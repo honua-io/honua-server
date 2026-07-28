@@ -64,7 +64,12 @@ internal static class EsriLocFileParser
                 "data or export the reference data and import it directly.");
         }
 
-        var text = Encoding.UTF8.GetString(content);
+        // A UTF-8 BOM would otherwise survive GetString as U+FEFF and corrupt the first
+        // property key (e.g. "﻿Version"), silently classifying it as unsupported.
+        var body = content.Length >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF
+            ? content[3..]
+            : content;
+        var text = Encoding.UTF8.GetString(body);
 
         string? version = null;
         string? styleId = null;

@@ -328,7 +328,13 @@ internal sealed partial class EsriLocatorImportService(
         }
 
         // Report every header column: mapped columns as supported, the rest explicitly ignored.
-        var mappedIndexes = mapping.ToDictionary(static p => p.Value, static p => p.Key);
+        // An explicit fieldMap may assign one CSV column to several roles, so group per index
+        // instead of assuming a one-to-one mapping.
+        var mappedIndexes = mapping
+            .GroupBy(static p => p.Value)
+            .ToDictionary(
+                static g => g.Key,
+                static g => string.Join("', '", g.Select(static p => p.Key).Order(StringComparer.Ordinal)));
         for (var i = 0; i < header.Length; i++)
         {
             var column = header[i].Trim();
@@ -337,8 +343,8 @@ internal sealed partial class EsriLocatorImportService(
                 continue;
             }
 
-            report.Add(mappedIndexes.TryGetValue(i, out var role)
-                ? new LocatorTranslationEntry(column, LocatorTranslationStatus.Supported, $"Reference column mapped to '{role}'.")
+            report.Add(mappedIndexes.TryGetValue(i, out var roles)
+                ? new LocatorTranslationEntry(column, LocatorTranslationStatus.Supported, $"Reference column mapped to '{roles}'.")
                 : new LocatorTranslationEntry(column, LocatorTranslationStatus.Ignored, "Reference column is not mapped to a geocoder field."));
         }
 
@@ -404,14 +410,26 @@ internal sealed partial class EsriLocatorImportService(
             return false;
         }
 
-        // search_text must contain every stored structured component, not just the display
-        // label: LocalPostgisGeocodeProvider.ComposeSearchText folds neighborhood and country
-        // into structured queries, and forward matching requires all query tokens to appear
-        // in the record's normalized text.
-        var searchSource = string.Join(' ', new[]
+        // search_text must contain every stored structured component exactly once: the
+        // provider folds neighborhood and country into structured queries, but repeating
+        // components already present in the display label would demote an identical query
+        // from an exact match to a prefix match in LocalPostgisGeocodeProvider.ScoreMatch.
+        var streetLine = string.Join(' ', new[] { addressNumber, streetName }
+            .Where(static p => !string.IsNullOrWhiteSpace(p)));
+        string searchSource;
+        if (Get(RoleDisplayName) is null)
         {
-            displayName, addressNumber, streetName, neighborhood, city, region, postalCode, country,
-        }.Where(static p => !string.IsNullOrWhiteSpace(p)));
+            searchSource = string.Join(' ', new[] { streetLine, neighborhood, city, region, postalCode, country }
+                .Where(static p => !string.IsNullOrWhiteSpace(p)));
+        }
+        else
+        {
+            var normalizedDisplay = GeocodeReferenceText.Normalize(displayName);
+            var extras = new[] { streetLine, neighborhood, city, region, postalCode, country }
+                .Where(static p => !string.IsNullOrWhiteSpace(p))
+                .Where(p => !normalizedDisplay.Contains(GeocodeReferenceText.Normalize(p!), StringComparison.Ordinal));
+            searchSource = string.Join(' ', new[] { displayName }.Concat(extras));
+        }
 
         row = new ReferenceRow(
             DisplayName: displayName,

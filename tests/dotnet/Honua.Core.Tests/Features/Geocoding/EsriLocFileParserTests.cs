@@ -31,6 +31,19 @@ public sealed class EsriLocFileParserTests
         """;
 
     [Fact]
+    public void Parse_Utf8BomPrefixedLocator_ParsesFirstKey()
+    {
+        var report = new List<LocatorTranslationEntry>();
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF }.Concat(Encoding.UTF8.GetBytes(ClassicLoc)).ToArray();
+
+        var definition = EsriLocFileParser.Parse(bytes, "USStreets", report);
+
+        Assert.Equal("8.1", definition.Version);
+        Assert.DoesNotContain(report, static e =>
+            e.Item.Contains('﻿', StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Parse_ClassicLocator_RecordsMatchSettings()
     {
         var report = new List<LocatorTranslationEntry>();

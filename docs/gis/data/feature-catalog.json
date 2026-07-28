@@ -13837,6 +13837,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_BinaryProLocator_Returns400WithExplicitError",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_ClassicLocatorWithReferenceData_ServesGeocodeServerRoundTrip",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_FieldMapColumnServingMultipleRoles_Succeeds",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_MismatchedLocatorName_Returns400",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_MissingLocatorFile_Returns400",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_NullFieldMapValue_Returns400",

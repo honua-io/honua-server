@@ -262,6 +262,27 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
     [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    public async Task Import_FieldMapColumnServingMultipleRoles_Succeeds()
+    {
+        using var content = BuildImportForm(includeReference: true, includeIndex: false);
+        content.Add(new StringContent("{\"displayName\":\"STREET_NAME\",\"streetName\":\"STREET_NAME\"}"), "fieldMap");
+
+        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"Import failed: {response.StatusCode}: {body}");
+        using var payload = JsonDocument.Parse(body);
+        var report = payload.RootElement.GetProperty("data").GetProperty("report").EnumerateArray().ToArray();
+        Assert.Contains(report, static e =>
+            e.GetProperty("item").GetString() == "STREET_NAME" &&
+            e.GetProperty("status").GetString() == "supported" &&
+            e.GetProperty("detail").GetString()!.Contains("displayName", StringComparison.Ordinal) &&
+            e.GetProperty("detail").GetString()!.Contains("streetName", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
     public async Task Import_NullFieldMapValue_Returns400()
     {
         using var content = BuildImportForm(includeReference: true, includeIndex: false);
