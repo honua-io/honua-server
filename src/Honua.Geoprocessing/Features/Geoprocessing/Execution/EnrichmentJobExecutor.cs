@@ -66,11 +66,14 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private const string HonuaLayerSourceId = "source.honua-layer";
 
     /// <summary>
-    /// CRS both layers are normalized to when the caller supplies no <c>outSrid</c>.
-    /// Pinning one CRS is what makes a cross-SRID join correct; callers that need metric
-    /// distances choose a metric <c>outSrid</c>.
+    /// The single CRS both layers are streamed in and the artifact is published in:
+    /// EPSG:4326. Pinning one CRS is what makes a cross-SRID join correct, and GeoJSON
+    /// is WGS 84 by specification (RFC 7946), so publishing projected ordinates would
+    /// be misread by every standard consumer. Distances are therefore evaluated in
+    /// degrees — the same "CRS units, no geodesic conversion" contract the other managed
+    /// analytics executors document.
     /// </summary>
-    private const int DefaultOutputSrid = 4326;
+    private const int JoinSrid = 4326;
 
     /// <summary>
     /// Default per-layer admission cap. Enforced while streaming so an oversized
@@ -85,6 +88,14 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// guard and exhaust the worker.
     /// </summary>
     private const int MaxInputFeaturesCeiling = 1_000_000;
+
+    /// <summary>
+    /// Cumulative ceiling on carried match values across an entire join. Bounds the
+    /// Cartesian growth the per-layer input caps cannot see (targets x matches x
+    /// carried fields), so two individually permitted but highly overlapping layers
+    /// cannot exhaust the worker before the artifact-size check.
+    /// </summary>
+    private const long MaxCarriedMatchValues = 20_000_000L;
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -171,7 +182,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         EnrichmentPlan plan;
         try
         {
-            plan = BuildPlan(inputs, dataset, hasInline);
+            plan = BuildPlan(inputs, dataset);
         }
         catch (TransformInputException ex)
         {
@@ -201,12 +212,12 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(45, "Reading enrichment dataset layer", cancellationToken).ConfigureAwait(false);
 
-            // Both layers are streamed in the SAME CRS (plan.OutputSrid) so the managed
+            // Both layers are streamed in the SAME CRS (JoinSrid) so the managed
             // NTS predicates and distances compare comparable ordinates; without this a
             // 4326 source joined to a 3857 dataset would silently mismatch.
             joinFeatures = await LayerSourcedFeatureExecutor.ReadLayerAsync(
                     source,
-                    new DagSourceRequest { LayerId = dataset.LayerId, OutputSrid = plan.OutputSrid },
+                    new DagSourceRequest { LayerId = dataset.LayerId, OutputSrid = JoinSrid },
                     cancellationToken,
                     plan.MaxInputFeatures,
                     $"enrichment dataset layer {dataset.LayerId}")
@@ -337,9 +348,9 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             LayerId = layerId,
             Where = inputs.TryGet("where", out var where) ? where : null,
             Bbox = inputs.TryGet("bbox", out var bbox) ? bbox : null,
-            // Normalized to the plan CRS so the source and dataset layers are joined in
+            // Normalized to the join CRS so the source and dataset layers are joined in
             // one coordinate system (see the dataset read).
-            OutputSrid = plan.OutputSrid,
+            OutputSrid = JoinSrid,
         };
 
         return LayerSourcedFeatureExecutor.ReadLayerAsync(
@@ -349,10 +360,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     // Resolves the effective join behavior from the enrichment vocabulary: the
     // 'method' names (mirroring POST /api/enrich) take precedence over a raw
     // 'predicate', which falls back to the dataset default.
-    private static EnrichmentPlan BuildPlan(
-        StepInputReader inputs,
-        EnrichmentDatasetDefinition dataset,
-        bool inlineSource)
+    private static EnrichmentPlan BuildPlan(StepInputReader inputs, EnrichmentDatasetDefinition dataset)
     {
         var carryFields = StatisticsSupport.ParseFieldList(inputs.GetOrDefault("outputFields", string.Empty));
         if (carryFields.Count == 0)
@@ -410,22 +418,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 "the within-distance method requires a finite positive 'distance' threshold in CRS units");
         }
 
-        // Both layers are read in ONE CRS. The caller may pick it (e.g. a metric CRS so
-        // within-distance/NEAR_DIST are meters); otherwise both are normalized to
-        // EPSG:4326 so a cross-SRID pair can never be joined on raw, incomparable
-        // ordinates.
-        var outputSrid = TryReadPositiveInt(inputs, "outSrid") ?? DefaultOutputSrid;
-
-        // Inline GeoJSON is WGS 84 by specification (RFC 7946) and is parsed with the
-        // 4326 factory, so it cannot be joined against a dataset reprojected to another
-        // CRS. Reject that combination rather than silently comparing 4326 input
-        // ordinates against reprojected dataset ordinates.
-        if (inlineSource && outputSrid != DefaultOutputSrid)
-        {
-            throw new TransformInputException(
-                $"'outSrid' must be {DefaultOutputSrid} when the source is supplied inline via 'input': inline "
-                + "GeoJSON is WGS 84 by specification. Use a 'layerId' source to enrich in another CRS.");
-        }
 
         // The caller may only LOWER the admission cap. An operator ceiling still applies,
         // so a permitted caller cannot disable the guard (e.g. int.MaxValue) and exhaust
@@ -435,7 +427,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             MaxInputFeaturesCeiling);
 
         return new EnrichmentPlan(
-            methodName, nearest, predicate, distance, carryFields, stats, outputSrid, maxInputFeatures);
+            methodName, nearest, predicate, distance, carryFields, stats, maxInputFeatures);
     }
 
     private static int? TryReadPositiveInt(StepInputReader inputs, string name)
@@ -487,11 +479,15 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
 
         var index = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
+        // One budget for the WHOLE join: the per-layer caps bound each input, but the
+        // match set is a Cartesian product, so overlapping layers can buffer far more
+        // carried values than either input has features.
+        var budget = new SpatialJoinSupport.MatchBudget(MaxCarriedMatchValues);
         foreach (var target in targets)
         {
             cancellationToken.ThrowIfCancellationRequested();
             output.Add(SpatialJoinSupport.Join(
-                target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats));
+                target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats, budget));
         }
 
         return output;
@@ -570,10 +566,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// <param name="Distance">Within-distance threshold in CRS units (0 when unused).</param>
     /// <param name="CarryFields">Dataset attributes carried onto each enriched feature.</param>
     /// <param name="Stats">Aggregates computed over the matched dataset features.</param>
-    /// <param name="OutputSrid">
-    /// CRS both the source and dataset layers are streamed in, so the managed predicates
-    /// and distances compare comparable ordinates.
-    /// </param>
     /// <param name="MaxInputFeatures">
     /// Per-layer admission cap enforced WHILE streaming, so an oversized selection fails
     /// fast instead of exhausting worker memory before the artifact-size check.
@@ -585,7 +577,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         double Distance,
         IReadOnlyList<string> CarryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> Stats,
-        int OutputSrid,
         int MaxInputFeatures);
 
     private static partial class Log

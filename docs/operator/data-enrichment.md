@@ -67,20 +67,19 @@ enrichment-local job lifecycle:
   dataset id and attribution embedded as foreign members.
 - **Gating**: the shared `analytics.spatial-join` (Pro) entitlement and the
   dataset's `minimumEdition` are enforced at execution.
-- **CRS**: both the source and dataset layers are streamed in a single CRS
-  (`outSrid`, default EPSG:4326), so a cross-SRID pair is never joined on
-  incomparable ordinates. Within-distance thresholds and `NEAR_DIST` are in those
-  CRS units (managed NTS join, no geodesic conversion) — the sync endpoint's
-  `distanceMeters` semantics do not apply, so supply `distance` explicitly and
-  pick a metric `outSrid` (e.g. 3857) when you need meters.
-  `bbox` coordinates are expressed in `outSrid` (the layer connector stamps the
-  filter envelope with the requested output SRID). Inline `input` sources must
-  keep `outSrid` at 4326 — inline GeoJSON is WGS 84 by specification, so the
-  request is rejected rather than joined against a reprojected dataset.
+- **CRS**: both the source and dataset layers are streamed in EPSG:4326 and the
+  result is published in EPSG:4326, so a cross-SRID pair is never joined on
+  incomparable ordinates and the GeoJSON output is valid WGS 84 (RFC 7946).
+  `bbox` is likewise EPSG:4326. Within-distance thresholds and `NEAR_DIST` are
+  therefore in degrees (managed NTS join, no geodesic conversion) — the sync
+  endpoint's `distanceMeters` semantics do not apply, so supply `distance`
+  explicitly in degrees.
 - **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
   while streaming, so an oversized selection fails fast with an actionable error
   instead of exhausting worker memory. The value is clamped to an operator
-  ceiling of 1000000 — a caller may only lower the cap, never disable it.
+  ceiling of 1000000 — a caller may only lower the cap, never disable it. A
+  cumulative carried-match budget additionally bounds the join itself, which is a
+  Cartesian product the per-layer caps cannot see.
 
 ## Registering enrichment datasets
 

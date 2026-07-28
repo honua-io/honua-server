@@ -78,7 +78,8 @@ internal static class SpatialJoinSupport
         SpatialPredicate predicate,
         double distance,
         IReadOnlyList<string> carryFields,
-        IReadOnlyList<StatisticsSupport.StatSpec> stats)
+        IReadOnlyList<StatisticsSupport.StatSpec> stats,
+        MatchBudget? budget = null)
     {
         var attributes = OverlayExecutorSupport.CopyAttributes(target);
 
@@ -106,6 +107,13 @@ internal static class SpatialJoinSupport
                 }
 
                 matchCount++;
+
+                // Carried values are what actually grow without bound: two highly
+                // overlapping layers buffer targets x matches x fields values before the
+                // artifact-size check ever runs. Charge each one against the shared
+                // budget so the job fails fast instead of exhausting the worker.
+                budget?.Charge(carryFields.Count);
+
                 foreach (var field in carryFields)
                 {
                     carried[field].Add(ReadValue(candidate, field));
@@ -164,6 +172,45 @@ internal static class SpatialJoinSupport
             }
 
             return first.Distance(second);
+        }
+    }
+
+    /// <summary>
+    /// Cumulative budget over the carried match values a whole join may buffer. The
+    /// per-layer admission caps bound each INPUT, but the join itself is a Cartesian
+    /// product: highly overlapping layers can materialize far more carried values than
+    /// either input has features. Charging every carried value against one shared budget
+    /// makes that growth fail fast with an actionable message.
+    /// </summary>
+    internal sealed class MatchBudget
+    {
+        private readonly long _limit;
+        private long _used;
+
+        /// <summary>Creates a budget over the maximum number of carried match values.</summary>
+        /// <param name="limit">Maximum carried values across the entire join.</param>
+        internal MatchBudget(long limit) => _limit = limit;
+
+        /// <summary>
+        /// Charges <paramref name="count"/> carried values, throwing once the cumulative
+        /// budget is exhausted.
+        /// </summary>
+        /// <param name="count">Number of carried values produced by one match.</param>
+        internal void Charge(int count)
+        {
+            if (count <= 0)
+            {
+                return;
+            }
+
+            _used += count;
+            if (_used > _limit)
+            {
+                throw new TransformInputException(
+                    $"the join exceeded the cumulative match budget of {_limit} carried values; "
+                    + "narrow the selection (where/bbox), carry fewer 'outputFields', or use a less "
+                    + "permissive spatial method.");
+            }
         }
     }
 
