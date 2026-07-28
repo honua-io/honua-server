@@ -235,10 +235,11 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// <summary>
     /// Streams every feature the resolved <paramref name="source"/> returns for
     /// <paramref name="request"/> into an in-memory NetTopologySuite feature list.
-    /// Shared by the base's primary layer read and by two-layer ops that resolve a
-    /// second catalog layer through the same connector.
+    /// Shared by the base's primary layer read, by two-layer ops that resolve a
+    /// second catalog layer through the same connector, and by the standalone
+    /// <c>enrichment.enrich</c> executor (#2283).
     /// </summary>
-    private protected static async Task<List<IFeature>> ReadLayerAsync(
+    internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
         DagSourceRequest request,
         CancellationToken cancellationToken)

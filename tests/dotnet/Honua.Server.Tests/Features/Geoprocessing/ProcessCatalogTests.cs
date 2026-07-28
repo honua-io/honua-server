@@ -75,7 +75,8 @@ public sealed class ProcessCatalogTests
         // conversion.rasterize (#2240).
         // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
         // Analysis / Getis-Ord Gi*) added by #2142.
-        all.Should().HaveCount(96);
+        // + 1 async batch enrichment op (enrichment.enrich) added by #2283.
+        all.Should().HaveCount(97);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -363,6 +364,7 @@ public sealed class ProcessCatalogTests
             "analytics.density-managed",
             "analytics.hotspot-managed",
             "analytics.buffer-aggregate", "analytics.density",
+            "enrichment.enrich",
             "surface.slope", "surface.aspect", "surface.hillshade",
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
             "raster.clip", "raster.reproject", "raster.statistics",

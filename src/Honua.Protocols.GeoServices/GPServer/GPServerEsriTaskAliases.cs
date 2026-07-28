@@ -117,6 +117,10 @@ internal static class GPServerEsriTaskAliases
         // variants actually reachable through GPServer's submitJob/execute routes)
         ["analytics.spatial-join-managed"] = "SpatialJoin",
         ["analytics.hotspot-managed"] = "HotSpots",
+
+        // Data enrichment (#2283): the async batch enrichment job maps onto the
+        // Esri "Enrich Layer" analysis tool convention.
+        ["enrichment.enrich"] = "EnrichLayer",
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>
