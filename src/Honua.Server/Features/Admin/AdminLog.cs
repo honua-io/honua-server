@@ -265,4 +265,13 @@ internal static partial class AdminLog
         Level = LogLevel.Warning,
         Message = "Geocoding provider health check failed")]
     public static partial void GeocodingProviderHealthCheckFailed(ILogger logger, Exception ex);
+
+    /// <summary>
+    /// Log when an Esri locator import request is rejected with an operator-safe reason.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4622,
+        Level = LogLevel.Warning,
+        Message = "Esri locator import rejected: {Reason}")]
+    public static partial void EsriLocatorImportRejected(ILogger logger, string reason);
 }

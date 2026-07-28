@@ -13828,6 +13828,25 @@
       "capability": "fieldops.forms"
     },
     {
+      "id": "post-api-v1-admin-geocoding-locators-import",
+      "route": "/api/v1/admin/geocoding/locators/import",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_BinaryProLocator_Returns400WithExplicitError",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_ClassicLocatorWithReferenceData_ServesGeocodeServerRoundTrip",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_MissingLocatorFile_Returns400",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_ReferenceDataWithoutCoordinateColumns_Returns400",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_WithoutAdminCredentials_IsRejected",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_WithoutReferenceData_ParsesAndClassifiesOnly"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "geocoding.forward"
+    },
+    {
       "id": "post-api-v1-admin-import-arcgis-migrations-runid-manifest",
       "route": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
       "method": "POST",

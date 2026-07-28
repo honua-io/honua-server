@@ -100,6 +100,29 @@ VALUES
 }
 ```
 
+## Importing an Esri `.loc`/`.lox` locator
+
+`POST /api/v1/admin/geocoding/locators/import` (admin-authorized, `multipart/form-data`) imports a
+classic Esri address locator into the reference table above so it can be served through
+GeocodeServer by the local provider:
+
+| Part | Required | Content |
+| --- | --- | --- |
+| `locator` | yes | Classic text `.loc` definition (`key = value` properties). ArcGIS Pro binary locator payloads are rejected with an explicit error. |
+| `index` | no | `.lox` binary index sidecar. It is never parsed — equivalent match indexes are rebuilt in PostGIS — and is reported as `regenerated`. |
+| `referenceData` | no | CSV (header row required) with the locator's reference records. When omitted, the locator is parsed and classified only. |
+| `locatorName` | no | Overrides the locator name (defaults to the `.loc` file base name). |
+| `mode` | no | `replace` (default) clears the reference table first; `append` adds to it. |
+| `fieldMap` | no | JSON object mapping canonical roles (`displayName`, `addressNumber`, `streetName`, `city`, `region`, `postalCode`, `country`, `neighborhood`, `addressType`, `x`, `y`) to CSV column names. Roles not listed are auto-mapped from well-known Esri reference field aliases (`HOUSE_NUM`, `STREET_NAME`, `ZIP`, `POINT_X`, ...). |
+
+Coordinates must be WGS84 longitude/latitude. `search_text` is populated with the same
+normalization the provider applies at query time. The response contains a **translation report**
+with one entry per source construct (`supported`, `unsupported`, `regenerated`, or `ignored`) —
+unsupported locator features (composite locators, alternate-name tables, non-WGS84 coordinate
+systems, unknown properties) are reported explicitly rather than silently dropped. Match settings
+(`MinimumMatchScore`, `SpellingSensitivity`, offsets, ...) are recorded verbatim in the response;
+applying them to runtime candidate scoring is not yet implemented.
+
 ## Scoring
 
 Forward-match scores are derived deterministically from the match shape against the normalized
