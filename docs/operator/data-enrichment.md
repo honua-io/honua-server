@@ -46,6 +46,32 @@ spatial predicates, supports `outputFields` and per-match `aggregates`
 `X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
 async batch path) when the source selection exceeds the synchronous input cap.
 
+## Async batch enrichment jobs (`enrichment.enrich`)
+
+Large or staged-input enrichment runs as a **canonical geoprocessing job**
+(#2283) through the existing OGC API Processes surface — there is no
+enrichment-local job lifecycle:
+
+- **Submit**: `POST /ogc/processes/processes/enrichment.enrich/execution` with
+  the same enrichment vocabulary as `POST /api/enrich` — `datasetId` (required),
+  `method` (`intersects`, `point-in-polygon`, `within`, `within-distance`,
+  `nearest-neighbor`), `outputFields`, `aggregates` (`field:stat` pairs), and the
+  source as EITHER a registered `layerId` (with optional `where`/`bbox`
+  windowing) OR a staged inline FeatureCollection via `input`
+  (`data:application/geo+json;base64` data URI). Returns `201` with a job id.
+- **Poll / results / dismiss**: the standard job endpoints —
+  `GET /ogc/processes/jobs/{jobId}`, `GET /ogc/processes/jobs/{jobId}/results`,
+  `DELETE /ogc/processes/jobs/{jobId}`.
+- **Results** are an enriched GeoJSON FeatureCollection artifact (`JOIN_COUNT`,
+  carried attributes, aggregates; `NEAR_DIST` for nearest-neighbor) with the
+  dataset id and attribution embedded as foreign members.
+- **Gating**: the shared `analytics.spatial-join` (Pro) entitlement and the
+  dataset's `minimumEdition` are enforced at execution.
+- **Units**: within-distance thresholds on the job path are evaluated in the CRS
+  units of the layer geometries (managed NTS join, no geodesic conversion), so
+  the sync endpoint's `distanceMeters` semantics do not apply; supply `distance`
+  explicitly.
+
 ## Registering enrichment datasets
 
 The catalog is **operator-curated** and configuration-driven. Publish the
@@ -116,12 +142,14 @@ enterprise/revenue features in the ticket:
   demographic data** (ACS/Census/OSM extracts, Natural Earth boundaries, etc.) —
   no such dataset ships with the server. Operators bring their own reference data
   and register it as above.
-- **No inline-GeoJSON source feature sets.** The source must be a registered
-  layer; ad-hoc inline feature sets are not yet supported.
+- **No inline-GeoJSON source feature sets on the synchronous endpoint.** The
+  sync source must be a registered layer; inline/staged feature sets run through
+  the async `enrichment.enrich` job's `input` data URI instead.
 - **Synchronous spatial-join method only.** The point-in-polygon / within /
   contains / dwithin predicates are served through the shared spatial-join
-  pipeline. Nearest-neighbour, buffer+aggregate weighting, and intersection
-  area-weighting as *enrichment methods*, plus async/batch jobs and
-  CDC-triggered enrichment, are deferred to follow-up work.
+  pipeline. Nearest-neighbour is available on the async `enrichment.enrich` job
+  path (#2283); buffer+aggregate weighting and intersection area-weighting as
+  *enrichment methods*, plus CDC-triggered enrichment, are deferred to
+  follow-up work.
 
 These deferrals are tracked under [#374](https://github.com/honua-io/honua-server/issues/374).

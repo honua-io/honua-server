@@ -416,6 +416,9 @@ internal static partial class ProcessPlanValidator
             case "analytics.spatial-join-managed":
                 ValidateManagedSpatialJoinSemantics(step, violations);
                 break;
+            case "enrichment.enrich":
+                ValidateEnrichmentSemantics(step, violations);
+                break;
             case "analytics.cluster-managed":
                 ValidateManagedClusterSemantics(step, violations);
                 break;
@@ -683,6 +686,114 @@ internal static partial class ProcessPlanValidator
             {
                 AddRangeViolationIfNew(step, "statistics",
                     $"statistic '{statName}' requires a join field, e.g. 'fieldName:{statName}'", violations);
+                return;
+            }
+        }
+    }
+
+    // enrichment.enrich (#2283) allow-lists mirror the EnrichmentJobExecutor body
+    // so the validator rejects the same method/predicate/aggregate spellings the
+    // executor refuses at runtime.
+    private static readonly HashSet<string> EnrichmentMethodValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "point-in-polygon", "point_in_polygon", "pip", "contains", "within",
+        "within-distance", "within_distance", "dwithin",
+        "nearest-neighbor", "nearest_neighbor", "nearest"
+    };
+
+    private static readonly HashSet<string> EnrichmentDistanceMethodValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "within-distance", "within_distance", "dwithin"
+    };
+
+    private static readonly HashSet<string> EnrichmentAggregateStatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "mean", "avg", "average", "min", "max", "stddev", "std"
+    };
+
+    // enrichment.enrich (#2283) resolves the enrichment dataset at execution, so
+    // dataset-dependent defaults (default predicate) cannot be validated here.
+    // This mirrors the executor's submit-time-checkable rules: exactly one source
+    // (layerId XOR input), the method/predicate enums, the conditional distance
+    // when the caller explicitly requests within-distance, and the 'aggregates'
+    // field:stat grammar shared with the statistics tool pack.
+    private static void ValidateEnrichmentSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerIdRaw)
+            && !string.IsNullOrWhiteSpace(layerIdRaw);
+        var hasInline = step.Inputs.TryGetValue("input", out var inputRaw)
+            && !string.IsNullOrWhiteSpace(inputRaw);
+        if (hasLayerId == hasInline)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = hasLayerId ? "INVALID_PARAMETER_VALUE" : "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' must supply EXACTLY ONE source for process '{step.ProcessId}': "
+                    + "'layerId' (registered source layer) or 'input' (staged FeatureCollection data URI).",
+                FieldPath = $"steps[{step.StepId}].inputs.layerId"
+            });
+        }
+
+        var hasMethod = step.Inputs.TryGetValue("method", out var methodRaw)
+            && !string.IsNullOrWhiteSpace(methodRaw);
+        if (hasMethod && !EnrichmentMethodValues.Contains(methodRaw!.Trim()))
+        {
+            AddEnumViolation(step, "method", methodRaw!,
+                "intersects, point-in-polygon, within, within-distance, nearest-neighbor", violations);
+        }
+
+        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !SpatialJoinPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, contains, within, dwithin", violations);
+        }
+
+        var wantsDistance =
+            (hasMethod && EnrichmentDistanceMethodValues.Contains(methodRaw!.Trim()))
+            || (!hasMethod
+                && step.Inputs.TryGetValue("predicate", out var effectivePredicate)
+                && string.Equals(effectivePredicate?.Trim(), "dwithin", StringComparison.OrdinalIgnoreCase));
+        if (wantsDistance)
+        {
+            RequireConditionalParameter(step, "distance", "method=within-distance", violations);
+        }
+
+        if (step.Inputs.TryGetValue("distance", out var distanceRaw)
+            && !string.IsNullOrWhiteSpace(distanceRaw)
+            && (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
+                || !double.IsFinite(distance)
+                || distance <= 0))
+        {
+            AddRangeViolationIfNew(step, "distance", "expected a finite positive number (CRS units)", violations);
+        }
+
+        if (!step.Inputs.TryGetValue("aggregates", out var aggregatesRaw)
+            || string.IsNullOrWhiteSpace(aggregatesRaw))
+        {
+            return;
+        }
+
+        foreach (var token in aggregatesRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = token.Split(':', StringSplitOptions.TrimEntries);
+            var statName = parts.Length >= 2 ? parts[1] : parts[0];
+            var field = parts.Length >= 2 ? parts[0] : string.Empty;
+
+            if (!EnrichmentAggregateStatValues.Contains(statName))
+            {
+                AddRangeViolationIfNew(step, "aggregates",
+                    $"unsupported statistic '{statName}' in '{token}' (allowed: count, sum, mean, min, max, stddev)", violations);
+                return;
+            }
+
+            if (!string.Equals(statName, "count", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(field))
+            {
+                AddRangeViolationIfNew(step, "aggregates",
+                    $"statistic '{statName}' requires a dataset field, e.g. 'fieldName:{statName}'", violations);
                 return;
             }
         }

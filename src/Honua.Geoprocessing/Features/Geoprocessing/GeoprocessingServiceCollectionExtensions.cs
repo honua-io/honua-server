@@ -303,6 +303,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         // the joinLayerId through source.honua-layer and enriches each target feature
         // with matched join attributes/aggregates in one dispatched job.
         Register<LayerSpatialJoinExecutor>(services);
+        // Async batch enrichment (#2283): the job-executable counterpart of
+        // POST /api/enrich — resolves a managed enrichment dataset by id and joins
+        // a layer-backed or staged inline target set against the dataset's layer
+        // through the shared spatial-join computation.
+        Register<EnrichmentJobExecutor>(services);
         // Layer-aware overlay tool pack (#2206, #2139).
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);
