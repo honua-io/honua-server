@@ -376,6 +376,80 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_UnreferencedSource_IsRejectedBeforeDelegation()
+    {
+        // An unreferenced source makes the output-location contract unverifiable.
+        // Treating that as permission to skip the comparison would let the backend
+        // return any georeferenced raster, so it is refused up front.
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-unreferenced-source");
+
+        var record = CreateJobRecord(source: Convert.ToBase64String(UnreferencedTiff));
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("georeferencing");
+        handler.LastRequestBody.Should().BeNull("an unverifiable source must never be delegated");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_SendsSourceCrsToTheBackend()
+    {
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-source-crs", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        using var request = JsonDocument.Parse(handler.LastRequestBody!);
+        request.RootElement.GetProperty("sourceCrs").GetInt32().Should().Be(32610,
+            "the backend needs the scene CRS to georeference its result");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ProjectedFeatureCoordinates_AreRejectedNotPublished()
+    {
+        // The source is EPSG:32610, so a backend echoing detections in source-CRS
+        // metres yields coordinates far outside lon/lat range. Downstream consumers
+        // read this artifact through a 4326-fixed factory, so publishing it would
+        // silently relocate every detection.
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[500123.0,4600456.0]},"properties":{"class":"building"}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-projected-features");
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("WGS 84");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_TiepointWithRasterOffset_IsTreatedAsTheSameGrid()
+    {
+        // Same grid expressed with a non-zero raster tiepoint (i=8, j=8) and a
+        // correspondingly shifted model point. Discarding (i, j) would compute a
+        // different origin and reject this valid output as mislocated.
+        var offsetEquivalent = BuildGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20, epsg: 32610,
+            tiepointI: 8, tiepointJ: 8);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(offsetEquivalent)), provider: "http");
+        var context = CreateContext("op-tiepoint-offset", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded,
+            "a non-zero ModelTiepoint raster offset describes the same grid");
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
@@ -525,7 +599,9 @@ public sealed class ImageryInferenceJobExecutorTests
         double originY,
         double pixelSize,
         int epsg,
-        bool georeferenced = true)
+        bool georeferenced = true,
+        double tiepointI = 0,
+        double tiepointJ = 0)
     {
         // Entries: ImageWidth, ImageLength [, ModelPixelScale, ModelTiepoint, GeoKeyDirectory]
         var entryCount = georeferenced ? 5 : 2;
@@ -564,9 +640,15 @@ public sealed class ImageryInferenceJobExecutorTests
             BinaryPrimitives.WriteDoubleLittleEndian(span[(pixelScaleOffset + 8)..], pixelSize);
             BinaryPrimitives.WriteDoubleLittleEndian(span[(pixelScaleOffset + 16)..], 0d);
 
-            // ModelTiepoint (i, j, k, x, y, z): raster (0,0,0) -> model origin.
-            BinaryPrimitives.WriteDoubleLittleEndian(span[(tiepointOffset + 24)..], originX);
-            BinaryPrimitives.WriteDoubleLittleEndian(span[(tiepointOffset + 32)..], originY);
+            // ModelTiepoint (i, j, k, x, y, z): raster point (i, j) -> its model
+            // point. With the default (0, 0) that model point IS the upper-left
+            // corner; with an offset the corner is walked back along the scale.
+            BinaryPrimitives.WriteDoubleLittleEndian(span[tiepointOffset..], tiepointI);
+            BinaryPrimitives.WriteDoubleLittleEndian(span[(tiepointOffset + 8)..], tiepointJ);
+            BinaryPrimitives.WriteDoubleLittleEndian(
+                span[(tiepointOffset + 24)..], originX + (tiepointI * pixelSize));
+            BinaryPrimitives.WriteDoubleLittleEndian(
+                span[(tiepointOffset + 32)..], originY - (tiepointJ * pixelSize));
 
             // GeoKeyDirectory: version/revision/minor/numberOfKeys, then one key
             // (ProjectedCSTypeGeoKey = 3072) stored in-line.

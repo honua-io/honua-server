@@ -310,6 +310,8 @@ internal readonly record struct GeoTiffGeoreferencing
         private double _height;
         private double _scaleX;
         private double _scaleY;
+        private double _tiepointI;
+        private double _tiepointJ;
         private double _tiepointX;
         private double _tiepointY;
         private bool _hasTiepoint;
@@ -343,7 +345,14 @@ internal readonly record struct GeoTiffGeoreferencing
                     _hasScale = true;
                     break;
                 case TagModelTiepoint when count >= 6 && dataOffset + 48 <= bytes.Length:
-                    // (i, j, k, x, y, z) — the raster point and its model point.
+                    // (i, j, k, x, y, z) — the RASTER point (i, j) and the model
+                    // point (x, y) it maps to. The raster point is usually (0, 0)
+                    // but is not required to be: keep it so TryBuild can walk the
+                    // model point back to the upper-left corner. Discarding it
+                    // would make a backend that normalizes the same grid to a
+                    // (0,0) tiepoint compare as mislocated.
+                    _tiepointI = ReadDouble(bytes, dataOffset, littleEndian);
+                    _tiepointJ = ReadDouble(bytes, dataOffset + 8, littleEndian);
                     _tiepointX = ReadDouble(bytes, dataOffset + 24, littleEndian);
                     _tiepointY = ReadDouble(bytes, dataOffset + 32, littleEndian);
                     _hasTiepoint = true;
@@ -372,8 +381,11 @@ internal readonly record struct GeoTiffGeoreferencing
 
             if (_hasScale && _hasTiepoint)
             {
-                originX = _tiepointX;
-                originY = _tiepointY;
+                // Walk the model point back along the raster offset to the
+                // upper-left corner: X decreases with i, Y increases with j
+                // (raster rows run north -> south).
+                originX = _tiepointX - (_tiepointI * _scaleX);
+                originY = _tiepointY + (_tiepointJ * _scaleY);
                 pixelX = _scaleX;
                 pixelY = _scaleY;
             }

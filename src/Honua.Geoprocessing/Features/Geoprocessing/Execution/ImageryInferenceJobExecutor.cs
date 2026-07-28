@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using NetTopologySuite.Features;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -150,6 +151,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             Model = inputs.Model,
             Task = inputs.Task,
             ImageBytes = inputs.SourceBytes,
+            SourceCrsCode = inputs.SourceGeoreferencing.CrsCode,
             ConfidenceThreshold = inputs.ConfidenceThreshold,
             MaxArtifactBytes = maxArtifactBytes
         };
@@ -211,17 +213,16 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     "extent/CRS; a plain unreferenced TIFF is rejected rather than published at an unknown location.");
             }
 
-            if (GeoTiffGeoreferencing.TryRead(inputs.SourceBytes, out var sourceGeoreferencing)
-                && sourceGeoreferencing.IsGeoreferenced)
+            // Unconditional: the input gate guarantees a georeferenced source, so
+            // there is no "could not parse the source" path that silently skips
+            // this comparison.
+            var mismatch = outputGeoreferencing.DescribeMismatchAgainst(inputs.SourceGeoreferencing);
+            if (mismatch is not null)
             {
-                var mismatch = outputGeoreferencing.DescribeMismatchAgainst(sourceGeoreferencing);
-                if (mismatch is not null)
-                {
-                    Log.GeoreferencingMismatch(_logger, job.OperationId, mismatch);
-                    return JobExecutionResult.Failed(
-                        $"imagery.classify inference failed: the output raster's georeferencing does not match the " +
-                        $"source scene ({mismatch}). The classification would be placed at the wrong location.");
-                }
+                Log.GeoreferencingMismatch(_logger, job.OperationId, mismatch);
+                return JobExecutionResult.Failed(
+                    $"imagery.classify inference failed: the output raster's georeferencing does not match the " +
+                    $"source scene ({mismatch}). The classification would be placed at the wrong location.");
             }
 
             if (rasterBytes.Length > maxArtifactBytes)
@@ -249,11 +250,27 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             }
 
             if (!FeatureCollectionArtifact.TryParseJson(
-                    Encoding.UTF8.GetString(featureJson), out _, out var featureParseError))
+                    Encoding.UTF8.GetString(featureJson), out var parsedFeatures, out var featureParseError))
             {
                 return JobExecutionResult.Failed(
                     "imagery.classify inference failed: the backend returned a features payload that is not a " +
                     $"valid GeoJSON FeatureCollection ({featureParseError}).");
+            }
+
+            // RFC 7946 GeoJSON is WGS 84 lon/lat, and every downstream GP consumer
+            // reads this artifact through GeoJsonArtifactCodec, whose geometry
+            // factory is fixed to SRID 4326. A backend that echoed detections in a
+            // projected source CRS (metre coordinates) would therefore be silently
+            // read as degrees and placed on the far side of the planet, so
+            // out-of-range coordinates are rejected instead of published.
+            if (!TryValidateWgs84Bounds(parsedFeatures, out var boundsError))
+            {
+                Log.FeatureOutputNotWgs84(_logger, job.OperationId, boundsError);
+                return JobExecutionResult.Failed(
+                    "imagery.classify inference failed: the backend returned detected features outside WGS 84 " +
+                    $"bounds ({boundsError}). GeoJSON output must be EPSG:4326 longitude/latitude (RFC 7946); " +
+                    $"the source CRS is supplied to the backend as 'sourceCrs' (EPSG:{inputs.SourceGeoreferencing.CrsCode}) " +
+                    "so it can transform detections before returning them.");
             }
 
             if (featureJson.Length > maxArtifactBytes)
@@ -310,6 +327,21 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             return false;
         }
 
+        // The whole imagery.classify contract is "the output preserves the source
+        // extent/CRS", which can only be verified against a source whose own
+        // georeferencing is readable. Treating an unparseable source as permission
+        // to SKIP the output comparison would let a backend return any georeferenced
+        // raster and have it published as though the source location were preserved,
+        // so an unreferenced source is rejected up front instead.
+        if (!GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing)
+            || !sourceGeoreferencing.IsGeoreferenced)
+        {
+            error = "input 'source' is a TIFF without usable GeoTIFF georeferencing (a model transform plus "
+                + "CRS keys). The output location can only be verified against a georeferenced source, so an "
+                + "unreferenced or malformed-metadata scene is rejected rather than delegated";
+            return false;
+        }
+
         var model = parameters.GetValueOrDefault(prefix + "model");
         if (string.IsNullOrWhiteSpace(model))
         {
@@ -349,7 +381,8 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             confidenceThreshold = parsed;
         }
 
-        inputs = new InferenceInputs(sourceBytes, model.Trim(), task, confidenceThreshold);
+        inputs = new InferenceInputs(
+            sourceBytes, sourceGeoreferencing, model.Trim(), task, confidenceThreshold);
         return true;
     }
 
@@ -370,8 +403,41 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return littleEndian || bigEndian;
     }
 
+    /// <summary>
+    /// Verifies every detected geometry falls inside WGS 84 bounds
+    /// (lon +/-180, lat +/-90). This is what catches a backend echoing projected
+    /// source-CRS coordinates into an artifact that downstream code reads as
+    /// degrees.
+    /// </summary>
+    private static bool TryValidateWgs84Bounds(FeatureCollection features, out string error)
+    {
+        error = "";
+
+        foreach (var feature in features)
+        {
+            var geometry = feature?.Geometry;
+            if (geometry is null || geometry.IsEmpty)
+            {
+                continue;
+            }
+
+            var envelope = geometry.EnvelopeInternal;
+            if (envelope.MinX < -180d || envelope.MaxX > 180d
+                || envelope.MinY < -90d || envelope.MaxY > 90d)
+            {
+                error = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"geometry envelope [{envelope.MinX}, {envelope.MinY}, {envelope.MaxX}, {envelope.MaxY}] is not longitude/latitude");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private sealed record InferenceInputs(
         byte[] SourceBytes,
+        GeoTiffGeoreferencing SourceGeoreferencing,
         string Model,
         string Task,
         double? ConfidenceThreshold);
@@ -409,6 +475,10 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         [LoggerMessage(9321, LogLevel.Warning,
             "Imagery inference executor refused job {OperationId}: output georeferencing mismatch — {Detail}")]
         public static partial void GeoreferencingMismatch(ILogger logger, string operationId, string detail);
+
+        [LoggerMessage(9322, LogLevel.Warning,
+            "Imagery inference executor refused job {OperationId}: feature output is not WGS 84 — {Detail}")]
+        public static partial void FeatureOutputNotWgs84(ILogger logger, string operationId, string detail);
 
         [LoggerMessage(9319, LogLevel.Information,
             "Imagery inference executor completed job {OperationId} via provider '{Provider}' with {OutputType} output")]

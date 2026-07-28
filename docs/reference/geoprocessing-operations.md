@@ -135,7 +135,7 @@ Imagery/ML analysis by **delegation to cloud-native inference** — Honua GP orc
 
 | Process ID | Description | Key parameters |
 | --- | --- | --- |
-| `imagery.classify` | Classification / segmentation / object detection on a raster scene via a configured cloud inference backend. The model is a *reference* into the backend. Lands either a classification/segmentation GeoTIFF (backend-preserved georeferencing, passed through byte-for-byte) or detected features as a GeoJSON FeatureCollection in the source CRS. | `source` (base64 GeoTIFF) or `layerId`/`rasterId`, `model`, `task` (`classification`/`segmentation`/`detection`), `confidenceThreshold` |
+| `imagery.classify` | Classification / segmentation / object detection on a raster scene via a configured cloud inference backend. The model is a *reference* into the backend. Lands either a classification/segmentation GeoTIFF (backend-preserved georeferencing, passed through byte-for-byte and verified against the source CRS/extent) or detected features as a GeoJSON FeatureCollection in WGS 84 lon/lat (RFC 7946). The source must be a georeferenced GeoTIFF. | `source` (base64 GeoTIFF) or `layerId`/`rasterId`, `model`, `task` (`classification`/`segmentation`/`detection`), `confidenceThreshold` |
 
 ## Conversion (8)
 

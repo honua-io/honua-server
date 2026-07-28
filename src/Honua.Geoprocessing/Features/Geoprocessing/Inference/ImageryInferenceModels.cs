@@ -19,6 +19,13 @@ internal sealed record ImageryInferenceRequest
     /// <summary>Source raster bytes (GeoTIFF).</summary>
     public required byte[] ImageBytes { get; init; }
 
+    /// <summary>
+    /// CRS code of the source scene, sent to the backend so it can georeference
+    /// its result. Feature outputs must still come back as WGS 84 lon/lat per
+    /// RFC 7946 regardless of this value.
+    /// </summary>
+    public int SourceCrsCode { get; init; }
+
     /// <summary>Optional score threshold in [0, 1] forwarded to the backend.</summary>
     public double? ConfidenceThreshold { get; init; }
 

@@ -21,8 +21,11 @@ namespace Honua.Geoprocessing.Inference;
 /// Response contract (JSON): <c>{ "outputType": "raster"|"features",
 /// "raster": base64 GeoTIFF | "features": GeoJSON FeatureCollection }</c>.
 /// The backend must preserve the source georeferencing: raster outputs carry the
-/// source grid/CRS in the returned GeoTIFF, feature outputs use source-CRS
-/// coordinates. The adapter passes raster bytes through byte-for-byte, so
+/// source grid/CRS in the returned GeoTIFF. Feature outputs MUST be WGS 84
+/// (EPSG:4326) longitude/latitude as RFC 7946 requires — the source CRS is sent
+/// as <c>sourceCrs</c> so the backend can transform its detections — and the
+/// executor rejects coordinates outside WGS 84 bounds rather than publishing
+/// projected numbers that downstream GeoJSON consumers would read as lon/lat. The adapter passes raster bytes through byte-for-byte, so
 /// whatever georeferencing the backend emits is exactly what lands in the
 /// artifact.
 /// All thrown <see cref="ImageryInferenceException"/> messages are safe for job
@@ -218,6 +221,10 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
             writer.WriteString("task", request.Task);
             writer.WriteBase64String("image", request.ImageBytes);
             writer.WriteString("imageMediaType", GeoTiffMediaType);
+            if (request.SourceCrsCode != 0)
+            {
+                writer.WriteNumber("sourceCrs", request.SourceCrsCode);
+            }
             if (request.ConfidenceThreshold is { } threshold)
             {
                 writer.WriteNumber("confidenceThreshold", threshold);
