@@ -766,6 +766,63 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_BigTiffWithOverflowingIfdOffset_FailsCleanlyNotByThrowing()
+    {
+        // A BigTIFF first-IFD offset near ulong.MaxValue makes a naive
+        // "offset + needed > length" bounds check WRAP and pass, after which
+        // narrowing to int yields a negative span index and throws out of the
+        // parser — surfacing as an unexpected execution failure to be retried
+        // rather than a curated invalid-input result.
+        var malformed = new byte[64];
+        malformed[0] = 0x49;
+        malformed[1] = 0x49;
+        BinaryPrimitives.WriteUInt16LittleEndian(malformed.AsSpan(2), 43);   // BigTIFF
+        BinaryPrimitives.WriteUInt16LittleEndian(malformed.AsSpan(4), 8);    // offset size
+        BinaryPrimitives.WriteUInt16LittleEndian(malformed.AsSpan(6), 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(malformed.AsSpan(8), ulong.MaxValue - 4);
+
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-bigtiff-overflow");
+
+        var record = CreateJobRecord(source: Convert.ToBase64String(malformed));
+
+        var act = async () => await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Subject.ErrorMessage.Should().Contain("source");
+        handler.LastRequestBody.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_DatelineCrossingSource_AcceptsNormalizedDetections()
+    {
+        // Scene at longitude 179 spanning 2 degrees: its footprint runs past 181,
+        // but RFC 7946 requires the backend to report that same ground as about
+        // -179. A naive numeric range test would reject this valid detection.
+        var datelineSource = BuildGeoTiff(
+            width: 32, height: 32, originX: 179, originY: 10, pixelSize: 0.0625, epsg: 4326);
+        var datelineOutput = BuildGeoTiff(
+            width: 32, height: 32, originX: 179, originY: 10, pixelSize: 0.0625, epsg: 4326);
+
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-179.6,9.5]},"properties":{"class":"vessel"}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-dateline", out _);
+
+        var record = CreateJobRecord(
+            source: Convert.ToBase64String(datelineSource), task: "detection");
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        _ = datelineOutput;
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded,
+            "a detection normalized across the antimeridian still lies inside the source scene");
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(

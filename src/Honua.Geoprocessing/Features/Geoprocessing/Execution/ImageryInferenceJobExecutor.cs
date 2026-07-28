@@ -363,8 +363,13 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         // to SKIP the output comparison would let a backend return any georeferenced
         // raster and have it published as though the source location were preserved,
         // so an unreferenced source is rejected up front instead.
-        if (GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing)
-            && sourceGeoreferencing.UnsupportedTransformReason is { } sourceTransformReason)
+        if (!GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing))
+        {
+            error = "input 'source' could not be parsed as a TIFF/GeoTIFF (malformed or truncated header)";
+            return false;
+        }
+
+        if (sourceGeoreferencing.UnsupportedTransformReason is { } sourceTransformReason)
         {
             error = $"input 'source' carries georeferencing this process cannot verify against an output "
                 + $"({sourceTransformReason}). Sources must be axis-aligned north-up GeoTIFFs with an "
@@ -495,7 +500,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             }
 
             if (hasFootprint
-                && (envelope.MaxX < minLon || envelope.MinX > maxLon
+                && (!LongitudesOverlap(envelope.MinX, envelope.MaxX, minLon, maxLon)
                     || envelope.MaxY < minLat || envelope.MinY > maxLat))
             {
                 error = string.Create(
@@ -506,6 +511,61 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Longitude overlap test that understands the antimeridian. A scene at
+    /// longitude 179 with a 2-degree extent has a footprint running to 181, while
+    /// RFC 7946 requires the backend to report the same ground as -179 — so a
+    /// naive numeric comparison rejects a perfectly valid detection. The footprint
+    /// range is therefore normalized into [-180, 180] and, when it wraps, treated
+    /// as the two intervals it really is.
+    /// </summary>
+    private static bool LongitudesOverlap(
+        double envelopeMinLon,
+        double envelopeMaxLon,
+        double footprintMinLon,
+        double footprintMaxLon)
+    {
+        // A footprint spanning the globe constrains nothing.
+        if (footprintMaxLon - footprintMinLon >= 360d)
+        {
+            return true;
+        }
+
+        var min = NormalizeLongitude(footprintMinLon);
+        var max = NormalizeLongitude(footprintMaxLon);
+
+        if (min <= max)
+        {
+            return envelopeMaxLon >= min && envelopeMinLon <= max;
+        }
+
+        // Wrapped: the footprint is [min, 180] together with [-180, max].
+        return (envelopeMaxLon >= min && envelopeMinLon <= 180d)
+            || (envelopeMaxLon >= -180d && envelopeMinLon <= max);
+    }
+
+    /// <summary>Wraps a longitude into the closed range [-180, 180].</summary>
+    private static double NormalizeLongitude(double longitude)
+    {
+        if (longitude is >= -180d and <= 180d)
+        {
+            return longitude;
+        }
+
+        var wrapped = Math.IEEERemainder(longitude, 360d);
+        if (double.IsNaN(wrapped))
+        {
+            return longitude;
+        }
+
+        return wrapped switch
+        {
+            > 180d => wrapped - 360d,
+            < -180d => wrapped + 360d,
+            _ => wrapped
+        };
     }
 
     /// <summary>

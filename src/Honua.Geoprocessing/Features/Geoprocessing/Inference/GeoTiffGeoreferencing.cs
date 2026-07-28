@@ -228,13 +228,13 @@ internal readonly record struct GeoTiffGeoreferencing
         }
 
         var ifdOffset = ReadUInt64(bytes, 8, littleEndian);
-        if (ifdOffset + 8 > (ulong)bytes.Length)
+        if (!TryResolveOffset(ifdOffset, 8, bytes.Length, out var ifdStart))
         {
             return false;
         }
 
-        var entryCount = ReadUInt64(bytes, (int)ifdOffset, littleEndian);
-        var entriesStart = (long)ifdOffset + 8;
+        var entryCount = ReadUInt64(bytes, ifdStart, littleEndian);
+        var entriesStart = (long)ifdStart + 8;
         if (entryCount > 4096 || entriesStart + ((long)entryCount * 20) > bytes.Length)
         {
             return false;
@@ -255,6 +255,14 @@ internal readonly record struct GeoTiffGeoreferencing
                 continue;
             }
 
+            // A declared element count larger than the whole buffer can never be
+            // valid, and rejecting it here also keeps the payload-size product
+            // below overflow range.
+            if (count > (ulong)bytes.Length)
+            {
+                continue;
+            }
+
             var payloadBytes = count * (ulong)elementSize;
             int dataOffset;
             if (payloadBytes <= 8)
@@ -264,12 +272,10 @@ internal readonly record struct GeoTiffGeoreferencing
             else
             {
                 var pointer = ReadUInt64(bytes, valueFieldOffset, littleEndian);
-                if (pointer + payloadBytes > (ulong)bytes.Length)
+                if (!TryResolveOffset(pointer, payloadBytes, bytes.Length, out dataOffset))
                 {
                     continue;
                 }
-
-                dataOffset = (int)pointer;
             }
 
             builder.Accept(bytes, tag, type, (uint)Math.Min(count, uint.MaxValue), dataOffset, littleEndian);
@@ -349,6 +355,38 @@ internal readonly record struct GeoTiffGeoreferencing
     /// </summary>
     private static double OriginTolerance(double origin, double extent)
         => Math.Max(Math.Max(Math.Abs(origin), Math.Abs(extent)) * 1e-9, 1e-6);
+
+    /// <summary>
+    /// Converts a file offset into a span index, rejecting anything that does not
+    /// address <paramref name="needed"/> readable bytes inside the payload.
+    /// </summary>
+    /// <remarks>
+    /// The comparison is deliberately written as <c>offset &gt; length - needed</c>
+    /// rather than <c>offset + needed &gt; length</c>: a BigTIFF offset near
+    /// <see cref="ulong.MaxValue"/> makes the addition WRAP, sail through the
+    /// bounds check, and then produce a negative span index when narrowed to
+    /// <see cref="int"/> — throwing out of the parser instead of returning a clean
+    /// "this input is not usable" result. Offsets beyond <see cref="int.MaxValue"/>
+    /// are refused outright since they can never index a .NET buffer.
+    /// </remarks>
+    private static bool TryResolveOffset(ulong offset, ulong needed, int bufferLength, out int start)
+    {
+        start = 0;
+
+        if (offset > int.MaxValue || bufferLength < 0)
+        {
+            return false;
+        }
+
+        var length = (ulong)bufferLength;
+        if (needed > length || offset > length - needed)
+        {
+            return false;
+        }
+
+        start = (int)offset;
+        return true;
+    }
 
     private static int ElementSize(ushort type) => type switch
     {
