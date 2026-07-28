@@ -60,6 +60,24 @@ internal sealed class McpOptions
     public bool ServerInitiatedStreamEnabled { get; set; }
 
     /// <summary>
+    /// When <see langword="true"/> (the default) a <c>POST /mcp</c> request that
+    /// presents a well-formed but unknown <c>Mcp-Session-Id</c> is served as if it
+    /// were session-less instead of being rejected with HTTP 404. Session state is
+    /// per instance, so on a multi-instance deployment without sticky routing
+    /// (e.g. the multi-container Lambda demo) a spec-compliant client that
+    /// initialized against one instance would otherwise 404 on every POST routed
+    /// to a different instance (honua-server#3027). Serving the request
+    /// statelessly is safe because every POST is independently authenticated and
+    /// authorized; the only session-negotiated state (elicitation capability,
+    /// SSE progress routing) degrades to the documented session-less fallbacks.
+    /// When <see langword="false"/> the strict Streamable-HTTP (MCP 2025-03-26)
+    /// behavior is kept: an unknown id answers HTTP 404 so the client
+    /// re-initializes. Malformed ids (non visible-ASCII or overlong) always 404
+    /// regardless of this setting.
+    /// </summary>
+    public bool StatelessSessionFallback { get; set; } = true;
+
+    /// <summary>
     /// Maximum number of concurrently tracked sessions. When reached, a new
     /// <c>initialize</c> is handled per <see cref="SessionEvictionPolicy"/>. Bounds
     /// host memory on a public endpoint. Default 10,000.

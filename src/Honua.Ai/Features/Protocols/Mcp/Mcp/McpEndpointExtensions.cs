@@ -14,8 +14,12 @@ namespace Honua.Ai.Protocols.Mcp;
 /// Streamable-HTTP transport (MCP 2025-03-26). Accepts both individual requests
 /// and JSON-RPC 2.0 batches on <c>POST /mcp</c>, enforces the MCP request-id
 /// rules (string or integer only), and manages <c>Mcp-Session-Id</c> sessions:
-/// a session id is issued on <c>initialize</c> and validated (HTTP 404 on an
-/// unknown id) on every subsequent request. The transport negotiates the
+/// a session id is issued on <c>initialize</c> and validated on every subsequent
+/// request. By default a well-formed but unknown id on POST is served
+/// statelessly (<see cref="McpOptions.StatelessSessionFallback"/>;
+/// honua-server#3027) so multi-instance deployments without sticky routing keep
+/// working; with the fallback disabled — and always for malformed ids — the
+/// strict spec answer is HTTP 404. The transport negotiates the
 /// response content type from the client's <c>Accept</c> header — emitting a
 /// single Server-Sent-Events <c>message</c> frame when the client accepts
 /// <c>text/event-stream</c>, and plain JSON otherwise. <c>GET /mcp</c> opens an
@@ -161,9 +165,30 @@ internal static class McpEndpointExtensions
                 switch (sessions.ValidateAccess(presented.ToString(), principalKey))
                 {
                     case McpSessionValidation.Unknown:
-                        McpLog.SessionRejected(logger, "unknown-or-expired");
-                        context.Response.StatusCode = StatusCodes.Status404NotFound;
-                        return;
+                        {
+                            // Session state is per instance, so on a multi-instance
+                            // deployment without sticky routing an id minted by one
+                            // container is unknown to its peers and a strict 404 would
+                            // break every spec-compliant client (honua-server#3027).
+                            // Every POST is independently authenticated, so by default
+                            // a well-formed unknown id is served statelessly: strip
+                            // the header so downstream session consumers (elicitation
+                            // capability lookup, SSE progress routing) observe the
+                            // request as session-less, and do not echo a session id.
+                            var options = context.RequestServices
+                                .GetRequiredService<IOptions<McpOptions>>().Value;
+                            if (options.StatelessSessionFallback
+                                && IsWellFormedSessionId(presented.ToString()))
+                            {
+                                McpLog.SessionServedStateless(logger, SessionIdPrefix(presented.ToString()));
+                                context.Request.Headers.Remove(McpSessionManager.SessionHeaderName);
+                                break;
+                            }
+
+                            McpLog.SessionRejected(logger, "unknown-or-expired");
+                            context.Response.StatusCode = StatusCodes.Status404NotFound;
+                            return;
+                        }
 
                     case McpSessionValidation.PrincipalMismatch:
                         McpLog.SessionRejected(logger, "principal-mismatch");
@@ -616,6 +641,36 @@ internal static class McpEndpointExtensions
         Id = id,
         Error = error
     };
+
+    /// <summary>
+    /// Maximum length accepted for a presented <c>Mcp-Session-Id</c> before the
+    /// stateless fallback refuses to treat it as well-formed. Server-minted ids
+    /// are 64 lowercase-hex characters; 128 leaves headroom for other
+    /// spec-compliant issuers while bounding what a hostile client can push
+    /// through the fallback path.
+    /// </summary>
+    private const int MaxWellFormedSessionIdLength = 128;
+
+    /// <summary>
+    /// Returns <c>true</c> when a presented session id satisfies the
+    /// Streamable-HTTP well-formedness rule — visible ASCII only (0x21–0x7E) —
+    /// and a sane length bound. Used by the stateless fallback
+    /// (honua-server#3027) so only ids that could plausibly have been minted by
+    /// a spec-compliant server are served statelessly; garbage keeps the strict
+    /// 404.
+    /// </summary>
+    private static bool IsWellFormedSessionId(string sessionId) =>
+        sessionId.Length > 0
+        && sessionId.Length <= MaxWellFormedSessionIdLength
+        && sessionId.All(static c => c is >= '!' and <= '~');
+
+    /// <summary>
+    /// Returns a short non-identifying prefix of a session id for structured
+    /// logging. Session ids are bearer-adjacent (they name a live session), so
+    /// they are never logged in full outside the trusted mint/terminate paths.
+    /// </summary>
+    private static string SessionIdPrefix(string sessionId) =>
+        sessionId.Length <= 8 ? sessionId : sessionId[..8];
 
     /// <summary>
     /// Returns <c>true</c> when the supplied JSON element is a single JSON-RPC
