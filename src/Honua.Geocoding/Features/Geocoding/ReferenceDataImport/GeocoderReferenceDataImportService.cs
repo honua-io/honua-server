@@ -517,6 +517,13 @@ internal sealed partial class GeocoderReferenceDataImportService(
             );
             CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_geom")} ON {qualifiedTable} USING gist (geom);
             CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_search_text")} ON {qualifiedTable} (search_text text_pattern_ops);
+            -- Self-heal rows loaded under the pre-canonicalization rule (commas preserved).
+            -- Server migration 091 covers the default connection's table; this covers
+            -- dedicated Geocoding:Providers:Local:ConnectionString databases, which the
+            -- server migration runner never touches. Idempotent and cheap when clean.
+            UPDATE {qualifiedTable}
+            SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'))
+            WHERE search_text ~ '[,;]';
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
