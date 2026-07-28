@@ -204,8 +204,27 @@ public sealed class ToolboxTranslationValidatorTests
     [Fact]
     public void Validate_WithoutProbe_FallsBackToStaticRequiredFlagsOnly()
     {
+        // No probe, so no conditional-input violation fires; 'source' is still neither
+        // mapped nor defaulted, so the mapping is reported for review rather than certified.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("AspectLikeTool", "test.optional-only")),
+            new FakeCatalog());
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Issues.Select(issue => issue.Code).Should()
+            .OnlyContain(code => code == ToolboxTranslationIssueCodes.UnverifiableConditionalBranches);
+    }
+
+    [Fact]
+    public void Validate_UnmappedDefaultlessParameter_IsNotCertifiedTranslated()
+    {
+        // test.buffer's 'geodesic' is defaulted, so a wkb+distance mapping stays certifiable;
+        // dropping 'distance' from the catalog default set is what makes a value undetermined.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("BufferTool", "test.buffer",
+                Mapping("in_geom", "wkb"),
+                Mapping("dist", "distance"))),
             new FakeCatalog());
 
         report.Tools.Single().Classification.Should().Be(ToolboxToolClassifications.Translated);
@@ -291,7 +310,7 @@ public sealed class ToolboxTranslationValidatorTests
             [
                 Parameter("wkb", ProcessParameterValueType.Wkb, required: true),
                 Parameter("distance", ProcessParameterValueType.FloatingPoint, required: true),
-                Parameter("geodesic", ProcessParameterValueType.Flag, required: false)
+                Parameter("geodesic", ProcessParameterValueType.Flag, required: false, defaultValue: "false")
             ],
             OutputArtifactKinds = []
         };
@@ -324,8 +343,8 @@ public sealed class ToolboxTranslationValidatorTests
             Parameters =
             [
                 Parameter("source", ProcessParameterValueType.Text, required: false),
-                Parameter("layerId", ProcessParameterValueType.LayerId, required: false),
-                Parameter("units", ProcessParameterValueType.Text, required: false)
+                Parameter("layerId", ProcessParameterValueType.LayerId, required: false, defaultValue: "0"),
+                Parameter("units", ProcessParameterValueType.Text, required: false, defaultValue: "m")
             ],
             OutputArtifactKinds = []
         };

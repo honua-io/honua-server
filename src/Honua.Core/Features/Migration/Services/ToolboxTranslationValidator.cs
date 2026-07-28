@@ -171,6 +171,17 @@ public static class ToolboxTranslationValidator
             });
         }
 
+        // The probe can only exercise the branch selected by the values it substitutes, so a
+        // parameter that is neither mapped nor defaulted leaves its value undetermined: a
+        // caller-supplied discriminator could select a branch that requires it (for example
+        // analytics.cluster-managed requires 'k' only when algorithm=kmeans, and the
+        // catalog does not enumerate that parameter's legal values). Certifying such a
+        // mapping executable would over-claim, so it is reported for review instead.
+        var undetermined = definition.Parameters
+            .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
+            .Select(parameter => parameter.Name)
+            .ToArray();
+
         // Static Required flags are not the whole admissibility contract: several processes
         // declare mutually-substitutable optional inputs (for example the raster
         // source/layerId/rasterId trio) that only the canonical plan validator enforces at
@@ -189,6 +200,16 @@ public static class ToolboxTranslationValidator
                     Message = $"Canonical plan validation would reject this mapping: {violation}"
                 });
             }
+        }
+
+        if (!missingRequired && undetermined.Length > 0)
+        {
+            issues.Add(new ToolboxTranslationIssue
+            {
+                Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
+                Message = $"Parameter(s) {string.Join(", ", undetermined)} of process '{definition.ProcessId}' are neither mapped nor defaulted, so branch-dependent requirements cannot be proven for every caller-supplied value; review before treating this tool as executable.",
+                ParameterName = undetermined[0]
+            });
         }
 
         // A tool that cannot supply a required parameter is not executable against the

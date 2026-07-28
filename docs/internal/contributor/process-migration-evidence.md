@@ -91,7 +91,8 @@ repos by design:
   round-tripped canonical parameter bindings, and explicit issue codes
   (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
   `duplicate-target-parameter`, `missing-required-parameter`,
-  `unsupported-construct`, `unsatisfied-conditional-inputs`). Tools that cannot
+  `unsupported-construct`, `unsatisfied-conditional-inputs`,
+  `unverifiable-conditional-branches`). Tools that cannot
   supply a required parameter are `unsupported`, never stubbed as executable.
   Inbound manifests must carry a supported `artifactKind`/`artifactVersion`;
   an incompatible identity is rejected rather than reinterpreted.
@@ -109,6 +110,17 @@ never certifies a tool that submit-time validation will refuse. The probe
 answers strictly from parameter presence and filters to
 `MISSING_REQUIRED_PARAMETER` failures, because callers supply parameter names
 rather than real values.
+
+The probe can only exercise the branch its substituted values select, and the
+catalog does not enumerate legal values for most discriminator parameters
+(only two parameters repo-wide declare `allowedValues`). So a mapping that
+leaves a parameter both unmapped and undefaulted cannot be proven for every
+caller-supplied value — for example `analytics.cluster-managed` requires `k`
+only when `algorithm=kmeans`. Those mappings are reported
+`unverifiable-conditional-branches` and classified `partially-translated`:
+reviewable, never certified executable. Enumerating discriminator branches
+exactly would require catalog-level value domains or SDK-supplied source value
+constraints, tracked as follow-up.
 
 The server never parses toolbox sources and never emulates arcpy execution;
 translated tools execute only as existing native processes through the

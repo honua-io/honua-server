@@ -353,7 +353,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
-    public async Task ValidateTranslation_SatisfiedConditionalInput_IsTranslated()
+    public async Task ValidateTranslation_SatisfiedConditionalInput_HasNoUnsatisfiedInputIssue()
     {
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
@@ -378,8 +378,12 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         using var report = await ReadJsonAsync(response);
         var tool = report.RootElement.GetProperty("tools")[0];
 
-        tool.GetProperty("classification").GetString().Should().Be("translated");
-        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+        // layerId/rasterId remain unmapped and defaultless, so the mapping is reported for
+        // review rather than certified; the conditional-input requirement itself is satisfied.
+        tool.GetProperty("classification").GetString().Should().Be("partially-translated");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().OnlyContain(code => code == "unverifiable-conditional-branches");
     }
 
     [IntegrationTest]
@@ -418,6 +422,46 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("artifactVersion");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_BranchDependentRequirement_IsNotCertifiedExecutable()
+    {
+        // analytics.cluster-managed requires 'k' only when algorithm=kmeans. The probe can
+        // only exercise the branch its substituted values select (the catalog default,
+        // dbscan), and the catalog does not enumerate 'algorithm'. Because 'algorithm' is
+        // caller-supplied and 'k' is neither mapped nor defaulted, the mapping must not be
+        // certified translated.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ClusterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ClusterDbscanOnly",
+                  "targetProcessId": "analytics.cluster-managed",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "algo", "targetParameter": "algorithm" },
+                    { "sourceName": "eps", "targetParameter": "eps" },
+                    { "sourceName": "min_points", "targetParameter": "minPoints" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().NotBe("translated");
+        var issue = tool.GetProperty("issues").EnumerateArray()
+            .Single(entry => entry.GetProperty("code").GetString() == "unverifiable-conditional-branches");
+        issue.GetProperty("message").GetString().Should().Contain("k");
     }
 
     [IntegrationTest]

@@ -336,4 +336,13 @@ public static class ToolboxTranslationIssueCodes
     /// even though every statically-<c>Required</c> parameter is mapped.
     /// </summary>
     public const string UnsatisfiedConditionalInputs = "unsatisfied-conditional-inputs";
+
+    /// <summary>
+    /// The mapping leaves a parameter both unmapped and without a declared default, so its
+    /// value is undetermined at translation time. Branch-dependent requirements keyed on a
+    /// caller-supplied discriminator (for example <c>analytics.cluster-managed</c>, where
+    /// <c>k</c> is required only when <c>algorithm=kmeans</c>) cannot be proven for every
+    /// branch, so the tool is reported as reviewable rather than certified executable.
+    /// </summary>
+    public const string UnverifiableConditionalBranches = "unverifiable-conditional-branches";
 }

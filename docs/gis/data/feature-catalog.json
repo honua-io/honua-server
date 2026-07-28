@@ -14259,6 +14259,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_BlankArtifactVersion_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_BranchDependentRequirement_IsNotCertifiedExecutable",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_EmptyMappingOnOptionalParameterProcess_IsNotClaimedTranslated",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_ExplicitNullArtifactKind_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_ForeignArtifactKind_ReturnsBadRequest",
@@ -14267,7 +14268,7 @@
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_NullTools_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_OversizedStreamedBody_Returns413NotBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_PartiallyTranslatableToolbox_ReportsUnsupportedConstructs",
-        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SatisfiedConditionalInput_IsTranslated",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SatisfiedConditionalInput_HasNoUnsatisfiedInputIssue",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_TranslatableToolbox_RoundTripsAllParameterSignatures",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_UnknownSourceFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_UnrelatedOptionalMappingOnly_IsNotClaimedTranslated",
