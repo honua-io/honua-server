@@ -244,6 +244,18 @@ internal sealed partial class EsriLocatorImportService(
             imported += await FlushBatchAsync(connection, transaction, qualifiedTable, batch, cancellationToken).ConfigureAwait(false);
         }
 
+        // A replace with zero importable rows would commit the DELETE and permanently erase
+        // the working dataset while reporting success; abort so the transaction rolls back.
+        if (request.ReplaceExisting && imported == 0)
+        {
+            var detail = skippedCount == 0
+                ? "The reference data CSV contains no data rows."
+                : $"All {skippedCount} reference data row(s) were rejected " +
+                  $"(first reason: {skippedRows.FirstOrDefault()?.Reason ?? "unknown"}).";
+            throw new EsriLocatorImportException(
+                $"Replace-mode import aborted; the existing reference data was left unchanged. {detail}");
+        }
+
         // Phantom-commit guard (mirrors DbTransactionExtensions.CommitSafelyAsync in the Postgres
         // module, which this satellite cannot reference): check the token before the COMMIT
         // round-trip begins, then never interrupt the in-flight COMMIT.

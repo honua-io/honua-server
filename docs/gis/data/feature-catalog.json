@@ -13842,6 +13842,7 @@
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_MissingLocatorFile_Returns400",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_NullFieldMapValue_Returns400",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_ReferenceDataWithoutCoordinateColumns_Returns400",
+        "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_ReplaceWithNoImportableRows_Returns400AndPreservesData",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_WithoutAdminCredentials_IsRejected",
         "Honua.Server.Tests.Features.Geocoding.EsriLocatorImportEndpointTests.Import_WithoutReferenceData_ParsesAndClassifiesOnly"
       ],

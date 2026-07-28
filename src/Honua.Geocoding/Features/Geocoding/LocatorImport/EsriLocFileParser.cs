@@ -111,7 +111,10 @@ internal static class EsriLocFileParser
 
             if (_numericMatchKeys.Contains(key))
             {
-                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+                // Non-finite values (NaN/Infinity) parse successfully but cannot be serialized
+                // by the default JSON configuration and are meaningless as match settings.
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) &&
+                    double.IsFinite(number))
                 {
                     switch (key.ToUpperInvariant())
                     {

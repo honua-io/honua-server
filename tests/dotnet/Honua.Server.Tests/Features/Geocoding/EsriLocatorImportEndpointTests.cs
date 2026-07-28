@@ -262,6 +262,38 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
     [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    public async Task Import_ReplaceWithNoImportableRows_Returns400AndPreservesData()
+    {
+        using (var seed = BuildImportForm(includeReference: true, includeIndex: false))
+        {
+            using var seedResponse = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", seed);
+            Assert.Equal(HttpStatusCode.OK, seedResponse.StatusCode);
+        }
+
+        using var content = new MultipartFormDataContent();
+        AddLocPart(content);
+        var csv = new ByteArrayContent(Encoding.UTF8.GetBytes(
+            "HOUSE_NUM,STREET_NAME,CITY,STATE,ZIP,COUNTRY,POINT_X,POINT_Y\n" +
+            "bad,Row,No,Coords,00000,US,not-a-number,also-bad\n"));
+        csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        content.Add(csv, "referenceData", "allbad.csv");
+        content.Add(new StringContent(LocatorName), "locatorName");
+
+        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("left unchanged", body, StringComparison.Ordinal);
+
+        using var forward = await _client.GetAsync(
+            $"/rest/services/{LocatorName}/GeocodeServer/findAddressCandidates?singleLine=380+New+York+St+Redlands&f=json");
+        Assert.Equal(HttpStatusCode.OK, forward.StatusCode);
+        using var payload = JsonDocument.Parse(await forward.Content.ReadAsStringAsync());
+        Assert.True(payload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
     public async Task Import_FieldMapColumnServingMultipleRoles_Succeeds()
     {
         using var content = BuildImportForm(includeReference: true, includeIndex: false);

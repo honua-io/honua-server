@@ -31,6 +31,19 @@ public sealed class EsriLocFileParserTests
         """;
 
     [Fact]
+    public void Parse_NonFiniteMatchSetting_ReportedUnsupported()
+    {
+        var report = new List<LocatorTranslationEntry>();
+
+        var definition = EsriLocFileParser.Parse(
+            Encoding.UTF8.GetBytes("Version = 8.1\nMinimumMatchScore = NaN\n"), "USStreets", report);
+
+        Assert.Null(definition.MatchSettings.MinimumMatchScore);
+        Assert.Contains(report, static e =>
+            e.Item == "MinimumMatchScore" && e.Status == LocatorTranslationStatus.Unsupported);
+    }
+
+    [Fact]
     public void Parse_Utf8BomPrefixedLocator_ParsesFirstKey()
     {
         var report = new List<LocatorTranslationEntry>();

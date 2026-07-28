@@ -6,6 +6,7 @@ using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.AspNetCore.Http.Features;
 using Honua.Geocoding.Features.Geocoding.LocatorImport;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 
@@ -40,7 +41,9 @@ internal static class GeocodingLocatorImportEndpoints
             .WithTags("Admin", "Geocoding")
             .RequireAdminAuthorization();
 
-        _ = group.MapPost("/locators/import", HandleImportLocator)
+        // Cast to Delegate so the HttpContext-only handler binds as a route handler (its
+        // IResult is written to the response) rather than a raw RequestDelegate.
+        _ = group.MapPost("/locators/import", (Delegate)HandleImportLocator)
             .WithName("ImportEsriLocator")
             .WithSummary("Import an Esri .loc/.lox locator and its reference data into the local geocoder")
             .Accepts<IFormFile>("multipart/form-data")
@@ -49,8 +52,12 @@ internal static class GeocodingLocatorImportEndpoints
             .DisableAntiforgery();
     }
 
-    private static async Task<IResult> HandleImportLocator(HttpContext context, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleImportLocator(HttpContext context)
     {
+        // Timeout-aware token (includes Limits:Connections:RequestTimeout via
+        // LimitsEnforcementMiddleware) so long imports cancel and produce the configured 408,
+        // consistent with the other import endpoints.
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         if (!context.Request.HasFormContentType)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
