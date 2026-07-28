@@ -394,6 +394,46 @@ public sealed class CollaborationLiveCoEditingTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // A well-known, checkpointable kind carrying a payload the applier cannot express must
+        // never take a cursor: it would 422 every checkpoint while retained and 409 the
+        // continuity guard once pruned, wedging the map permanently.
+        foreach (var malformed in new[]
+        {
+            """{"operationId":"bad-1","kind":"SetLayerVisibility","baseCursor":0,"payload":{"visible":true}}""",
+            """{"operationId":"bad-2","kind":"SetLayerVisibility","baseCursor":0,"payload":{"layerId":"parcels"}}""",
+            """{"operationId":"bad-3","kind":"ReorderLayers","baseCursor":0,"payload":{"layerIds":"parcels"}}""",
+            """{"operationId":"bad-4","kind":"ReorderLayers","baseCursor":0,"payload":{"layerIds":["",""]}}""",
+            """{"operationId":"bad-5","kind":"PatchStyle","baseCursor":0,"payload":{"styleRef":"style-night"}}""",
+            """{"operationId":"bad-6","kind":"ReplaceWebMapDocument","baseCursor":0,"payload":[]}""",
+        })
+        {
+            using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
+            using var badResponse = await client.PostAsync(
+                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+            badResponse.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
+        }
+
+        // No cursor was consumed by any rejected append, and the map still checkpoints.
+        var accepted = await AppendOperationAsync(
+            client, mapId, "op-1", "SetLayerVisibility", baseCursor: 0,
+            payload: """{"layerId":"parcels","visible":false}""");
+        accepted.GetProperty("operation").GetProperty("serverCursor").GetInt64().Should().Be(1);
+
+        var checkpoint = await CheckpointAsync(client, mapId, "after rejected payloads");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
     {
         using var factory = CreateFactory();

@@ -74,20 +74,37 @@ Duplicate detection is keyed on `operationId` and, when supplied, `idempotencyKe
 
 Each `kind` maps to a conflict **family**. The MVP policy treats per-aspect families as independently reconcilable and whole-document replacement as unsafe.
 
-| `kind` | Family | Conflict class |
-| --- | --- | --- |
-| `SetMetadataField` | Metadata | safe scalar |
-| `SetViewport` | Viewport | safe scalar |
-| `SetLayerVisibility` | LayerVisibility | safe scalar |
-| `ReorderLayers` | LayerOrdering | safe scalar |
-| `PatchStyle` | Style | safe scalar |
-| `ReplaceWebMapDocument` | WebMapDocument | unsafe |
+| `kind` | Family | Conflict class | Accepted |
+| --- | --- | --- | --- |
+| `SetMetadataField` | Metadata | safe scalar | **No — rejected with `400`** |
+| `SetViewport` | Viewport | safe scalar | Yes |
+| `SetLayerVisibility` | LayerVisibility | safe scalar | Yes |
+| `ReorderLayers` | LayerOrdering | safe scalar | Yes |
+| `PatchStyle` | Style | safe scalar | Yes |
+| `ReplaceWebMapDocument` | WebMapDocument | unsafe | Yes |
+
+### `SetMetadataField` is not accepted (honua-server#2999)
+
+The append endpoint rejects `SetMetadataField` with `400`. The checkpoint applier persists
+operations onto the Studio composition body, which carries no metadata bag, so there is no
+transform that could durably apply a metadata edit. Admitting the kind anyway would be worse
+than rejecting it: the operation would take a permanent op-log cursor and then fail every
+later checkpoint (`422` while retained, `409` on the continuity guard once pruned), leaving the
+map unable to save any further version.
+
+Edit saved-map titles and other metadata through the Studio draft surface
+(`PUT /api/v1/studio/package-drafts/{draftId}`) instead. The enum member is retained so existing
+payloads still parse and receive this explicit error rather than a deserialization failure.
+
+Only kinds the checkpoint applier can express are admitted; the append endpoint and the applier
+share one source of truth (`SavedMapOperationDraftApplier.IsCheckpointable`), and payloads are
+shape-validated on admission for the same reason.
 
 ## Conflict semantics
 
 The MVP conflict policy is **last-writer-wins (LWW) for safe scalar fields** and **fail-with-conflict for whole-document replacement**:
 
-- **Safe scalar families** (metadata, viewport, layer visibility, layer ordering, style) never conflict with each other. Concurrent edits to these aspects are appended in cursor order, and the last operation per aspect wins on replay. Two clients setting the title concurrently both append; the higher-cursor title is the effective value once both replay. This is safe because each family targets an independent slice of the saved-map document.
+- **Safe scalar families** (viewport, layer visibility, layer ordering, style; see the metadata note above) never conflict with each other. Concurrent edits to these aspects are appended in cursor order, and the last operation per aspect wins on replay. Two clients restyling the same layer concurrently both append; the higher-cursor style is the effective value once both replay. This is safe because each family targets an independent slice of the saved-map document.
 - **`ReplaceWebMapDocument` (unsafe)** conflicts with **any** concurrent operation, and any safe operation conflicts with a concurrent `ReplaceWebMapDocument`. Whole-document replacement based on a stale cursor would silently discard peer edits, so it returns a typed `conflict` instead.
 
 A `conflict` response body carries:

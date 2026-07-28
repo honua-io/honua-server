@@ -16115,6 +16115,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_UnresolvableMapId_ReturnsNotFound",
@@ -16183,6 +16184,7 @@
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutAuthentication_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutSavedMapCapability_ReturnsForbidden",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_KindTheCheckpointApplierCannotApply_IsRejected",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",

@@ -113,6 +113,15 @@ internal static class SavedMapOperationEndpoints
                 "checkpoint and is not accepted by the collaboration operation log.");
         }
 
+        // Same reasoning one level deeper: a well-known kind carrying a payload the applier
+        // cannot express (for example SetLayerVisibility without 'layerId') would take a
+        // permanent cursor and then fail every checkpoint — 422 while retained, 409 on the
+        // continuity guard once pruned. Validate the payload shape before it can be committed.
+        if (!SavedMapOperationPayloadValidator.TryValidate(request.Kind.Value, request.Payload, out var payloadError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, payloadError);
+        }
+
         var actorId = ResolveActorId(request.ActorId, context.User);
         if (actorId is null)
         {
