@@ -320,6 +320,7 @@ tests/js/test-results/
 # Local audit artifacts
 .audit/runs/
 .claude/worktrees/
+.wt/
 
 # Generated 3D Tiles scene output (publish/ingest executors)
 scenes-generated/
