@@ -471,9 +471,19 @@ internal sealed partial class GeocoderReferenceDataImportService(
             searchSource = componentText;
         }
 
+        // An address consisting only of separators ("," / ";") survives the display-name check
+        // but normalizes to nothing, producing a row no query can ever match — and it would
+        // still count toward the import total, defeating the zero-import rollback guard.
+        var searchText = GeocodeReferenceText.Normalize(searchSource);
+        if (searchText.Length == 0)
+        {
+            reason = "Row has no searchable address text after normalization.";
+            return false;
+        }
+
         row = new ReferenceRow(
             DisplayName: displayName,
-            SearchText: GeocodeReferenceText.Normalize(searchSource),
+            SearchText: searchText,
             AddressNumber: addressNumber,
             StreetName: streetName,
             City: city,
