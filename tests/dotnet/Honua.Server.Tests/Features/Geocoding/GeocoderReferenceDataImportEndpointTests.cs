@@ -277,6 +277,29 @@ public sealed class GeocoderReferenceDataImportEndpointTests : IAsyncLifetime
         Assert.Contains("does not match the geocode service name", body, StringComparison.Ordinal);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    public async Task Import_DisplayAddressWithoutStreetColumns_KeepsStreetSearchable()
+    {
+        using var content = new MultipartFormDataContent();
+        AddCsvPart(content,
+            "ADDRESS,CITY,POINT_X,POINT_Y\n" +
+            "\"380 New York St, Redlands, CA 92373\",Redlands,-117.1956,34.0566\n",
+            "display-only.csv");
+        content.Add(new StringContent(LocatorName), "locatorName");
+
+        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/reference-data/import", content);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"Import failed: {response.StatusCode}: {body}");
+
+        using var forward = await _client.GetAsync(
+            $"/rest/services/{LocatorName}/GeocodeServer/findAddressCandidates?singleLine=380+New+York+St&f=json");
+        Assert.Equal(HttpStatusCode.OK, forward.StatusCode);
+        using var payload = JsonDocument.Parse(await forward.Content.ReadAsStringAsync());
+        Assert.True(payload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
+    }
+
     private static MultipartFormDataContent BuildImportForm()
     {
         var content = new MultipartFormDataContent();

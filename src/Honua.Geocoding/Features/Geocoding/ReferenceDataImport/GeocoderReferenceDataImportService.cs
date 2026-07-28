@@ -303,13 +303,13 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
         foreach (var role in _roles.Where(role => !mapping.ContainsKey(role)))
         {
-            foreach (var alias in _roleAliases[role])
+            var index = _roleAliases[role]
+                .Where(columnsByName.ContainsKey)
+                .Select(alias => columnsByName[alias])
+                .FirstOrDefault(i => !mapping.ContainsValue(i), -1);
+            if (index >= 0)
             {
-                if (columnsByName.TryGetValue(alias, out var index) && !mapping.ContainsValue(index))
-                {
-                    mapping[role] = index;
-                    break;
-                }
+                mapping[role] = index;
             }
         }
 
@@ -418,7 +418,22 @@ internal sealed partial class GeocoderReferenceDataImportService(
             .Where(static p => !string.IsNullOrWhiteSpace(p)));
         var componentText = string.Join(' ', new[] { streetLine, neighborhood, city, region, postalCode, country }
             .Where(static p => !string.IsNullOrWhiteSpace(p)));
-        var searchSource = componentText.Length > 0 ? componentText : displayName;
+        string searchSource;
+        if (streetLine.Length == 0 && Get(RoleDisplayName) is not null)
+        {
+            // No structured street columns: the display address is the only street text.
+            // Base the searchable value on it and fold in locality components it doesn't
+            // already contain, so neither the street nor the locality becomes unsearchable.
+            var normalizedDisplay = GeocodeReferenceText.Normalize(displayName);
+            var extras = new[] { neighborhood, city, region, postalCode, country }
+                .Where(static p => !string.IsNullOrWhiteSpace(p))
+                .Where(p => !normalizedDisplay.Contains(GeocodeReferenceText.Normalize(p!), StringComparison.Ordinal));
+            searchSource = string.Join(' ', new[] { displayName }.Concat(extras));
+        }
+        else
+        {
+            searchSource = componentText.Length > 0 ? componentText : displayName;
+        }
 
         row = new ReferenceRow(
             DisplayName: displayName,

@@ -13835,6 +13835,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_DisplayAddressWithoutStreetColumns_KeepsStreetSearchable",
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_FieldMapColumnServingMultipleRoles_Succeeds",
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_MalformedMultipartBody_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocoderReferenceDataImportEndpointTests.Import_MismatchedLocatorName_Returns400",

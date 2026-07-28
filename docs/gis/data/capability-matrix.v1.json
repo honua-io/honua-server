@@ -880,7 +880,7 @@
       "category": "Geocoding",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 56,
+      "provingTestCount": 57,
       "maturity": {
         "implemented": 10
       },
