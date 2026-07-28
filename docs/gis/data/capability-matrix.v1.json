@@ -6,7 +6,7 @@
     "WFS 2.0 Transactional",
     "WMS 1.1.1"
   ],
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
   "trackingIssue": "#2893",
   "sourceArtifacts": [
@@ -14,8 +14,14 @@
     "docs/cite-status.md",
     "docs/gis/data/geoservices-rest-parity.json",
     "docs/gis/data/capability-keys.v1.json",
-    "docs/gis/data/capability-no-surface-allowlist.v1.json"
+    "docs/gis/data/capability-no-surface-allowlist.v1.json",
+    "tests/baselines/client-compat/"
   ],
+  "evidenceFreshness": {
+    "anchor": "2026-07-09T00:00:00Z",
+    "maxAgeDays": 14,
+    "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
+  },
   "capabilities": [
     {
       "key": "admin.control-plane",
@@ -34,7 +40,12 @@
       "interop": [
         {
           "clientLane": "cli",
-          "protocol": "admin-api"
+          "protocol": "admin-api",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": []
@@ -1476,23 +1487,48 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "featureserver"
+          "protocol": "featureserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "desktop-arcgis",
-          "protocol": "featureserver"
+          "protocol": "featureserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "arcgis-stub",
-          "protocol": "featureserver"
+          "protocol": "featureserver",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:19.209522Z"
+          }
         },
         {
           "clientLane": "cli",
-          "protocol": "featureserver"
+          "protocol": "featureserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "ci-desktop",
-          "protocol": "featureserver"
+          "protocol": "featureserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": [
@@ -1596,19 +1632,39 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "mapserver"
+          "protocol": "mapserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "desktop-arcgis",
-          "protocol": "mapserver"
+          "protocol": "mapserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "arcgis-stub",
-          "protocol": "mapserver"
+          "protocol": "mapserver",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:19.321037Z"
+          }
         },
         {
           "clientLane": "ci-desktop",
-          "protocol": "mapserver"
+          "protocol": "mapserver",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": [
@@ -1700,19 +1756,39 @@
       "interop": [
         {
           "clientLane": "cli",
-          "protocol": "odata"
+          "protocol": "odata",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "ci-bi",
-          "protocol": "odata"
+          "protocol": "odata",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "bi-powerbi",
-          "protocol": "odata"
+          "protocol": "odata",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         },
         {
           "clientLane": "bi-excel",
-          "protocol": "odata"
+          "protocol": "odata",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": []
@@ -1776,19 +1852,39 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "ogc-features"
+          "protocol": "ogc-features",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:39.990000Z"
+          }
         },
         {
           "clientLane": "desktop-qgis",
-          "protocol": "ogc-features"
+          "protocol": "ogc-features",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:07:17.988831Z"
+          }
         },
         {
           "clientLane": "cli",
-          "protocol": "ogc-features"
+          "protocol": "ogc-features",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:27.279118Z"
+          }
         },
         {
           "clientLane": "ci-desktop",
-          "protocol": "ogc-features"
+          "protocol": "ogc-features",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": [
@@ -1814,11 +1910,21 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "ogc-maps"
+          "protocol": "ogc-maps",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:39.755000Z"
+          }
         },
         {
           "clientLane": "js-cesium",
-          "protocol": "ogc-maps"
+          "protocol": "ogc-maps",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:53.364000Z"
+          }
         }
       ],
       "geobench": []
@@ -1865,7 +1971,12 @@
       "interop": [
         {
           "clientLane": "js-cesium",
-          "protocol": "ogc-tiles"
+          "protocol": "ogc-tiles",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:53.364000Z"
+          }
         }
       ],
       "geobench": []
@@ -1921,7 +2032,12 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "mvt"
+          "protocol": "mvt",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:52.394000Z"
+          }
         }
       ],
       "geobench": []
@@ -1992,15 +2108,30 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "wfs"
+          "protocol": "wfs",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:40.991000Z"
+          }
         },
         {
           "clientLane": "desktop-qgis",
-          "protocol": "wfs"
+          "protocol": "wfs",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:07:17.989246Z"
+          }
         },
         {
           "clientLane": "cli",
-          "protocol": "wfs"
+          "protocol": "wfs",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:27.279118Z"
+          }
         }
       ],
       "geobench": [
@@ -2033,15 +2164,30 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "wms"
+          "protocol": "wms",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:39.001000Z"
+          }
         },
         {
           "clientLane": "js-cesium",
-          "protocol": "wms"
+          "protocol": "wms",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:53.364000Z"
+          }
         },
         {
           "clientLane": "desktop-qgis",
-          "protocol": "wms"
+          "protocol": "wms",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": [
@@ -2076,15 +2222,30 @@
       "interop": [
         {
           "clientLane": "js",
-          "protocol": "wmts"
+          "protocol": "wmts",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:37.557000Z"
+          }
         },
         {
           "clientLane": "js-cesium",
-          "protocol": "wmts"
+          "protocol": "wmts",
+          "freshness": {
+            "state": "stale",
+            "ageDays": 62,
+            "runDate": "2026-05-07T14:05:53.364000Z"
+          }
         },
         {
           "clientLane": "desktop-qgis",
-          "protocol": "wmts"
+          "protocol": "wmts",
+          "freshness": {
+            "state": "unknown",
+            "ageDays": null,
+            "runDate": null
+          }
         }
       ],
       "geobench": [
