@@ -42,25 +42,13 @@ internal static class LegendImageComposer
         SKEncodedImageFormat format = SKEncodedImageFormat.Png)
     {
         using var font = TryCreateLabelFont();
-        var rowHeight = Math.Max(swatchHeight, font is null ? 0f : font.Size) + EntryGap;
-
-        var labelWidth = 0f;
-        if (font is not null)
-        {
-            foreach (var entry in entries)
-            {
-                labelWidth = Math.Max(labelWidth, Math.Min(font.MeasureText(entry.Class.Label), MaxLabelWidth));
-            }
-        }
-
-        var imageWidth = (int)Math.Ceiling(
-            (OuterPadding * 2) + swatchWidth + (labelWidth > 0 ? SwatchLabelGap + labelWidth : 0));
-        var imageHeight = (int)Math.Ceiling((OuterPadding * 2) + (rowHeight * entries.Count));
+        var dimensions = Measure(entries, swatchWidth, swatchHeight, font);
+        var rowHeight = GetRowHeight(swatchHeight, font);
 
         using var surface = SKSurface.Create(
-            new SKImageInfo(Math.Max(imageWidth, 1), Math.Max(imageHeight, 1), SKColorType.Rgba8888, SKAlphaType.Premul))
+            new SKImageInfo(dimensions.Width, dimensions.Height, SKColorType.Rgba8888, SKAlphaType.Premul))
             ?? throw new InvalidOperationException(
-                $"Skia failed to allocate a render surface for the WMS legend at {imageWidth}x{imageHeight}.");
+                $"Skia failed to allocate a render surface for the WMS legend at {dimensions.Width}x{dimensions.Height}.");
 
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
@@ -103,6 +91,45 @@ internal static class LegendImageComposer
         return data?.ToArray()
             ?? throw new InvalidOperationException("Skia failed to encode the WMS legend image.");
     }
+
+    /// <summary>
+    /// Measures the exact raster produced by <see cref="Compose"/> for the same
+    /// entries and swatch dimensions.
+    /// </summary>
+    internal static (int Width, int Height) Measure(
+        IReadOnlyList<LegendImageEntry> entries,
+        int swatchWidth,
+        int swatchHeight)
+    {
+        using var font = TryCreateLabelFont();
+        return Measure(entries, swatchWidth, swatchHeight, font);
+    }
+
+    private static (int Width, int Height) Measure(
+        IReadOnlyList<LegendImageEntry> entries,
+        int swatchWidth,
+        int swatchHeight,
+        SKFont? font)
+    {
+        var labelWidth = 0f;
+        if (font is not null)
+        {
+            foreach (var entry in entries)
+            {
+                labelWidth = Math.Max(labelWidth, Math.Min(font.MeasureText(entry.Class.Label), MaxLabelWidth));
+            }
+        }
+
+        var imageWidth = (int)Math.Ceiling(
+            (OuterPadding * 2) + swatchWidth + (labelWidth > 0 ? SwatchLabelGap + labelWidth : 0));
+        var imageHeight = (int)Math.Ceiling(
+            (OuterPadding * 2) + (GetRowHeight(swatchHeight, font) * entries.Count));
+
+        return (Math.Max(imageWidth, 1), Math.Max(imageHeight, 1));
+    }
+
+    private static float GetRowHeight(int swatchHeight, SKFont? font)
+        => Math.Max(swatchHeight, font is null ? 0f : font.Size) + EntryGap;
 
     private static SKFont? TryCreateLabelFont()
     {

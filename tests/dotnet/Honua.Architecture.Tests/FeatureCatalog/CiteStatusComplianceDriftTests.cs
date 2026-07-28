@@ -62,7 +62,7 @@ public sealed partial class CiteStatusComplianceDriftTests
     // full-suite aggregate ProseAggregatePattern anchors on. The protocol-scoped
     // *-openapi.json files restate their own suite's count ahead of the aggregate
     // (e.g. "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is
-    // 952/952") -- AssertSuiteRows only checks the structured suites[] entries,
+    // 1117/1117") -- AssertSuiteRows only checks the structured suites[] entries,
     // so without this a stale leading count in the prose would slip past the gate
     // even though suites[] and cite-status.md still agree.
     [GeneratedRegex(@"\b(\d+)\s*/\s*(\d+)\b")]
@@ -249,7 +249,7 @@ public sealed partial class CiteStatusComplianceDriftTests
     /// <see cref="ProseAggregatePattern"/> anchors on. The protocol-scoped
     /// *-openapi.json files restate their own suite's count ahead of the aggregate
     /// (e.g. "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is
-    /// 952/952"); <see cref="AssertSuiteRows"/> only checks the structured
+    /// 1117/1117"); <see cref="AssertSuiteRows"/> only checks the structured
     /// suites[] entries, so a stale leading count in the prose would otherwise
     /// slip past this gate even when suites[] and cite-status.md still agree.
     /// Each fraction found must equal either the canonical full-suite aggregate

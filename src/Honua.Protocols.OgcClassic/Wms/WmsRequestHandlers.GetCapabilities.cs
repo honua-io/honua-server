@@ -36,7 +36,10 @@ internal static partial class WmsRequestHandlers
                 .Append("<Dimension name=\"")
                 .Append(EscapeXml(definition.Value.Name))
                 .Append("\" units=\"")
-                .Append(EscapeXml(definition.Value.Units))
+                .Append(EscapeXml(
+                    string.Equals(definition.Value.Name, "elevation", StringComparison.OrdinalIgnoreCase)
+                        ? "EPSG:5703"
+                        : definition.Value.Units))
                 .Append('"');
 
             if (!string.IsNullOrWhiteSpace(definition.Value.UnitSymbol))
@@ -166,7 +169,7 @@ internal static partial class WmsRequestHandlers
     /// A layer qualifies only when its resolved style plan — the same plan GetMap
     /// renders from — yields symbology the swatch renderer paints.
     /// </summary>
-    private static async Task<HashSet<int>> PrefetchLegendCapableLayersAsync(
+    private static async Task<Dictionary<int, (int Width, int Height)>> PrefetchLegendDimensionsAsync(
         HttpContext context,
         IReadOnlyList<WmsLayer> layers,
         CancellationToken cancellationToken)
@@ -190,16 +193,26 @@ internal static partial class WmsRequestHandlers
             GetRasterStylePlanAsync(styleCatalog, layer.StorageLayerId, cancellationToken)))
             .ConfigureAwait(false);
 
-        var capable = new HashSet<int>();
+        var dimensions = new Dictionary<int, (int Width, int Height)>();
         for (var i = 0; i < candidates.Length; i++)
         {
-            if (SupportsLegend(plans[i]))
+            if (!SupportsLegend(plans[i]))
             {
-                capable.Add(candidates[i].StorageLayerId);
+                continue;
             }
+
+            var layer = candidates[i];
+            var (entries, _) = BuildLegendEntries(
+                plans[i],
+                GetWmsLayerDisplayName(layer),
+                RenderZoom.NotDerivable("the GetLegendGraphic request supplied no SCALE"));
+            dimensions[layer.StorageLayerId] = LegendImageComposer.Measure(
+                entries,
+                DefaultLegendSwatchWidth,
+                DefaultLegendSwatchHeight);
         }
 
-        return capable;
+        return dimensions;
     }
 
     /// <summary>
@@ -389,7 +402,9 @@ internal static partial class WmsRequestHandlers
         }
 
         sb.AppendLine("  <Service>");
-        sb.AppendLine("    <Name>WMS</Name>");
+        sb.Append("    <Name>")
+            .Append(isWms111 ? "OGC:WMS" : "WMS")
+            .AppendLine("</Name>");
         sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
         sb.AppendLine("    <KeywordList>");
@@ -499,7 +514,7 @@ internal static partial class WmsRequestHandlers
         var temporalRanges = await PrefetchTemporalRangesAsync(
             context, accessibleLayers, cancellationToken).ConfigureAwait(false);
 
-        var legendCapableLayers = await PrefetchLegendCapableLayersAsync(
+        var legendDimensions = await PrefetchLegendDimensionsAsync(
             context, accessibleLayers, cancellationToken).ConfigureAwait(false);
 
         foreach (var layer in accessibleLayers)
@@ -538,17 +553,24 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("        <Style>");
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");
-            if (legendCapableLayers.Contains(layer.StorageLayerId))
+            if (legendDimensions.TryGetValue(layer.StorageLayerId, out var legendSize))
             {
-                // width/height are deliberately omitted: both are optional in the WMS
-                // schema and the composed legend's size depends on label metrics we
-                // cannot know without rendering. Advertising a guess would be a
-                // capability claim we do not honor.
                 var legendHref =
                     $"{wmsUrlPrefix}SERVICE=WMS&VERSION={(isWms111 ? Wms111Version : Wms13Version)}"
                     + $"&REQUEST=GetLegendGraphic&LAYER={Uri.EscapeDataString(layerName)}"
                     + "&STYLE=default&FORMAT=image/png";
-                sb.AppendLine("          <LegendURL>");
+                if (isWms111)
+                {
+                    sb.Append("          <LegendURL width=\"")
+                        .Append(legendSize.Width.ToString(CultureInfo.InvariantCulture))
+                        .Append("\" height=\"")
+                        .Append(legendSize.Height.ToString(CultureInfo.InvariantCulture))
+                        .AppendLine("\">");
+                }
+                else
+                {
+                    sb.AppendLine("          <LegendURL>");
+                }
                 sb.AppendLine("            <Format>image/png</Format>");
                 AppendWmsOnlineResource(sb, "            ", legendHref, isWms111);
                 sb.AppendLine("          </LegendURL>");

@@ -32,7 +32,8 @@ using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 namespace Honua.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
-/// CITE conformance: 199/199 (WMS 1.3 `default` profile, 100% pass on trunk).
+/// CITE conformance: 126/126 (WMS 1.1.1) and 213/213 (WMS 1.3)
+/// using the official `default` profiles, 100% pass on trunk.
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
 internal static partial class WmsRequestHandlers
@@ -44,6 +45,7 @@ internal static partial class WmsRequestHandlers
     private const string Wms111CapabilitiesMimeType = "application/vnd.ogc.wms_xml";
     private const string WmsXmlExceptionMimeType = "text/xml";
     private const string WmsSeXmlExceptionMimeType = "application/vnd.ogc.se_xml";
+    private const string WmsGmlFeatureInfoSchemaRequest = "GetFeatureInfoSchema";
     private const string WmsExceptionSchemaLocation = "http://www.opengis.net/ogc http://schemas.opengis.net/wms/1.3.0/exceptions_1_3_0.xsd";
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
@@ -57,6 +59,7 @@ internal static partial class WmsRequestHandlers
     private const string CiteAutosDefaultTime = "2000-01-01T00:00:30Z";
     private const string CiteAutosExtent = "2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S";
     private const string WmsProtocolName = "Wms";
+    private static readonly Version _wms13SemanticVersion = new(1, 3, 0);
     private static readonly DateTimeOffset[] _citeAutosInstants =
     [
         new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero),
@@ -133,8 +136,8 @@ internal static partial class WmsRequestHandlers
         {
             var query = context.Request.Query;
             var service = GetQueryValue(query, "SERVICE");
-            var requestType = GetQueryValue(query, "REQUEST");
-            var version = GetQueryValue(query, "VERSION");
+            var requestType = NormalizeWmsRequestType(GetQueryValue(query, "REQUEST"));
+            var version = GetRequestedWmsVersion(query);
 
             if (!string.Equals(service, "WMS", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(service))
@@ -202,15 +205,14 @@ internal static partial class WmsRequestHandlers
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.IsNullOrWhiteSpace(version) && !IsSupportedWmsVersion(version))
+                if (!TryNegotiateWmsCapabilitiesVersion(version, out var capabilitiesVersion))
                 {
                     return CreateWmsServiceException(
                         context,
                         "InvalidParameterValue",
-                        $"Unsupported WMS VERSION '{version}'. Supported versions are 1.3.0 and 1.1.1.");
+                        $"Invalid WMS VERSION '{version}'.");
                 }
 
-                var capabilitiesVersion = string.IsNullOrWhiteSpace(version) ? Wms13Version : version.Trim();
                 if (!XmlContentNegotiation.IsXmlAccepted(
                         context.Request.Headers.Accept.ToString(),
                         GetWmsCapabilitiesMediaTypes(capabilitiesVersion)))
@@ -232,6 +234,15 @@ internal static partial class WmsRequestHandlers
             if (string.Equals(requestType, "GetFeatureInfo", StringComparison.OrdinalIgnoreCase))
             {
                 return await HandleWmsGetFeatureInfo(context, svcDef, accessibleLayers, serviceId, logger);
+            }
+
+            if (string.Equals(requestType, WmsGmlFeatureInfoSchemaRequest, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Content(
+                    BuildWmsGmlFeatureInfoSchema(),
+                    "application/xml",
+                    Encoding.UTF8,
+                    StatusCodes.Status200OK);
             }
 
             if (string.Equals(requestType, "GetLegendGraphic", StringComparison.OrdinalIgnoreCase))
@@ -625,19 +636,13 @@ internal static partial class WmsRequestHandlers
             return false;
         }
 
-        // WMS validates coordinate ordering separately from CRS bounds.
-        // Keep parsing strict on axis order and min/max ordering, but allow
-        // out-of-range geographic coordinates so GetMap can return blank
-        // imagery and GetFeatureInfo can emit a targeted CRS-range exception.
-        // Pass the resolved CRS's IsGeographic flag (matching the WFS bbox
-        // path) so a dateline-crossing geographic bbox (minX > maxX) is accepted
-        // rather than rejected as a min/max ordering error — CreateBboxSpatialFilter
-        // already splits a wrapped extent into a multi-polygon and the render
-        // transform handles the longitude wrap.
+        // WMS requires strictly increasing BBOX ordinates, including for geographic
+        // CRSes. Range validation is intentionally deferred: GetMap must return a
+        // blank image when the requested area lies outside the CRS domain.
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
                 ResolveWmsBboxAxisOrder(version, crsDefinition.AxisOrder),
-                crsDefinition.IsGeographic,
+                isGeographic: false,
                 out var minX,
                 out var minY,
                 out var maxX,
@@ -696,6 +701,71 @@ internal static partial class WmsRequestHandlers
                string.Equals(version, Wms111Version, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string? GetRequestedWmsVersion(IQueryCollection query)
+    {
+        var version = GetQueryValue(query, "VERSION");
+        return string.IsNullOrWhiteSpace(version)
+            ? GetQueryValue(query, "WMTVER")
+            : version;
+    }
+
+    private static bool TryGetRequiredWmsVersion(IQueryCollection query, out string version)
+    {
+        version = GetRequestedWmsVersion(query) ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(version);
+    }
+
+    private static string? NormalizeWmsRequestType(string? requestType)
+    {
+        if (string.Equals(requestType, "capabilities", StringComparison.OrdinalIgnoreCase))
+        {
+            return "GetCapabilities";
+        }
+
+        if (string.Equals(requestType, "map", StringComparison.OrdinalIgnoreCase))
+        {
+            return "GetMap";
+        }
+
+        if (string.Equals(requestType, "feature_info", StringComparison.OrdinalIgnoreCase))
+        {
+            return "GetFeatureInfo";
+        }
+
+        return requestType;
+    }
+
+    private static bool TryNegotiateWmsCapabilitiesVersion(string? requestedVersion, out string negotiatedVersion)
+    {
+        if (string.IsNullOrWhiteSpace(requestedVersion))
+        {
+            negotiatedVersion = Wms13Version;
+            return true;
+        }
+
+        var trimmed = requestedVersion.Trim();
+        if (IsSupportedWmsVersion(trimmed))
+        {
+            negotiatedVersion = trimmed;
+            return true;
+        }
+
+        // WMS version values have exactly three numeric components (x.y.z); shapes
+        // like "1.2" or "1.2.3.4" are InvalidParameterValue, not negotiable inputs.
+        if (!Version.TryParse(trimmed, out var parsedVersion) ||
+            parsedVersion.Build < 0 ||
+            parsedVersion.Revision >= 0)
+        {
+            negotiatedVersion = string.Empty;
+            return false;
+        }
+
+        negotiatedVersion = parsedVersion < _wms13SemanticVersion
+            ? Wms111Version
+            : Wms13Version;
+        return true;
+    }
+
     private static bool IsWms111Version(string? version)
         => string.Equals(version, Wms111Version, StringComparison.OrdinalIgnoreCase);
 
@@ -738,8 +808,8 @@ internal static partial class WmsRequestHandlers
     }
 
     /// <summary>
-    /// Returns true when the requested bbox intersects the CRS's valid bounds at
-    /// all (non-empty intersection). Unlike <see cref="IsExtentWithinCrsBounds"/>,
+    /// Returns true when the requested bbox intersects the CRS's valid bounds with
+    /// positive area. Unlike <see cref="IsExtentWithinCrsBounds"/>,
     /// a partial overlap counts as intersecting: GetMap renders the in-bounds
     /// portion and paints the out-of-bounds margin as background, so only a fully
     /// disjoint bbox should short-circuit to a blank image. For CRSes without
@@ -750,19 +820,15 @@ internal static partial class WmsRequestHandlers
         if (string.Equals(normalizedCrs, "CRS:84", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalizedCrs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
         {
-            // An antimeridian-crossing geographic bbox (MinX > MaxX) wraps the
-            // dateline and therefore always overlaps the valid longitude range,
-            // so only the latitude axis needs an intersection test.
-            var longitudeIntersects = extent.MinX > extent.MaxX ||
-                                      (extent.MinX <= 180 && extent.MaxX >= -180);
-            var latitudeIntersects = extent.MinY <= 90 && extent.MaxY >= -90;
+            var longitudeIntersects = extent.MinX < 180 && extent.MaxX > -180;
+            var latitudeIntersects = extent.MinY < 90 && extent.MaxY > -90;
             return longitudeIntersects && latitudeIntersects;
         }
 
         if (string.Equals(normalizedCrs, "EPSG:3857", StringComparison.OrdinalIgnoreCase))
         {
-            return extent.MinX <= WmsWebMercatorMax && extent.MaxX >= -WmsWebMercatorMax &&
-                   extent.MinY <= WmsWebMercatorMax && extent.MaxY >= -WmsWebMercatorMax;
+            return extent.MinX < WmsWebMercatorMax && extent.MaxX > -WmsWebMercatorMax &&
+                   extent.MinY < WmsWebMercatorMax && extent.MaxY > -WmsWebMercatorMax;
         }
 
         return true;
@@ -1078,7 +1144,7 @@ internal static partial class WmsRequestHandlers
                 includeClientErrors: true);
         }
 
-        var version = context is null ? Wms13Version : GetQueryValue(context.Request.Query, "VERSION");
+        var version = context is null ? Wms13Version : GetRequestedWmsVersion(context.Request.Query);
         var xml = BuildWmsServiceExceptionReport(code, message, version);
         var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"), version);
         // WMS 1.3.0 §7.3.3.4 / WMS 1.1.1 §6.10: ServiceExceptionReport MUST be returned with HTTP 200 OK.

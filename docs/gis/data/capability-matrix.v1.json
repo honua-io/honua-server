@@ -2,7 +2,9 @@
   "unjoinedCiteSuites": [
     "GML 3.2",
     "GeoPackage 1.2",
-    "KML 2.2"
+    "KML 2.2",
+    "WFS 2.0 Transactional",
+    "WMS 1.1.1"
   ],
   "schemaVersion": "1.0.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
@@ -1575,7 +1577,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 309,
+      "provingTestCount": 317,
       "maturity": {
         "implemented": 45
       },
@@ -2021,8 +2023,8 @@
         {
           "suite": "WMS 1.3",
           "profile": "default",
-          "passed": 199,
-          "total": 199,
+          "passed": 213,
+          "total": 213,
           "passRate": 100.0
         }
       ],

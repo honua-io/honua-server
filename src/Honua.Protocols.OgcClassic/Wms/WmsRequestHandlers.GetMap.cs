@@ -55,7 +55,7 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "VERSION", out var versionValue))
+        if (!TryGetRequiredWmsVersion(query, out var versionValue))
         {
             return CreateWmsServiceException(context, "MissingParameterValue", "VERSION parameter is required.");
         }

@@ -21,6 +21,19 @@ namespace Honua.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
 {
+    private const string WmsGmlFeatureInfoSchema = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="unqualified">
+          <xs:element name="msGMLOutput">
+            <xs:complexType>
+              <xs:sequence>
+                <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+        </xs:schema>
+        """;
+
     private static async Task<IResult> HandleWmsGetFeatureInfo(
         HttpContext context,
         MetadataV2Service service,
@@ -55,7 +68,7 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
-        if (!TryGetRequiredQueryValue(query, "VERSION", out var versionValue))
+        if (!TryGetRequiredWmsVersion(query, out var versionValue))
         {
             return CreateWmsServiceException(context, "MissingParameterValue", "VERSION parameter is required.");
         }
@@ -314,7 +327,11 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            var gml = BuildWmsGmlFeatureInfo(gmlFeatures);
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+            var schemaUrl =
+                $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceId)}/MapServer/WMS"
+                + $"?SERVICE=WMS&VERSION={Wms111Version}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
+            var gml = BuildWmsGmlFeatureInfo(gmlFeatures, schemaUrl);
             return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
 
@@ -365,12 +382,18 @@ internal static partial class WmsRequestHandlers
     /// <c>wms:wms-getfeatureinfo</c>) expects: a well-formed XML document whose
     /// content type matches the advertised GML format.
     /// </summary>
-    private static string BuildWmsGmlFeatureInfo(IReadOnlyList<WmsFeatureInfoFeature> features)
+    private static string BuildWmsGmlFeatureInfo(
+        IReadOnlyList<WmsFeatureInfoFeature> features,
+        string schemaUrl)
     {
         var sb = new StringBuilder(512);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.Append("<msGMLOutput xmlns:gml=\"http://www.opengis.net/gml\" ")
-            .AppendLine("xmlns:xlink=\"http://www.w3.org/1999/xlink\">");
+            .Append("xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
+            .Append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ")
+            .Append("xsi:noNamespaceSchemaLocation=\"")
+            .Append(EscapeXml(schemaUrl))
+            .AppendLine("\">");
 
         foreach (var feature in features)
         {
@@ -400,6 +423,8 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("</msGMLOutput>");
         return sb.ToString();
     }
+
+    private static string BuildWmsGmlFeatureInfoSchema() => WmsGmlFeatureInfoSchema;
 
     /// <summary>
     /// Normalizes an arbitrary layer/attribute name into a safe XML element
