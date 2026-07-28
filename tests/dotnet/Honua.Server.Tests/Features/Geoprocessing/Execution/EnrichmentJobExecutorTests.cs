@@ -170,13 +170,12 @@ public sealed class EnrichmentJobExecutorTests
         var (status, _) = await RunAsync(
             services,
             ("datasetId", DatasetId),
-            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
-            ("outSrid", "3857"));
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)));
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         source.RequestedSrids.Should().HaveCount(2);
-        source.RequestedSrids.Should().AllBeEquivalentTo(3857,
-            "both the source and dataset layers must be streamed in one CRS");
+        source.RequestedSrids.Should().AllBeEquivalentTo(4326,
+            "both layers must be streamed in one CRS, and GeoJSON output must be WGS 84");
     }
 
     [UnitTest]
@@ -194,24 +193,6 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("limit of 1 features");
-    }
-
-    [UnitTest]
-    public async Task Enrich_InlineSourceWithNonDefaultOutSrid_IsRejected()
-    {
-        // Codex P1: inline GeoJSON is WGS 84 by specification, so it cannot be joined
-        // against a dataset reprojected to another CRS — reject rather than silently
-        // comparing 4326 input ordinates against reprojected dataset ordinates.
-        var services = DefaultServices(dataset: Dataset());
-
-        var (status, error) = await RunExpectingFailureAsync(
-            services,
-            ("datasetId", DatasetId),
-            ("input", InlineFeatureCollection(PointNtsFeature(5, 5))),
-            ("outSrid", "3857"));
-
-        status.Should().Be(ExecutionJobStatus.Failed);
-        error.Should().Contain("outSrid");
     }
 
     [UnitTest]
@@ -237,6 +218,22 @@ public sealed class EnrichmentJobExecutorTests
         // The job still runs (the seed layers are tiny); the point is the requested cap
         // is clamped rather than honoured verbatim.
         status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public void MatchBudget_ExhaustedByCumulativeCarriedValues_ThrowsActionableError()
+    {
+        // Codex P1: the per-layer input caps cannot see the join's Cartesian growth
+        // (targets x matches x carried fields), so a cumulative budget must fail the
+        // job before the carried arrays and artifact are materialized.
+        var budget = new SpatialJoinSupport.MatchBudget(4);
+
+        budget.Charge(2);
+        budget.Charge(2);
+
+        var exceeded = () => budget.Charge(1);
+        exceeded.Should().Throw<TransformInputException>()
+            .WithMessage("*cumulative match budget*");
     }
 
     [UnitTest]
