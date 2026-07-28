@@ -186,7 +186,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
             _ = await advisoryLock.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await EnsureReferenceTableAsync(connection, transaction, qualifiedTable, config.Table, cancellationToken).ConfigureAwait(false);
+        await EnsureReferenceTableAsync(connection, transaction, qualifiedTable, config.Table, request.ReplaceExisting, cancellationToken).ConfigureAwait(false);
 
         if (request.ReplaceExisting)
         {
@@ -391,6 +391,17 @@ internal sealed partial class GeocoderReferenceDataImportService(
             return value.Length == 0 ? null : value;
         }
 
+        // PostgreSQL text cannot represent U+0000; a dirty export carrying one would abort the
+        // whole transaction as a server error, so reject the row as client data instead.
+        foreach (var index in mapping.Values.Distinct())
+        {
+            if (index < record.Length && record[index].Contains('\0', StringComparison.Ordinal))
+            {
+                reason = "Row contains a NUL (U+0000) character, which cannot be stored as text.";
+                return false;
+            }
+        }
+
         var xText = Get(RoleX);
         var yText = Get(RoleY);
         if (xText is null || yText is null ||
@@ -496,10 +507,25 @@ internal sealed partial class GeocoderReferenceDataImportService(
         NpgsqlTransaction transaction,
         string qualifiedTable,
         string table,
+        bool replaceExisting,
         CancellationToken cancellationToken)
     {
         // Documented reference schema: docs/reference/geocoding/local-postgis-geocoder.md (#2151).
         var indexBase = "ix_" + (table.Length > 48 ? table[..48] : table);
+
+        // Self-heal rows loaded under the pre-canonicalization rule (commas preserved).
+        // Server migration 091 covers the default connection's table; this covers dedicated
+        // Geocoding:Providers:Local:ConnectionString databases, which the server migration
+        // runner never touches. Skipped for replace mode, where every existing row is about
+        // to be deleted anyway — rewriting them first would burn scans and WAL against the
+        // request timeout for no benefit.
+        var legacySelfHeal = replaceExisting
+            ? string.Empty
+            : $"""
+            UPDATE {qualifiedTable}
+            SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'))
+            WHERE search_text ~ '[,;]';
+            """;
         var sql = $"""
             CREATE TABLE IF NOT EXISTS {qualifiedTable} (
                 id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -517,13 +543,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
             );
             CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_geom")} ON {qualifiedTable} USING gist (geom);
             CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_search_text")} ON {qualifiedTable} (search_text text_pattern_ops);
-            -- Self-heal rows loaded under the pre-canonicalization rule (commas preserved).
-            -- Server migration 091 covers the default connection's table; this covers
-            -- dedicated Geocoding:Providers:Local:ConnectionString databases, which the
-            -- server migration runner never touches. Idempotent and cheap when clean.
-            UPDATE {qualifiedTable}
-            SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'))
-            WHERE search_text ~ '[,;]';
+            {legacySelfHeal}
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
