@@ -343,9 +343,9 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
             .ToList();
 
     // Normalizes to a lowercase, single-spaced form matching the documented `search_text` column,
-    // so the same normalization is applied on load and at query time.
+    // so the same normalization is applied on load (locator/reference import) and at query time.
     private static string Normalize(string text)
-        => WhitespaceRegex().Replace(text.Trim().ToLowerInvariant(), " ");
+        => GeocodeReferenceText.Normalize(text);
 
     private static string EscapeLike(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal)
@@ -377,9 +377,6 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
 
         return "\"" + identifier + "\"";
     }
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex WhitespaceRegex();
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex IdentifierRegex();
