@@ -91,8 +91,18 @@ repos by design:
   round-tripped canonical parameter bindings, and explicit issue codes
   (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
   `duplicate-target-parameter`, `missing-required-parameter`,
-  `unsupported-construct`). Tools that cannot supply a required parameter are
-  `unsupported`, never stubbed as executable.
+  `unsupported-construct`, `unverified-conditional-inputs`). Tools that cannot
+  supply a required parameter are `unsupported`, never stubbed as executable.
+  Inbound manifests must carry a supported `artifactKind`/`artifactVersion`;
+  an incompatible identity is rejected rather than reinterpreted.
+
+The report proves the **signature** round-trip, not full plan admissibility.
+Several processes declare mutually-substitutable optional inputs (for example
+the raster `source`/`layerId`/`rasterId` trio) that only the canonical plan
+validator enforces at submit time, so a tool that maps no parameters is
+flagged `unverified-conditional-inputs` instead of being claimed executable.
+The lane deliberately does not re-implement those conditional semantics —
+canonical submit-time validation stays the single enforcement point.
 
 The server never parses toolbox sources and never emulates arcpy execution;
 translated tools execute only as existing native processes through the

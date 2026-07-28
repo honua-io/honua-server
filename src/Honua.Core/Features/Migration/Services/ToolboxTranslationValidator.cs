@@ -72,13 +72,8 @@ public static class ToolboxTranslationValidator
     {
         var issues = new List<ToolboxTranslationIssue>();
 
-        foreach (var construct in descriptor.UnsupportedConstructs)
+        foreach (var construct in descriptor.UnsupportedConstructs.Where(value => !string.IsNullOrWhiteSpace(value)))
         {
-            if (string.IsNullOrWhiteSpace(construct))
-            {
-                continue;
-            }
-
             issues.Add(new ToolboxTranslationIssue
             {
                 Code = ToolboxTranslationIssueCodes.UnsupportedConstruct,
@@ -148,18 +143,35 @@ public static class ToolboxTranslationValidator
         }
 
         var missingRequired = false;
-        foreach (var parameter in definition.Parameters)
+        var unmappedRequired = definition.Parameters.Where(parameter =>
+            parameter.Required
+            && parameter.DefaultValue is null
+            && !mappedTargets.Contains(parameter.Name));
+
+        foreach (var parameter in unmappedRequired)
         {
-            if (parameter.Required && parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
+            missingRequired = true;
+            issues.Add(new ToolboxTranslationIssue
             {
-                missingRequired = true;
-                issues.Add(new ToolboxTranslationIssue
-                {
-                    Code = ToolboxTranslationIssueCodes.MissingRequiredParameter,
-                    Message = $"Required parameter '{parameter.Name}' of process '{definition.ProcessId}' has no default and is not mapped; the tool cannot execute.",
-                    ParameterName = parameter.Name
-                });
-            }
+                Code = ToolboxTranslationIssueCodes.MissingRequiredParameter,
+                Message = $"Required parameter '{parameter.Name}' of process '{definition.ProcessId}' has no default and is not mapped; the tool cannot execute.",
+                ParameterName = parameter.Name
+            });
+        }
+
+        // Static Required flags are not the whole admissibility contract: several processes
+        // declare mutually-substitutable optional inputs (for example the raster
+        // source/layerId/rasterId trio) that the canonical plan validator requires at submit
+        // time. A tool that maps nothing therefore cannot be asserted executable from the
+        // signature alone. Report the uncertainty explicitly rather than reimplementing the
+        // canonical conditional semantics here (which would fork validation behavior).
+        if (!missingRequired && bindings.Count == 0 && definition.Parameters.Count > 0)
+        {
+            issues.Add(new ToolboxTranslationIssue
+            {
+                Code = ToolboxTranslationIssueCodes.UnverifiedConditionalInputs,
+                Message = $"Tool maps no parameters onto process '{definition.ProcessId}', which declares {definition.Parameters.Count} parameter(s); canonical plan validation may still reject the execution (conditional input requirements are enforced at submit time)."
+            });
         }
 
         // A tool that cannot supply a required parameter is not executable against the

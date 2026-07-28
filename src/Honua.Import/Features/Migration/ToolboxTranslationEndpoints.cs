@@ -99,6 +99,25 @@ internal static partial class ToolboxTranslationEndpoints
 
     private static string? ValidateStructure(ToolboxTranslationManifest manifest)
     {
+        // Reject a payload that identifies as a different artifact or an unsupported schema
+        // version rather than silently reinterpreting it as the v1 toolbox contract. An
+        // absent field is treated as "the v1 toolbox manifest": source-generated
+        // deserialization leaves omitted properties unset rather than applying the records'
+        // initializers, so only an explicitly-supplied incompatible identity is rejected.
+        var artifactKind = manifest.ArtifactKind?.Trim();
+        if (!string.IsNullOrEmpty(artifactKind)
+            && !string.Equals(artifactKind, ToolboxTranslationArtifacts.ManifestKind, StringComparison.Ordinal))
+        {
+            return $"artifactKind must be '{ToolboxTranslationArtifacts.ManifestKind}'.";
+        }
+
+        var artifactVersion = manifest.ArtifactVersion?.Trim();
+        if (!string.IsNullOrEmpty(artifactVersion)
+            && !ToolboxTranslationArtifacts.SupportedManifestVersions.Contains(artifactVersion))
+        {
+            return $"artifactVersion must be one of: {string.Join(", ", ToolboxTranslationArtifacts.SupportedManifestVersions)}.";
+        }
+
         if (string.IsNullOrWhiteSpace(manifest.ToolboxName))
         {
             return "toolboxName is required.";
@@ -138,14 +157,14 @@ internal static partial class ToolboxTranslationEndpoints
 
             // Explicit JSON nulls for the per-tool collections are normalized to empty by
             // Normalize(); a null element inside a present collection is still rejected.
-            foreach (var mapping in tool.ParameterMappings ?? [])
+            var invalidMapping = (tool.ParameterMappings ?? []).Any(mapping =>
+                mapping is null
+                || string.IsNullOrWhiteSpace(mapping.SourceName)
+                || string.IsNullOrWhiteSpace(mapping.TargetParameter));
+
+            if (invalidMapping)
             {
-                if (mapping is null
-                    || string.IsNullOrWhiteSpace(mapping.SourceName)
-                    || string.IsNullOrWhiteSpace(mapping.TargetParameter))
-                {
-                    return $"Tool '{tool.ToolName.Trim()}' has a parameter mapping without sourceName or targetParameter.";
-                }
+                return $"Tool '{tool.ToolName.Trim()}' has a parameter mapping without sourceName or targetParameter.";
             }
         }
 

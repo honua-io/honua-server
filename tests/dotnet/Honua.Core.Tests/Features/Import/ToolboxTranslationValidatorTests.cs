@@ -170,6 +170,36 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_EmptyMappingOnAllOptionalProcess_FlagsUnverifiedConditionalInputs()
+    {
+        // Every parameter of test.optional-only is statically optional, so no
+        // missing-required-parameter issue fires; the canonical plan validator can still
+        // reject the execution, so the tool must not be claimed translated.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only")),
+            new FakeCatalog());
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.ProcessId.Should().Be("test.optional-only");
+        tool.Issues.Single().Code.Should()
+            .Be(ToolboxTranslationIssueCodes.UnverifiedConditionalInputs);
+        report.Summary.TranslatedCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void Validate_MappedOptionalParameter_DoesNotFlagConditionalInputs()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_raster", "source"))),
+            new FakeCatalog());
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Translated);
+        tool.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Validate_NormalizesToolboxNameAndSourceFormat()
     {
         var manifest = Manifest(Tool("BufferTool", "test.buffer",
@@ -238,14 +268,34 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
+        /// <summary>
+        /// Mirrors the shape of catalog processes such as <c>surface.aspect</c> whose raster
+        /// source parameters are individually optional but conditionally required by the
+        /// canonical plan validator.
+        /// </summary>
+        private static readonly ProcessDefinition OptionalOnly = new()
+        {
+            ProcessId = "test.optional-only",
+            Title = "Optional Only",
+            Description = "Test process whose parameters are all statically optional.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("source", ProcessParameterValueType.Text, required: false),
+                Parameter("layerId", ProcessParameterValueType.LayerId, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
         public ProcessDefinition? GetProcess(string processId) => processId switch
         {
             "test.buffer" => Buffer,
             "test.simplify" => Simplify,
+            "test.optional-only" => OptionalOnly,
             _ => null
         };
 
-        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify];
+        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify, OptionalOnly];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) =>
             ListProcesses().Where(definition => definition.Category == category).ToArray();

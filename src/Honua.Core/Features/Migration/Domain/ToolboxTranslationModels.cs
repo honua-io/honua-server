@@ -16,7 +16,7 @@ public sealed record ToolboxTranslationManifest
     /// <summary>
     /// Stable artifact kind identifier.
     /// </summary>
-    public string ArtifactKind { get; init; } = "honua.migration.toolbox-translation";
+    public string ArtifactKind { get; init; } = ToolboxTranslationArtifacts.ManifestKind;
 
     /// <summary>
     /// Artifact schema version.
@@ -115,7 +115,7 @@ public sealed record ToolboxTranslationReport
     /// <summary>
     /// Stable artifact kind identifier.
     /// </summary>
-    public string ArtifactKind { get; init; } = "honua.migration.toolbox-translation-report";
+    public string ArtifactKind { get; init; } = ToolboxTranslationArtifacts.ReportKind;
 
     /// <summary>
     /// Artifact schema version.
@@ -253,6 +253,24 @@ public sealed record ToolboxTranslationIssue
 }
 
 /// <summary>
+/// Stable artifact identities for the toolbox translation lane. Callers must submit a
+/// manifest whose <see cref="ToolboxTranslationManifest.ArtifactKind"/> and
+/// <see cref="ToolboxTranslationManifest.ArtifactVersion"/> match a supported identity;
+/// an incompatible payload is rejected rather than reinterpreted under the v1 contract.
+/// </summary>
+public static class ToolboxTranslationArtifacts
+{
+    /// <summary>Stable artifact kind for the inbound translation manifest.</summary>
+    public const string ManifestKind = "honua.migration.toolbox-translation";
+
+    /// <summary>Stable artifact kind for the server-authoritative report.</summary>
+    public const string ReportKind = "honua.migration.toolbox-translation-report";
+
+    /// <summary>Manifest schema versions this server understands.</summary>
+    public static readonly IReadOnlyList<string> SupportedManifestVersions = ["1.0"];
+}
+
+/// <summary>
 /// Known source toolbox formats accepted by the translation lane.
 /// </summary>
 public static class ToolboxSourceFormats
@@ -310,4 +328,13 @@ public static class ToolboxTranslationIssueCodes
 
     /// <summary>A scanner-declared source construct cannot be translated.</summary>
     public const string UnsupportedConstruct = "unsupported-construct";
+
+    /// <summary>
+    /// The tool maps no parameters onto a process that declares some, so static signature
+    /// analysis cannot assert executability. The canonical plan validator enforces
+    /// conditional input semantics (for example the mutually-substitutable
+    /// <c>source</c>/<c>layerId</c>/<c>rasterId</c> raster inputs) at submit time and may
+    /// still reject the execution.
+    /// </summary>
+    public const string UnverifiedConditionalInputs = "unverified-conditional-inputs";
 }

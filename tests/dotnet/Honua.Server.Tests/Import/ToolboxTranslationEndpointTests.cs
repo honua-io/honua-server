@@ -23,8 +23,6 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 {
-    private const string Route = "/api/v1/admin/import/toolbox/translation/validate";
-
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
 
@@ -40,7 +38,9 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_TranslatableToolbox_RoundTripsAllParameterSignatures()
     {
-        var response = await PostFixtureAsync("translatable-toolbox.json");
+        var response = await PostFixtureAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            "translatable-toolbox.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var report = await ReadJsonAsync(response);
@@ -81,7 +81,9 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_PartiallyTranslatableToolbox_ReportsUnsupportedConstructs()
     {
-        var response = await PostFixtureAsync("partially-translatable-toolbox.json");
+        var response = await PostFixtureAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            "partially-translatable-toolbox.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var report = await ReadJsonAsync(response);
@@ -116,7 +118,9 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_UnsupportedToolbox_MarksEveryToolUnsupportedWithExplicitReasons()
     {
-        var response = await PostFixtureAsync("unsupported-toolbox.json");
+        var response = await PostFixtureAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            "unsupported-toolbox.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var report = await ReadJsonAsync(response);
@@ -158,6 +162,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_UnknownSourceFormat_ReturnsBadRequest()
     {
         var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
             """
             {
               "toolboxName": "BadFormat",
@@ -175,6 +180,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_NullTools_ReturnsBadRequest()
     {
         var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
             """
             {
               "toolboxName": "NullTools",
@@ -196,6 +202,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // here because overlay.clip's required parameters are unmapped) instead of
         // producing a 500.
         var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
             """
             {
               "toolboxName": "NullCollections",
@@ -229,19 +236,94 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_ForeignArtifactKind_ReturnsBadRequest()
+    {
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "artifactKind": "honua.migration.manifest",
+              "artifactVersion": "1.0",
+              "toolboxName": "WrongKind",
+              "sourceFormat": "pyt",
+              "tools": [{ "toolName": "Anything" }]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("artifactKind");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_UnsupportedArtifactVersion_ReturnsBadRequest()
+    {
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "artifactVersion": "2.0",
+              "toolboxName": "FutureSchema",
+              "sourceFormat": "pyt",
+              "tools": [{ "toolName": "Anything" }]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("artifactVersion");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_EmptyMappingOnOptionalParameterProcess_IsNotClaimedTranslated()
+    {
+        // surface.aspect declares source/layerId/rasterId as individually optional, but the
+        // canonical plan validator requires one of them. An empty mapping must therefore not
+        // be reported as executable.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ConditionalInputs",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "AspectNoInputs",
+                  "targetProcessId": "surface.aspect",
+                  "parameterMappings": []
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().NotBe("translated");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Contain("unverified-conditional-inputs");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_MalformedBody_ReturnsBadRequest()
     {
-        var response = await PostJsonAsync("{ not json");
+        var response = await PostJsonAsync("/api/v1/admin/import/toolbox/translation/validate", "{ not json");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    private async Task<HttpResponseMessage> PostFixtureAsync(string fixtureName)
-        => await PostJsonAsync(await File.ReadAllTextAsync(
+    private async Task<HttpResponseMessage> PostFixtureAsync(string route, string fixtureName)
+        => await PostJsonAsync(route, await File.ReadAllTextAsync(
             ResolveRepoFile("tests", "fixtures", "toolbox-translation", fixtureName)));
 
-    private async Task<HttpResponseMessage> PostJsonAsync(string json)
-        => await _client.PostAsync(Route, new StringContent(json, Encoding.UTF8, "application/json"));
+    private async Task<HttpResponseMessage> PostJsonAsync(string route, string json)
+    {
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        return await _client.PostAsync(route, content);
+    }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
