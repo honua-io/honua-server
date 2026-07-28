@@ -43,6 +43,10 @@ internal static partial class CollaborationSessionStreamEndpoint
         ILogger<CollaborationStreamLogCategory> logger,
         HttpContext context)
     {
+        // One canonical session/log key per draft regardless of the GUID textual form in the
+        // route (honua-server#2999): sessions, appends, replay, and checkpoints must all agree.
+        mapId = SavedMapCollaborationMapId.Normalize(mapId);
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             // The route is upgrade-only; a plain GET is a client error.

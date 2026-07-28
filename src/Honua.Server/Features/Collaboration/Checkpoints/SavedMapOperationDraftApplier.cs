@@ -132,13 +132,12 @@ internal static class SavedMapOperationDraftApplier
 
         var byId = body.Layers.ToDictionary(static layer => layer.Id, StringComparer.Ordinal);
         var reordered = new List<StudioCompositionLayer>(body.Layers.Count);
-        foreach (var id in order)
-        {
-            if (byId.Remove(id, out var layer))
-            {
-                reordered.Add(layer);
-            }
-        }
+        // Remove-as-we-go both dedupes repeated ids in the requested order and leaves byId
+        // holding exactly the layers the order omitted (consumed by the tail append below).
+        reordered.AddRange(order
+            .Select(id => (Found: byId.Remove(id, out var layer), Layer: layer))
+            .Where(static entry => entry.Found)
+            .Select(static entry => entry.Layer!));
 
         // Layers omitted from the requested order keep their relative position at the end so a
         // reorder authored against a stale layer set never drops layers.

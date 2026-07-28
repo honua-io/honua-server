@@ -17,6 +17,14 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 internal interface ICollaborationSessionBackplane
 {
     /// <summary>
+    /// Whether this backplane connects multiple replicas (a distributed deployment). Used by
+    /// consumers that must fail closed when replica-local state cannot prove cross-node
+    /// continuity (honua-server#2999): a distributed backplane with a process-local op log
+    /// means an append and its checkpoint replay can land on different nodes.
+    /// </summary>
+    bool IsDistributed { get; }
+
+    /// <summary>
     /// Publishes a locally-originated collaboration event to peer nodes. Implementations
     /// must not block the caller and must swallow transport failures.
     /// </summary>
@@ -35,6 +43,9 @@ internal sealed class NullCollaborationSessionBackplane : ICollaborationSessionB
     private NullCollaborationSessionBackplane()
     {
     }
+
+    /// <inheritdoc />
+    public bool IsDistributed => false;
 
     /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)

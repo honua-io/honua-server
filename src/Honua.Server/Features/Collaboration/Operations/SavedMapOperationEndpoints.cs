@@ -58,6 +58,9 @@ internal static class SavedMapOperationEndpoints
         [FromServices] InMemoryCollaborationSessionService sessions,
         HttpContext context)
     {
+        // One canonical log key per draft regardless of the GUID textual form in the route
+        // (honua-server#2999): appends, replay, sessions, and checkpoints must all agree.
+        mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
         {
@@ -143,6 +146,7 @@ internal static class SavedMapOperationEndpoints
         HttpContext context,
         [FromQuery] long? since = null)
     {
+        mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
         {

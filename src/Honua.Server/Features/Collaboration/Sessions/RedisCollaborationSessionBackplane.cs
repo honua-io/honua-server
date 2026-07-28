@@ -96,6 +96,9 @@ internal sealed partial class RedisCollaborationSessionBackplane
     }
 
     /// <inheritdoc />
+    public bool IsDistributed => true;
+
+    /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)
     {
         var subscriber = _subscriber;

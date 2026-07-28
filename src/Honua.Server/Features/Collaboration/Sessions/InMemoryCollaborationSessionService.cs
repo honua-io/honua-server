@@ -504,9 +504,13 @@ internal sealed class InMemoryCollaborationSessionService
     /// Applies a collaboration event that originated on another node (delivered over the Redis
     /// backplane) to the local participant outboxes for its map. Remote events are never
     /// re-published, preventing fan-out loops between nodes. The actor's own session is excluded
-    /// so a participant does not receive an echo of its own action from a peer node. The local
-    /// per-map sequence is advanced to at least the remote sequence so later local envelopes stay
-    /// ahead of everything already observed.
+    /// so a participant does not receive an echo of its own action from a peer node. The envelope
+    /// is re-stamped with THIS node's next per-map sequence before fan-out: the origin sequence
+    /// is only monotonic on the origin node, and local clients — already past a higher local
+    /// sequence from their own join/status/snapshot frames — would drop a lower-sequenced remote
+    /// envelope per the v1 reducer contract, losing cross-replica operations (honua-server#2999).
+    /// The event payload (including the authoritative op-log cursor inside operation events) is
+    /// preserved unchanged.
     /// </summary>
     public void ApplyRemoteEvent(CollaborationEventEnvelope ev)
     {
@@ -531,8 +535,18 @@ internal sealed class InMemoryCollaborationSessionService
                 return;
             }
 
-            channel.LastSequence = Math.Max(channel.LastSequence, ev.Sequence);
-            FanOutLocked(channel, ev, excludeSessionId);
+            // Advance past BOTH streams before stamping: past this node's own sequence so local
+            // clients (already beyond their snapshot sequence) accept the event, and past the
+            // origin sequence so later local envelopes also stay ahead of anything a client may
+            // have observed with origin stamping.
+            var sequence = Math.Max(channel.LastSequence, ev.Sequence) + 1;
+            channel.LastSequence = sequence;
+            var restamped = ev with
+            {
+                Sequence = sequence,
+                Cursor = sequence.ToString(CultureInfo.InvariantCulture)
+            };
+            FanOutLocked(channel, restamped, excludeSessionId);
         }
     }
 
@@ -608,9 +622,38 @@ internal sealed class InMemoryCollaborationSessionService
                 continue;
             }
 
+            // Presence frames are disposable, but a committed operation (or a not-yet-delivered
+            // resync notice) falling off the bounded outbox would permanently desync the client:
+            // later operations keep arriving while a cursor range silently vanishes
+            // (honua-server#2999). Turn any such eviction into an explicit resync-required error
+            // so the client replays the op log from its last known cursor.
+            var operationEvicted = false;
             while (state.Outbox.Count >= MaxOutboxDepth)
             {
-                state.Outbox.Dequeue();
+                operationEvicted |= IsOperationBearing(state.Outbox.Dequeue());
+            }
+
+            if (operationEvicted)
+            {
+                // Keep the outbox at its cap after adding both the notice and the new event.
+                if (state.Outbox.Count >= MaxOutboxDepth - 1)
+                {
+                    _ = IsOperationBearing(state.Outbox.Dequeue());
+                }
+
+                state.Outbox.Enqueue(CreateEnvelopeLocked(
+                    channel,
+                    state.Presence.SessionId,
+                    state.Presence.ParticipantId,
+                    ev.ServerTime,
+                    new CollaborationSessionEvent
+                    {
+                        Type = CollaborationSessionEventTypes.Error,
+                        Code = CollaborationErrorCodes.ResyncRequired,
+                        Message = "Committed operations were evicted from the delivery buffer before this client drained them; replay the operation log from your last cursor.",
+                        Terminal = false,
+                        ResyncRequired = true
+                    }));
             }
 
             state.Outbox.Enqueue(ev);
@@ -619,6 +662,10 @@ internal sealed class InMemoryCollaborationSessionService
         }
 
         return delivered;
+
+        static bool IsOperationBearing(CollaborationEventEnvelope evicted) =>
+            evicted.Event.Type == CollaborationSessionEventTypes.OperationAppended ||
+            evicted.Event.ResyncRequired == true;
     }
 
     private static int ClearFollowsTargetingLocked(

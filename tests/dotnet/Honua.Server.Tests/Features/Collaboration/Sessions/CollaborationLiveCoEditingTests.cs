@@ -6,10 +6,12 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -248,6 +250,77 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+
+        // Append through the "N" GUID route form, then checkpoint through the "D" form: both
+        // must resolve to ONE canonical op log (honua-server#2999 review).
+        var nForm = draft.DraftId.ToString("N");
+        var dForm = draft.DraftId.ToString("D");
+        var first = await AppendOperationAsync(
+            client, nForm, "op-view", "SetViewport", baseCursor: 0, payload: """{"zoom":9}""");
+        var head = first.GetProperty("operation").GetProperty("serverCursor").GetInt64();
+        _ = await AppendOperationAsync(
+            client, dForm, "op-vis", "SetLayerVisibility", baseCursor: head,
+            payload: """{"layerId":"parcels","visible":false}""");
+
+        // The replay window is server-derived: a client-supplied cursor field (which previously
+        // could silently drop accepted operation 1) is ignored, so BOTH ops reach the version.
+        using var content = new StringContent(
+            """{"changeNote":"canonical","sinceCursor":1}""", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{dForm}/collaboration/checkpoints", content);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "checkpoint response body: {0}", text);
+        using var document = JsonDocument.Parse(text);
+        var checkpoint = document.RootElement.GetProperty("data");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(2);
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(2);
+        checkpoint.GetProperty("mapId").GetString().Should().Be(dForm);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_DistributedBackplaneWithProcessLocalLog_FailsClosed()
+    {
+        // The in-memory op log declares it cannot prove cross-replica replay continuity...
+        new InMemorySavedMapOperationLogRepository().SupportsReplicaSharedReplay.Should().BeFalse();
+
+        // ...so with a distributed backplane (multi-replica deployment) the checkpoint must
+        // fail closed instead of minting a version from a possibly-partial node-local log.
+        using var factory = CreateFactory(configureTestServices: services =>
+        {
+            services.RemoveAll<ICollaborationSessionBackplane>();
+            services.AddSingleton<ICollaborationSessionBackplane>(new DistributedNoOpBackplane());
+        });
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/checkpoints", content);
+
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
+        text.Should().Contain("replica-shared");
+    }
+
+    private sealed class DistributedNoOpBackplane : ICollaborationSessionBackplane
+    {
+        public bool IsDistributed => true;
+
+        public void Publish(CollaborationEventEnvelope ev)
+        {
+            // Cross-node delivery is irrelevant here; only the distributed-topology signal matters.
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
@@ -263,7 +336,9 @@ public sealed class CollaborationLiveCoEditingTests
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, "checkpoint response body: {0}", responseText);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(bool endUserAuthorization = false)
+    private static WebApplicationFactory<Program> CreateFactory(
+        bool endUserAuthorization = false,
+        Action<IServiceCollection>? configureTestServices = null)
     {
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
@@ -280,6 +355,7 @@ public sealed class CollaborationLiveCoEditingTests
 
                 builder.ConfigureTestServices(services =>
                 {
+                    configureTestServices?.Invoke(services);
                     // No collaboration authorizer override: these tests exercise the real
                     // Studio-lifecycle-backed authorizer. The Studio store is swapped for the
                     // in-memory implementation so the lifecycle runs without a migrated Postgres

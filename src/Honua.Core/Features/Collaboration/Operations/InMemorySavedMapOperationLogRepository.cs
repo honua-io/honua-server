@@ -41,6 +41,14 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Always <see langword="false"/>: this log lives in one process, so replays only observe
+    /// operations accepted by this node since it started. Checkpoint-style consumers guard on
+    /// this in multi-node deployments (honua-server#2999).
+    /// </remarks>
+    public bool SupportsReplicaSharedReplay => false;
+
+    /// <inheritdoc />
     public Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default)

@@ -42,6 +42,9 @@ internal static class CollaborationSessionServices
         services.AddHostedService<CollaborationSessionPruneService>();
         services.AddFeatureLockCollaboration();
         services.AddSavedMapOperationLog();
+        // Checkpoint-facing facade pairing the full-log replay with the replica-continuity
+        // proof that gates it (honua-server#2999); keeps the endpoint within DI limits.
+        services.TryAddSingleton<Checkpoints.SavedMapCheckpointOperationLog>();
         return services;
     }
 }

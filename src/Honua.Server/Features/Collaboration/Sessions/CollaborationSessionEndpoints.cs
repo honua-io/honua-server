@@ -54,7 +54,9 @@ internal static class CollaborationSessionEndpoints
         HttpContext context)
     {
         var result = await sessions.JoinAsync(
-                mapId,
+                // One canonical session/log key per draft regardless of the GUID textual form in
+                // the route (honua-server#2999): sessions, appends, replay, and checkpoints agree.
+                SavedMapCollaborationMapId.Normalize(mapId),
                 request,
                 context.User,
                 context.RequestAborted)

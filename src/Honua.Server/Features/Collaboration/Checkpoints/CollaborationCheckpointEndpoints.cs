@@ -41,7 +41,8 @@ internal static class CollaborationCheckpointEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleCheckpoint(
@@ -49,7 +50,7 @@ internal static class CollaborationCheckpointEndpoints
         [FromBody] CollaborationCheckpointRequest request,
         [FromServices] IStudioPackageLifecycleService lifecycle,
         [FromServices] StudioEndpointAuthorization authorization,
-        [FromServices] ISavedMapOperationLogRepository operationLog,
+        [FromServices] SavedMapCheckpointOperationLog operationLog,
         [FromServices] ILogger<CollaborationCheckpointEndpointsMarker> logger,
         HttpContext context)
     {
@@ -57,6 +58,25 @@ internal static class CollaborationCheckpointEndpoints
         {
             return StandardErrorHelpers.CreateNotFound(
                 context, "The map id does not resolve to a Studio package draft.");
+        }
+
+        // Sessions, appends, replay, and checkpoints must share ONE log key per draft, so the
+        // route value (which authorization accepts in any GUID textual form) is canonicalized
+        // to the "D" form before touching the op log.
+        var canonicalMapId = SavedMapCollaborationMapId.Normalize(mapId);
+
+        // A distributed deployment routes an append and its checkpoint to arbitrary nodes, but
+        // a process-local op log only replays operations accepted by THIS node — a replay here
+        // could silently omit accepted edits and mint an incomplete immutable version. Fail
+        // closed with an honest error until the op log is backed by a replica-shared store
+        // (honua-server#2999); do not fake durability.
+        if (!operationLog.CanProveReplayContinuity)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map checkpoints are unavailable in multi-replica deployments until the " +
+                "collaboration operation log is backed by a replica-shared store; the " +
+                "process-local log cannot prove it observed every accepted edit.");
         }
 
         var draft = await lifecycle.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
@@ -99,25 +119,24 @@ internal static class CollaborationCheckpointEndpoints
                 context, itemDecision.Reason ?? "You are not allowed to checkpoint this saved map.");
         }
 
-        // Replay the retained log. All supported operation families are absolute-state, so
-        // replaying an already-applied prefix is idempotent. When the requested since-cursor has
-        // fallen out of the in-memory replay window the checkpoint MUST fail closed: pruned
-        // operations are not necessarily superseded by the retained tail (an old change to one
-        // field followed by many changes to another field would be silently dropped from the
-        // immutable version), so refuse to persist an incomplete state instead of guessing.
-        var sinceCursor = Math.Max(request.SinceCursor ?? 0, 0);
-        var replay = await operationLog.ReplayAsync(
-                new SavedMapId(mapId),
-                new SavedMapOperationCursor(sinceCursor),
-                context.RequestAborted)
+        // Replay the FULL retained log from the earliest provable cursor (0). The replay start
+        // is server-derived — a client-supplied cursor is never trusted, because the server does
+        // not track which cursor was last applied to the draft and an arbitrary client value
+        // could silently drop accepted operations from the immutable version. Replaying an
+        // already-applied prefix is idempotent: all supported operation families are
+        // absolute-state. When the start of the log has been pruned out of the retained window
+        // the checkpoint MUST fail closed: pruned operations are not necessarily superseded by
+        // the retained tail (an old change to one field followed by many changes to another
+        // field would be silently dropped), so refuse to persist an unprovable state.
+        var replay = await operationLog.ReplayAllAsync(canonicalMapId, context.RequestAborted)
             .ConfigureAwait(false);
         if (replay.Status == SavedMapOperationReplayStatus.ResyncRequired)
         {
             return StandardErrorHelpers.CreateConflict(
                 context,
-                "The requested operation cursor is outside the retained replay window; the " +
-                "checkpoint cannot prove it captures every accepted edit. Checkpoint more " +
-                "frequently or restart the session from the latest saved version.");
+                "The start of the operation log has been pruned out of the retained replay " +
+                "window; the checkpoint cannot prove it captures every accepted edit. " +
+                "Checkpoint more frequently or restart the session from the latest saved version.");
         }
 
         var actorId = ConsolePrincipal.ResolveActorId(context.User);
@@ -159,7 +178,7 @@ internal static class CollaborationCheckpointEndpoints
 
             var response = new CollaborationCheckpointResponse
             {
-                MapId = mapId,
+                MapId = canonicalMapId,
                 ItemId = version.ItemId,
                 VersionId = version.VersionId,
                 VersionNumber = version.VersionNumber,
@@ -223,18 +242,15 @@ internal static partial class CollaborationCheckpointLog
 }
 
 /// <summary>
-/// Request body for a live-session checkpoint.
+/// Request body for a live-session checkpoint. The replay window is server-derived (always the
+/// full retained log): a client-supplied cursor is deliberately NOT accepted, because the server
+/// does not track the draft's last-applied cursor and trusting an arbitrary client value could
+/// silently drop accepted operations from the immutable version (honua-server#2999).
 /// </summary>
 internal sealed record CollaborationCheckpointRequest
 {
     /// <summary>Optional change note recorded on the immutable version.</summary>
     public string? ChangeNote { get; init; }
-
-    /// <summary>
-    /// Optional operation cursor to replay from. Defaults to the empty-log base; supported
-    /// operation families are absolute-state, so replaying an already-applied prefix is safe.
-    /// </summary>
-    public long? SinceCursor { get; init; }
 }
 
 /// <summary>

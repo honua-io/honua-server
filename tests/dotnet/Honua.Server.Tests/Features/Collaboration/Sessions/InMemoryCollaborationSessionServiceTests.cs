@@ -163,7 +163,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         service.DrainEvents(follower.SessionId).Should().Contain(e =>
             e.Event.Type == CollaborationSessionEventTypes.Follow &&
             e.Event.ParticipantId == follower.ParticipantId &&
-            e.Event.Follow!.Following == false);
+            !e.Event.Follow!.Following);
     }
 
     [UnitTest]
@@ -323,8 +323,84 @@ public sealed class InMemoryCollaborationSessionServiceTests
     {
         public List<CollaborationEventEnvelope> Published { get; } = [];
 
+        public bool IsDistributed => false;
+
         public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
     }
+
+    [UnitTest]
+    public async Task ApplyRemoteEvent_LowerOriginSequence_RestampsDestinationMonotonic()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
+        _ = service.DrainEvents(local.SessionId);
+        var lastLocalSequence = service.GetSnapshot("map-a").Sequence;
+
+        // A remote node broadcast this operation with ITS node-local sequence (1), which is
+        // already far behind this node's stream; the v1 reducer would drop it un-restamped.
+        var remote = new CollaborationEventEnvelope
+        {
+            MapId = "map-a",
+            EventId = Guid.NewGuid().ToString("N"),
+            Sequence = 1,
+            Cursor = "1",
+            ServerTime = FixedUtcNow(),
+            ActorId = "peer",
+            Event = new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.OperationAppended,
+                Operation = CreateWireOperation("map-a", cursor: 1)
+            }
+        };
+
+        service.ApplyRemoteEvent(remote);
+
+        var delivered = service.DrainEvents(local.SessionId).Should().ContainSingle().Subject;
+        delivered.Event.Type.Should().Be(CollaborationSessionEventTypes.OperationAppended);
+        delivered.Sequence.Should().BeGreaterThan(lastLocalSequence);
+        // The authoritative op-log cursor inside the event payload is preserved unchanged.
+        delivered.Event.Operation!.Cursor.Should().Be("1");
+    }
+
+    [UnitTest]
+    public async Task PublishOperation_OperationEvictedFromFullOutbox_EmitsResyncRequired()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
+        _ = service.DrainEvents(local.SessionId);
+
+        // Never drain while more operations than the bounded outbox holds are committed: the
+        // oldest operation frames must not vanish silently.
+        var total = InMemoryCollaborationSessionService.MaxOutboxDepth + 5;
+        for (var i = 1; i <= total; i++)
+        {
+            service.PublishOperation("map-a", CreateWireOperation("map-a", cursor: i));
+        }
+
+        var drained = service.DrainEvents(local.SessionId);
+        drained.Should().Contain(e =>
+            e.Event.Type == CollaborationSessionEventTypes.Error &&
+            e.Event.Code == CollaborationErrorCodes.ResyncRequired &&
+            e.Event.ResyncRequired == true);
+        drained.Length.Should().BeLessThanOrEqualTo(InMemoryCollaborationSessionService.MaxOutboxDepth);
+        // The newest committed operation is still delivered after the resync notice.
+        drained[^1].Event.Operation!.Cursor.Should().Be(
+            total.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static CollaborationOperationWire CreateWireOperation(string mapId, long cursor) => new()
+    {
+        Id = $"op-{cursor}",
+        MapId = mapId,
+        Kind = "SetViewport",
+        Revision = cursor,
+        Sequence = cursor,
+        Cursor = cursor.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        AuthorId = "peer",
+        SubmittedAt = FixedUtcNow()
+    };
 
     private static DateTimeOffset FixedUtcNow() =>
         new(2026, 5, 12, 0, 0, 0, TimeSpan.Zero);
