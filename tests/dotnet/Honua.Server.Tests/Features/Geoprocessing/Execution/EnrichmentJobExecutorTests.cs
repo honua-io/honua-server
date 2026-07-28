@@ -197,6 +197,49 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_InlineSourceWithNonDefaultOutSrid_IsRejected()
+    {
+        // Codex P1: inline GeoJSON is WGS 84 by specification, so it cannot be joined
+        // against a dataset reprojected to another CRS — reject rather than silently
+        // comparing 4326 input ordinates against reprojected dataset ordinates.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("input", InlineFeatureCollection(PointNtsFeature(5, 5))),
+            ("outSrid", "3857"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("outSrid");
+    }
+
+    [UnitTest]
+    public async Task Enrich_CallerCannotRaiseInputCapAboveOperatorCeiling()
+    {
+        // Codex P2: the cap is an operator ceiling a caller may only LOWER, so an
+        // int.MaxValue request cannot disable the streaming guard.
+        var source = new RecordingDagFeatureSource(
+            HonuaLayerSourceId,
+            new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+            {
+                [SourceLayerId] = DefaultSourceFeatures(),
+                [DatasetLayerId] = DefaultDatasetFeatures(),
+            });
+        var services = ServicesWith(source, Dataset());
+
+        var (status, _) = await RunAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("maxInputFeatures", int.MaxValue.ToString(CultureInfo.InvariantCulture)));
+
+        // The job still runs (the seed layers are tiny); the point is the requested cap
+        // is clamped rather than honoured verbatim.
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task Enrich_UnknownDataset_FailsWithClearMessage()
     {
         var services = DefaultServices(dataset: null);
