@@ -49,6 +49,13 @@ public sealed class GeocoderReferenceCsvTests
     }
 
     [Fact]
+    public async Task ReadRecordsAsync_TextAfterClosingQuote_Throws()
+    {
+        await Assert.ThrowsAsync<GeocoderReferenceDataImportException>(
+            () => ReadAllAsync("a,b\n\"380 Main\"oops,-117\n"));
+    }
+
+    [Fact]
     public async Task ReadRecordsAsync_UnterminatedQuote_Throws()
     {
         await Assert.ThrowsAsync<GeocoderReferenceDataImportException>(() => ReadAllAsync("a,b\n\"open,2\n"));

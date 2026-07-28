@@ -60,8 +60,16 @@ internal static class GeocoderReferenceCsv
                         continue;
                     }
 
-                    // Closing quote: fall through and process c as an unquoted character.
+                    // Closing quote: only a delimiter or record terminator may follow. Anything
+                    // else ("380 Main"oops,...) is malformed input that must not be silently
+                    // folded into the field value.
                     inQuotes = false;
+                    if (c is not (',' or '\r' or '\n'))
+                    {
+                        throw new GeocoderReferenceDataImportException(
+                            "The reference data CSV is malformed: a closing quote must be followed " +
+                            "by a comma or end of record.");
+                    }
                 }
 
                 if (inQuotes)

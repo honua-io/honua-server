@@ -46,6 +46,8 @@ internal static class GeocodingReferenceDataImportEndpoints
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<ApiResponse<GeocoderReferenceDataImportResponse>>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .DisableAntiforgery();
     }
 

@@ -62,6 +62,10 @@ separator punctuation (commas/semicolons) replaced by spaces. The provider appli
 normalization to incoming queries, so a comma-formatted display address and a space-joined
 structured query normalize to the same text. Loaders should normalize on insert:
 
+> **Migrating pre-existing data:** if you loaded reference rows under the earlier rule (commas
+> preserved in `search_text`), re-normalize once so prefix matching keeps working:
+> `UPDATE honua_geocode_reference SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'));`
+
 ```sql
 INSERT INTO honua_geocode_reference
     (display_name, search_text, address_number, street_name, city, region, postal_code, country, address_type, geom)
