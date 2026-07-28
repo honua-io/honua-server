@@ -56,11 +56,11 @@ internal sealed partial class GeocoderReferenceDataImportService(
     private static readonly Dictionary<string, string[]> _roleAliases = new(StringComparer.Ordinal)
     {
         [RoleDisplayName] = ["displayname", "display_name", "full_addr", "fulladdr", "address", "singleline", "single_line", "match_addr"],
-        [RoleAddressNumber] = ["addressnumber", "address_number", "house_num", "housenum", "house_number", "housenumber", "addr_num"],
+        [RoleAddressNumber] = ["addressnumber", "address_number", "house_num", "housenum", "house_number", "housenumber", "addr_num", "number"],
         [RoleStreetName] = ["streetname", "street_name", "st_name", "street"],
         [RoleCity] = ["city", "place", "placename", "place_name", "municipality"],
         [RoleRegion] = ["region", "state", "province", "state_abbr", "st_abbrev"],
-        [RolePostalCode] = ["postalcode", "postal_code", "postal", "zip", "zipcode", "zip_code"],
+        [RolePostalCode] = ["postalcode", "postal_code", "postal", "zip", "zipcode", "zip_code", "postcode"],
         [RoleCountry] = ["country", "country_code", "countrycode", "nation"],
         [RoleNeighborhood] = ["neighborhood", "nbrhd", "district"],
         [RoleAddressType] = ["addresstype", "address_type", "addr_type"],
@@ -77,6 +77,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
         using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.reference_import");
         activity?.SetTag("honua.operation", "reference_import");
+        activity?.SetTag("honua.protocol", "admin");
 
         try
         {
@@ -419,20 +420,22 @@ internal sealed partial class GeocoderReferenceDataImportService(
         var componentText = string.Join(' ', new[] { streetLine, neighborhood, city, region, postalCode, country }
             .Where(static p => !string.IsNullOrWhiteSpace(p)));
         string searchSource;
-        if (streetLine.Length == 0 && Get(RoleDisplayName) is not null)
+        if (Get(RoleDisplayName) is not null)
         {
-            // No structured street columns: the display address is the only street text.
-            // Base the searchable value on it and fold in locality components it doesn't
-            // already contain, so neither the street nor the locality becomes unsearchable.
+            // An explicit display address may carry components (house number, locality) that
+            // the structured mapping lacks, so it is always preserved; structured components
+            // it does not already contain are folded in without duplication. Separator
+            // punctuation is canonicalized by the shared normalizer, so a comma-formatted
+            // display address still scores exact against space-joined structured queries.
             var normalizedDisplay = GeocodeReferenceText.Normalize(displayName);
-            var extras = new[] { neighborhood, city, region, postalCode, country }
+            var extras = new[] { streetLine, neighborhood, city, region, postalCode, country }
                 .Where(static p => !string.IsNullOrWhiteSpace(p))
                 .Where(p => !normalizedDisplay.Contains(GeocodeReferenceText.Normalize(p!), StringComparison.Ordinal));
             searchSource = string.Join(' ', new[] { displayName }.Concat(extras));
         }
         else
         {
-            searchSource = componentText.Length > 0 ? componentText : displayName;
+            searchSource = componentText;
         }
 
         row = new ReferenceRow(
