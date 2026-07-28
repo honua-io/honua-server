@@ -115,7 +115,7 @@ internal static class GeocodingReferenceDataImportEndpoints
 
         if (referenceFile.Length > MaxReferenceBytes)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status413PayloadTooLarge,
                 $"The reference data CSV exceeds the {MaxReferenceBytes}-byte upload limit.");
         }
 
