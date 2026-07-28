@@ -157,6 +157,22 @@ internal static class GeoprocessingServiceCollectionExtensions
         //  - import.dataset durable import orchestration (#1630).
         AddProcessExecutors(services);
 
+        // Imagery/ML inference delegation (#2241): imagery.classify submits the
+        // source raster + a model reference to a configured cloud endpoint and
+        // lands the result as a GP artifact. DELIBERATELY DORMANT when
+        // unconfigured — no startup validation, no eager probe; an unconfigured
+        // deployment fails the job at execution with a clear message. Provider
+        // adapters sit behind IImageryInferenceClient; the generic 'http' REST
+        // adapter (OpenAI-compatible / hosted-ONNX / Azure ML online endpoints)
+        // is the supported backend in this build.
+        services
+            .AddOptions<Inference.ImageryInferenceOptions>()
+            .Bind(configuration.GetSection(Inference.ImageryInferenceOptions.SectionName));
+        services.AddHttpClient(Inference.HttpImageryInferenceClient.HttpClientName);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<Inference.IImageryInferenceClient, Inference.HttpImageryInferenceClient>());
+        Register<ImageryInferenceJobExecutor>(services);
+
         // First-class remote DAG source connectors (source.honua-layer,
         // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis).
         // One RemoteSourceExecutor is registered per source process id; each resolves

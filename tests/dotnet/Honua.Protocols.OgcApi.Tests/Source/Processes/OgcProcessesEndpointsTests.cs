@@ -236,6 +236,52 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_ImageryClassify_AdvertisesDelegatedInferenceDescriptors()
+    {
+        // #2241: the delegated imagery/ML inference lane is registered with
+        // conformant parameter descriptors. The process is advertised even when no
+        // inference backend is configured (execution then fails with a clear
+        // message — no silent stub), so discovery must always succeed.
+        var response = await _fixture.Client.GetAsync("/ogc/processes/processes/imagery.classify");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("id").GetString().Should().Be("imagery.classify");
+        root.GetProperty("inputs").TryGetProperty("model", out _).Should().BeTrue(
+            "the model reference input must be advertised");
+        root.GetProperty("inputs").TryGetProperty("source", out _).Should().BeTrue();
+        root.GetProperty("inputs").TryGetProperty("layerId", out _).Should().BeTrue(
+            "catalog-raster sourcing must be advertised alongside the inline source");
+        root.GetProperty("inputs").TryGetProperty("task", out _).Should().BeTrue();
+        // The backend decides whether classification lands as a raster map or as
+        // detected features, so both output shapes are advertised.
+        root.GetProperty("outputs").TryGetProperty("outputRaster", out _).Should().BeTrue();
+        root.GetProperty("outputs").TryGetProperty("outputFeatureLayer", out _).Should().BeTrue();
+        root.GetProperty("jobControlOptions").EnumerateArray()
+            .Select(e => e.GetString()).Should().Contain("async-execute");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_IncludesImageryInferenceProcess()
+    {
+        // #2241: imagery.classify appears in the process list for SDK/agent
+        // discovery alongside the vector and raster families.
+        var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = json.RootElement.GetProperty("processes").EnumerateArray()
+            .Select(p => p.GetProperty("id").GetString())
+            .ToArray();
+        ids.Should().Contain("imagery.classify");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesRasterSurfaceProcesses()
     {

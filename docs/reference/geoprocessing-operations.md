@@ -2,12 +2,13 @@
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The same catalog is exposed through three surfaces: OGC API Processes (`/ogc/processes/processes`), the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`), and gRPC `geospatial.v1.ProcessService`. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
-The catalog currently registers **96 processes** across 14 families. This page is regenerated from `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`; a catalog-vs-doc parity test (`tests/dotnet/Honua.Architecture.Tests/GeoprocessingCatalogDocParityTests.cs`) fails the build if a registered process id is missing here, and asserts this prose count matches the catalog.
+The catalog currently registers **97 processes** across 15 families. This page is regenerated from `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`; a catalog-vs-doc parity test (`tests/dotnet/Honua.Architecture.Tests/GeoprocessingCatalogDocParityTests.cs`) fails the build if a registered process id is missing here, and asserts this prose count matches the catalog.
 
 Execution notes that apply across families:
 
-- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 96 processes are native.
+- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 97 processes are native.
 - **Flagged / unsupported.** One native process is advertised so callers can *discover* the capability gap but **fails with a clear message when submitted** rather than silently substituting a different algorithm: `raster.interpolate-kriging` (no kriging backend in the worker image — use `raster.interpolate-idw`).
+- **Delegated cloud inference.** `imagery.classify` delegates ML inference to a configured cloud endpoint (`Geoprocessing:ImageryInference`) — Honua bundles no model runtime. When no backend is configured the process stays advertised but every execution fails with a clear "no cloud inference backend is configured" message (no silent stub, no fake result).
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
 - **Inline FeatureCollections.** Managed `*-managed`, `overlay.*`, `proximity.near*`, `statistics.*`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
@@ -127,6 +128,14 @@ Raster analysis and mutation executed by the GDAL worker via `gdalwarp` / `gdali
 | `raster.spectral-index` | Named spectral index (NDVI/NDWI/NDBI/SAVI/EVI) compiled to map-algebra. | `index`, `red`, `nir`, `green`, `swir`, `blue`, `L` |
 | `raster.reclassify` | Remap pixel values per a remap table (`gdal_calc.py`). | `remap`, `defaultValue`, `dataType` |
 | `gdal.gdalwarp` | Full PROJ-backed raster reprojection, including datum shifts the managed path rejects. | `source`, `targetSrs`, `sourceSrs` |
+
+## Imagery (1)
+
+Imagery/ML analysis by **delegation to cloud-native inference** — Honua GP orchestrates, a managed cloud endpoint runs the model (no model runtime is bundled, and there is no in-process GPU/model execution or training). Managed profile: the lean dispatcher performs the HTTP delegation itself. Configure the backend with `Geoprocessing:ImageryInference` (`Provider`, `Endpoint`, `ApiKey` — the key may be a secret reference resolved through the secret store, or the `HONUA_IMAGERY_INFERENCE_API_KEY` environment variable; it is never logged). The generic `http` provider (OpenAI-compatible, hosted-ONNX, or Azure ML online-endpoint style REST invocation) is supported end-to-end; `sagemaker`, `vertex`, and `azureml` SDK-authenticated adapters are recognized configuration values that fail clearly until their adapters land. With no backend configured, submissions validate but execution fails with a clear unavailability message.
+
+| Process ID | Description | Key parameters |
+| --- | --- | --- |
+| `imagery.classify` | Classification / segmentation / object detection on a raster scene via a configured cloud inference backend. The model is a *reference* into the backend. Lands either a classification/segmentation GeoTIFF (backend-preserved georeferencing, passed through byte-for-byte) or detected features as a GeoJSON FeatureCollection in the source CRS. | `source` (base64 GeoTIFF) or `layerId`/`rasterId`, `model`, `task` (`classification`/`segmentation`/`detection`), `confidenceThreshold` |
 
 ## Conversion (8)
 

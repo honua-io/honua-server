@@ -106,6 +106,7 @@ internal static class ProcessMigrationEvidenceClassifier
         return definition.Category switch
         {
             "surface" or "raster" => EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
+            "imagery" => EsriConstructCapabilityRegistry.Keys.GpImageryInference,
             "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) =>
                 EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
             "data-management" => EsriConstructCapabilityRegistry.Keys.GpDataManagement,
