@@ -46,6 +46,16 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         var clause = filter.SpatialRelationship switch
         {
+            // Envelope-only windowing path, mirroring the Postgres builder's
+            // CanUseEnvelopeOnlyPointIntersects: a viewport/tile bbox filter explicitly marked
+            // AllowEnvelopeOnly by the adapter may use the envelope predicate for point layers
+            // (MBR-vs-point IS the exact envelope-window semantic for points). This matters
+            // beyond performance on MySQL: geographic SRSes (e.g. EPSG:4326) interpret polygon
+            // edges as geodesics and reject pole-touching whole-hemisphere envelope rings as
+            // invalid (ST_IsValid = 0), so ST_Intersects against a zoom-0 tile envelope silently
+            // matches zero rows while MBRIntersects windows correctly (honua-server#2983).
+            SpatialRelationship.Intersects when CanUseEnvelopeOnlyPointIntersects(query, mapping, filter) =>
+                $"MBRIntersects({geomCol}, {filterGeom})",
             // MBRIntersects is index-eligible (uses SPATIAL index when available); ST_Intersects
             // refines the candidates to exact intersection. MySQL/MariaDB plan this combo well.
             SpatialRelationship.Intersects =>
@@ -80,6 +90,22 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
         sb.Append(CultureInfo.InvariantCulture, $" AND {clause}");
     }
+
+    /// <summary>
+    /// Mirrors the Postgres builder's envelope-only point-intersects gate: the adapter must
+    /// have explicitly marked the filter as an envelope-window request
+    /// (<see cref="SpatialFilter.IsSimpleEnvelope"/> + <see cref="SpatialFilter.AllowEnvelopeOnly"/>,
+    /// per the documented bbox windowing semantics), the layer must be point-typed (envelope
+    /// vs point is exact, not an approximation), and null-geometry rows must not be requested.
+    /// </summary>
+    private static bool CanUseEnvelopeOnlyPointIntersects(
+        FeatureQuery query,
+        MySqlLayerMapping mapping,
+        SpatialFilter filter)
+        => filter.IsSimpleEnvelope
+           && filter.AllowEnvelopeOnly
+           && mapping.GeometryType is GeometryType.Point or GeometryType.MultiPoint
+           && !query.IncludeNullGeometry;
 
     private static string AppendFilterGeometryParam(
         SpatialFilter filter,

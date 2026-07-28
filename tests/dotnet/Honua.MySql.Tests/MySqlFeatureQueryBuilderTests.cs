@@ -326,6 +326,72 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EnvelopeOnlyIntersectsOnPointLayer_UsesMbrOnly()
+    {
+        // Adapter-marked envelope windowing (IsSimpleEnvelope + AllowEnvelopeOnly, e.g. an
+        // OGC tile viewport bbox) on a point layer must use the MBR predicate alone: MBR vs
+        // point is the exact envelope-window semantic, and MySQL geographic SRSes treat a
+        // pole-touching whole-hemisphere envelope ring as invalid so ST_Intersects would
+        // silently match zero rows (honua-server#2983).
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 2,
+            TableName = "parcels_points",
+            SchemaName = "honua",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.Point
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x02, 0x03],
+                spatialRelationship: SpatialRelationship.Intersects,
+                srid: 4326,
+                isSimpleEnvelope: true,
+                allowEnvelopeOnly: true,
+                envelopeMinX: -180,
+                envelopeMinY: -90,
+                envelopeMaxX: 0,
+                envelopeMaxY: 90)
+        };
+
+        var result = builder.BuildSelectQuery(2, query);
+
+        Assert.Contains("MBRIntersects(`geom`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ST_Intersects", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_EnvelopeOnlyIntersectsOnPolygonLayer_KeepsExactIntersects()
+    {
+        // The envelope-only shortcut is point-layer-only (mirrors the Postgres builder's
+        // CanUseEnvelopeOnlyPointIntersects): for polygon layers MBR-vs-MBR over-matches,
+        // so the exact ST_Intersects refinement must stay.
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x02, 0x03],
+                spatialRelationship: SpatialRelationship.Intersects,
+                srid: 4326,
+                isSimpleEnvelope: true,
+                allowEnvelopeOnly: true,
+                envelopeMinX: -180,
+                envelopeMinY: -90,
+                envelopeMaxX: 0,
+                envelopeMaxY: 90)
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ST_Intersects", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithinFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter

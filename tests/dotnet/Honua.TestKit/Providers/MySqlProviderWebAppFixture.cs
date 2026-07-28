@@ -63,6 +63,11 @@ public sealed class MySqlProviderWebAppFixture : IAsyncLifetime
 
             ProviderSmokeHostConfiguration.ApplySettings(builder, new Dictionary<string, string?>
             {
+                // Grant Pro entitlements (dev/test-only knob) so the FeatureServer
+                // applyEdits smoke test reaches the provider's ReadOnlyFeatureWriter and
+                // proves the documented 405 rejection posture instead of stopping at the
+                // 402 entitlement gate (editing.featureserver-edits, honua-server#1591).
+                ["Licensing:DevGrantEdition"] = "Pro",
                 ["DataSource:Provider"] = "mysql",
                 ["MySql:ConnectionString"] = _container.GetConnectionString(),
                 ["MySql:EngineFlavor"] = "Mysql",
