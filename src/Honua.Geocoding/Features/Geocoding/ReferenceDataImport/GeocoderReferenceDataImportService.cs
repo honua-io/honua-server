@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Geocoding.Features.Geocoding.Domain;
@@ -28,6 +29,9 @@ internal sealed partial class GeocoderReferenceDataImportService(
     private const int BatchSize = 500;
     private const int MaxSkippedRowDetails = 25;
     private const int MaxReferenceRows = 2_000_000;
+
+    /// <summary>PostgreSQL NAMEDATALEN-1: identifiers longer than this are silently truncated.</summary>
+    private const int MaxIdentifierBytes = 63;
 
     // Canonical reference roles the loader can populate.
     private const string RoleDisplayName = "displayName";
@@ -393,13 +397,11 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
         // PostgreSQL text cannot represent U+0000; a dirty export carrying one would abort the
         // whole transaction as a server error, so reject the row as client data instead.
-        foreach (var index in mapping.Values.Distinct())
+        if (mapping.Values.Distinct()
+            .Any(index => index < record.Length && record[index].Contains('\0', StringComparison.Ordinal)))
         {
-            if (index < record.Length && record[index].Contains('\0', StringComparison.Ordinal))
-            {
-                reason = "Row contains a NUL (U+0000) character, which cannot be stored as text.";
-                return false;
-            }
+            reason = "Row contains a NUL (U+0000) character, which cannot be stored as text.";
+            return false;
         }
 
         var xText = Get(RoleX);
@@ -511,7 +513,12 @@ internal sealed partial class GeocoderReferenceDataImportService(
         CancellationToken cancellationToken)
     {
         // Documented reference schema: docs/reference/geocoding/local-postgis-geocoder.md (#2151).
-        var indexBase = "ix_" + (table.Length > 48 ? table[..48] : table);
+        // Index names are schema-wide, so a plain prefix truncation would let two tables sharing
+        // their first 48 characters collide — CREATE INDEX IF NOT EXISTS would then silently
+        // leave the second table unindexed. Append a stable digest of the full table name.
+        var indexBase = "ix_" + (table.Length > 48
+            ? table[..48] + "_" + StableSuffix(table)
+            : table);
 
         // Self-heal rows loaded under the pre-canonicalization rule (commas preserved).
         // Server migration 091 covers the default connection's table; this covers dedicated
@@ -619,12 +626,29 @@ internal sealed partial class GeocoderReferenceDataImportService(
         return name;
     }
 
+    /// <summary>
+    /// Stable 8-character lowercase-hex digest of the full identifier, used to keep truncated
+    /// index names distinct. Not security-sensitive — collision resistance for naming only.
+    /// </summary>
+    private static string StableSuffix(string value)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..8].ToLowerInvariant();
+
     private static void ValidateIdentifier(string identifier, string kind)
     {
         if (string.IsNullOrWhiteSpace(identifier) || !IdentifierRegex().IsMatch(identifier))
         {
             throw new GeocoderReferenceDataImportException(
                 $"The configured local geocoder reference {kind} is not a valid PostgreSQL identifier.");
+        }
+
+        // PostgreSQL truncates identifiers past NAMEDATALEN-1 (63 bytes) silently, so two
+        // configured names sharing a 63-byte prefix would address the same relation — and a
+        // replace-mode import would then delete the wrong dataset.
+        if (Encoding.UTF8.GetByteCount(identifier) > MaxIdentifierBytes)
+        {
+            throw new GeocoderReferenceDataImportException(
+                $"The configured local geocoder reference {kind} exceeds PostgreSQL's " +
+                $"{MaxIdentifierBytes}-byte identifier limit.");
         }
     }
 
