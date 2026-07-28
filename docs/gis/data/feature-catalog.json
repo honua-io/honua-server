@@ -725,8 +725,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentUseReturns404",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentPostIsServedStatelessly",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Delete_TerminatesSession_WhenFallbackDisabled_SubsequentUseReturns404"
       ],
       "proof_ledger_surface": "mcp-operator",
       "maturity": "implemented",
@@ -16566,9 +16567,11 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.PromptsList_AdvertisesCuratedCatalog",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithEventStreamAccept_ReturnsSseMessageFrame",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithIssuedSessionId_IsAccepted",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithMalformedSessionId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithOverlongSessionId_Returns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithSessionBoundToDifferentPrincipal_ReturnsStructuredAuthError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithSessionBoundToSamePrincipal_IsAccepted",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithUnknownSessionId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Request_WithUnknownWellFormedSessionId_IsServedStatelessly",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourceTemplatesList_AdvertisesParameterizedUris",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourcesList_ExcludesParameterizedUris",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.ResourcesRead_UnknownUri_ReturnsResourceNotFoundJsonRpcCode",
@@ -16586,7 +16589,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithFullScope_IsAuthorized",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithMatchingScope_IsAuthorized",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNarrowerScope_IsDeniedByScopeEvenThoughGrantPasses",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed"
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithIssuedSessionId_WhenFallbackDisabled_IsAccepted",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithUnknownSessionId_WhenFallbackDisabled_Returns404"
       ],
       "proof_ledger_surface": "mcp-operator",
       "maturity": "implemented",
