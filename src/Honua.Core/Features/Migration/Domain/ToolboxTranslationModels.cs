@@ -330,11 +330,10 @@ public static class ToolboxTranslationIssueCodes
     public const string UnsupportedConstruct = "unsupported-construct";
 
     /// <summary>
-    /// The tool maps no parameters onto a process that declares some, so static signature
-    /// analysis cannot assert executability. The canonical plan validator enforces
-    /// conditional input semantics (for example the mutually-substitutable
-    /// <c>source</c>/<c>layerId</c>/<c>rasterId</c> raster inputs) at submit time and may
-    /// still reject the execution.
+    /// The canonical plan validator would reject this mapping because it satisfies no
+    /// member of a conditionally-required input group (for example the
+    /// mutually-substitutable <c>source</c>/<c>layerId</c>/<c>rasterId</c> raster inputs),
+    /// even though every statically-<c>Required</c> parameter is mapped.
     /// </summary>
-    public const string UnverifiedConditionalInputs = "unverified-conditional-inputs";
+    public const string UnsatisfiedConditionalInputs = "unsatisfied-conditional-inputs";
 }

@@ -170,33 +170,61 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptyMappingOnAllOptionalProcess_FlagsUnverifiedConditionalInputs()
+    public void Validate_ProbeReportsMissingConditionalInput_ClassifiesUnsupported()
     {
         // Every parameter of test.optional-only is statically optional, so no
-        // missing-required-parameter issue fires; the canonical plan validator can still
-        // reject the execution, so the tool must not be claimed translated.
+        // missing-required-parameter issue fires. The canonical probe still rejects the
+        // mapping, and the tool must not be certified.
         var report = ToolboxTranslationValidator.Validate(
-            Manifest(Tool("AspectLikeTool", "test.optional-only")),
-            new FakeCatalog());
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("unit", "units"))),
+            new FakeCatalog(),
+            new FakeProbe(["source", "layerId"]));
 
         var tool = report.Tools.Single();
-        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Classification.Should().Be(ToolboxToolClassifications.Unsupported);
         tool.ProcessId.Should().Be("test.optional-only");
         tool.Issues.Single().Code.Should()
-            .Be(ToolboxTranslationIssueCodes.UnverifiedConditionalInputs);
+            .Be(ToolboxTranslationIssueCodes.UnsatisfiedConditionalInputs);
         report.Summary.TranslatedCount.Should().Be(0);
     }
 
     [Fact]
-    public void Validate_MappedOptionalParameter_DoesNotFlagConditionalInputs()
+    public void Validate_ProbeSatisfiedByMappedOptionalInput_IsTranslated()
     {
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_raster", "source"))),
-            new FakeCatalog());
+            new FakeCatalog(),
+            new FakeProbe(["source", "layerId"]));
 
         var tool = report.Tools.Single();
         tool.Classification.Should().Be(ToolboxToolClassifications.Translated);
         tool.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_WithoutProbe_FallsBackToStaticRequiredFlagsOnly()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only")),
+            new FakeCatalog());
+
+        report.Tools.Single().Classification.Should().Be(ToolboxToolClassifications.Translated);
+    }
+
+    [Fact]
+    public void Validate_ProbeNotConsultedWhenStaticRequiredParameterMissing()
+    {
+        // A statically-missing required parameter already makes the tool unsupported; the
+        // probe must not add a duplicate conditional issue on top of it.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("BufferTool", "test.buffer", Mapping("in_geom", "wkb"))),
+            new FakeCatalog(),
+            new FakeProbe(["nothing-supplied"]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Unsupported);
+        tool.Issues.Select(issue => issue.Code).Should()
+            .OnlyContain(code => code == ToolboxTranslationIssueCodes.MissingRequiredParameter);
     }
 
     [Fact]
@@ -236,6 +264,20 @@ public sealed class ToolboxTranslationValidatorTests
         SourceName = source,
         TargetParameter = target
     };
+
+    /// <summary>
+    /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
+    /// missing conditional input unless at least one member of the group is supplied.
+    /// </summary>
+    private sealed class FakeProbe(string[] requiredAnyOf) : IProcessConditionalInputProbe
+    {
+        public IReadOnlyList<string> FindMissingRequiredInputs(
+            string processId,
+            IReadOnlyCollection<string> suppliedParameterNames)
+            => requiredAnyOf.Any(name => suppliedParameterNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                ? []
+                : [$"Step requires one of {string.Join('/', requiredAnyOf)} for process '{processId}'."];
+    }
 
     private sealed class FakeCatalog : IProcessCatalog
     {
@@ -282,7 +324,8 @@ public sealed class ToolboxTranslationValidatorTests
             Parameters =
             [
                 Parameter("source", ProcessParameterValueType.Text, required: false),
-                Parameter("layerId", ProcessParameterValueType.LayerId, required: false)
+                Parameter("layerId", ProcessParameterValueType.LayerId, required: false),
+                Parameter("units", ProcessParameterValueType.Text, required: false)
             ],
             OutputArtifactKinds = []
         };

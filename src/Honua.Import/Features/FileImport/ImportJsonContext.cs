@@ -41,6 +41,7 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(OgcApiFeaturesMigrationEvidencePackFilterScope))]
 [JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
 [JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
+[JsonSerializable(typeof(System.Text.Json.JsonDocument))]
 [JsonSerializable(typeof(ToolboxTranslationManifest))]
 [JsonSerializable(typeof(ToolboxToolDescriptor))]
 [JsonSerializable(typeof(ToolboxToolDescriptor[]))]

@@ -24,8 +24,17 @@ public static class ToolboxTranslationValidator
     /// (non-blank toolbox name, known source format, at least one tool with a non-blank
     /// name); protocol adapters enforce structure before calling.</param>
     /// <param name="catalog">Canonical process catalog.</param>
+    /// <param name="conditionalInputProbe">
+    /// Optional seam onto the canonical plan validator's presence-based input requirements.
+    /// When supplied, a mapping that would be rejected at submit time (for example because
+    /// it satisfies no member of a mutually-substitutable input group) is reported instead
+    /// of being certified. When <c>null</c>, only static <c>Required</c> flags are checked.
+    /// </param>
     /// <returns>Per-tool classification report with round-tripped signatures.</returns>
-    public static ToolboxTranslationReport Validate(ToolboxTranslationManifest manifest, IProcessCatalog catalog)
+    public static ToolboxTranslationReport Validate(
+        ToolboxTranslationManifest manifest,
+        IProcessCatalog catalog,
+        IProcessConditionalInputProbe? conditionalInputProbe = null)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -37,7 +46,7 @@ public static class ToolboxTranslationValidator
 
         for (var i = 0; i < manifest.Tools.Length; i++)
         {
-            var tool = ValidateTool(manifest.Tools[i], catalog);
+            var tool = ValidateTool(manifest.Tools[i], catalog, conditionalInputProbe);
             tools[i] = tool;
             switch (tool.Classification)
             {
@@ -68,7 +77,10 @@ public static class ToolboxTranslationValidator
         };
     }
 
-    private static ToolboxToolTranslation ValidateTool(ToolboxToolDescriptor descriptor, IProcessCatalog catalog)
+    private static ToolboxToolTranslation ValidateTool(
+        ToolboxToolDescriptor descriptor,
+        IProcessCatalog catalog,
+        IProcessConditionalInputProbe? conditionalInputProbe)
     {
         var issues = new List<ToolboxTranslationIssue>();
 
@@ -161,17 +173,22 @@ public static class ToolboxTranslationValidator
 
         // Static Required flags are not the whole admissibility contract: several processes
         // declare mutually-substitutable optional inputs (for example the raster
-        // source/layerId/rasterId trio) that the canonical plan validator requires at submit
-        // time. A tool that maps nothing therefore cannot be asserted executable from the
-        // signature alone. Report the uncertainty explicitly rather than reimplementing the
-        // canonical conditional semantics here (which would fork validation behavior).
-        if (!missingRequired && bindings.Count == 0 && definition.Parameters.Count > 0)
+        // source/layerId/rasterId trio) that only the canonical plan validator enforces at
+        // submit time. Ask that validator through the shared probe rather than
+        // re-implementing its conditional rules here, so a tool this report certifies is
+        // one the submit path will actually accept.
+        if (!missingRequired && conditionalInputProbe is not null)
         {
-            issues.Add(new ToolboxTranslationIssue
+            var suppliedNames = bindings.Select(binding => binding.TargetParameter).ToArray();
+            foreach (var violation in conditionalInputProbe.FindMissingRequiredInputs(definition.ProcessId, suppliedNames))
             {
-                Code = ToolboxTranslationIssueCodes.UnverifiedConditionalInputs,
-                Message = $"Tool maps no parameters onto process '{definition.ProcessId}', which declares {definition.Parameters.Count} parameter(s); canonical plan validation may still reject the execution (conditional input requirements are enforced at submit time)."
-            });
+                missingRequired = true;
+                issues.Add(new ToolboxTranslationIssue
+                {
+                    Code = ToolboxTranslationIssueCodes.UnsatisfiedConditionalInputs,
+                    Message = $"Canonical plan validation would reject this mapping: {violation}"
+                });
+            }
         }
 
         // A tool that cannot supply a required parameter is not executable against the

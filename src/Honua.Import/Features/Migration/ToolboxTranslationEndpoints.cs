@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -45,19 +46,25 @@ internal static partial class ToolboxTranslationEndpoints
 
     private static async Task HandleValidateTranslation(HttpContext context)
     {
+        // The body is parsed as a document first so artifact identity can be judged on what
+        // the caller actually sent: an omitted property is not distinguishable from an
+        // explicit null once deserialized onto the manifest's non-nullable properties.
+        JsonDocument? document;
         ToolboxTranslationManifest? manifest;
         try
         {
-            manifest = await context.Request.ReadFromJsonAsync(
-                ImportJsonContext.Default.ToolboxTranslationManifest,
+            document = await context.Request.ReadFromJsonAsync(
+                ImportJsonContext.Default.JsonDocument,
                 context.RequestAborted).ConfigureAwait(false);
+            manifest = document?.Deserialize(ImportJsonContext.Default.ToolboxTranslationManifest);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             throw;
         }
-        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
-        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
+        // Intentionally generic: reading/deserializing can throw JsonException,
+        // NotSupportedException, or IOException for malformed/unreadable request bodies;
+        // map all of them to a 400 response.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
@@ -66,10 +73,19 @@ internal static partial class ToolboxTranslationEndpoints
             return;
         }
 
-        if (manifest is null)
+        using var bodyDocument = document;
+        if (manifest is null || bodyDocument is null || bodyDocument.RootElement.ValueKind != JsonValueKind.Object)
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context, "Request body is required.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var identityError = ValidateArtifactIdentity(bodyDocument.RootElement);
+        if (identityError is not null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context, identityError, StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -82,7 +98,8 @@ internal static partial class ToolboxTranslationEndpoints
         }
 
         var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-        var report = ToolboxTranslationValidator.Validate(Normalize(manifest), catalog);
+        var conditionalInputProbe = context.RequestServices.GetService<IProcessConditionalInputProbe>();
+        var report = ToolboxTranslationValidator.Validate(Normalize(manifest), catalog, conditionalInputProbe);
 
         Log.TranslationValidated(
             GetLogger(context),
@@ -97,27 +114,37 @@ internal static partial class ToolboxTranslationEndpoints
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
-    private static string? ValidateStructure(ToolboxTranslationManifest manifest)
+    /// <summary>
+    /// Rejects a payload that identifies as a different artifact or an unsupported schema
+    /// version instead of silently reinterpreting it under the v1 toolbox contract. Judged
+    /// on the raw document so an <em>omitted</em> identity (accepted as v1) stays
+    /// distinguishable from an explicit <c>null</c>/blank one (rejected).
+    /// </summary>
+    private static string? ValidateArtifactIdentity(JsonElement root)
     {
-        // Reject a payload that identifies as a different artifact or an unsupported schema
-        // version rather than silently reinterpreting it as the v1 toolbox contract. An
-        // absent field is treated as "the v1 toolbox manifest": source-generated
-        // deserialization leaves omitted properties unset rather than applying the records'
-        // initializers, so only an explicitly-supplied incompatible identity is rejected.
-        var artifactKind = manifest.ArtifactKind?.Trim();
-        if (!string.IsNullOrEmpty(artifactKind)
-            && !string.Equals(artifactKind, ToolboxTranslationArtifacts.ManifestKind, StringComparison.Ordinal))
+        if (root.TryGetProperty("artifactKind", out var kindElement)
+            && (kindElement.ValueKind != JsonValueKind.String
+                || !string.Equals(
+                    kindElement.GetString()?.Trim(),
+                    ToolboxTranslationArtifacts.ManifestKind,
+                    StringComparison.Ordinal)))
         {
             return $"artifactKind must be '{ToolboxTranslationArtifacts.ManifestKind}'.";
         }
 
-        var artifactVersion = manifest.ArtifactVersion?.Trim();
-        if (!string.IsNullOrEmpty(artifactVersion)
-            && !ToolboxTranslationArtifacts.SupportedManifestVersions.Contains(artifactVersion))
+        if (root.TryGetProperty("artifactVersion", out var versionElement)
+            && (versionElement.ValueKind != JsonValueKind.String
+                || !ToolboxTranslationArtifacts.SupportedManifestVersions.Contains(
+                    versionElement.GetString()?.Trim() ?? string.Empty)))
         {
             return $"artifactVersion must be one of: {string.Join(", ", ToolboxTranslationArtifacts.SupportedManifestVersions)}.";
         }
 
+        return null;
+    }
+
+    private static string? ValidateStructure(ToolboxTranslationManifest manifest)
+    {
         if (string.IsNullOrWhiteSpace(manifest.ToolboxName))
         {
             return "toolboxName is required.";

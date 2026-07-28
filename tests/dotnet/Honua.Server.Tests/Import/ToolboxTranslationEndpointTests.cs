@@ -278,8 +278,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_EmptyMappingOnOptionalParameterProcess_IsNotClaimedTranslated()
     {
         // surface.aspect declares source/layerId/rasterId as individually optional, but the
-        // canonical plan validator requires one of them. An empty mapping must therefore not
-        // be reported as executable.
+        // canonical plan validator requires one of them. Neither an empty mapping nor one
+        // that maps only an unrelated optional parameter may be reported as executable.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -303,7 +303,112 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         tool.GetProperty("classification").GetString().Should().NotBe("translated");
         tool.GetProperty("issues").EnumerateArray()
             .Select(issue => issue.GetProperty("code").GetString())
-            .Should().Contain("unverified-conditional-inputs");
+            .Should().Contain("unsatisfied-conditional-inputs");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_UnrelatedOptionalMappingOnly_IsNotClaimedTranslated()
+    {
+        // Mapping only 'azimuth' to surface.hillshade satisfies every statically-Required
+        // parameter, but ValidateSharedRasterSourceSemantics still rejects the plan for
+        // supplying none of source/layerId/rasterId.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ConditionalInputs",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "HillshadeAzimuthOnly",
+                  "targetProcessId": "surface.hillshade",
+                  "parameterMappings": [
+                    { "sourceName": "azimuth", "targetParameter": "azimuth" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        tool.GetProperty("parameterBindings").GetArrayLength().Should().Be(1);
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Contain("unsatisfied-conditional-inputs");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_SatisfiedConditionalInput_IsTranslated()
+    {
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ConditionalInputs",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "HillshadeWithSource",
+                  "targetProcessId": "surface.hillshade",
+                  "parameterMappings": [
+                    { "sourceName": "in_raster", "targetParameter": "source" },
+                    { "sourceName": "azimuth", "targetParameter": "azimuth" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_ExplicitNullArtifactKind_ReturnsBadRequest()
+    {
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "artifactKind": null,
+              "toolboxName": "NullKind",
+              "sourceFormat": "pyt",
+              "tools": [{ "toolName": "Anything" }]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("artifactKind");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_BlankArtifactVersion_ReturnsBadRequest()
+    {
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "artifactVersion": "   ",
+              "toolboxName": "BlankVersion",
+              "sourceFormat": "pyt",
+              "tools": [{ "toolName": "Anything" }]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("artifactVersion");
     }
 
     [IntegrationTest]
