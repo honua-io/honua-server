@@ -404,6 +404,7 @@ public sealed class CatalogExecutableConformanceTests
             new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),
+            new EnrichmentJobExecutor(scopeFactory, monitor, NullLogger<EnrichmentJobExecutor>.Instance),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),
