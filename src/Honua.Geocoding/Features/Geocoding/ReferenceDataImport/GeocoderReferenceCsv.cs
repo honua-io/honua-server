@@ -4,19 +4,19 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace Honua.Geocoding.Features.Geocoding.LocatorImport;
+namespace Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
 /// <summary>
-/// Minimal streaming RFC 4180 CSV record reader for locator reference data uploads.
+/// Minimal streaming RFC 4180 CSV record reader for geocoder reference data uploads.
 /// </summary>
 /// <remarks>
-/// Scoped to the locator import path: the shared feature-oriented CSV reader lives in the
+/// Scoped to the reference data import path: the shared feature-oriented CSV reader lives in the
 /// geometry satellite (<c>Honua.Geometry</c>, internal, <c>IFeature</c>-shaped), which the
 /// geocoding satellite cannot reference under the module dependency policy, so this reader
 /// handles the raw-record shape the reference loader needs (quoted fields, escaped quotes,
 /// CRLF/LF, streaming — no full-file buffering).
 /// </remarks>
-internal static class LocatorReferenceCsv
+internal static class GeocoderReferenceCsv
 {
     /// <summary>
     /// Streams CSV records (including the header row) from <paramref name="reader"/>. Records that
@@ -131,7 +131,7 @@ internal static class LocatorReferenceCsv
 
         if (inQuotes && !pendingQuote)
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 "The reference data CSV ends inside an unterminated quoted field.");
         }
 

@@ -13,38 +13,21 @@ using Xunit;
 namespace Honua.Server.Tests.Features.Geocoding;
 
 /// <summary>
-/// Integration coverage for the Esri <c>.loc</c>/<c>.lox</c> locator import (#2152): a classic
-/// text locator plus CSV reference data is imported into the local PostGIS geocoder and then
-/// served through GeocodeServer (forward, reverse, suggest) fully offline; unsupported locator
-/// constructs surface in an explicit translation report. Fixtures are deterministic in-test
-/// payloads — no licensed Esri software is involved.
+/// Integration coverage for the geocoder reference data import: CSV reference data is loaded into
+/// the local PostGIS geocoder and then served through GeocodeServer (forward, structured, reverse,
+/// suggest) fully offline; every CSV column lands in an explicit report and invalid rows are
+/// skipped with reasons. Fixtures are deterministic in-test payloads.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Geocoding)]
-public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
+public sealed class GeocoderReferenceDataImportEndpointTests : IAsyncLifetime
 {
+    private const string ImportRoute = "/api/v1/admin/geocoding/reference-data/import";
     private const string LocatorName = "RedlandsStreets";
-
-    private const string ClassicLoc = """
-        ; US Streets style address locator (deterministic test fixture)
-        Version = 8.1
-        CLSID = {AE5A3A0E-F756-11D2-9F4F-00C04F8ED1C4}
-        Category = Address
-        Fields = SingleLine
-        MinimumMatchScore = 60
-        MinimumCandidateScore = 10
-        SpellingSensitivity = 80
-        SideOffset = 20
-        SideOffsetUnits = Feet
-        EndOffset = 3
-        MatchIfScoresTie = TRUE
-        Interpolate = TRUE
-        BatchPresenceThreshold = 0.8
-        """;
 
     private const string ReferenceCsv =
         "HOUSE_NUM,STREET_NAME,CITY,STATE,ZIP,COUNTRY,POINT_X,POINT_Y,NOTES\n" +
-        "380,New York St,Redlands,CA,92373,US,-117.1956,34.0566,esri hq\n" +
+        "380,New York St,Redlands,CA,92373,US,-117.1956,34.0566,sample hq\n" +
         "1,Microsoft Way,Redmond,WA,98052,US,-122.1298,47.6396,msft hq\n" +
         "bad,Row,No,Coords,00000,US,not-a-number,34.0,broken\n" +
         "7,NaN St,Nowhere,ZZ,11111,US,NaN,NaN,non-finite coords\n";
@@ -80,11 +63,11 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
-    public async Task Import_ClassicLocatorWithReferenceData_ServesGeocodeServerRoundTrip()
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    public async Task Import_ReferenceCsv_ServesGeocodeServerRoundTrip()
     {
-        using var content = BuildImportForm(includeReference: true, includeIndex: true);
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var content = BuildImportForm();
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.OK, $"Import failed: {response.StatusCode}: {body}");
@@ -94,30 +77,24 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
         Assert.Equal(LocatorName, data.GetProperty("locatorName").GetString());
         Assert.Equal("local", data.GetProperty("provider").GetString());
-        Assert.True(data.GetProperty("referenceDataImported").GetBoolean());
         Assert.Equal(2, data.GetProperty("recordsImported").GetInt32());
         Assert.Equal(2, data.GetProperty("recordsSkipped").GetInt32());
 
-        // Match settings are recorded from the source locator.
-        var matchSettings = data.GetProperty("matchSettings");
-        Assert.Equal(60, matchSettings.GetProperty("minimumMatchScore").GetDouble());
-        Assert.Equal(80, matchSettings.GetProperty("spellingSensitivity").GetDouble());
+        // Skipped rows carry reasons (invalid number + non-finite coordinates).
+        var skipped = data.GetProperty("skippedRows").EnumerateArray().ToArray();
+        Assert.Equal(2, skipped.Length);
+        Assert.All(skipped, static r => Assert.False(string.IsNullOrWhiteSpace(r.GetProperty("reason").GetString())));
 
-        // The unsupported construct and the regenerated .lox index are reported explicitly.
+        // Every CSV column is reported: mapped columns as supported, the rest explicitly ignored.
         var report = data.GetProperty("report").EnumerateArray().ToArray();
-        Assert.Contains(report, e =>
-            e.GetProperty("item").GetString() == "BatchPresenceThreshold" &&
-            e.GetProperty("status").GetString() == "unsupported");
-        Assert.Contains(report, e =>
-            e.GetProperty("item").GetString() == "redlands.lox" &&
-            e.GetProperty("status").GetString() == "regenerated");
-
-        // The unmapped CSV column is reported, not silently dropped.
-        Assert.Contains(report, e =>
-            e.GetProperty("item").GetString() == "NOTES" &&
+        Assert.Contains(report, static e =>
+            e.GetProperty("column").GetString() == "STREET_NAME" &&
+            e.GetProperty("status").GetString() == "supported");
+        Assert.Contains(report, static e =>
+            e.GetProperty("column").GetString() == "NOTES" &&
             e.GetProperty("status").GetString() == "ignored");
 
-        // Round-trip: the imported locator serves forward geocode via GeocodeServer...
+        // Round-trip: the imported reference data serves forward geocode via GeocodeServer...
         using var forward = await _client.GetAsync(
             $"/rest/services/{LocatorName}/GeocodeServer/findAddressCandidates?singleLine=380+New+York+St+Redlands&f=json");
         Assert.Equal(HttpStatusCode.OK, forward.StatusCode);
@@ -157,65 +134,29 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
-    public async Task Import_WithoutReferenceData_ParsesAndClassifiesOnly()
-    {
-        using var content = BuildImportForm(includeReference: false, includeIndex: false);
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var data = payload.RootElement.GetProperty("data");
-
-        Assert.False(data.GetProperty("referenceDataImported").GetBoolean());
-        Assert.Equal(0, data.GetProperty("recordsImported").GetInt32());
-        Assert.True(data.GetProperty("report").GetArrayLength() > 0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
-    public async Task Import_BinaryProLocator_Returns400WithExplicitError()
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    public async Task Import_MissingReferenceDataFile_Returns400()
     {
         using var content = new MultipartFormDataContent();
-        var binary = new ByteArrayContent([0x50, 0x4B, 0x00, 0x01, 0x02, 0x03]);
-        binary.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        content.Add(binary, "locator", "pro-locator.loc");
+        content.Add(new StringContent(LocatorName), "locatorName");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("binary", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("referenceData", body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
-    public async Task Import_MissingLocatorFile_Returns400()
-    {
-        using var content = new MultipartFormDataContent();
-        var csv = new ByteArrayContent(Encoding.UTF8.GetBytes(ReferenceCsv));
-        csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
-        content.Add(csv, "referenceData", "redlands.csv");
-
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_ReferenceDataWithoutCoordinateColumns_Returns400()
     {
         using var content = new MultipartFormDataContent();
-        AddLocPart(content);
-        var csv = new ByteArrayContent(Encoding.UTF8.GetBytes("ADDRESS,CITY\n380 New York St,Redlands\n"));
-        csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
-        content.Add(csv, "referenceData", "no-coords.csv");
+        AddCsvPart(content, "ADDRESS,CITY\n380 New York St,Redlands\n", "no-coords.csv");
+        content.Add(new StringContent(LocatorName), "locatorName");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -224,62 +165,55 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_WithoutAdminCredentials_IsRejected()
     {
-        using var content = BuildImportForm(includeReference: false, includeIndex: false);
-        using var response = await _client.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var content = BuildImportForm();
+        using var response = await _client.PostAsync(ImportRoute, content);
 
         Assert.True(
             response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
             $"Expected 401/403 for anonymous import, got {(int)response.StatusCode}");
     }
 
-    private static MultipartFormDataContent BuildImportForm(bool includeReference, bool includeIndex)
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
+    public async Task Import_MalformedMultipartBody_Returns400()
     {
-        var content = new MultipartFormDataContent();
-        AddLocPart(content);
-
-        if (includeIndex)
+        using var request = new HttpRequestMessage(HttpMethod.Post, ImportRoute);
+        request.Content = new StringContent("not multipart at all", Encoding.UTF8);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data")
         {
-            // Deterministic stand-in for the opaque binary index sidecar.
-            var lox = new ByteArrayContent([0x00, 0x01, 0x02, 0x03]);
-            lox.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-            content.Add(lox, "index", "redlands.lox");
-        }
+            Parameters = { new NameValueHeaderValue("boundary", "\"missing\"") },
+        };
 
-        if (includeReference)
-        {
-            var csv = new ByteArrayContent(Encoding.UTF8.GetBytes(ReferenceCsv));
-            csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
-            content.Add(csv, "referenceData", "redlands.csv");
-        }
+        using var response = await _adminClient.SendAsync(request);
 
-        content.Add(new StringContent(LocatorName), "locatorName");
-        return content;
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("could not be parsed", body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_ReplaceWithNoImportableRows_Returns400AndPreservesData()
     {
-        using (var seed = BuildImportForm(includeReference: true, includeIndex: false))
+        using (var seed = BuildImportForm())
         {
-            using var seedResponse = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", seed);
+            using var seedResponse = await _adminClient.PostAsync(ImportRoute, seed);
             Assert.Equal(HttpStatusCode.OK, seedResponse.StatusCode);
         }
 
         using var content = new MultipartFormDataContent();
-        AddLocPart(content);
-        var csv = new ByteArrayContent(Encoding.UTF8.GetBytes(
+        AddCsvPart(content,
             "HOUSE_NUM,STREET_NAME,CITY,STATE,ZIP,COUNTRY,POINT_X,POINT_Y\n" +
-            "bad,Row,No,Coords,00000,US,not-a-number,also-bad\n"));
-        csv.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
-        content.Add(csv, "referenceData", "allbad.csv");
+            "bad,Row,No,Coords,00000,US,not-a-number,also-bad\n",
+            "allbad.csv");
         content.Add(new StringContent(LocatorName), "locatorName");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("left unchanged", body, StringComparison.Ordinal);
@@ -293,20 +227,20 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_FieldMapColumnServingMultipleRoles_Succeeds()
     {
-        using var content = BuildImportForm(includeReference: true, includeIndex: false);
+        using var content = BuildImportForm();
         content.Add(new StringContent("{\"displayName\":\"STREET_NAME\",\"streetName\":\"STREET_NAME\"}"), "fieldMap");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.OK, $"Import failed: {response.StatusCode}: {body}");
         using var payload = JsonDocument.Parse(body);
         var report = payload.RootElement.GetProperty("data").GetProperty("report").EnumerateArray().ToArray();
         Assert.Contains(report, static e =>
-            e.GetProperty("item").GetString() == "STREET_NAME" &&
+            e.GetProperty("column").GetString() == "STREET_NAME" &&
             e.GetProperty("status").GetString() == "supported" &&
             e.GetProperty("detail").GetString()!.Contains("displayName", StringComparison.Ordinal) &&
             e.GetProperty("detail").GetString()!.Contains("streetName", StringComparison.Ordinal));
@@ -314,13 +248,13 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_NullFieldMapValue_Returns400()
     {
-        using var content = BuildImportForm(includeReference: true, includeIndex: false);
+        using var content = BuildImportForm();
         content.Add(new StringContent("{\"x\":null}"), "fieldMap");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -329,24 +263,32 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GeocodingAdmin)]
-    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
     public async Task Import_MismatchedLocatorName_Returns400()
     {
         using var content = new MultipartFormDataContent();
-        AddLocPart(content);
+        AddCsvPart(content, ReferenceCsv, "redlands.csv");
         content.Add(new StringContent("SomeOtherLocator"), "locatorName");
 
-        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+        using var response = await _adminClient.PostAsync(ImportRoute, content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("does not match the geocode service name", body, StringComparison.Ordinal);
     }
 
-    private static void AddLocPart(MultipartFormDataContent content)
+    private static MultipartFormDataContent BuildImportForm()
     {
-        var loc = new ByteArrayContent(Encoding.UTF8.GetBytes(ClassicLoc));
-        loc.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        content.Add(loc, "locator", "redlands.loc");
+        var content = new MultipartFormDataContent();
+        AddCsvPart(content, ReferenceCsv, "redlands.csv");
+        content.Add(new StringContent(LocatorName), "locatorName");
+        return content;
+    }
+
+    private static void AddCsvPart(MultipartFormDataContent content, string csv, string fileName)
+    {
+        var part = new ByteArrayContent(Encoding.UTF8.GetBytes(csv));
+        part.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        content.Add(part, "referenceData", fileName);
     }
 }

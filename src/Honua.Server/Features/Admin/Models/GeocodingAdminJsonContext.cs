@@ -19,11 +19,10 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(GeocodingProviderDetail))]
 [JsonSerializable(typeof(GeocodingProviderDetail[]))]
 [JsonSerializable(typeof(GeocodingProviderCapabilitiesDto))]
-[JsonSerializable(typeof(ApiResponse<EsriLocatorImportResponse>))]
-[JsonSerializable(typeof(EsriLocatorImportResponse))]
-[JsonSerializable(typeof(EsriLocatorReportEntryDto[]))]
-[JsonSerializable(typeof(EsriLocatorSkippedRowDto[]))]
-[JsonSerializable(typeof(EsriLocatorMatchSettingsDto))]
+[JsonSerializable(typeof(ApiResponse<GeocoderReferenceDataImportResponse>))]
+[JsonSerializable(typeof(GeocoderReferenceDataImportResponse))]
+[JsonSerializable(typeof(GeocoderReferenceReportEntryDto[]))]
+[JsonSerializable(typeof(GeocoderReferenceSkippedRowDto[]))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class GeocodingAdminJsonContext : JsonSerializerContext
 {

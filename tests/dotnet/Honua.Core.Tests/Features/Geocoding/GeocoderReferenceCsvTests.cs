@@ -1,15 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Geocoding.Features.Geocoding.LocatorImport;
+using Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
 /// <summary>
-/// Unit coverage for the streaming CSV record reader used by the Esri locator reference data
-/// loader (#2152).
+/// Unit coverage for the streaming CSV record reader used by the geocoder reference data loader.
 /// </summary>
-public sealed class LocatorReferenceCsvTests
+public sealed class GeocoderReferenceCsvTests
 {
     [Fact]
     public async Task ReadRecordsAsync_PlainRecords_ParsesFieldsAndSkipsBlankLines()
@@ -52,14 +51,14 @@ public sealed class LocatorReferenceCsvTests
     [Fact]
     public async Task ReadRecordsAsync_UnterminatedQuote_Throws()
     {
-        await Assert.ThrowsAsync<EsriLocatorImportException>(() => ReadAllAsync("a,b\n\"open,2\n"));
+        await Assert.ThrowsAsync<GeocoderReferenceDataImportException>(() => ReadAllAsync("a,b\n\"open,2\n"));
     }
 
     private static async Task<List<string[]>> ReadAllAsync(string csv)
     {
         using var reader = new StringReader(csv);
         var records = new List<string[]>();
-        await foreach (var record in LocatorReferenceCsv.ReadRecordsAsync(reader))
+        await foreach (var record in GeocoderReferenceCsv.ReadRecordsAsync(reader))
         {
             records.Add(record);
         }

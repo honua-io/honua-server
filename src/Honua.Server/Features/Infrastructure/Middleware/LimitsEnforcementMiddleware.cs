@@ -148,7 +148,7 @@ internal sealed class LimitsEnforcementMiddleware(
             return _limits.Imports.MaxImportSize;
         }
 
-        if (IsLocatorImportUpload(path))
+        if (IsGeocoderReferenceImportUpload(path))
         {
             return _limits.Imports.MaxImportSize;
         }
@@ -178,8 +178,8 @@ internal sealed class LimitsEnforcementMiddleware(
     private static bool IsImportUpload(string path)
         => path.Contains("/admin/import/upload", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsLocatorImportUpload(string path)
-        => path.Contains("/admin/geocoding/locators/import", StringComparison.OrdinalIgnoreCase);
+    private static bool IsGeocoderReferenceImportUpload(string path)
+        => path.Contains("/admin/geocoding/reference-data/import", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsRasterImportUpload(string path)
         => path.Contains("/admin/import/raster", StringComparison.OrdinalIgnoreCase) &&

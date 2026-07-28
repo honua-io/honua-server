@@ -2,8 +2,8 @@
 
 The local geocoder (`provider = "local"`) is a self-hosted, offline geocoding backend that runs
 entirely against a PostGIS reference dataset you load yourself. It makes **no external service
-calls**, so it is suitable for air-gapped and data-sovereignty deployments and is the substrate the
-Esri `.loc`/`.lox` locator import targets.
+calls**, so it is suitable for air-gapped and data-sovereignty deployments; the admin reference data
+import loads records into it.
 
 It plugs into the shared geocoding provider abstraction, so once enabled it is served through the
 same `GeocodeServer` endpoints (`findAddressCandidates`, `reverseGeocode`, `suggest`,
@@ -73,9 +73,9 @@ VALUES
 ## Load path
 
 1. Create the table and indexes (above).
-2. Bulk-load reference records (e.g. address points, OpenAddresses extracts, or an imported Esri
-   locator) with `COPY`/`INSERT`, populating `search_text` with the normalized form and `geom` as a
-   WGS84 point.
+2. Bulk-load reference records (e.g. address points or OpenAddresses extracts) with
+   `COPY`/`INSERT` — or the admin reference data import endpoint below — populating `search_text`
+   with the normalized form and `geom` as a WGS84 point.
 3. `ANALYZE honua_geocode_reference;`
 
 ## Configuration
@@ -100,28 +100,25 @@ VALUES
 }
 ```
 
-## Importing an Esri `.loc`/`.lox` locator
+## Importing reference data
 
-`POST /api/v1/admin/geocoding/locators/import` (admin-authorized, `multipart/form-data`) imports a
-classic Esri address locator into the reference table above so it can be served through
-GeocodeServer by the local provider:
+`POST /api/v1/admin/geocoding/reference-data/import` (admin-authorized, `multipart/form-data`)
+loads CSV reference data into the reference table above so it can be served through GeocodeServer
+by the local provider:
 
 | Part | Required | Content |
 | --- | --- | --- |
-| `locator` | yes | Classic text `.loc` definition (`key = value` properties). ArcGIS Pro binary locator payloads are rejected with an explicit error. |
-| `index` | no | `.lox` binary index sidecar. It is never parsed — equivalent match indexes are rebuilt in PostGIS — and is reported as `regenerated`. |
-| `referenceData` | no | CSV (header row required) with the locator's reference records. When omitted, the locator is parsed and classified only. |
+| `referenceData` | yes | CSV (header row required) with the geocodable records. |
 | `locatorName` | no | Must match the configured `Geocoding:LocatorName` service name (case-insensitive) when supplied; defaults to it when omitted. The server registers a single GeocodeServer locator route, so any other name is rejected with `400` until per-locator registration exists. |
 | `mode` | no | `replace` (default) clears the reference table first; `append` adds to it. |
-| `fieldMap` | no | JSON object mapping canonical roles (`displayName`, `addressNumber`, `streetName`, `city`, `region`, `postalCode`, `country`, `neighborhood`, `addressType`, `x`, `y`) to CSV column names. Roles not listed are auto-mapped from well-known Esri reference field aliases (`HOUSE_NUM`, `STREET_NAME`, `ZIP`, `POINT_X`, ...). |
+| `fieldMap` | no | JSON object mapping canonical roles (`displayName`, `addressNumber`, `streetName`, `city`, `region`, `postalCode`, `country`, `neighborhood`, `addressType`, `x`, `y`) to CSV column names. Roles not listed are auto-mapped from well-known header aliases commonly found in address-point exports (`HOUSE_NUM`, `STREET_NAME`, `ZIP`, `POINT_X`, `LON`, `LAT`, ...). |
 
 Coordinates must be WGS84 longitude/latitude. `search_text` is populated with the same
-normalization the provider applies at query time. The response contains a **translation report**
-with one entry per source construct (`supported`, `unsupported`, `regenerated`, or `ignored`) —
-unsupported locator features (composite locators, alternate-name tables, non-WGS84 coordinate
-systems, unknown properties) are reported explicitly rather than silently dropped. Match settings
-(`MinimumMatchScore`, `SpellingSensitivity`, offsets, ...) are recorded verbatim in the response;
-applying them to runtime candidate scoring is not yet implemented.
+normalization the provider applies at query time. The response contains a **column report** with
+one entry per CSV header column (`supported` with the mapped roles, or `ignored`) — unmapped
+columns are reported explicitly rather than silently dropped — plus per-row skip reasons for rows
+with missing/invalid coordinates or no address text. A `replace`-mode import that would load zero
+rows is aborted and the existing reference data is left unchanged.
 
 ## Scoring
 

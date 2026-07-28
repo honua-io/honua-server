@@ -12,18 +12,18 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Geocoding.Features.Geocoding.LocatorImport;
+namespace Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
 /// <summary>
-/// Default <see cref="IEsriLocatorImportService"/>: parses classic Esri <c>.loc</c> locator
-/// definitions, classifies every construct into an explicit translation report, and materializes
-/// supplied reference data into the local PostGIS geocoder reference table (#2152) using the same
+/// Default <see cref="IGeocoderReferenceDataImportService"/>: maps CSV reference data columns to
+/// the canonical reference roles, classifies every header column into an explicit report, and
+/// materializes the records into the local PostGIS geocoder reference table using the same
 /// documented schema and <c>search_text</c> normalization the local provider queries (#2151).
 /// </summary>
-internal sealed partial class EsriLocatorImportService(
+internal sealed partial class GeocoderReferenceDataImportService(
     IConfiguration configuration,
     IOptionsMonitor<LocalGeocoderProviderConfiguration> localConfiguration,
-    ILogger<EsriLocatorImportService> logger) : IEsriLocatorImportService
+    ILogger<GeocoderReferenceDataImportService> logger) : IGeocoderReferenceDataImportService
 {
     private const int BatchSize = 500;
     private const int MaxSkippedRowDetails = 25;
@@ -48,8 +48,11 @@ internal sealed partial class EsriLocatorImportService(
         RolePostalCode, RoleCountry, RoleNeighborhood, RoleAddressType, RoleX, RoleY,
     ];
 
-    // Well-known Esri reference-data field name aliases, per role. Matched case-insensitively
-    // against CSV header columns when no explicit fieldMap override is supplied.
+    // Well-known reference-data header aliases, per role, matched case-insensitively against CSV
+    // header columns when no explicit fieldMap override is supplied. Covers the column names
+    // commonly found in address-point exports (including Esri-style exports such as HOUSE_NUM or
+    // POINT_X — plain header names, no proprietary file format involved) and OpenAddresses-style
+    // extracts.
     private static readonly Dictionary<string, string[]> _roleAliases = new(StringComparer.Ordinal)
     {
         [RoleDisplayName] = ["displayname", "display_name", "full_addr", "fulladdr", "address", "singleline", "single_line", "match_addr"],
@@ -66,19 +69,18 @@ internal sealed partial class EsriLocatorImportService(
     };
 
     /// <inheritdoc />
-    public async Task<EsriLocatorImportResult> ImportAsync(
-        EsriLocatorImportRequest request,
+    public async Task<GeocoderReferenceDataImportResult> ImportAsync(
+        GeocoderReferenceDataImportRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.locator_import");
-        activity?.SetTag("honua.operation", "locator_import");
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.reference_import");
+        activity?.SetTag("honua.operation", "reference_import");
 
         try
         {
             var result = await ImportCoreAsync(request, activity, cancellationToken).ConfigureAwait(false);
-            activity?.SetTag("honua.geocoding.reference_imported", result.ReferenceDataImported);
             activity?.SetTag("honua.geocoding.records_imported", result.RecordsImported);
             activity?.SetTag("honua.geocoding.records_skipped", result.RecordsSkipped);
             return result;
@@ -90,43 +92,17 @@ internal sealed partial class EsriLocatorImportService(
         }
     }
 
-    private async Task<EsriLocatorImportResult> ImportCoreAsync(
-        EsriLocatorImportRequest request,
+    private async Task<GeocoderReferenceDataImportResult> ImportCoreAsync(
+        GeocoderReferenceDataImportRequest request,
         Activity? activity,
         CancellationToken cancellationToken)
     {
         var locatorName = ResolveLocatorName(request);
         activity?.SetTag("honua.geocoding.locator", locatorName);
-        var report = new List<LocatorTranslationEntry>();
-        var definition = EsriLocFileParser.Parse(request.LocContent.Span, locatorName, report);
-
-        if (!string.IsNullOrWhiteSpace(request.IndexFileName))
-        {
-            // Behavior note: the .lox sidecar is a generated match index. It is intentionally not
-            // parsed — the local geocoder rebuilds equivalent structures as PostGIS indexes — so it
-            // is reported as regenerated rather than silently accepted or dropped.
-            report.Add(new LocatorTranslationEntry(
-                request.IndexFileName,
-                LocatorTranslationStatus.Regenerated,
-                "The .lox binary index is not read; equivalent match indexes are rebuilt in PostGIS."));
-        }
 
         var config = localConfiguration.CurrentValue;
         ValidateIdentifier(config.Schema, "schema");
         ValidateIdentifier(config.Table, "table");
-
-        if (request.ReferenceData is null)
-        {
-            LogParsedOnly(logger, locatorName, report.Count);
-            return new EsriLocatorImportResult
-            {
-                Definition = definition,
-                Schema = config.Schema,
-                Table = config.Table,
-                ReferenceDataImported = false,
-                Report = report,
-            };
-        }
 
         var connectionString = !string.IsNullOrWhiteSpace(config.ConnectionString)
             ? config.ConnectionString
@@ -134,35 +110,35 @@ internal sealed partial class EsriLocatorImportService(
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 "The local geocoder has no reference database configured. Set " +
                 "Geocoding:Providers:Local:ConnectionString or ConnectionStrings:DefaultConnection.");
         }
 
+        var report = new List<ReferenceColumnReportEntry>();
         int imported;
         int skippedCount;
-        List<LocatorImportSkippedRow> skippedRows;
+        List<ReferenceImportSkippedRow> skippedRows;
 
         try
         {
             (imported, skippedCount, skippedRows) = await LoadReferenceDataAsync(
-                request, definition, config, connectionString, report, cancellationToken).ConfigureAwait(false);
+                request, config, connectionString, report, cancellationToken).ConfigureAwait(false);
         }
         catch (NpgsqlException ex)
         {
             LogReferenceStoreFailure(logger, locatorName, ex);
-            throw new EsriLocatorImportException(
-                "The geocoder reference store rejected the locator import.", ex);
+            throw new GeocoderReferenceDataImportStoreException(
+                "The geocoder reference store failed during the reference data import.", ex);
         }
 
         LogImported(logger, locatorName, imported, skippedCount);
 
-        return new EsriLocatorImportResult
+        return new GeocoderReferenceDataImportResult
         {
-            Definition = definition,
+            LocatorName = locatorName,
             Schema = config.Schema,
             Table = config.Table,
-            ReferenceDataImported = true,
             RecordsImported = imported,
             RecordsSkipped = skippedCount,
             SkippedRows = skippedRows,
@@ -170,21 +146,20 @@ internal sealed partial class EsriLocatorImportService(
         };
     }
 
-    private static async Task<(int Imported, int Skipped, List<LocatorImportSkippedRow> SkippedRows)> LoadReferenceDataAsync(
-        EsriLocatorImportRequest request,
-        EsriLocatorDefinition definition,
+    private static async Task<(int Imported, int Skipped, List<ReferenceImportSkippedRow> SkippedRows)> LoadReferenceDataAsync(
+        GeocoderReferenceDataImportRequest request,
         LocalGeocoderProviderConfiguration config,
         string connectionString,
-        List<LocatorTranslationEntry> report,
+        List<ReferenceColumnReportEntry> report,
         CancellationToken cancellationToken)
     {
-        using var textReader = new StreamReader(request.ReferenceData!, Encoding.UTF8, leaveOpen: true);
-        var records = LocatorReferenceCsv.ReadRecordsAsync(textReader, cancellationToken);
+        using var textReader = new StreamReader(request.ReferenceData, Encoding.UTF8, leaveOpen: true);
+        var records = GeocoderReferenceCsv.ReadRecordsAsync(textReader, cancellationToken);
 
         await using var enumerator = records.GetAsyncEnumerator(cancellationToken);
         if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
         {
-            throw new EsriLocatorImportException("The reference data CSV is empty; a header row is required.");
+            throw new GeocoderReferenceDataImportException("The reference data CSV is empty; a header row is required.");
         }
 
         var header = enumerator.Current;
@@ -208,7 +183,7 @@ internal sealed partial class EsriLocatorImportService(
         var batch = new ReferenceRowBatch(BatchSize);
         var imported = 0;
         var skippedCount = 0;
-        var skippedRows = new List<LocatorImportSkippedRow>();
+        var skippedRows = new List<ReferenceImportSkippedRow>();
         var rowNumber = 0;
 
         while (await enumerator.MoveNextAsync().ConfigureAwait(false))
@@ -216,17 +191,17 @@ internal sealed partial class EsriLocatorImportService(
             rowNumber++;
             if (rowNumber > MaxReferenceRows)
             {
-                throw new EsriLocatorImportException(
+                throw new GeocoderReferenceDataImportException(
                     $"The reference data exceeds the {MaxReferenceRows:N0}-row import limit.");
             }
 
             var record = enumerator.Current;
-            if (!TryMapRow(record, header.Length, mapping, definition, out var row, out var reason))
+            if (!TryMapRow(record, header.Length, mapping, out var row, out var reason))
             {
                 skippedCount++;
                 if (skippedRows.Count < MaxSkippedRowDetails)
                 {
-                    skippedRows.Add(new LocatorImportSkippedRow(rowNumber, reason!));
+                    skippedRows.Add(new ReferenceImportSkippedRow(rowNumber, reason!));
                 }
 
                 continue;
@@ -252,7 +227,7 @@ internal sealed partial class EsriLocatorImportService(
                 ? "The reference data CSV contains no data rows."
                 : $"All {skippedCount} reference data row(s) were rejected " +
                   $"(first reason: {skippedRows.FirstOrDefault()?.Reason ?? "unknown"}).";
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 $"Replace-mode import aborted; the existing reference data was left unchanged. {detail}");
         }
 
@@ -267,11 +242,11 @@ internal sealed partial class EsriLocatorImportService(
     private static Dictionary<string, int> BuildColumnMapping(
         string[] header,
         IReadOnlyDictionary<string, string>? fieldMap,
-        List<LocatorTranslationEntry> report)
+        List<ReferenceColumnReportEntry> report)
     {
         if (header.Length == 0 || header.All(static c => string.IsNullOrWhiteSpace(c)))
         {
-            throw new EsriLocatorImportException("The reference data CSV header row is empty.");
+            throw new GeocoderReferenceDataImportException("The reference data CSV header row is empty.");
         }
 
         var columnsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -292,20 +267,20 @@ internal sealed partial class EsriLocatorImportService(
             foreach (var (roleKey, column) in fieldMap)
             {
                 var role = _roles.FirstOrDefault(r => r.Equals(roleKey, StringComparison.OrdinalIgnoreCase))
-                    ?? throw new EsriLocatorImportException(
+                    ?? throw new GeocoderReferenceDataImportException(
                         $"Unknown field-map role '{roleKey}'. Valid roles: {string.Join(", ", _roles)}.");
 
                 // System.Text.Json can materialize a JSON null into this non-nullable dictionary
                 // value; reject it as client input instead of throwing NullReferenceException.
                 if (string.IsNullOrWhiteSpace(column))
                 {
-                    throw new EsriLocatorImportException(
+                    throw new GeocoderReferenceDataImportException(
                         $"Field-map value for role '{roleKey}' must be a non-empty CSV column name.");
                 }
 
                 if (!columnsByName.TryGetValue(column.Trim(), out var index))
                 {
-                    throw new EsriLocatorImportException(
+                    throw new GeocoderReferenceDataImportException(
                         $"Field-map column '{column}' does not exist in the reference data CSV header.");
                 }
 
@@ -327,14 +302,14 @@ internal sealed partial class EsriLocatorImportService(
 
         if (!mapping.ContainsKey(RoleX) || !mapping.ContainsKey(RoleY))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 "The reference data CSV must contain WGS84 longitude/latitude columns (for example " +
                 "POINT_X/POINT_Y, LON/LAT) or an explicit fieldMap for the 'x' and 'y' roles.");
         }
 
         if (!mapping.ContainsKey(RoleDisplayName) && !mapping.ContainsKey(RoleStreetName))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 "The reference data CSV must contain an address column (for example ADDRESS or " +
                 "STREET_NAME) or an explicit fieldMap for the 'displayName' or 'streetName' role.");
         }
@@ -356,8 +331,8 @@ internal sealed partial class EsriLocatorImportService(
             }
 
             report.Add(mappedIndexes.TryGetValue(i, out var roles)
-                ? new LocatorTranslationEntry(column, LocatorTranslationStatus.Supported, $"Reference column mapped to '{roles}'.")
-                : new LocatorTranslationEntry(column, LocatorTranslationStatus.Ignored, "Reference column is not mapped to a geocoder field."));
+                ? new ReferenceColumnReportEntry(column, ReferenceColumnStatus.Supported, $"Reference column mapped to '{roles}'.")
+                : new ReferenceColumnReportEntry(column, ReferenceColumnStatus.Ignored, "Reference column is not mapped to a geocoder field."));
         }
 
         return mapping;
@@ -367,7 +342,6 @@ internal sealed partial class EsriLocatorImportService(
         string[] record,
         int headerLength,
         Dictionary<string, int> mapping,
-        EsriLocatorDefinition definition,
         out ReferenceRow row,
         out string? reason)
     {
@@ -453,7 +427,7 @@ internal sealed partial class EsriLocatorImportService(
             PostalCode: postalCode,
             Country: country,
             Neighborhood: neighborhood,
-            AddressType: Get(RoleAddressType) ?? definition.Category,
+            AddressType: Get(RoleAddressType),
             X: x,
             Y: y);
         reason = null;
@@ -546,7 +520,7 @@ internal sealed partial class EsriLocatorImportService(
         return inserted;
     }
 
-    private string ResolveLocatorName(EsriLocatorImportRequest request)
+    private string ResolveLocatorName(GeocoderReferenceDataImportRequest request)
     {
         // The GeocodeServer runtime serves only the statically configured Geocoding:LocatorName
         // route; until per-locator registration exists, an import must land under that name or
@@ -562,13 +536,13 @@ internal sealed partial class EsriLocatorImportService(
         var name = request.LocatorName.Trim();
         if (name.Length == 0 || name.Length > 128 || !LocatorNameRegex().IsMatch(name))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 "Locator name must be 1-128 characters of letters, digits, spaces, '.', '_' or '-'.");
         }
 
         if (!string.Equals(name, served, StringComparison.OrdinalIgnoreCase))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 $"Locator name '{name}' does not match the geocode service name '{served}' this " +
                 "server registers. Import under the configured name or change Geocoding:LocatorName.");
         }
@@ -580,7 +554,7 @@ internal sealed partial class EsriLocatorImportService(
     {
         if (string.IsNullOrWhiteSpace(identifier) || !IdentifierRegex().IsMatch(identifier))
         {
-            throw new EsriLocatorImportException(
+            throw new GeocoderReferenceDataImportException(
                 $"The configured local geocoder reference {kind} is not a valid PostgreSQL identifier.");
         }
     }
@@ -596,15 +570,11 @@ internal sealed partial class EsriLocatorImportService(
     private static partial Regex LocatorNameRegex();
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Parsed Esri locator '{LocatorName}' without reference data ({ReportEntries} report entries).")]
-    private static partial void LogParsedOnly(ILogger logger, string locatorName, int reportEntries);
-
-    [LoggerMessage(Level = LogLevel.Information,
-        Message = "Imported Esri locator '{LocatorName}': {Imported} reference rows loaded, {Skipped} skipped.")]
+        Message = "Imported geocoder reference data for '{LocatorName}': {Imported} rows loaded, {Skipped} skipped.")]
     private static partial void LogImported(ILogger logger, string locatorName, int imported, int skipped);
 
     [LoggerMessage(Level = LogLevel.Error,
-        Message = "The geocoder reference store rejected the Esri locator import for '{LocatorName}'.")]
+        Message = "The geocoder reference store failed during the reference data import for '{LocatorName}'.")]
     private static partial void LogReferenceStoreFailure(ILogger logger, string locatorName, Exception exception);
 
     private sealed class ReferenceRowBatch(int capacity)

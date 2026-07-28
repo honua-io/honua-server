@@ -163,8 +163,8 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/cache/invalidate"),
         new("GET", "/api/v1/admin/geocoding/providers"),
 
-        // v1 admin Esri locator import (#2152)
-        new("POST", "/api/v1/admin/geocoding/locators/import"),
+        // v1 admin geocoder reference data import (#1263)
+        new("POST", "/api/v1/admin/geocoding/reference-data/import"),
         new("GET", "/api/v1/admin/geoprocessing/tools/usage-ranking"),
         new("GET", "/api/v1/admin/features"),
 

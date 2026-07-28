@@ -267,11 +267,11 @@ internal static partial class AdminLog
     public static partial void GeocodingProviderHealthCheckFailed(ILogger logger, Exception ex);
 
     /// <summary>
-    /// Log when an Esri locator import request is rejected with an operator-safe reason.
+    /// Log when a geocoder reference data import request is rejected with an operator-safe reason.
     /// </summary>
     [LoggerMessage(
         EventId = 4622,
         Level = LogLevel.Warning,
-        Message = "Esri locator import rejected: {Reason}")]
-    public static partial void EsriLocatorImportRejected(ILogger logger, string reason);
+        Message = "Geocoder reference data import rejected: {Reason}")]
+    public static partial void GeocoderReferenceImportRejected(ILogger logger, string reason);
 }
