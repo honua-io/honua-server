@@ -788,7 +788,7 @@
       "category": "Enrichment",
       "edition": "Community",
       "entryCount": 7,
-      "provingTestCount": 22,
+      "provingTestCount": 23,
       "maturity": {
         "implemented": 7
       },
@@ -1237,7 +1237,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 108,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 10
       },

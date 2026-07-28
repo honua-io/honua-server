@@ -2,11 +2,11 @@
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). The same catalog is exposed through three surfaces: OGC API Processes (`/ogc/processes/processes`), the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`), and gRPC `geospatial.v1.ProcessService`. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
-The catalog currently registers **96 processes** across 14 families. This page is regenerated from `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`; a catalog-vs-doc parity test (`tests/dotnet/Honua.Architecture.Tests/GeoprocessingCatalogDocParityTests.cs`) fails the build if a registered process id is missing here, and asserts this prose count matches the catalog.
+The catalog currently registers **97 processes** across 15 families. This page is regenerated from `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs`; a catalog-vs-doc parity test (`tests/dotnet/Honua.Architecture.Tests/GeoprocessingCatalogDocParityTests.cs`) fails the build if a registered process id is missing here, and asserts this prose count matches the catalog.
 
 Execution notes that apply across families:
 
-- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 96 processes are native.
+- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 97 processes are native.
 - **Flagged / unsupported.** One native process is advertised so callers can *discover* the capability gap but **fails with a clear message when submitted** rather than silently substituting a different algorithm: `raster.interpolate-kriging` (no kriging backend in the worker image — use `raster.interpolate-idw`).
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
 - **Inline FeatureCollections.** Managed `*-managed`, `overlay.*`, `proximity.near*`, `statistics.*`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
@@ -49,6 +49,14 @@ The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `anal
 | `analytics.buffer-aggregate-managed` | Job-executable buffer-and-dissolve over inline features. | `input`, `distance`, `unit`, `dissolve`, `groupByFields` |
 | `analytics.density-managed` | Job-executable hex/square binning over inline features. | `input`, `mode`, `cellSize`, `weightField` |
 | `analytics.hotspot-managed` | Job-executable Getis-Ord Gi* Hot Spot Analysis over inline features; appends `GI_ZSCORE`, `GI_PVALUE`, `GI_BIN`. | `input`, `field`, `distanceBand` |
+
+## Enrichment (1)
+
+Asynchronous batch counterpart of the synchronous `POST /api/enrich` endpoint. Resolves a managed or configured enrichment dataset by `datasetId` through the same catalog the sync endpoint uses, then joins the target features against the dataset's layer with the shared managed spatial-join computation (`JOIN_COUNT`, carried attributes, `field:stat` aggregates) or annotates each target with its nearest dataset feature (`NEAR_DIST`). Targets come from EITHER a registered `layerId` (with `where`/`bbox` windowing) OR a staged inline FeatureCollection (`input` data URI). The dataset's minimum edition and the shared `analytics.spatial-join` (Pro) entitlement are enforced at execution, and the published FeatureCollection carries the dataset id and attribution as foreign members. Distances are evaluated in CRS units (no geodesic conversion), so the sync endpoint's meters-based dataset default is not inherited.
+
+| Process ID | Description | Key parameters |
+| --- | --- | --- |
+| `enrichment.enrich` | Job-executable enrichment of a layer-backed or staged feature set from a registered enrichment dataset. | `datasetId`, `layerId` \| `input`, `method`, `predicate`, `distance`, `outputFields`, `aggregates`, `where`, `bbox` |
 
 ## Overlay (6)
 
