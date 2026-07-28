@@ -28,6 +28,10 @@ internal readonly record struct GeoTiffGeoreferencing
 {
     private const ushort TagImageWidth = 256;
     private const ushort TagImageLength = 257;
+    private const ushort TagStripOffsets = 273;
+    private const ushort TagStripByteCounts = 279;
+    private const ushort TagTileOffsets = 324;
+    private const ushort TagTileByteCounts = 325;
     private const ushort TagModelPixelScale = 33550;
     private const ushort TagModelTiepoint = 33922;
     private const ushort TagModelTransformation = 34264;
@@ -61,6 +65,15 @@ internal readonly record struct GeoTiffGeoreferencing
     public int CrsCode { get; init; }
 
     /// <summary>
+    /// True when the file declares actual pixel storage — strip offsets +
+    /// byte counts, or their tiled equivalents — with a positive byte count.
+    /// A header-only TIFF carrying size/transform/CRS tags but no raster data
+    /// is structurally parseable yet useless as a classification artifact, so
+    /// the executor refuses to publish one.
+    /// </summary>
+    public bool HasRasterData { get; init; }
+
+    /// <summary>
     /// Non-null when the file carries a model transform this comparison cannot
     /// honestly verify — a rotated/sheared grid, or an axis orientation other
     /// than the standard north-up (X increasing east, Y decreasing south).
@@ -81,7 +94,8 @@ internal readonly record struct GeoTiffGeoreferencing
     /// non-degenerate pixel size) and a CRS declaration.
     /// </summary>
     public bool IsGeoreferenced =>
-        UnsupportedTransformReason is null
+        HasRasterData
+        && UnsupportedTransformReason is null
         && Width > 0 && Height > 0
         && PixelSizeX > 0 && PixelSizeY > 0
         && double.IsFinite(OriginX) && double.IsFinite(OriginY)
@@ -260,21 +274,31 @@ internal readonly record struct GeoTiffGeoreferencing
                 $"CRS code {CrsCode} does not match the source CRS code {source.CrsCode}");
         }
 
-        // Tolerance: one source pixel on each axis, floored at a small relative
-        // epsilon so large projected coordinates do not trip on float noise.
-        var toleranceX = Math.Max(source.PixelSizeX, Math.Abs(source.ExtentWidth) * 1e-6);
-        var toleranceY = Math.Max(source.PixelSizeY, Math.Abs(source.ExtentHeight) * 1e-6);
+        // The upper-left corner must be PRESERVED, not merely close: a whole-pixel
+        // allowance here would let a coarse-imagery result shift by tens or
+        // hundreds of metres while the job reports georeferencing was preserved.
+        // So the origin tolerance covers floating-point noise only, scaled to the
+        // coordinate magnitude (projected CRS values are large).
+        var originToleranceX = OriginTolerance(source.OriginX, source.ExtentWidth);
+        var originToleranceY = OriginTolerance(source.OriginY, source.ExtentHeight);
 
-        if (Math.Abs(OriginX - source.OriginX) > toleranceX
-            || Math.Abs(OriginY - source.OriginY) > toleranceY)
+        if (Math.Abs(OriginX - source.OriginX) > originToleranceX
+            || Math.Abs(OriginY - source.OriginY) > originToleranceY)
         {
             return string.Create(
                 CultureInfo.InvariantCulture,
                 $"origin ({OriginX}, {OriginY}) does not match the source origin ({source.OriginX}, {source.OriginY})");
         }
 
-        if (Math.Abs(ExtentWidth - source.ExtentWidth) > toleranceX
-            || Math.Abs(ExtentHeight - source.ExtentHeight) > toleranceY)
+        // Extent, unlike the origin, legitimately rounds: resampling to a cell
+        // size that does not divide the source coverage evenly forces the pixel
+        // count up or down. The allowance is therefore ONE OUTPUT pixel — bounded
+        // by the result's own resolution — not one source pixel.
+        var extentToleranceX = Math.Max(PixelSizeX, OriginTolerance(source.OriginX, source.ExtentWidth));
+        var extentToleranceY = Math.Max(PixelSizeY, OriginTolerance(source.OriginY, source.ExtentHeight));
+
+        if (Math.Abs(ExtentWidth - source.ExtentWidth) > extentToleranceX
+            || Math.Abs(ExtentHeight - source.ExtentHeight) > extentToleranceY)
         {
             return string.Create(
                 CultureInfo.InvariantCulture,
@@ -283,6 +307,14 @@ internal readonly record struct GeoTiffGeoreferencing
 
         return null;
     }
+
+    /// <summary>
+    /// Floating-point-noise tolerance scaled to the magnitude of the coordinates
+    /// involved, so a projected CRS (metre values in the millions) does not trip
+    /// on representation error while a geographic CRS stays tight.
+    /// </summary>
+    private static double OriginTolerance(double origin, double extent)
+        => Math.Max(Math.Max(Math.Abs(origin), Math.Abs(extent)) * 1e-9, 1e-6);
 
     private static int ElementSize(ushort type) => type switch
     {
@@ -335,6 +367,8 @@ internal readonly record struct GeoTiffGeoreferencing
         private double _matrixShearY;
         private bool _hasMatrix;
         private int _crsCode;
+        private bool _hasStorageOffsets;
+        private double _storageByteCount;
 
         public void Accept(
             ReadOnlySpan<byte> bytes,
@@ -351,6 +385,18 @@ internal readonly record struct GeoTiffGeoreferencing
                     break;
                 case TagImageLength:
                     _height = ReadScalar(bytes, type, dataOffset, littleEndian);
+                    break;
+                case TagStripOffsets:
+                case TagTileOffsets:
+                    _hasStorageOffsets = true;
+                    break;
+                case TagStripByteCounts:
+                case TagTileByteCounts:
+                    // Any positive byte count proves pixel storage is declared;
+                    // reading the first element is enough to tell data from a
+                    // header-only stub.
+                    _storageByteCount = Math.Max(
+                        _storageByteCount, ReadScalar(bytes, type, dataOffset, littleEndian));
                     break;
                 case TagModelPixelScale when count >= 2 && dataOffset + 16 <= bytes.Length:
                     // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
@@ -451,7 +497,8 @@ internal readonly record struct GeoTiffGeoreferencing
                 {
                     Width = _width,
                     Height = _height,
-                    CrsCode = _crsCode
+                    CrsCode = _crsCode,
+                    HasRasterData = _hasStorageOffsets && _storageByteCount > 0
                 };
                 return true;
             }
@@ -465,6 +512,7 @@ internal readonly record struct GeoTiffGeoreferencing
                 PixelSizeX = pixelX,
                 PixelSizeY = pixelY,
                 CrsCode = _crsCode,
+                HasRasterData = _hasStorageOffsets && _storageByteCount > 0,
                 UnsupportedTransformReason = unsupported
             };
             return true;

@@ -214,6 +214,15 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     "while covering materially different ground.");
             }
 
+            if (parsedOutput && !outputGeoreferencing.HasRasterData)
+            {
+                Log.OutputNotGeoreferenced(_logger, job.OperationId);
+                return JobExecutionResult.Failed(
+                    "imagery.classify inference failed: the backend returned a header-only TIFF that declares no " +
+                    "pixel storage (strip/tile offsets and byte counts). A classification raster with no raster " +
+                    "data is not a usable artifact.");
+            }
+
             if (!parsedOutput || !outputGeoreferencing.IsGeoreferenced)
             {
                 Log.OutputNotGeoreferenced(_logger, job.OperationId);
@@ -351,6 +360,13 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             return false;
         }
 
+        if (!sourceGeoreferencing.HasRasterData)
+        {
+            error = "input 'source' is a header-only TIFF that declares no pixel storage (strip/tile offsets "
+                + "and byte counts); there is no imagery to run inference on";
+            return false;
+        }
+
         if (!sourceGeoreferencing.IsGeoreferenced)
         {
             error = "input 'source' is a TIFF without usable GeoTIFF georeferencing (a model transform plus "
@@ -430,9 +446,8 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     {
         error = "";
 
-        foreach (var feature in features)
+        foreach (var geometry in features.Select(feature => feature?.Geometry))
         {
-            var geometry = feature?.Geometry;
             if (geometry is null || geometry.IsEmpty)
             {
                 continue;

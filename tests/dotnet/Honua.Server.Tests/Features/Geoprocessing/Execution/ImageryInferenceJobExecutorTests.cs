@@ -506,6 +506,44 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_HeaderOnlyTiffOutput_IsRejectedNotPublished()
+    {
+        // Size, transform, and CRS tags but no strip offsets / byte counts: a
+        // structurally parseable header with no pixels is not a usable
+        // classification raster.
+        var headerOnly = BuildGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20,
+            epsg: 32610, withRasterData: false);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(headerOnly)), provider: "http");
+        var context = CreateContext("op-header-only");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("header-only");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_SubPixelOriginShift_IsRejected()
+    {
+        // A shift well under one SOURCE pixel (10m) but far above float noise
+        // still relocates the classification on the ground, so it must fail.
+        var shifted = BuildGeoTiff(
+            width: 32, height: 32, originX: 500004, originY: 4600000, pixelSize: 20, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(shifted)), provider: "http");
+        var context = CreateContext("op-subpixel-shift");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("origin");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
@@ -657,10 +695,15 @@ public sealed class ImageryInferenceJobExecutorTests
         int epsg,
         bool georeferenced = true,
         double tiepointI = 0,
-        double tiepointJ = 0)
+        double tiepointJ = 0,
+        bool withRasterData = true)
     {
-        // Entries: ImageWidth, ImageLength [, ModelPixelScale, ModelTiepoint, GeoKeyDirectory]
-        var entryCount = georeferenced ? 5 : 2;
+        // Entries (ascending tag order, as TIFF requires): ImageWidth, ImageLength,
+        // StripOffsets, StripByteCounts [, ModelPixelScale, ModelTiepoint,
+        // GeoKeyDirectory]. The strip tags plus a real pixel block matter: a
+        // header-only TIFF is refused by the executor, so the happy-path fixtures
+        // must carry actual raster data to prove a readable artifact.
+        var entryCount = (georeferenced ? 5 : 2) + (withRasterData ? 2 : 0);
         var ifdOffset = 8;
         var ifdSize = 2 + (entryCount * 12) + 4;
         var dataStart = ifdOffset + ifdSize;
@@ -668,7 +711,9 @@ public sealed class ImageryInferenceJobExecutorTests
         var pixelScaleOffset = dataStart;
         var tiepointOffset = pixelScaleOffset + 24;   // 3 doubles
         var geoKeyOffset = tiepointOffset + 48;       // 6 doubles
-        var totalLength = georeferenced ? geoKeyOffset + 16 : dataStart;
+        var pixelDataOffset = georeferenced ? geoKeyOffset + 16 : dataStart;
+        var pixelDataLength = withRasterData ? width * height : 0;
+        var totalLength = pixelDataOffset + pixelDataLength;
 
         var buffer = new byte[totalLength];
         var span = buffer.AsSpan();
@@ -684,6 +729,18 @@ public sealed class ImageryInferenceJobExecutorTests
 
         WriteLongEntry(span, ref entry, tag: 256, value: (uint)width);
         WriteLongEntry(span, ref entry, tag: 257, value: (uint)height);
+        if (withRasterData)
+        {
+            WriteLongEntry(span, ref entry, tag: 273, value: (uint)pixelDataOffset);
+            WriteLongEntry(span, ref entry, tag: 279, value: (uint)pixelDataLength);
+
+            // Deterministic, non-empty pixel block so the payload is a readable
+            // raster rather than a bare header.
+            for (var p = 0; p < pixelDataLength; p++)
+            {
+                span[pixelDataOffset + p] = (byte)(p % 251);
+            }
+        }
 
         if (georeferenced)
         {
@@ -737,12 +794,15 @@ public sealed class ImageryInferenceJobExecutorTests
         double shearY,
         int epsg)
     {
-        const int entryCount = 4; // width, height, transformation, geokeys
+        // width, height, stripOffsets, stripByteCounts, transformation, geokeys
+        const int entryCount = 6;
         var ifdOffset = 8;
         var dataStart = ifdOffset + 2 + (entryCount * 12) + 4;
         var matrixOffset = dataStart;
         var geoKeyOffset = matrixOffset + 128; // 16 doubles
-        var buffer = new byte[geoKeyOffset + 16];
+        var pixelDataOffset = geoKeyOffset + 16;
+        var pixelDataLength = width * height;
+        var buffer = new byte[pixelDataOffset + pixelDataLength];
         var span = buffer.AsSpan();
 
         span[0] = 0x49;
@@ -754,6 +814,8 @@ public sealed class ImageryInferenceJobExecutorTests
         var entry = ifdOffset + 2;
         WriteLongEntry(span, ref entry, tag: 256, value: (uint)width);
         WriteLongEntry(span, ref entry, tag: 257, value: (uint)height);
+        WriteLongEntry(span, ref entry, tag: 273, value: (uint)pixelDataOffset);
+        WriteLongEntry(span, ref entry, tag: 279, value: (uint)pixelDataLength);
         WriteOffsetEntry(span, ref entry, tag: 34264, type: 12, count: 16, offset: (uint)matrixOffset);
         WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 8, offset: (uint)geoKeyOffset);
 
@@ -773,6 +835,11 @@ public sealed class ImageryInferenceJobExecutorTests
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 10)..], 0);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)epsg);
+
+        for (var p = 0; p < pixelDataLength; p++)
+        {
+            span[pixelDataOffset + p] = (byte)(p % 251);
+        }
 
         return buffer;
     }
