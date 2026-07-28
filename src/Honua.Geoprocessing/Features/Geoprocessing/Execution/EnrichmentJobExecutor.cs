@@ -13,6 +13,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
+using NetTopologySuite.Index.Strtree;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -63,6 +64,20 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private const string EnrichmentEntitlementKey = "analytics.spatial-join";
 
     private const string HonuaLayerSourceId = "source.honua-layer";
+
+    /// <summary>
+    /// CRS both layers are normalized to when the caller supplies no <c>outSrid</c>.
+    /// Pinning one CRS is what makes a cross-SRID join correct; callers that need metric
+    /// distances choose a metric <c>outSrid</c>.
+    /// </summary>
+    private const int DefaultOutputSrid = 4326;
+
+    /// <summary>
+    /// Default per-layer admission cap. Enforced while streaming so an oversized
+    /// selection fails fast with an actionable message instead of exhausting worker
+    /// memory before the artifact-size check.
+    /// </summary>
+    private const int DefaultMaxInputFeatures = 250_000;
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -174,15 +189,20 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         {
             targets = hasInline
                 ? ParseInlineSource(inlineUri!)
-                : await ReadSourceLayerAsync(source, inputs, cancellationToken).ConfigureAwait(false);
+                : await ReadSourceLayerAsync(source, inputs, plan, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(45, "Reading enrichment dataset layer", cancellationToken).ConfigureAwait(false);
 
+            // Both layers are streamed in the SAME CRS (plan.OutputSrid) so the managed
+            // NTS predicates and distances compare comparable ordinates; without this a
+            // 4326 source joined to a 3857 dataset would silently mismatch.
             joinFeatures = await LayerSourcedFeatureExecutor.ReadLayerAsync(
                     source,
-                    new DagSourceRequest { LayerId = dataset.LayerId },
-                    cancellationToken)
+                    new DagSourceRequest { LayerId = dataset.LayerId, OutputSrid = plan.OutputSrid },
+                    cancellationToken,
+                    plan.MaxInputFeatures,
+                    $"enrichment dataset layer {dataset.LayerId}")
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -294,6 +314,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private static Task<List<IFeature>> ReadSourceLayerAsync(
         IDagFeatureSource source,
         StepInputReader inputs,
+        EnrichmentPlan plan,
         CancellationToken cancellationToken)
     {
         if (!inputs.TryGet("layerId", out var raw)
@@ -309,9 +330,13 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             LayerId = layerId,
             Where = inputs.TryGet("where", out var where) ? where : null,
             Bbox = inputs.TryGet("bbox", out var bbox) ? bbox : null,
+            // Normalized to the plan CRS so the source and dataset layers are joined in
+            // one coordinate system (see the dataset read).
+            OutputSrid = plan.OutputSrid,
         };
 
-        return LayerSourcedFeatureExecutor.ReadLayerAsync(source, request, cancellationToken);
+        return LayerSourcedFeatureExecutor.ReadLayerAsync(
+            source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}");
     }
 
     // Resolves the effective join behavior from the enrichment vocabulary: the
@@ -360,23 +385,46 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
 
         var distance = 0d;
-        if (!nearest && predicate == SpatialJoinSupport.SpatialPredicate.Dwithin)
-        {
-            // The within-distance threshold is evaluated in the CRS units of the layer
-            // geometries (no geodesic conversion on this managed path), so the sync
-            // endpoint's meters-based dataset default is deliberately NOT inherited —
-            // callers must state the threshold explicitly.
-            if (!inputs.TryGet("distance", out var distanceRaw)
+        // The within-distance threshold is evaluated in the CRS units of the layer
+        // geometries (no geodesic conversion on this managed path), so the sync
+        // endpoint's meters-based dataset default is deliberately NOT inherited —
+        // callers must state the threshold explicitly.
+        if (!nearest
+            && predicate == SpatialJoinSupport.SpatialPredicate.Dwithin
+            && (!inputs.TryGet("distance", out var distanceRaw)
                 || !double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out distance)
                 || !double.IsFinite(distance)
-                || distance <= 0)
-            {
-                throw new TransformInputException(
-                    "the within-distance method requires a finite positive 'distance' threshold in CRS units");
-            }
+                || distance <= 0))
+        {
+            throw new TransformInputException(
+                "the within-distance method requires a finite positive 'distance' threshold in CRS units");
         }
 
-        return new EnrichmentPlan(methodName, nearest, predicate, distance, carryFields, stats);
+        // Both layers are read in ONE CRS. The caller may pick it (e.g. a metric CRS so
+        // within-distance/NEAR_DIST are meters); otherwise both are normalized to
+        // EPSG:4326 so a cross-SRID pair can never be joined on raw, incomparable
+        // ordinates.
+        var outputSrid = TryReadPositiveInt(inputs, "outSrid") ?? DefaultOutputSrid;
+
+        var maxInputFeatures = TryReadPositiveInt(inputs, "maxInputFeatures") ?? DefaultMaxInputFeatures;
+
+        return new EnrichmentPlan(
+            methodName, nearest, predicate, distance, carryFields, stats, outputSrid, maxInputFeatures);
+    }
+
+    private static int? TryReadPositiveInt(StepInputReader inputs, string name)
+    {
+        if (!inputs.TryGet(name, out var raw))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value <= 0)
+        {
+            throw new TransformInputException($"'{name}' must be a positive integer.");
+        }
+
+        return value;
     }
 
     private static SpatialJoinSupport.SpatialPredicate ParsePredicate(string raw)
@@ -399,10 +447,14 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var output = new List<IFeature>(targets.Count);
         if (plan.Nearest)
         {
+            // Index the dataset ONCE and query it per target, so nearest-neighbor is
+            // O(targets · log dataset) rather than a full O(targets × dataset) scan that
+            // would effectively hang on an ordinary large reference dataset.
+            var nearestIndex = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
             foreach (var target in targets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                output.Add(AnnotateNearest(target, joinFeatures, plan.CarryFields));
+                output.Add(AnnotateNearest(target, nearestIndex, plan.CarryFields));
             }
 
             return output;
@@ -425,7 +477,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     // and 0 otherwise so the output stays shape-compatible with the join methods.
     private static Feature AnnotateNearest(
         IFeature target,
-        List<IFeature> joinFeatures,
+        STRtree<IFeature> nearestIndex,
         IReadOnlyList<string> carryFields)
     {
         var attributes = OverlayExecutorSupport.CopyAttributes(target);
@@ -433,22 +485,18 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         IFeature? nearestFeature = null;
         var bestDistance = double.PositiveInfinity;
         var geometry = target.Geometry;
-        if (geometry is not null && !geometry.IsEmpty)
+        if (geometry is not null && !geometry.IsEmpty && nearestIndex.Count > 0)
         {
-            foreach (var candidate in joinFeatures)
+            nearestFeature = nearestIndex.NearestNeighbour(
+                geometry.EnvelopeInternal, target, SpatialJoinSupport.FeatureDistance.Instance);
+            var nearestGeometry = nearestFeature?.Geometry;
+            if (nearestGeometry is null || nearestGeometry.IsEmpty)
             {
-                var candidateGeometry = candidate.Geometry;
-                if (candidateGeometry is null || candidateGeometry.IsEmpty)
-                {
-                    continue;
-                }
-
-                var distance = geometry.Distance(candidateGeometry);
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    nearestFeature = candidate;
-                }
+                nearestFeature = null;
+            }
+            else
+            {
+                bestDistance = geometry.Distance(nearestGeometry);
             }
         }
 
@@ -490,13 +538,29 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     }
 
     /// <summary>The resolved enrichment join behavior for one job.</summary>
+    /// <param name="MethodName">Effective enrichment method name, echoed as artifact provenance.</param>
+    /// <param name="Nearest">Whether the nearest-neighbor method was requested.</param>
+    /// <param name="Predicate">Effective spatial predicate for the join methods.</param>
+    /// <param name="Distance">Within-distance threshold in CRS units (0 when unused).</param>
+    /// <param name="CarryFields">Dataset attributes carried onto each enriched feature.</param>
+    /// <param name="Stats">Aggregates computed over the matched dataset features.</param>
+    /// <param name="OutputSrid">
+    /// CRS both the source and dataset layers are streamed in, so the managed predicates
+    /// and distances compare comparable ordinates.
+    /// </param>
+    /// <param name="MaxInputFeatures">
+    /// Per-layer admission cap enforced WHILE streaming, so an oversized selection fails
+    /// fast instead of exhausting worker memory before the artifact-size check.
+    /// </param>
     private sealed record EnrichmentPlan(
         string MethodName,
         bool Nearest,
         SpatialJoinSupport.SpatialPredicate Predicate,
         double Distance,
         IReadOnlyList<string> CarryFields,
-        IReadOnlyList<StatisticsSupport.StatSpec> Stats);
+        IReadOnlyList<StatisticsSupport.StatSpec> Stats,
+        int OutputSrid,
+        int MaxInputFeatures);
 
     private static partial class Log
     {

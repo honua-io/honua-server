@@ -153,6 +153,50 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_NormalizesBothLayersToOneCrs()
+    {
+        // Codex P1: without a common output CRS a 4326 source joined to a 3857 dataset
+        // would compare raw, incomparable ordinates. Both reads must therefore request
+        // the SAME OutputSrid.
+        var source = new RecordingDagFeatureSource(
+            HonuaLayerSourceId,
+            new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+            {
+                [SourceLayerId] = DefaultSourceFeatures(),
+                [DatasetLayerId] = DefaultDatasetFeatures(),
+            });
+        var services = ServicesWith(source, Dataset());
+
+        var (status, _) = await RunAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("outSrid", "3857"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        source.RequestedSrids.Should().HaveCount(2);
+        source.RequestedSrids.Should().AllBeEquivalentTo(3857,
+            "both the source and dataset layers must be streamed in one CRS");
+    }
+
+    [UnitTest]
+    public async Task Enrich_InputAboveCap_FailsFastWithActionableMessage()
+    {
+        // Codex P2: the cap must be enforced WHILE streaming so an oversized selection
+        // fails fast instead of materializing everything before the artifact check.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("maxInputFeatures", "1"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("limit of 1 features");
+    }
+
+    [UnitTest]
     public async Task Enrich_UnknownDataset_FailsWithClearMessage()
     {
         var services = DefaultServices(dataset: null);
@@ -273,6 +317,31 @@ public sealed class EnrichmentJobExecutorTests
         PointFeature(6, 6, ("name", "p2"), ("pop", 7)),
         PointFeature(25, 25, ("name", "p3"), ("pop", 3)),
     ];
+
+    // Builds a provider around an explicit feature source (used by the CRS test, which
+    // needs to observe the OutputSrid of every layer read).
+    private static ServiceProvider ServicesWith(
+        IDagFeatureSource source,
+        EnrichmentDatasetDefinition? dataset,
+        HonuaEdition edition = HonuaEdition.Pro)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(source);
+
+        var resolver = Substitute.For<IEnrichmentDatasetResolver>();
+        resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(
+                string.Equals(callInfo.ArgAt<string>(0), dataset?.Id, StringComparison.OrdinalIgnoreCase)
+                    ? dataset
+                    : null));
+        services.AddSingleton(resolver);
+
+        var statusProvider = Substitute.For<ILicenseStatusProvider>();
+        statusProvider.GetCurrentStatus().Returns(new LicenseStatus(edition, true, null, "test"));
+        services.AddSingleton(statusProvider);
+
+        return services.BuildServiceProvider();
+    }
 
     private static ServiceProvider DefaultServices(
         EnrichmentDatasetDefinition? dataset,
@@ -442,6 +511,43 @@ public sealed class EnrichmentJobExecutorTests
             GeometryGeoJson = $$"""{"type":"Polygon","coordinates":[[{{ring}}]]}""",
             Attributes = attrs,
         };
+    }
+
+    /// <summary>
+    /// Layered fake that also records the <see cref="DagSourceRequest.OutputSrid"/> of
+    /// every read, so a test can prove both layers were streamed in one CRS.
+    /// </summary>
+    private sealed class RecordingDagFeatureSource : IDagFeatureSource
+    {
+        private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
+
+        public RecordingDagFeatureSource(
+            string sourceId,
+            IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> byLayer)
+        {
+            SourceId = sourceId;
+            _byLayer = byLayer;
+        }
+
+        public string SourceId { get; }
+
+        public List<int?> RequestedSrids { get; } = [];
+
+        public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
+            DagSourceRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            RequestedSrids.Add(request.OutputSrid);
+            if (request.LayerId is { } layerId && _byLayer.TryGetValue(layerId, out var features))
+            {
+                foreach (var feature in features)
+                {
+                    yield return feature;
+                }
+            }
+
+            await Task.CompletedTask;
+        }
     }
 
     /// <summary>

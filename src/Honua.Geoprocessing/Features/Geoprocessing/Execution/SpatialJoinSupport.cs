@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using NetTopologySuite.Features;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.Index.Strtree;
 using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
@@ -139,6 +140,31 @@ internal static class SpatialJoinSupport
         }
 
         return new Feature(target.Geometry, attributes);
+    }
+
+    /// <summary>
+    /// <see cref="IItemDistance{Envelope, IFeature}"/> over indexed features, so an
+    /// <see cref="STRtree{T}"/> can answer exact nearest-neighbour queries on the
+    /// features' geometries (planar CRS-unit distance) instead of the callers
+    /// scanning every candidate.
+    /// </summary>
+    internal sealed class FeatureDistance : IItemDistance<NtsEnvelope, IFeature>
+    {
+        /// <summary>Shared stateless instance.</summary>
+        internal static readonly FeatureDistance Instance = new();
+
+        /// <inheritdoc />
+        public double Distance(IBoundable<NtsEnvelope, IFeature> item1, IBoundable<NtsEnvelope, IFeature> item2)
+        {
+            var first = item1.Item?.Geometry;
+            var second = item2.Item?.Geometry;
+            if (first is null || first.IsEmpty || second is null || second.IsEmpty)
+            {
+                return double.PositiveInfinity;
+            }
+
+            return first.Distance(second);
+        }
     }
 
     /// <summary>Reads a join feature's attribute value, or null when absent.</summary>
