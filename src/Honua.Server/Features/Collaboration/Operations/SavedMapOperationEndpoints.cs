@@ -40,7 +40,8 @@ internal static class SavedMapOperationEndpoints
             .Produces<ApiResponse<SavedMapOperationAppendApiResponse>>(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("", HandleReplay)
             .WithDisplayName("Replay Saved Map Collaboration Operations")
@@ -56,6 +57,7 @@ internal static class SavedMapOperationEndpoints
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         [FromServices] InMemoryCollaborationSessionService sessions,
+        [FromServices] ICollaborationSessionBackplane backplane,
         HttpContext context)
     {
         // One canonical log key per draft regardless of the GUID textual form in the route
@@ -65,6 +67,20 @@ internal static class SavedMapOperationEndpoints
         if (authorizationError is not null)
         {
             return authorizationError;
+        }
+
+        // Same fail-closed continuity rule as the checkpoint surface (honua-server#2999
+        // review): with a distributed backplane but a process-local op log, two replicas would
+        // each run an independent per-map cursor sequence — both could accept "cursor 1" and
+        // broadcast conflicting committed operations that can never be reconciled. Reject the
+        // edit honestly instead of accepting state the deployment cannot make authoritative.
+        if (backplane.IsDistributed && !repository.SupportsReplicaSharedReplay)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map collaborative edits are unavailable in multi-replica deployments " +
+                "until the collaboration operation log is backed by a replica-shared store; a " +
+                "process-local log cannot assign authoritative operation cursors across replicas.");
         }
 
         if (!TryValidate(request, out var validationError) ||

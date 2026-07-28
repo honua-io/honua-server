@@ -237,6 +237,28 @@ public sealed class CollaborationLiveCoEditingTests
             unresolvableJoinContent);
         unresolvableJoin.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
+        // A peer cannot eject the owner's session by replaying its participant id (which every
+        // session member sees in snapshots): leave is scoped to the caller's own identity, and
+        // a foreign caller is reported exactly like an unknown session so probing learns nothing.
+        using var joinDocument = JsonDocument.Parse(await ownerJoin.Content.ReadAsStringAsync());
+        var ownerSessionId = joinDocument.RootElement.GetProperty("data").GetProperty("sessionId").GetGuid();
+        using var stolenLeaveContent = new StringContent(
+            $$"""{"sessionId":"{{ownerSessionId}}"}""", Encoding.UTF8, "application/json");
+        using var stolenLeave = await bobClient.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/leave", stolenLeaveContent);
+        stolenLeave.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadJsonAsync(stolenLeave)).GetProperty("data").GetProperty("left").GetBoolean()
+            .Should().BeFalse();
+
+        // The owner's session survived the attempt: only she can end it.
+        using var ownLeaveContent = new StringContent(
+            $$"""{"sessionId":"{{ownerSessionId}}"}""", Encoding.UTF8, "application/json");
+        using var ownLeave = await aliceClient.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/leave", ownLeaveContent);
+        ownLeave.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadJsonAsync(ownLeave)).GetProperty("data").GetProperty("left").GetBoolean()
+            .Should().BeTrue();
+
         // The non-owner is also denied on the op-log and checkpoint surfaces, which share the
         // same authorization seam.
         using var nonOwnerAppendContent = new StringContent(
@@ -285,14 +307,16 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
-    public async Task Checkpoint_DistributedBackplaneWithProcessLocalLog_FailsClosed()
+    public async Task EditAndCheckpoint_DistributedBackplaneWithProcessLocalLog_FailClosed()
     {
         // The in-memory op log declares it cannot prove cross-replica replay continuity...
         new InMemorySavedMapOperationLogRepository().SupportsReplicaSharedReplay.Should().BeFalse();
 
-        // ...so with a distributed backplane (multi-replica deployment) the checkpoint must
-        // fail closed instead of minting a version from a possibly-partial node-local log.
+        // ...so with a distributed backplane (multi-replica deployment) both the edit append
+        // (whose node-local cursors could collide across replicas) and the checkpoint (whose
+        // node-local replay could omit accepted edits) must fail closed.
         using var factory = CreateFactory(configureTestServices: services =>
         {
             services.RemoveAll<ICollaborationSessionBackplane>();
@@ -301,6 +325,16 @@ public sealed class CollaborationLiveCoEditingTests
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
 
+        using var appendContent = new StringContent(
+            """{"operationId":"op-x","kind":"SetViewport","baseCursor":0,"payload":{"zoom":3}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var appendResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/operations", appendContent);
+        var appendText = await appendResponse.Content.ReadAsStringAsync();
+        appendResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "append response body: {0}", appendText);
+        appendText.Should().Contain("replica-shared");
+
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
             $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/checkpoints", content);
@@ -308,6 +342,39 @@ public sealed class CollaborationLiveCoEditingTests
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
         text.Should().Contain("replica-shared");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        var first = await AppendOperationAsync(
+            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":5}""");
+        var head = first.GetProperty("operation").GetProperty("serverCursor").GetInt64();
+        _ = await AppendOperationAsync(
+            client, mapId, "op-2", "PatchStyle", baseCursor: head,
+            payload: """{"layerId":"parcels","styleRef":"style-day"}""");
+
+        var checkpoint1 = await CheckpointAsync(client, mapId, "first");
+        checkpoint1.GetProperty("appliedOperationCount").GetInt32().Should().Be(2);
+        checkpoint1.GetProperty("headCursor").GetInt64().Should().Be(2);
+
+        _ = await AppendOperationAsync(
+            client, mapId, "op-3", "SetLayerVisibility", baseCursor: 2,
+            payload: """{"layerId":"parcels","visible":false}""");
+
+        // The server recorded cursor 2 as checkpointed, so the second checkpoint replays only
+        // the pending suffix — the map stays checkpointable even after the already-persisted
+        // prefix eventually ages out of the retained replay window.
+        var checkpoint2 = await CheckpointAsync(client, mapId, "second");
+        checkpoint2.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+        checkpoint2.GetProperty("headCursor").GetInt64().Should().Be(3);
     }
 
     private sealed class DistributedNoOpBackplane : ICollaborationSessionBackplane
@@ -437,6 +504,18 @@ public sealed class CollaborationLiveCoEditingTests
             content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await ReadJsonAsync(response)).GetProperty("data");
+    }
+
+    private static async Task<JsonElement> CheckpointAsync(HttpClient client, string mapId, string changeNote)
+    {
+        using var content = new StringContent(
+            $$"""{"changeNote":"{{changeNote}}"}""", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "checkpoint response body: {0}", text);
+        using var document = JsonDocument.Parse(text);
+        return document.RootElement.GetProperty("data").Clone();
     }
 
     private static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage response)

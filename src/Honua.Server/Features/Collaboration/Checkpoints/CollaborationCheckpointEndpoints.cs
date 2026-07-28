@@ -119,23 +119,23 @@ internal static class CollaborationCheckpointEndpoints
                 context, itemDecision.Reason ?? "You are not allowed to checkpoint this saved map.");
         }
 
-        // Replay the FULL retained log from the earliest provable cursor (0). The replay start
-        // is server-derived — a client-supplied cursor is never trusted, because the server does
-        // not track which cursor was last applied to the draft and an arbitrary client value
-        // could silently drop accepted operations from the immutable version. Replaying an
-        // already-applied prefix is idempotent: all supported operation families are
-        // absolute-state. When the start of the log has been pruned out of the retained window
-        // the checkpoint MUST fail closed: pruned operations are not necessarily superseded by
-        // the retained tail (an old change to one field followed by many changes to another
-        // field would be silently dropped), so refuse to persist an unprovable state.
-        var replay = await operationLog.ReplayAllAsync(canonicalMapId, context.RequestAborted)
+        // Replay everything after the last successfully checkpointed cursor (0 when none is
+        // recorded). The replay start is fully server-derived — a client-supplied cursor is
+        // never trusted, because an arbitrary client value could silently drop accepted
+        // operations from the immutable version. Replaying an already-applied prefix is
+        // idempotent: all supported operation families are absolute-state. A ResyncRequired
+        // result means never-checkpointed operations have been pruned out of the retained
+        // window, so the checkpoint MUST fail closed: pruned operations are not necessarily
+        // superseded by the retained tail (an old change to one field followed by many changes
+        // to another field would be silently dropped).
+        var replay = await operationLog.ReplayPendingAsync(canonicalMapId, context.RequestAborted)
             .ConfigureAwait(false);
         if (replay.Status == SavedMapOperationReplayStatus.ResyncRequired)
         {
             return StandardErrorHelpers.CreateConflict(
                 context,
-                "The start of the operation log has been pruned out of the retained replay " +
-                "window; the checkpoint cannot prove it captures every accepted edit. " +
+                "Operations that were never checkpointed have been pruned out of the retained " +
+                "replay window; the checkpoint cannot prove it captures every accepted edit. " +
                 "Checkpoint more frequently or restart the session from the latest saved version.");
         }
 
@@ -175,6 +175,11 @@ internal static class CollaborationCheckpointEndpoints
             {
                 return StandardErrorHelpers.CreateNotFound(context, "Studio package draft was not found.");
             }
+
+            // Only after the immutable version is durably saved: later checkpoints replay just
+            // the suffix after this head, so a long session stays checkpointable after the
+            // already-persisted prefix ages out of the retained window.
+            operationLog.MarkCheckpointed(canonicalMapId, replay.HeadCursor.Value);
 
             var response = new CollaborationCheckpointResponse
             {

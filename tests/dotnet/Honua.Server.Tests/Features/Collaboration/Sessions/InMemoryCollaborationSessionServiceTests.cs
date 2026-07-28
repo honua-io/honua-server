@@ -390,6 +390,30 @@ public sealed class InMemoryCollaborationSessionServiceTests
             total.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    [UnitTest]
+    public async Task Leave_ForeignPrincipalOrWrongMap_DoesNotEvictParticipant()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var victim = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Victim" }, Principal("victim"))).Response!;
+
+        // Participant ids equal session ids and are visible to every session member, so another
+        // authenticated caller must not be able to eject a peer with a borrowed id.
+        service.Leave(victim.SessionId, reason: "left", requiredMapId: "map-a", requiredOwner: Principal("attacker"))
+            .Should().BeFalse();
+        service.GetSnapshot("map-a").Participants.Should().ContainSingle();
+
+        // A session id submitted against the wrong map route is rejected too.
+        service.Leave(victim.SessionId, reason: "left", requiredMapId: "map-b", requiredOwner: Principal("victim"))
+            .Should().BeFalse();
+        service.GetSnapshot("map-a").Participants.Should().ContainSingle();
+
+        // The owner on the correct map still leaves normally.
+        service.Leave(victim.SessionId, reason: "left", requiredMapId: "map-a", requiredOwner: Principal("victim"))
+            .Should().BeTrue();
+        service.GetSnapshot("map-a").Participants.Should().BeEmpty();
+    }
+
     private static CollaborationOperationWire CreateWireOperation(string mapId, long cursor) => new()
     {
         Id = $"op-{cursor}",

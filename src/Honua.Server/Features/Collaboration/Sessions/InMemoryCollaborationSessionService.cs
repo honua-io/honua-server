@@ -260,9 +260,28 @@ internal sealed class InMemoryCollaborationSessionService
             });
     }
 
-    public bool Leave(Guid sessionId, string? reason = null)
+    /// <summary>
+    /// Removes a participant session. When <paramref name="requiredMapId"/> and/or
+    /// <paramref name="requiredOwner"/> are supplied (the REST leave path), the session must
+    /// belong to that map and to the same resolved user identity that joined it — participant
+    /// ids equal the session id, so possession of the id is visible to every participant via
+    /// snapshots and is NOT proof of ownership (honua-server#2999 review). A scope mismatch
+    /// returns <see langword="false"/>, deliberately indistinguishable from an unknown session
+    /// so probing cannot confirm a session exists. Server-internal callers (socket cleanup,
+    /// pruning) omit the constraints.
+    /// </summary>
+    public bool Leave(
+        Guid sessionId,
+        string? reason = null,
+        string? requiredMapId = null,
+        ClaimsPrincipal? requiredOwner = null)
     {
         if (!TryResolveSession(sessionId, out var mapId, out var channel))
+        {
+            return false;
+        }
+
+        if (requiredMapId is not null && !string.Equals(mapId, requiredMapId, StringComparison.Ordinal))
         {
             return false;
         }
@@ -270,6 +289,19 @@ internal sealed class InMemoryCollaborationSessionService
         CollaborationEventEnvelope left;
         lock (channel.Sync)
         {
+            if (requiredOwner is not null &&
+                channel.Participants.TryGetValue(sessionId, out var owned))
+            {
+                // Fail closed: without a resolvable, matching user identity the caller cannot
+                // prove it owns this session.
+                var callerUserId = ResolveUserId(requiredOwner);
+                if (callerUserId is null ||
+                    !string.Equals(owned.Presence.UserId, callerUserId, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
             if (!channel.Participants.Remove(sessionId, out var state))
             {
                 _sessionMapIndex.TryRemove(sessionId, out _);
