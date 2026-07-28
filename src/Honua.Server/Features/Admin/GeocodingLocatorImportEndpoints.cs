@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Geocoding.Features.Geocoding.Domain;
+using Microsoft.AspNetCore.Http.Features;
 using Honua.Geocoding.Features.Geocoding.LocatorImport;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -55,6 +56,15 @@ internal static class GeocodingLocatorImportEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
                 "Request must be multipart/form-data with a 'locator' field carrying the .loc definition file.");
         }
+
+        // ASP.NET Core's default multipart body limit (128 MiB) is below the advertised
+        // 256 MiB reference CSV cap; raise it for this request before parsing so the
+        // documented range is actually importable. Kestrel's overall request-body limit is
+        // handled by LimitsEnforcementMiddleware's import classification.
+        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions
+        {
+            MultipartBodyLengthLimit = MaxReferenceBytes + MaxLocBytes + (1024 * 1024),
+        }));
 
         var form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
 

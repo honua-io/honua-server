@@ -283,6 +283,14 @@ internal sealed partial class EsriLocatorImportService(
                     ?? throw new EsriLocatorImportException(
                         $"Unknown field-map role '{roleKey}'. Valid roles: {string.Join(", ", _roles)}.");
 
+                // System.Text.Json can materialize a JSON null into this non-nullable dictionary
+                // value; reject it as client input instead of throwing NullReferenceException.
+                if (string.IsNullOrWhiteSpace(column))
+                {
+                    throw new EsriLocatorImportException(
+                        $"Field-map value for role '{roleKey}' must be a non-empty CSV column name.");
+                }
+
                 if (!columnsByName.TryGetValue(column.Trim(), out var index))
                 {
                     throw new EsriLocatorImportException(
@@ -386,6 +394,9 @@ internal sealed partial class EsriLocatorImportService(
         var region = Get(RoleRegion);
         var postalCode = Get(RolePostalCode);
 
+        var country = Get(RoleCountry);
+        var neighborhood = Get(RoleNeighborhood);
+
         var displayName = Get(RoleDisplayName) ?? ComposeDisplayName(addressNumber, streetName, city, region, postalCode);
         if (string.IsNullOrWhiteSpace(displayName))
         {
@@ -393,16 +404,25 @@ internal sealed partial class EsriLocatorImportService(
             return false;
         }
 
+        // search_text must contain every stored structured component, not just the display
+        // label: LocalPostgisGeocodeProvider.ComposeSearchText folds neighborhood and country
+        // into structured queries, and forward matching requires all query tokens to appear
+        // in the record's normalized text.
+        var searchSource = string.Join(' ', new[]
+        {
+            displayName, addressNumber, streetName, neighborhood, city, region, postalCode, country,
+        }.Where(static p => !string.IsNullOrWhiteSpace(p)));
+
         row = new ReferenceRow(
             DisplayName: displayName,
-            SearchText: GeocodeReferenceText.Normalize(displayName),
+            SearchText: GeocodeReferenceText.Normalize(searchSource),
             AddressNumber: addressNumber,
             StreetName: streetName,
             City: city,
             Region: region,
             PostalCode: postalCode,
-            Country: Get(RoleCountry),
-            Neighborhood: Get(RoleNeighborhood),
+            Country: country,
+            Neighborhood: neighborhood,
             AddressType: Get(RoleAddressType) ?? definition.Category,
             X: x,
             Y: y);

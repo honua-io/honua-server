@@ -129,6 +129,13 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
         Assert.Equal(-117.1956, candidate.GetProperty("location").GetProperty("x").GetDouble(), 4);
         Assert.Equal(34.0566, candidate.GetProperty("location").GetProperty("y").GetDouble(), 4);
 
+        // ...a structured request whose country token must be present in search_text...
+        using var structured = await _client.GetAsync(
+            $"/rest/services/{LocatorName}/GeocodeServer/findAddressCandidates?Address=380+New+York+St&City=Redlands&CountryCode=US&f=json");
+        Assert.Equal(HttpStatusCode.OK, structured.StatusCode);
+        using var structuredPayload = JsonDocument.Parse(await structured.Content.ReadAsStringAsync());
+        Assert.True(structuredPayload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
+
         // ...reverse geocode...
         using var reverse = await _client.GetAsync(
             $"/rest/services/{LocatorName}/GeocodeServer/reverseGeocode?location=-117.1957,34.0567&f=json");
@@ -250,6 +257,21 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
         content.Add(new StringContent(LocatorName), "locatorName");
         return content;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    public async Task Import_NullFieldMapValue_Returns400()
+    {
+        using var content = BuildImportForm(includeReference: true, includeIndex: false);
+        content.Add(new StringContent("{\"x\":null}"), "fieldMap");
+
+        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("must be a non-empty CSV column name", body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
