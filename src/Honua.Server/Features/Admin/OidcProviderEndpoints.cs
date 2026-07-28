@@ -4,8 +4,10 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -50,7 +52,43 @@ internal static partial class OidcProviderEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OIDC")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            // #2997: OIDC provider configuration is the Pro identity.oidc surface (ADR-0024
+            // Identity tier — "no SSO tax for one provider"), mirroring the #2978 SAML/SCIM
+            // gate shape. Configuring a second provider additionally requires the Enterprise
+            // identity.oidc-multi-provider entitlement; that check runs first for creates that
+            // would grow the store beyond one provider so the 402 names the entitlement that
+            // is actually being exceeded. The JWT bearer / token-validation pipeline
+            // (OidcAuthenticationExtensions) is deliberately NOT gated: token validation for
+            // already-configured providers keeps working regardless of edition.
+            .AddEndpointFilter(async (invocationContext, next) =>
+            {
+                var httpContext = invocationContext.HttpContext;
+
+                if (IsCreateProviderRequest(httpContext))
+                {
+                    var store = httpContext.RequestServices.GetRequiredService<IOidcProviderStore>();
+                    var existing = await store.ListProvidersAsync(httpContext.RequestAborted);
+                    if (existing.Count >= 1)
+                    {
+                        var multiProviderGate = LicenseGate.RequireEntitlement(
+                            httpContext,
+                            FeatureCatalog.OidcMultiProviderKey,
+                            "OIDC multi-provider SSO");
+                        if (multiProviderGate is not null)
+                        {
+                            return multiProviderGate;
+                        }
+                    }
+                }
+
+                var gate = LicenseGate.RequireEntitlement(
+                    httpContext,
+                    FeatureCatalog.OidcAuthenticationKey,
+                    "OIDC authentication");
+
+                return gate is null ? await next(invocationContext) : gate;
+            });
 
         group.MapGet("/", HandleListProviders)
             .WithDisplayName("List OIDC Providers")
@@ -75,6 +113,21 @@ internal static partial class OidcProviderEndpoints
         group.MapPost("/{id:guid}/test", HandleTestProvider)
             .WithDisplayName("Test OIDC Provider Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+    }
+
+    /// <summary>
+    /// True when the request is the provider-create endpoint (<c>POST …/providers</c>) as
+    /// opposed to the connectivity-test endpoint (<c>POST …/providers/{id}/test</c>).
+    /// </summary>
+    private static bool IsCreateProviderRequest(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            return false;
+        }
+
+        var path = context.Request.Path.Value ?? string.Empty;
+        return !path.EndsWith("/test", StringComparison.OrdinalIgnoreCase);
     }
 
     private static OidcProviderResponse ToResponse(OidcProviderConfiguration p) => new()

@@ -206,7 +206,54 @@ internal static class EntitlementProbeRegistry
                 "/api/v1/admin/scenes/ingest/citygml"),
             new(FeatureCatalog.ScenePointCloudIngestKey, HttpMethod.Post,
                 "/api/v1/admin/scenes/ingest/pointcloud"),
+
+            // Identity: OIDC (#2997) — the provider admin group gates identity.oidc (Pro);
+            // creating a provider when the store already holds one gates the Enterprise
+            // identity.oidc-multi-provider first (the sweep fixture pre-seeds one provider so
+            // that branch is reachable in a single request).
+            new(FeatureCatalog.OidcAuthenticationKey, HttpMethod.Get, "/api/v1/admin/oidc/providers"),
+            new(FeatureCatalog.OidcMultiProviderKey, HttpMethod.Post, "/api/v1/admin/oidc/providers",
+                """{"name":"sweep-second-provider","providerType":"Generic","authority":"https://idp2.example.com","clientId":"sweep-client-2"}"""),
+
+            // Alerts/Channels (#2998) — rule mutations 402 with one `entitlement: {key}` detail
+            // per missing alerts.*/channels.* key BEFORE zone/config validation, so a
+            // nonexistent zone or unconfigured channel never masks the gate. At an entitled
+            // edition the same request proceeds into validation and 400s (zone not found /
+            // channel unconfigured), which the sweep treats as "not blocked" by design.
+            new(FeatureCatalog.AlertsEnterExitKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("webhook")),
+            new(FeatureCatalog.ChannelsWebhookKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("webhook")),
+            new(FeatureCatalog.AlertsDwellKey, HttpMethod.Post, AlertRulesPath,
+                """{"serviceId":"entitlement-sweep","layerId":0,"zoneId":1,"ruleName":"sweep dwell probe","triggerType":"dwell","conditionsJson":"{\"dwellSeconds\":60}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
+            new(FeatureCatalog.AlertsThresholdKey, HttpMethod.Post, AlertRulesPath,
+                """{"serviceId":"entitlement-sweep","layerId":0,"ruleName":"sweep threshold probe","triggerType":"threshold","conditionsJson":"{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
+            new(FeatureCatalog.AlertsEvaluationKey, HttpMethod.Post, AlertRulesPath + "/test",
+                $$"""{"rule":{{EnterRuleJson("webhook")}}}"""),
+            new(FeatureCatalog.ChannelsEmailKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("email")),
+            new(FeatureCatalog.ChannelsSlackKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("slack")),
+            new(FeatureCatalog.ChannelsTeamsKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("microsoft_teams")),
+            new(FeatureCatalog.ChannelsAwsSnsKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("aws_sns")),
+            new(FeatureCatalog.ChannelsAzureEventGridKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("azure_eventgrid")),
+            new(FeatureCatalog.ChannelsDigestKey, HttpMethod.Post, AlertRulesPath,
+                EnterRuleJson("digest")),
         }.ToDictionary(p => p.Key, StringComparer.Ordinal);
+
+    private const string AlertRulesPath = "/api/v1/admin/alerts/rules";
+
+    /// <summary>
+    /// An enter-trigger rule (Pro tier) carrying the given delivery channel, so each channels.*
+    /// probe isolates its own key: at Pro the trigger is entitled and only the probed channel's
+    /// key appears in the 402; at Community the combined 402 lists the probed channel key
+    /// alongside alerts.enter-exit, which still satisfies the per-key body assertion.
+    /// </summary>
+    private static string EnterRuleJson(string channel)
+        => $$"""{"serviceId":"entitlement-sweep","layerId":0,"zoneId":1,"ruleName":"sweep {{channel}} probe","triggerType":"enter","conditionsJson":"{}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["{{channel}}"],"isActive":true}""";
 
     private static string BuildMarkers(int count)
         => string.Join('|', Enumerable.Range(0, count).Select(i => $"-122.{400 + i},37.7{i},red"));
@@ -283,6 +330,21 @@ internal static class EntitlementProbeRegistry
             new("dr.failover", "Same dormant-scaffolding state as dr.backup-automation above."),
             new("dr.cache-backup", "Same dormant-scaffolding state as dr.backup-automation above."),
             new("dr.rto-rpo-reporting", "Same dormant-scaffolding state as dr.backup-automation above."),
+            new(FeatureCatalog.OutputCacheKey,
+                "Gated at process boot (#2998): StartupConfigurationHelpers.IsOutputCacheEntitledAsync " +
+                "decides whether app.UseOutputCache() is wired before the host starts accepting " +
+                "requests, mirroring caching.redis above — there is no single HTTP call whose " +
+                "response reflects this gate (an unentitled host serves identical, just uncached, " +
+                "responses). Verified enforced in code (Program.cs + " +
+                "OutputCacheEntitlementGateTests); not a gap."),
+            new(FeatureCatalog.OidcClaimsMappingKey,
+                "Enforced as a config-driven soft-degrade (#2997): the OIDC provider admin DTOs " +
+                "carry no claims-mapping fields, so the surface that exists is the " +
+                "Oidc:ClaimsMapping configuration (CustomMappings/AdditionalRoleClaimTypes) " +
+                "applied by OidcClaimsTransformation at authentication time. When the " +
+                "entitlement is missing, custom mappings are skipped (default normalization " +
+                "still runs) rather than failing the request, so no 402 is ever produced. " +
+                "Verified enforced in code (OidcClaimsMappingEntitlementTests); not a gap."),
         }.ToDictionary(e => e.Key, StringComparer.Ordinal);
 
     /// <summary>
@@ -292,65 +354,9 @@ internal static class EntitlementProbeRegistry
     /// fixed) is exactly the signal that resolution landed.
     /// </summary>
     public static IReadOnlyDictionary<string, EntitlementKnownGapEntry> KnownGaps { get; } =
-        new EntitlementKnownGapEntry[]
-        {
-            // --- Identity: OIDC family unenforced everywhere (new finding, this sweep) ---
-            new("identity.oidc",
-                "Zero LicenseGate/entitlement check anywhere in the OIDC surface: " +
-                "OidcProviderEndpoints (admin CRUD for provider configuration) and the JWT " +
-                "bearer/OIDC authentication pipeline (OidcAuthenticationExtensions) never call " +
-                "LicenseGate. A Community deployment can configure and use single-provider OIDC " +
-                "authentication for free. Needs its own decision ticket (see PR body).",
-                "#2997"),
-            new("identity.oidc-multi-provider",
-                "Same root cause as identity.oidc: OidcProviderEndpoints has no provider-count " +
-                "or edition check, so configuring N providers is unrestricted at any edition.",
-                "#2997"),
-            new("identity.claims-mapping",
-                "Same root cause as identity.oidc: no claims-mapping-specific gate exists; " +
-                "provider configuration (including any claims-mapping fields) is unrestricted.",
-                "#2997"),
-
-            // --- Alerts/Channels: parallel, license-disconnected edition system (new finding) ---
-            new("alerts.enter-exit",
-                "Alerts/channels edition enforcement flows entirely through a standalone " +
-                "`Alerts:Edition` config option (IAlertEditionPolicy), completely disconnected " +
-                "from ILicenseEntitlementService/Licensing:DevGrantEdition — no LicenseGate call " +
-                "exists anywhere in the Alerts feature. `Alerts:Edition` defaults to Pro, so a " +
-                "Community-licensed deployment gets Enter/Exit triggers and webhook delivery for " +
-                "free unless an operator manually sets Alerts:Edition=Community.",
-                "#2998"),
-            new("alerts.evaluation", "Same Alerts:Edition root cause as alerts.enter-exit above.",
-                "#2998"),
-            new("channels.webhook", "Same Alerts:Edition root cause as alerts.enter-exit above.",
-                "#2998"),
-            new("alerts.dwell",
-                "Same Alerts:Edition root cause; conversely, this Enterprise trigger requires a " +
-                "manual Alerts:Edition=Enterprise config flip even for a genuinely Enterprise- " +
-                "licensed deployment (the config default is Pro) — the two knobs can disagree " +
-                "in either direction.",
-                "#2998"),
-            new("alerts.threshold", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.email", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.slack", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.teams", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.aws-sns", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.azure-eventgrid", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.digest", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-
-            // --- Caching: output-cache unenforced everywhere (new finding) ---
-            new("caching.output-cache",
-                "Zero LicenseGate/entitlement check anywhere: ASP.NET Core output caching is " +
-                "registered unconditionally in Program.cs for every edition. Unlike caching.redis " +
-                "(gated at boot, see the no-http-surface allowlist), nothing turns output caching " +
-                "off for Community.",
-                "#2998"),
-        }.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        // #2997/#2998 resolved the last known gaps (OIDC identity.*, Alerts/Channels
+        // alerts.*/channels.*, caching.output-cache): every declared Pro/Enterprise key with an
+        // HTTP surface is now probed above, or carries a verified no-http-surface entry. Keep
+        // this bucket empty — a new entry requires its own tracking issue.
+        new Dictionary<string, EntitlementKnownGapEntry>(StringComparer.Ordinal);
 }

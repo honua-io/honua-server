@@ -8,9 +8,11 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
@@ -79,7 +81,21 @@ internal static class AlertAdminEndpoints
 
         group.MapPost("/rules/test", HandleTestRule)
             .WithDisplayName("Test Alert Rule")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // #2998: on-demand rule evaluation is the Pro alerts.evaluation surface; the
+            // background evaluation pipeline enforces per-rule entitlements through
+            // IAlertEditionPolicy instead of a boot-time gate.
+            .AddEndpointFilter((invocationContext, next) =>
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    invocationContext.HttpContext,
+                    FeatureCatalog.AlertsEvaluationKey,
+                    "Alert rule evaluation");
+
+                return gate is null
+                    ? next(invocationContext)
+                    : ValueTask.FromResult<object?>(gate);
+            });
 
         group.MapPut("/rules/{ruleId:long}", HandleUpdateRule)
             .WithDisplayName("Update Alert Rule")
@@ -233,6 +249,11 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
+        if (RequireRuleEntitlements(context, rule, editionPolicy) is { } entitlementBlock)
+        {
+            return entitlementBlock;
+        }
+
         var validation = await ValidateRuleDraftAsync(
             rule,
             draftZone: null,
@@ -306,6 +327,11 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
+        if (RequireRuleEntitlements(context, rule, editionPolicy) is { } entitlementBlock)
+        {
+            return entitlementBlock;
+        }
+
         var validation = await ValidateRuleDraftAsync(
             rule,
             draftZone: null,
@@ -347,6 +373,11 @@ internal static class AlertAdminEndpoints
         var requested = existing with { IsActive = request.Enabled };
         if (request.Enabled)
         {
+            if (RequireRuleEntitlements(context, requested, editionPolicy) is { } entitlementBlock)
+            {
+                return entitlementBlock;
+            }
+
             var validation = await ValidateRuleDraftAsync(
                 requested,
                 draftZone: null,
@@ -588,6 +619,60 @@ internal static class AlertAdminEndpoints
 
         error = string.Empty;
         return true;
+    }
+
+    /// <summary>
+    /// #2998: license-entitlement gate for alert-rule mutations. Collects every
+    /// <c>alerts.*</c>/<c>channels.*</c> entitlement the rule requires but the license-derived
+    /// <see cref="IAlertEditionPolicy"/> does not allow, and returns the standard 402
+    /// payment-required response naming each missing key (one <c>entitlement: {key}</c> detail
+    /// per key, mirroring <c>LicenseGate.RequireEntitlement</c>) so the block is observable as
+    /// an entitlement denial. Returns null when the rule is fully entitled; channels without a
+    /// catalog key of their own (WebSocket) fall through to the draft validation's
+    /// edition-unauthorized 400 as before.
+    /// </summary>
+    private static IResult? RequireRuleEntitlements(
+        HttpContext context,
+        AlertRuleDefinition rule,
+        IAlertEditionPolicy editionPolicy)
+    {
+        var deniedKeys = new List<string>();
+
+        // Probe the trigger entitlement with the minimum self-declared tier so a rule that is
+        // blocked purely by its own EditionRequired declaration (trigger key entitled, tier
+        // declaration above the effective edition) falls through to the draft validation's
+        // 400 instead of a 402 naming a key the license actually includes.
+        if (!editionPolicy.IsRuleAllowed(rule with { EditionRequired = AlertEdition.Pro }))
+        {
+            deniedKeys.Add(AlertEntitlementMap.GetTriggerEntitlementKey(rule.TriggerType));
+        }
+
+        if (!rule.Channels.IsDefaultOrEmpty)
+        {
+            foreach (var channel in rule.Channels)
+            {
+                if (editionPolicy.IsChannelAllowed(channel))
+                {
+                    continue;
+                }
+
+                var entitlementKey = AlertEntitlementMap.GetChannelEntitlementKey(channel);
+                if (entitlementKey is not null && !deniedKeys.Contains(entitlementKey))
+                {
+                    deniedKeys.Add(entitlementKey);
+                }
+            }
+        }
+
+        if (deniedKeys.Count == 0)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreatePaymentRequired(
+            context,
+            "The active license does not include the entitlements this alert rule requires.",
+            deniedKeys.Select(key => $"entitlement: {key}").ToArray());
     }
 
     private static async Task<RuleValidationResult> ValidateRuleDraftAsync(

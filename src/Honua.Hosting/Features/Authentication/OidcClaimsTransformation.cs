@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Licensing;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -10,10 +12,16 @@ namespace Honua.Infrastructure.Authentication;
 /// <summary>
 /// Claims transformation service for OIDC-authenticated users.
 /// Normalizes claims from different providers and adds application-specific claims.
+/// Custom claims mapping (<c>ClaimsMapping:CustomMappings</c> /
+/// <c>ClaimsMapping:AdditionalRoleClaimTypes</c>) is an Enterprise entitlement
+/// (identity.claims-mapping, #2997): when it is not active, those configured mappings are
+/// skipped (soft-degrade to default claims normalization) rather than failing authentication —
+/// the token-validation pipeline itself is never gated by edition.
 /// </summary>
 internal sealed class OidcClaimsTransformation(
     IOptions<OidcAuthenticationOptions> oidcOptions,
-    ILogger<OidcClaimsTransformation> logger) : IClaimsTransformation
+    ILogger<OidcClaimsTransformation> logger,
+    IServiceProvider serviceProvider) : IClaimsTransformation
 {
     private readonly OidcAuthenticationOptions _options = oidcOptions.Value;
 
@@ -36,6 +44,18 @@ internal sealed class OidcClaimsTransformation(
         if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
         {
             return Task.FromResult(principal);
+        }
+
+        // #2997: custom claims mapping is Enterprise (identity.claims-mapping). When configured
+        // but unentitled, skip the custom mappings and additional role claim types while default
+        // claims normalization continues to run.
+        var customMappingConfigured = _options.ClaimsMapping.CustomMappings.Count > 0
+            || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0;
+        var claimsMappingEntitled = !customMappingConfigured
+            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+        if (customMappingConfigured && !claimsMappingEntitled)
+        {
+            OidcAuthenticationLog.CustomClaimsMappingNotEntitled(logger);
         }
 
         var transformedClaims = new List<Claim>();
@@ -78,7 +98,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Map roles from provider-specific claims
-        var roles = GetRoleClaims(identity);
+        var roles = GetRoleClaims(identity, claimsMappingEntitled);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -106,13 +126,16 @@ internal sealed class OidcClaimsTransformation(
             transformedClaims.Add(new Claim("auth_type", scheme));
         }
 
-        // Apply custom mappings
-        foreach (var mapping in _options.ClaimsMapping.CustomMappings)
+        // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)
+        if (claimsMappingEntitled)
         {
-            var sourceValue = identity.FindFirst(mapping.Key)?.Value;
-            if (!string.IsNullOrEmpty(sourceValue) && !identity.HasClaim(c => c.Type == mapping.Value))
+            foreach (var mapping in _options.ClaimsMapping.CustomMappings)
             {
-                transformedClaims.Add(new Claim(mapping.Value, sourceValue));
+                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                if (!string.IsNullOrEmpty(sourceValue) && !identity.HasClaim(c => c.Type == mapping.Value))
+                {
+                    transformedClaims.Add(new Claim(mapping.Value, sourceValue));
+                }
             }
         }
 
@@ -134,7 +157,7 @@ internal sealed class OidcClaimsTransformation(
             ?.Value;
     }
 
-    private List<string> GetRoleClaims(ClaimsIdentity identity)
+    private List<string> GetRoleClaims(ClaimsIdentity identity, bool claimsMappingEntitled)
     {
         var roles = new List<string>();
 
@@ -146,10 +169,14 @@ internal sealed class OidcClaimsTransformation(
         roles.AddRange(identity.FindAll("roles").Select(c => c.Value));
 
         // Check provider-configurable additional role claim types
-        // (e.g. Okta "groups", Auth0 "{namespace}/roles", "{namespace}/permissions")
-        foreach (var claimType in _options.ClaimsMapping.AdditionalRoleClaimTypes)
+        // (e.g. Okta "groups", Auth0 "{namespace}/roles", "{namespace}/permissions") —
+        // Enterprise identity.claims-mapping only (#2997).
+        if (claimsMappingEntitled)
         {
-            roles.AddRange(identity.FindAll(claimType).Select(c => c.Value));
+            foreach (var claimType in _options.ClaimsMapping.AdditionalRoleClaimTypes)
+            {
+                roles.AddRange(identity.FindAll(claimType).Select(c => c.Value));
+            }
         }
 
         return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();

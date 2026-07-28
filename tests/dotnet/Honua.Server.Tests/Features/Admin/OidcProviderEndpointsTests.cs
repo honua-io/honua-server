@@ -40,6 +40,11 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                // #2997: the OIDC provider admin surface is entitlement-gated (identity.oidc
+                // Pro; a second provider needs Enterprise identity.oidc-multi-provider). These
+                // CRUD tests accumulate providers in the shared in-memory store, so grant
+                // Enterprise; the gate itself is covered by OidcEntitlementGateTests.
+                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
             });
     }
 

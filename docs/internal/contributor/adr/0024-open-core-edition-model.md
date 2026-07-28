@@ -229,3 +229,41 @@ License checks must be:
 - ADR-0020 (MVP Operational Deferrals): the deferrals described there (rate
   limiting, audit logs, compliance) are now scoped to the Enterprise tier rather
   than being indefinitely deferred.
+
+## Amendments
+
+### 2026-07-27 — OIDC, Alerts/Channels, and output-cache enforcement (#2997, #2998)
+
+The 2026-07-22 local entitlement sweep (#2980) found three declared-but-unenforced
+areas. Decisions, all "gate as declared" (no tier changes):
+
+- **OIDC (#2997).** The provider admin surface (`/api/v1/admin/oidc/providers`)
+  now gates `identity.oidc` (Pro) at the endpoint group, mirroring the #2978
+  SAML/SCIM shape. Creating a provider when one already exists additionally
+  requires `identity.oidc-multi-provider` (Enterprise), and that check runs
+  first so the 402 names the entitlement actually being exceeded. Scoping: the
+  JWT bearer / token-validation pipeline (`OidcAuthenticationExtensions`) is
+  deliberately **not** gated — token validation for already-configured providers
+  keeps working regardless of edition, and no eager boot-time validator is
+  introduced. `identity.claims-mapping` (Enterprise) has no admin DTO surface;
+  it is enforced as a config-driven soft-degrade in `OidcClaimsTransformation`:
+  configured `CustomMappings`/`AdditionalRoleClaimTypes` are skipped (default
+  claims normalization still runs) when the entitlement is missing, so
+  authentication never fails on edition.
+- **Alerts/Channels (#2998).** The standalone `Alerts:Edition` knob no longer
+  defines the alert tier. `IAlertEditionPolicy` derives allowed triggers and
+  channels from the active license entitlements
+  (`alerts.enter-exit`/`alerts.evaluation`/`channels.webhook` = Pro;
+  `alerts.dwell`/`alerts.threshold` and the remaining channels = Enterprise).
+  `Alerts:Edition` is retained **only as a downward operational cap** (nullable,
+  default null = license-derived); it can restrict below the license-derived
+  tier but never grants above it. Admin rule mutations blocked by entitlement
+  now return HTTP 402 naming each missing key; `POST /rules/test` gates
+  `alerts.evaluation`.
+- **Output cache (#2998).** `caching.output-cache` (Pro) is gated at process
+  boot (`StartupConfigurationHelpers.IsOutputCacheEntitledAsync`), mirroring the
+  `caching.redis` bootstrap gate including DevGrantEdition-outside-Production
+  (#1787) and the license-content secret resolvers (#1755). When unentitled,
+  `app.UseOutputCache()` is skipped while `AddOutputCache` registration remains,
+  so endpoint `CacheOutput` metadata is inert and Community deployments serve
+  identical, uncached responses.

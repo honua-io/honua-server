@@ -211,9 +211,83 @@ public static class FeatureCatalog
 
     /// <summary>
     /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
-    /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider.
+    /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider. Enforced on the
+    /// admin provider-configuration surface (<c>/api/v1/admin/oidc/providers</c>, #2997); the
+    /// JWT bearer / token-validation pipeline itself is deliberately NOT gated so existing
+    /// sessions and token validation keep working regardless of edition (see ADR-0024).
     /// </summary>
     public const string OidcAuthenticationKey = "identity.oidc";
+
+    /// <summary>
+    /// Entitlement key for Enter/Exit geofence alert triggers (#2998). Pro-tier: enforced
+    /// through the license-derived <c>IAlertEditionPolicy</c> on the alert-rule admin surface
+    /// and the evaluation pipeline.
+    /// </summary>
+    public const string AlertsEnterExitKey = "alerts.enter-exit";
+
+    /// <summary>
+    /// Entitlement key for the alert evaluation engine (#2998). Pro-tier: gates the on-demand
+    /// rule evaluation surface (<c>POST /api/v1/admin/alerts/rules/test</c>); background
+    /// evaluation enforces per-rule entitlements through <c>IAlertEditionPolicy</c>.
+    /// </summary>
+    public const string AlertsEvaluationKey = "alerts.evaluation";
+
+    /// <summary>
+    /// Entitlement key for dwell alert triggers (#2998). Enterprise-only.
+    /// </summary>
+    public const string AlertsDwellKey = "alerts.dwell";
+
+    /// <summary>
+    /// Entitlement key for attribute-threshold alert triggers (#2998). Enterprise-only.
+    /// </summary>
+    public const string AlertsThresholdKey = "alerts.threshold";
+
+    /// <summary>
+    /// Entitlement key for webhook alert delivery (#2998). Pro-tier.
+    /// </summary>
+    public const string ChannelsWebhookKey = "channels.webhook";
+
+    /// <summary>
+    /// Entitlement key for email alert delivery (#2998). Enterprise-only.
+    /// </summary>
+    public const string ChannelsEmailKey = "channels.email";
+
+    /// <summary>
+    /// Entitlement key for Slack alert delivery (#2998). Enterprise-only.
+    /// </summary>
+    public const string ChannelsSlackKey = "channels.slack";
+
+    /// <summary>
+    /// Entitlement key for Microsoft Teams alert delivery (#2998). Enterprise-only.
+    /// </summary>
+    public const string ChannelsTeamsKey = "channels.teams";
+
+    /// <summary>
+    /// Entitlement key for AWS SNS/SQS alert delivery (#2998). Enterprise-only; the SQS queue
+    /// channel shares this key (same cloud family and tier, no separate catalog entry).
+    /// </summary>
+    public const string ChannelsAwsSnsKey = "channels.aws-sns";
+
+    /// <summary>
+    /// Entitlement key for Azure Event Grid / Event Hub alert delivery (#2998). Enterprise-only;
+    /// the Event Hub channel shares this key (same cloud family and tier, no separate catalog
+    /// entry).
+    /// </summary>
+    public const string ChannelsAzureEventGridKey = "channels.azure-eventgrid";
+
+    /// <summary>
+    /// Entitlement key for digest (batched summary) alert delivery (#2998). Enterprise-only.
+    /// </summary>
+    public const string ChannelsDigestKey = "channels.digest";
+
+    /// <summary>
+    /// Entitlement key for the ASP.NET Core output-cache middleware (#2998). Pro-tier: gated at
+    /// process boot (<c>StartupConfigurationHelpers.IsOutputCacheEntitledAsync</c>) mirroring
+    /// <c>caching.redis</c>; when unentitled the middleware is skipped and endpoint
+    /// <c>CacheOutput</c> metadata is inert, so Community deployments serve identical responses,
+    /// just uncached.
+    /// </summary>
+    public const string OutputCacheKey = "caching.output-cache";
 
     /// <summary>
     /// Entitlement key for SAML 2.0 service-provider authentication (#2978). Enterprise-only
@@ -281,33 +355,33 @@ public static class FeatureCatalog
     public static IReadOnlyList<FeatureDefinition> All { get; } =
     [
         // Alerts — Pro
-        new("alerts.enter-exit", "Enter/Exit Geofence Triggers", Categories.Alerts,
+        new(AlertsEnterExitKey, "Enter/Exit Geofence Triggers", Categories.Alerts,
             HonuaEdition.Pro, "Trigger alerts when features enter or exit geofence zones."),
-        new("alerts.evaluation", "Alert Evaluation Engine", Categories.Alerts,
+        new(AlertsEvaluationKey, "Alert Evaluation Engine", Categories.Alerts,
             HonuaEdition.Pro, "Background worker for evaluating geofence rules against feature changes."),
 
         // Alerts — Enterprise
-        new("alerts.dwell", "Dwell Trigger", Categories.Alerts,
+        new(AlertsDwellKey, "Dwell Trigger", Categories.Alerts,
             HonuaEdition.Enterprise, "Trigger alerts when features remain inside a zone for a configured duration."),
-        new("alerts.threshold", "Threshold Trigger", Categories.Alerts,
+        new(AlertsThresholdKey, "Threshold Trigger", Categories.Alerts,
             HonuaEdition.Enterprise, "Trigger alerts based on attribute threshold conditions."),
 
         // Channels — Pro
-        new("channels.webhook", "Webhook Delivery", Categories.Channels,
+        new(ChannelsWebhookKey, "Webhook Delivery", Categories.Channels,
             HonuaEdition.Pro, "Deliver alert notifications via webhook HTTP callbacks."),
 
         // Channels — Enterprise
-        new("channels.email", "Email Delivery", Categories.Channels,
+        new(ChannelsEmailKey, "Email Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Deliver alert notifications via email."),
-        new("channels.slack", "Slack Delivery", Categories.Channels,
+        new(ChannelsSlackKey, "Slack Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Deliver alert notifications to Slack channels."),
-        new("channels.teams", "Microsoft Teams Delivery", Categories.Channels,
+        new(ChannelsTeamsKey, "Microsoft Teams Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Deliver alert notifications to Microsoft Teams."),
-        new("channels.aws-sns", "AWS SNS Delivery", Categories.Channels,
+        new(ChannelsAwsSnsKey, "AWS SNS Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Deliver alert notifications via AWS Simple Notification Service."),
-        new("channels.azure-eventgrid", "Azure Event Grid Delivery", Categories.Channels,
+        new(ChannelsAzureEventGridKey, "Azure Event Grid Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Deliver alert notifications via Azure Event Grid."),
-        new("channels.digest", "Digest Delivery", Categories.Channels,
+        new(ChannelsDigestKey, "Digest Delivery", Categories.Channels,
             HonuaEdition.Enterprise, "Aggregate and deliver batched alert summaries."),
 
         // Geocoding — Pro
@@ -349,7 +423,7 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "User/group provisioning through the SCIM 2.0 protocol surface."),
 
         // Caching — Pro
-        new("caching.output-cache", "Output Caching", Categories.Caching,
+        new(OutputCacheKey, "Output Caching", Categories.Caching,
             HonuaEdition.Pro, "HTTP response caching with tag-based invalidation."),
 
         // Caching — Pro

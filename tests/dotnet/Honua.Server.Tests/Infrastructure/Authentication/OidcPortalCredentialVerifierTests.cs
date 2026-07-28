@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -88,6 +89,18 @@ public sealed class OidcPortalCredentialVerifierTests
         result.Should().BeNull();
     }
 
+
+    /// <summary>
+    /// Service provider carrying an Enterprise-entitled license so claims transformation tests
+    /// exercise the pre-#2997 behavior (custom claims mapping applied); the unentitled path is
+    /// covered by OidcClaimsMappingEntitlementTests.
+    /// </summary>
+    private static ServiceProvider EnterpriseEntitledServices()
+        => new ServiceCollection()
+            .AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(
+                new Honua.TestKit.Helpers.TestLicenseEntitlementService(Honua.Core.Features.Licensing.Domain.HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+
     private static OidcPortalCredentialVerifier CreateVerifier(bool enabled)
     {
         var options = new OidcAuthenticationOptions
@@ -111,7 +124,7 @@ public sealed class OidcPortalCredentialVerifierTests
         };
 
         var wrapped = Options.Create(options);
-        var transformation = new OidcClaimsTransformation(wrapped, NullLogger<OidcClaimsTransformation>.Instance);
+        var transformation = new OidcClaimsTransformation(wrapped, NullLogger<OidcClaimsTransformation>.Instance, EnterpriseEntitledServices());
         return new OidcPortalCredentialVerifier(
             wrapped,
             transformation,

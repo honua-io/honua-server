@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -814,8 +815,13 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         IReadOnlyCollection<AlertChannelType> allowedChannels,
         IReadOnlyCollection<AlertChannelType> configuredChannels)
     {
-        return new WebAppFixture().ReplaceService<IAlertEditionPolicy>(
-            new TestAlertEditionPolicy(allowedChannels, configuredChannels));
+        // #2998: rule mutations/evaluation are entitlement-gated; grant Enterprise so these
+        // tests keep exercising the stubbed IAlertEditionPolicy paths past the license gate.
+        // The license gate itself is covered by AlertEntitlementGateTests.
+        return new WebAppFixture()
+            .WithTestLicense(Honua.Core.Features.Licensing.Domain.HonuaEdition.Enterprise)
+            .ReplaceService<IAlertEditionPolicy>(
+                new TestAlertEditionPolicy(allowedChannels, configuredChannels));
     }
 
     private static WebAppFixture CreateStubbedFixture(
@@ -826,6 +832,7 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         IReadOnlyCollection<AlertChannelType>? configuredChannels = null)
     {
         return new WebAppFixture()
+            .WithTestLicense(Honua.Core.Features.Licensing.Domain.HonuaEdition.Enterprise)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();

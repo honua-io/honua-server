@@ -23,9 +23,14 @@ public sealed class AlertOptions
     public bool Enabled { get; init; }
 
     /// <summary>
-    /// Active edition used for feature gating.
+    /// Optional downward-only cap on the license-derived alert edition (#2998). When null
+    /// (the default), the allowed alert triggers and delivery channels derive solely from the
+    /// active license entitlements (<c>alerts.*</c>/<c>channels.*</c> keys). When set, the
+    /// effective tier is the minimum of the license-derived tier and this value — the cap can
+    /// only restrict features below what the license grants; it never unlocks features the
+    /// license does not include.
     /// </summary>
-    public AlertEdition Edition { get; init; } = AlertEdition.Pro;
+    public AlertEdition? Edition { get; init; }
 
     /// <summary>
     /// Evaluator worker settings.
