@@ -144,6 +144,33 @@ internal static partial class CollaborationSessionStreamEndpoint
                     context.RequestAborted).ConfigureAwait(false);
             }
 
+            // Stamp the snapshot envelope BEFORE assembling its contents, then re-read the op
+            // tail and presence afterwards. Any event published while the snapshot is being
+            // assembled is therefore stamped with a LATER sequence than the snapshot and is
+            // delivered by the write loop after it (instead of being discarded by the client
+            // reducer as pre-snapshot), while its state is only possibly duplicated inside the
+            // snapshot — which is safe because presence is absolute-state and operations carry
+            // op-log cursors. Events stamped before the snapshot envelope are covered by the
+            // re-read contents.
+            var snapshotEnvelope = sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Snapshot
+            });
+
+            if (replay.Status == SavedMapOperationReplayStatus.Ok)
+            {
+                var freshReplay = await operationLog.ReplayAsync(
+                        new SavedMapId(mapId),
+                        new SavedMapOperationCursor(resumeFrom),
+                        context.RequestAborted)
+                    .ConfigureAwait(false);
+                if (freshReplay.Status == SavedMapOperationReplayStatus.Ok)
+                {
+                    replay = freshReplay;
+                    operations = freshReplay.Operations.Select(CollaborationOperationWire.FromEnvelope).ToArray();
+                }
+            }
+
             var snapshot = sessions.GetSnapshot(mapId) with
             {
                 Operations = operations,
@@ -152,11 +179,14 @@ internal static partial class CollaborationSessionStreamEndpoint
             await SendEnvelopeAsync(
                 webSocket,
                 writeLock,
-                sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+                snapshotEnvelope with
                 {
-                    Type = CollaborationSessionEventTypes.Snapshot,
-                    Snapshot = snapshot
-                }),
+                    Event = new CollaborationSessionEvent
+                    {
+                        Type = CollaborationSessionEventTypes.Snapshot,
+                        Snapshot = snapshot
+                    }
+                },
                 context.RequestAborted).ConfigureAwait(false);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);

@@ -621,10 +621,10 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "entryCount": 7,
-      "provingTestCount": 17,
+      "entryCount": 9,
+      "provingTestCount": 24,
       "maturity": {
-        "implemented": 7
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],

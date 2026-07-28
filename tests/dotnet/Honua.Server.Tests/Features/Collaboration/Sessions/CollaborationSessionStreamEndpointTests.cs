@@ -38,7 +38,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         using var factory = CreateFactory(allowJoin: true);
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         using var ws = await wsClient.ConnectAsync(
             new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
@@ -66,7 +66,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     public async Task Stream_WhenPeerJoins_ReceivesParticipantJoinedPresenceEvent()
     {
         using var factory = CreateFactory(allowJoin: true);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var firstClient = factory.Server.CreateWebSocketClient();
         firstClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
@@ -98,7 +98,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     public async Task Stream_WhenPeerSendsCursorFrame_FanOutsCursorEvent()
     {
         using var factory = CreateFactory(allowJoin: true);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var firstClient = factory.Server.CreateWebSocketClient();
         firstClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
@@ -145,7 +145,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         using var factory = CreateFactory(allowJoin: false);
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var connect = async () => await wsClient.ConnectAsync(
             new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream"),

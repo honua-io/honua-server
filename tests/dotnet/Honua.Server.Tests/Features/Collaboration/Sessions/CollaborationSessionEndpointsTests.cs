@@ -70,18 +70,20 @@ public sealed class CollaborationSessionEndpointsTests
         using var joinDocument = JsonDocument.Parse(await joinResponse.Content.ReadAsStringAsync());
         var sessionId = joinDocument.RootElement.GetProperty("data").GetProperty("sessionId").GetGuid();
 
+        using var leaveContent = new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json");
         using var leaveResponse = await client.PostAsync(
             "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
-            new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json"));
+            leaveContent);
 
         leaveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var leaveDocument = JsonDocument.Parse(await leaveResponse.Content.ReadAsStringAsync());
         leaveDocument.RootElement.GetProperty("data").GetProperty("left").GetBoolean().Should().BeTrue();
 
         // A second leave is a no-op: the session is already gone.
+        using var repeatContent = new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json");
         using var repeatResponse = await client.PostAsync(
             "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
-            new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json"));
+            repeatContent);
         repeatResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var repeatDocument = JsonDocument.Parse(await repeatResponse.Content.ReadAsStringAsync());
         repeatDocument.RootElement.GetProperty("data").GetProperty("left").GetBoolean().Should().BeFalse();

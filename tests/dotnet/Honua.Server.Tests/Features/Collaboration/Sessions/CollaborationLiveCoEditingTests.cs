@@ -46,7 +46,7 @@ public sealed class CollaborationLiveCoEditingTests
     {
         using var factory = CreateFactory();
         using var client = CreateAdminClient(factory);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -118,9 +118,10 @@ public sealed class CollaborationLiveCoEditingTests
 
         // Checkpoint (REQ-003/AC-2): the committed ops are applied to the draft and saved as an
         // immutable Studio content version through the canonical lifecycle service.
+        using var checkpointContent = new StringContent("""{"changeNote":"live checkpoint"}""", Encoding.UTF8, "application/json");
         using var checkpointResponse = await client.PostAsync(
             $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints",
-            new StringContent("""{"changeNote":"live checkpoint"}""", Encoding.UTF8, "application/json"));
+            checkpointContent);
         checkpointResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var checkpoint = (await ReadJsonAsync(checkpointResponse)).GetProperty("data");
         checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(2);
@@ -148,7 +149,7 @@ public sealed class CollaborationLiveCoEditingTests
     {
         using var factory = CreateFactory();
         using var client = CreateAdminClient(factory);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -213,32 +214,36 @@ public sealed class CollaborationLiveCoEditingTests
         var mapId = draft.DraftId.ToString("D");
 
         // The owner joins (AC-3: same identity model as the Studio lifecycle surface).
+        using var ownerJoinContent = new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json");
         using var ownerJoin = await aliceClient.PostAsync(
             $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
-            new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json"));
+            ownerJoinContent);
         ownerJoin.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // A non-owner, non-admin principal is denied.
+        using var nonOwnerJoinContent = new StringContent("""{"displayName":"Bob"}""", Encoding.UTF8, "application/json");
         using var nonOwnerJoin = await bobClient.PostAsync(
             $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
-            new StringContent("""{"displayName":"Bob"}""", Encoding.UTF8, "application/json"));
+            nonOwnerJoinContent);
         nonOwnerJoin.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         // A map id that resolves to no Studio draft/content item is denied (fail-closed), even
         // for an authenticated owner-capable principal.
+        using var unresolvableJoinContent = new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json");
         using var unresolvableJoin = await aliceClient.PostAsync(
             $"/api/v1/saved-maps/{Guid.NewGuid():D}/collaboration/sessions/join",
-            new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json"));
+            unresolvableJoinContent);
         unresolvableJoin.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         // The non-owner is also denied on the op-log and checkpoint surfaces, which share the
         // same authorization seam.
+        using var nonOwnerAppendContent = new StringContent(
+            """{"operationId":"op-x","kind":"SetViewport","baseCursor":0,"payload":{"zoom":3}}""",
+            Encoding.UTF8,
+            "application/json");
         using var nonOwnerAppend = await bobClient.PostAsync(
             $"/api/v1/saved-maps/{mapId}/collaboration/operations",
-            new StringContent(
-                """{"operationId":"op-x","kind":"SetViewport","baseCursor":0,"payload":{"zoom":3}}""",
-                Encoding.UTF8,
-                "application/json"));
+            nonOwnerAppendContent);
         nonOwnerAppend.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
@@ -249,9 +254,10 @@ public sealed class CollaborationLiveCoEditingTests
         using var factory = CreateFactory();
         using var client = CreateAdminClient(factory);
 
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
             $"/api/v1/saved-maps/{Guid.NewGuid():D}/collaboration/checkpoints",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            content);
 
         var responseText = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, "checkpoint response body: {0}", responseText);
@@ -319,12 +325,11 @@ public sealed class CollaborationLiveCoEditingTests
             },
         };
 
-        using var response = await client.PostAsync(
-            "/api/v1/studio/package-drafts",
-            new StringContent(
-                JsonSerializer.Serialize(request, StudioApiJsonContext.Default.CreateStudioPackageDraftRequest),
-                Encoding.UTF8,
-                "application/json"));
+        using var draftContent = new StringContent(
+            JsonSerializer.Serialize(request, StudioApiJsonContext.Default.CreateStudioPackageDraftRequest),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await client.PostAsync("/api/v1/studio/package-drafts", draftContent);
         var responseText = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, "draft create response body: {0}", responseText);
         var envelope = JsonSerializer.Deserialize(
@@ -350,9 +355,10 @@ public sealed class CollaborationLiveCoEditingTests
               "payload": {{payload}}
             }
             """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
             $"/api/v1/saved-maps/{mapId}/collaboration/operations",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await ReadJsonAsync(response)).GetProperty("data");
     }

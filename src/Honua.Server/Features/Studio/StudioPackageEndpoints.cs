@@ -14,6 +14,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Studio.Export;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;

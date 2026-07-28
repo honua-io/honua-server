@@ -8,7 +8,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Console;
-using Honua.Server.Features.Studio;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.Checkpoints;
@@ -50,6 +50,7 @@ internal static class CollaborationCheckpointEndpoints
         [FromServices] IStudioPackageLifecycleService lifecycle,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ISavedMapOperationLogRepository operationLog,
+        [FromServices] ILogger<CollaborationCheckpointEndpointsMarker> logger,
         HttpContext context)
     {
         if (!Guid.TryParse(mapId, out var draftId))
@@ -99,24 +100,24 @@ internal static class CollaborationCheckpointEndpoints
         }
 
         // Replay the retained log. All supported operation families are absolute-state, so
-        // replaying from the start of the retained window is idempotent even when a prior
-        // checkpoint already applied a prefix of it. When the requested since-cursor has fallen
-        // out of the in-memory replay window, fall back to the earliest retained cursor rather
-        // than failing the checkpoint (the retained tail supersedes pruned absolute-state ops).
+        // replaying an already-applied prefix is idempotent. When the requested since-cursor has
+        // fallen out of the in-memory replay window the checkpoint MUST fail closed: pruned
+        // operations are not necessarily superseded by the retained tail (an old change to one
+        // field followed by many changes to another field would be silently dropped from the
+        // immutable version), so refuse to persist an incomplete state instead of guessing.
         var sinceCursor = Math.Max(request.SinceCursor ?? 0, 0);
         var replay = await operationLog.ReplayAsync(
                 new SavedMapId(mapId),
                 new SavedMapOperationCursor(sinceCursor),
                 context.RequestAborted)
             .ConfigureAwait(false);
-        if (replay.Status == SavedMapOperationReplayStatus.ResyncRequired &&
-            replay.MinimumReplayCursor.Value > sinceCursor)
+        if (replay.Status == SavedMapOperationReplayStatus.ResyncRequired)
         {
-            replay = await operationLog.ReplayAsync(
-                    new SavedMapId(mapId),
-                    replay.MinimumReplayCursor,
-                    context.RequestAborted)
-                .ConfigureAwait(false);
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                "The requested operation cursor is outside the retained replay window; the " +
+                "checkpoint cannot prove it captures every accepted edit. Checkpoint more " +
+                "frequently or restart the session from the latest saved version.");
         }
 
         var actorId = ConsolePrincipal.ResolveActorId(context.User);
@@ -197,10 +198,28 @@ internal static class CollaborationCheckpointEndpoints
         catch (InvalidOperationException ex)
         {
             // Draft generation conflict or family/lifecycle invariant surfaced by the canonical
-            // lifecycle service.
-            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            // lifecycle service. Log the original exception and return a stable message so
+            // provider/implementation details never leak to the client.
+            CollaborationCheckpointLog.CheckpointConflict(logger, mapId, ex);
+            return StandardErrorHelpers.CreateConflict(
+                context,
+                "The draft changed concurrently or the Studio lifecycle rejected the checkpoint. " +
+                "Retry the checkpoint against the current draft state.");
         }
     }
+}
+
+/// <summary>Logger category marker for the collaboration checkpoint endpoints.</summary>
+internal sealed class CollaborationCheckpointEndpointsMarker;
+
+/// <summary>Source-generated logging for the collaboration checkpoint surface.</summary>
+internal static partial class CollaborationCheckpointLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "Saved-map collaboration checkpoint conflict for map {MapId}.")]
+    public static partial void CheckpointConflict(ILogger logger, string mapId, Exception exception);
 }
 
 /// <summary>

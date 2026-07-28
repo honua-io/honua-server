@@ -3,19 +3,20 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Studio.Abstractions;
-using Honua.Server.Features.Studio;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
 /// <summary>
 /// Studio-lifecycle-backed saved-map collaboration authorizer (honua-server#2999, REQ-001/AC-3).
-/// Resolves the collaboration <c>mapId</c> to a Studio package draft (preferred) or content item
-/// and delegates the decision to the same <see cref="IStudioAuthorizationService"/> policy layer
-/// the Studio lifecycle endpoints use — admins pass unconditionally, and with end-user
-/// authorization enabled the resource owner passes — with denials audited through the shared
-/// <see cref="StudioEndpointAuthorization"/> seam. A <c>mapId</c> that does not resolve to any
-/// Studio draft or content item is denied (fail-closed), preserving the pre-#2999 posture for
-/// unknown map identifiers.
+/// Resolves the collaboration <c>mapId</c> to a Studio package draft and delegates the decision
+/// to the same <see cref="IStudioAuthorizationService"/> policy layer the Studio lifecycle
+/// endpoints use — admins pass unconditionally, and with end-user authorization enabled the
+/// resource owner passes — with denials audited through the shared
+/// <see cref="StudioEndpointAuthorization"/> seam. A <c>mapId</c> that does not resolve to a
+/// Studio package draft (including content-item ids, which the checkpoint surface cannot yet
+/// normalize to a draft) is denied fail-closed, preserving the pre-#2999 posture for unknown
+/// map identifiers.
 /// </summary>
 /// <remarks>
 /// Registered as a singleton (the session service that consumes it is a singleton) while the
@@ -63,9 +64,13 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
         var lifecycle = context.RequestServices.GetRequiredService<IStudioPackageLifecycleService>();
         var authorization = context.RequestServices.GetRequiredService<StudioEndpointAuthorization>();
 
-        // Prefer the draft resolution: live co-editing sessions target the mutable draft that
-        // checkpoints save as immutable versions. Fall back to the content item so a session can
-        // be scoped to an item whose draft id the client does not know.
+        // Live co-editing sessions target exactly the mutable draft that checkpoints save as
+        // immutable versions, so only draft ids are accepted. Content-item ids are rejected
+        // fail-closed: the lifecycle surface has no item -> active-draft resolution yet, so an
+        // item-scoped session could accept live edits that the checkpoint endpoint (which
+        // resolves the id as a draft) could never persist. Accept item ids only once the
+        // session, op-log, and checkpoint surfaces can all normalize them to the same canonical
+        // draft id.
         var draft = await lifecycle.GetDraftAsync(resolvedId, cancellationToken).ConfigureAwait(false);
         if (draft is not null)
         {
@@ -78,20 +83,8 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
             return ToResult(decision);
         }
 
-        var pointers = await lifecycle.GetPointersAsync(resolvedId, cancellationToken).ConfigureAwait(false);
-        if (pointers is not null)
-        {
-            var decision = await authorization.AuthorizeAsync(
-                context,
-                StudioAuthorizationOperation.UpdateDraft,
-                pointers.OwnerId,
-                resourceType: "studio-content-item",
-                resourceId: pointers.ItemId.ToString("D")).ConfigureAwait(false);
-            return ToResult(decision);
-        }
-
         return SavedMapCollaborationAuthorizationResult.Forbid(
-            "The map id does not resolve to a Studio content item or draft.");
+            "The map id does not resolve to a Studio package draft.");
     }
 
     private static SavedMapCollaborationAuthorizationResult ToResult(StudioAuthorizationDecision decision) =>
