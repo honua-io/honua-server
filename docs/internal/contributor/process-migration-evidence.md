@@ -71,3 +71,34 @@ execution results before broader process portability wording is used.
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
   --filter "FullyQualifiedName~ProcessMigrationEvidence|FullyQualifiedName~OgcProcessesEndpointsTests|FullyQualifiedName~OgcProcessesJobResultsTests|FullyQualifiedName~GPServerDurableRuntimeTests"
 ```
+
+## Toolbox Translation Lane (#2145)
+
+The arcpy/toolbox (`.pyt`/`.tbx`/`.atbx`) translation lane is split across
+repos by design:
+
+- **honua-sdk-python** (`honua-migrate`, sdk issues #59/#123/#124) owns
+  parsing toolbox sources, scanning arcpy constructs, and proposing per-tool
+  mappings onto native Honua processes. Binary `.tbx`/`.atbx` parsing remains
+  an explicit `UnsupportedToolboxError` stub SDK-side.
+- **honua-server** owns the round-trip proof and the canonical runtime. The
+  process catalog is the single source of truth for executable signatures, so
+  the server validates SDK-translated manifests via
+  `POST /api/v1/admin/import/toolbox/translation/validate`
+  (`ToolboxTranslationEndpoints` -> `ToolboxTranslationValidator`) and returns
+  a `honua.migration.toolbox-translation-report` artifact: per-tool
+  classification (`translated` / `partially-translated` / `unsupported`),
+  round-tripped canonical parameter bindings, and explicit issue codes
+  (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
+  `duplicate-target-parameter`, `missing-required-parameter`,
+  `unsupported-construct`). Tools that cannot supply a required parameter are
+  `unsupported`, never stubbed as executable.
+
+The server never parses toolbox sources and never emulates arcpy execution;
+translated tools execute only as existing native processes through the
+canonical process/job runtime (OGC API Processes / GPServer).
+
+Contract fixtures live under `tests/fixtures/toolbox-translation/`
+(translatable, partially translatable, and fully unsupported toolboxes) and
+are exercised end-to-end by `ToolboxTranslationEndpointTests` plus the
+classification-rule unit tests in `ToolboxTranslationValidatorTests`.
