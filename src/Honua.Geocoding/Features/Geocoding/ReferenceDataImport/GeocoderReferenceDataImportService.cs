@@ -174,6 +174,18 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Serialize concurrent imports (including across replicas) with a transaction-scoped
+        // advisory lock keyed on the target table: under READ COMMITTED, two overlapping
+        // replace-mode transactions could otherwise each DELETE their own snapshot and commit
+        // the union of both batches instead of either replacement dataset. The lock is released
+        // automatically at commit/rollback.
+        await using (var advisoryLock = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))", connection, transaction))
+        {
+            advisoryLock.Parameters.AddWithValue("key", $"honua_geocode_reference_import:{qualifiedTable}");
+            _ = await advisoryLock.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (request.ReplaceExisting)
         {
             await using var delete = new NpgsqlCommand($"DELETE FROM {qualifiedTable}", connection, transaction);
