@@ -1067,10 +1067,10 @@
       "displayName": "File Import",
       "category": "Import",
       "edition": "Community",
-      "entryCount": 73,
-      "provingTestCount": 181,
+      "entryCount": 74,
+      "provingTestCount": 188,
       "maturity": {
-        "implemented": 73
+        "implemented": 74
       },
       "noSurface": null,
       "cite": [],

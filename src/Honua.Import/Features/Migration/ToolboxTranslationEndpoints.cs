@@ -82,7 +82,7 @@ internal static partial class ToolboxTranslationEndpoints
         }
 
         var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-        var report = ToolboxTranslationValidator.Validate(manifest, catalog);
+        var report = ToolboxTranslationValidator.Validate(Normalize(manifest), catalog);
 
         Log.TranslationValidated(
             GetLogger(context),
@@ -111,9 +111,11 @@ internal static partial class ToolboxTranslationEndpoints
             return $"sourceFormat must be one of: {string.Join(", ", ToolboxSourceFormats.All)}.";
         }
 
-        if (manifest.Tools.Length == 0)
+        // An explicit JSON null bypasses the property's non-null default, so guard the
+        // reference before any dereference.
+        if (manifest.Tools is null || manifest.Tools.Length == 0)
         {
-            return "tools must contain at least one tool.";
+            return "tools is required and must contain at least one tool.";
         }
 
         if (manifest.Tools.Length > MaxTools)
@@ -134,7 +136,9 @@ internal static partial class ToolboxTranslationEndpoints
                 return $"Duplicate toolName '{tool.ToolName.Trim()}' in manifest.";
             }
 
-            foreach (var mapping in tool.ParameterMappings)
+            // Explicit JSON nulls for the per-tool collections are normalized to empty by
+            // Normalize(); a null element inside a present collection is still rejected.
+            foreach (var mapping in tool.ParameterMappings ?? [])
             {
                 if (mapping is null
                     || string.IsNullOrWhiteSpace(mapping.SourceName)
@@ -147,6 +151,22 @@ internal static partial class ToolboxTranslationEndpoints
 
         return null;
     }
+
+    /// <summary>
+    /// Coerces explicit JSON <c>null</c> collection values (which bypass the records'
+    /// non-null defaults during deserialization) to empty arrays so the validator never
+    /// dereferences null. A null <c>parameterMappings</c> or <c>unsupportedConstructs</c>
+    /// is treated as "none declared".
+    /// </summary>
+    private static ToolboxTranslationManifest Normalize(ToolboxTranslationManifest manifest) =>
+        manifest with
+        {
+            Tools = [.. manifest.Tools.Select(tool => tool with
+            {
+                ParameterMappings = tool.ParameterMappings ?? [],
+                UnsupportedConstructs = tool.UnsupportedConstructs ?? []
+            })]
+        };
 
     private static ILogger<ToolboxTranslationEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<ToolboxTranslationEndpointsLog>>();

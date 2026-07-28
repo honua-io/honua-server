@@ -301,7 +301,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ArcGisMigration|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ArcGisMigration|FullyQualifiedName~Honua.Server.Tests.Import.GeoServer|FullyQualifiedName~Honua.Server.Tests.Import.Geoservices|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.PostgresMigrationStyleApplicator|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore",
       "paths": [
         "src/Honua.Core/Features/Migration/",
         "src/Honua.Postgres/Features/Migration/",
@@ -331,7 +331,9 @@
         "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs"
+        "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
+        "tests/fixtures/toolbox-translation/"
       ]
     },
     {

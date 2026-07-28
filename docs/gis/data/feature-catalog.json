@@ -14259,6 +14259,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_MalformedBody_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_NullToolCollections_NormalizesToEmptyAndReports",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_NullTools_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_PartiallyTranslatableToolbox_ReportsUnsupportedConstructs",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_TranslatableToolbox_RoundTripsAllParameterSignatures",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_UnknownSourceFormat_ReturnsBadRequest",

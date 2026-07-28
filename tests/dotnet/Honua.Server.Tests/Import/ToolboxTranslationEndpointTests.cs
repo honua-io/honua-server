@@ -172,6 +172,63 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_NullTools_ReturnsBadRequest()
+    {
+        var response = await PostJsonAsync(
+            """
+            {
+              "toolboxName": "NullTools",
+              "sourceFormat": "pyt",
+              "tools": null
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("tools");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_NullToolCollections_NormalizesToEmptyAndReports()
+    {
+        // Explicit JSON nulls for the per-tool collections are normalized to "none
+        // declared": the tool still validates against the catalog (and is unsupported
+        // here because overlay.clip's required parameters are unmapped) instead of
+        // producing a 500.
+        var response = await PostJsonAsync(
+            """
+            {
+              "toolboxName": "NullCollections",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ClipWithNullCollections",
+                  "targetProcessId": "overlay.clip",
+                  "parameterMappings": null,
+                  "unsupportedConstructs": null
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var root = report.RootElement;
+
+        root.GetProperty("summary").GetProperty("toolCount").GetInt32().Should().Be(1);
+        root.GetProperty("summary").GetProperty("unsupportedCount").GetInt32().Should().Be(1);
+
+        var tool = root.GetProperty("tools")[0];
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        tool.GetProperty("processId").GetString().Should().Be("overlay.clip");
+        tool.GetProperty("parameterBindings").GetArrayLength().Should().Be(0);
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().OnlyContain(code => code == "missing-required-parameter");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_MalformedBody_ReturnsBadRequest()
     {
         var response = await PostJsonAsync("{ not json");
