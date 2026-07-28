@@ -37,6 +37,14 @@ internal readonly record struct GeoTiffGeoreferencing
     private const ushort TagModelTransformation = 34264;
     private const ushort TagGeoKeyDirectory = 34735;
 
+    /// <summary>
+    /// Largest share of the source extent a single output pixel may span before
+    /// the extent comparison stops being meaningful (a result must be at least
+    /// ~10 cells across). Caps the resampling rounding allowance so a very coarse
+    /// result cannot pass the extent check by virtue of its own pixel size.
+    /// </summary>
+    private const double MaxRoundingFractionOfExtent = 0.1;
+
     private const ushort GeoKeyGeographicType = 2048;
     private const ushort GeoKeyProjectedCsType = 3072;
 
@@ -192,7 +200,7 @@ internal readonly record struct GeoTiffGeoreferencing
             builder.Accept(bytes, tag, type, count, dataOffset, littleEndian);
         }
 
-        return builder.TryBuild(out georeferencing);
+        return builder.TryBuild(bytes.Length, out georeferencing);
     }
 
     private static bool TryReadBigTiff(
@@ -255,7 +263,7 @@ internal readonly record struct GeoTiffGeoreferencing
             builder.Accept(bytes, tag, type, (uint)Math.Min(count, uint.MaxValue), dataOffset, littleEndian);
         }
 
-        return builder.TryBuild(out georeferencing);
+        return builder.TryBuild(bytes.Length, out georeferencing);
     }
 
     /// <summary>
@@ -290,12 +298,26 @@ internal readonly record struct GeoTiffGeoreferencing
                 $"origin ({OriginX}, {OriginY}) does not match the source origin ({source.OriginX}, {source.OriginY})");
         }
 
-        // Extent, unlike the origin, legitimately rounds: resampling to a cell
-        // size that does not divide the source coverage evenly forces the pixel
-        // count up or down. The allowance is therefore ONE OUTPUT pixel — bounded
-        // by the result's own resolution — not one source pixel.
-        var extentToleranceX = Math.Max(PixelSizeX, OriginTolerance(source.OriginX, source.ExtentWidth));
-        var extentToleranceY = Math.Max(PixelSizeY, OriginTolerance(source.OriginY, source.ExtentHeight));
+        // Extent, unlike the origin, legitimately rounds: resampling to a cell size
+        // that does not divide the source coverage evenly forces the pixel count up
+        // or down, so ONE OUTPUT pixel of slack is genuinely needed. But that
+        // allowance must not grow without bound: a 1x1 result with a pixel wider
+        // than the scene would otherwise "match" any extent at all. So a result too
+        // coarse to compare meaningfully is REJECTED rather than waved through with
+        // an enormous tolerance.
+        var coarsenessLimitX = Math.Abs(source.ExtentWidth) * MaxRoundingFractionOfExtent;
+        var coarsenessLimitY = Math.Abs(source.ExtentHeight) * MaxRoundingFractionOfExtent;
+        if (PixelSizeX > coarsenessLimitX || PixelSizeY > coarsenessLimitY)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"output cell size {PixelSizeX} x {PixelSizeY} is too coarse to verify extent preservation against a source extent of {source.ExtentWidth} x {source.ExtentHeight}");
+        }
+
+        var extentToleranceX = Math.Max(
+            Math.Min(PixelSizeX, coarsenessLimitX), OriginTolerance(source.OriginX, source.ExtentWidth));
+        var extentToleranceY = Math.Max(
+            Math.Min(PixelSizeY, coarsenessLimitY), OriginTolerance(source.OriginY, source.ExtentHeight));
 
         if (Math.Abs(ExtentWidth - source.ExtentWidth) > extentToleranceX
             || Math.Abs(ExtentHeight - source.ExtentHeight) > extentToleranceY)
@@ -368,6 +390,7 @@ internal readonly record struct GeoTiffGeoreferencing
         private bool _hasMatrix;
         private int _crsCode;
         private bool _hasStorageOffsets;
+        private double _storageOffset;
         private double _storageByteCount;
 
         public void Accept(
@@ -389,6 +412,7 @@ internal readonly record struct GeoTiffGeoreferencing
                 case TagStripOffsets:
                 case TagTileOffsets:
                     _hasStorageOffsets = true;
+                    _storageOffset = ReadScalar(bytes, type, dataOffset, littleEndian);
                     break;
                 case TagStripByteCounts:
                 case TagTileByteCounts:
@@ -442,7 +466,7 @@ internal readonly record struct GeoTiffGeoreferencing
             }
         }
 
-        public bool TryBuild(out GeoTiffGeoreferencing georeferencing)
+        public bool TryBuild(long payloadLength, out GeoTiffGeoreferencing georeferencing)
         {
             double originX;
             double originY;
@@ -498,7 +522,7 @@ internal readonly record struct GeoTiffGeoreferencing
                     Width = _width,
                     Height = _height,
                     CrsCode = _crsCode,
-                    HasRasterData = _hasStorageOffsets && _storageByteCount > 0
+                    HasRasterData = HasInBoundsStorage(payloadLength)
                 };
                 return true;
             }
@@ -512,11 +536,23 @@ internal readonly record struct GeoTiffGeoreferencing
                 PixelSizeX = pixelX,
                 PixelSizeY = pixelY,
                 CrsCode = _crsCode,
-                HasRasterData = _hasStorageOffsets && _storageByteCount > 0,
+                HasRasterData = HasInBoundsStorage(payloadLength),
                 UnsupportedTransformReason = unsupported
             };
             return true;
         }
+
+        /// <summary>
+        /// A declared strip/tile region only counts as raster data when it
+        /// actually lies inside the payload. A truncated or malformed TIFF can
+        /// retain its offset/byte-count tags while the pixels they point at are
+        /// gone, which would otherwise be published as a corrupt artifact.
+        /// </summary>
+        private readonly bool HasInBoundsStorage(long payloadLength)
+            => _hasStorageOffsets
+                && _storageByteCount > 0
+                && _storageOffset > 0
+                && _storageOffset + _storageByteCount <= payloadLength;
 
         private static int ReadCrsCode(
             ReadOnlySpan<byte> bytes,

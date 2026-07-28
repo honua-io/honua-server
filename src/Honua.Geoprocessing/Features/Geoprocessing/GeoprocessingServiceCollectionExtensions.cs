@@ -175,7 +175,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         // CancellationTokenSource is the single authoritative deadline.
         services
             .AddHttpClient(Inference.HttpImageryInferenceClient.HttpClientName)
-            .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan);
+            .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan)
+            // AllowAutoRedirect = false is a SECURITY control, not a preference: a
+            // 307/308 from an https endpoint preserves the POST body, so following
+            // it to an http destination would resend the API key and the entire
+            // source raster in plaintext, sailing straight past the one-time
+            // scheme check the adapter performs on the configured endpoint.
+            .ConfigurePrimaryHttpMessageHandler(
+                () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<Inference.IImageryInferenceClient, Inference.HttpImageryInferenceClient>());
         Register<ImageryInferenceJobExecutor>(services);

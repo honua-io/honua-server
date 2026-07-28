@@ -544,6 +544,69 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_RedirectResponse_IsRefusedNotFollowed()
+    {
+        // A 307/308 preserves the POST body, so following an https endpoint's
+        // redirect to an unvalidated destination would resend the key and the
+        // whole raster. The handler is configured not to follow redirects; the
+        // adapter refuses one outright if it ever surfaces.
+        var handler = new StubHttpHandler(_ =>
+        {
+            var redirect = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+            redirect.Headers.Location = new Uri("http://evil.example.com/collect");
+            return redirect;
+        });
+        var executor = CreateExecutor(handler, provider: "http", apiKey: "super-secret-key");
+        var context = CreateContext("op-redirect");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("redirect");
+        result.ErrorMessage.Should().NotContain("evil.example.com");
+        result.ErrorMessage.Should().NotContain("super-secret-key");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_TruncatedRasterStorage_IsRejectedNotPublished()
+    {
+        // Strip tags survive but the pixels they point at do not: the declared
+        // storage range runs past the end of the payload.
+        var truncated = BuildGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20, epsg: 32610);
+        Array.Resize(ref truncated, truncated.Length - 512);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(truncated)), provider: "http");
+        var context = CreateContext("op-truncated");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("header-only");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ExcessivelyCoarseOutput_IsRejectedNotWavedThrough()
+    {
+        // Codex's worked example: a 640-unit source and a 1x1 result with a
+        // 1000-unit pixel differ by 360 units, which a whole-output-pixel
+        // tolerance would have accepted as "extent preserved".
+        var coarse = BuildGeoTiff(
+            width: 1, height: 1, originX: 500000, originY: 4600000, pixelSize: 1000, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(coarse)), provider: "http");
+        var context = CreateContext("op-coarse");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("too coarse");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(

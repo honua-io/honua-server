@@ -139,6 +139,19 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
 
         using (response)
         {
+            // Defence in depth behind the handler's AllowAutoRedirect = false: if a
+            // redirect ever reaches this far it is refused outright rather than
+            // chased to a destination that was never scheme-validated.
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                Log.BackendErrorStatus(_logger, endpoint.Host, (int)response.StatusCode);
+                throw new ImageryInferenceException(
+                    $"the inference endpoint replied with a redirect (HTTP {(int)response.StatusCode}), which is " +
+                    "not followed: the redirect target is not covered by the configured endpoint's transport " +
+                    "validation and following it could resend credentials and imagery over an unvalidated " +
+                    "connection. Configure Endpoint to the final https invocation URL.");
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 Log.BackendErrorStatus(_logger, endpoint.Host, (int)response.StatusCode);
