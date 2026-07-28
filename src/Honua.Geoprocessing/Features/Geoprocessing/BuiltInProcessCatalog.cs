@@ -381,6 +381,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("aggregates", "Aggregates", "Semicolon-separated 'field:stat' aggregates computed over the matched dataset features (join methods only). Supported stats: count (emitted as JOIN_COUNT), sum, mean, min, max, stddev on numeric dataset fields.", ProcessParameterValueType.Text),
                 Param("where", "Where", "ArcGIS SQL filter applied to the source layer (layerId source only).", ProcessParameterValueType.Text),
                 Param("bbox", "BBox", "Bounding-box filter applied to the source layer (layerId source only), as minx,miny,maxx,maxy.", ProcessParameterValueType.Text),
+                Param("outSrid", "Output SRID", "EPSG code both the source and dataset layers are streamed in, so the join compares comparable ordinates. Defaults to 4326; choose a metric CRS (e.g. 3857) when 'distance'/NEAR_DIST must be in meters.", ProcessParameterValueType.WholeNumber, defaultValue: "4326"),
+                Param("maxInputFeatures", "Max Input Features", "Per-layer admission cap enforced while streaming, so an oversized selection fails fast instead of exhausting worker memory. Defaults to 250000.", ProcessParameterValueType.WholeNumber, defaultValue: "250000"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },

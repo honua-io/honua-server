@@ -770,6 +770,17 @@ internal static partial class ProcessPlanValidator
             AddRangeViolationIfNew(step, "distance", "expected a finite positive number (CRS units)", violations);
         }
 
+        foreach (var positive in new[] { "outSrid", "maxInputFeatures" })
+        {
+            if (step.Inputs.TryGetValue(positive, out var positiveRaw)
+                && !string.IsNullOrWhiteSpace(positiveRaw)
+                && (!int.TryParse(positiveRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    || parsed <= 0))
+            {
+                AddRangeViolationIfNew(step, positive, "expected a positive integer", violations);
+            }
+        }
+
         if (!step.Inputs.TryGetValue("aggregates", out var aggregatesRaw)
             || string.IsNullOrWhiteSpace(aggregatesRaw))
         {

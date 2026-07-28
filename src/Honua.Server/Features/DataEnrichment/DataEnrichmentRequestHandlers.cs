@@ -167,7 +167,7 @@ internal static class DataEnrichmentRequestHandlers
                 "Inline GeoJSON source not supported",
                 ["Inline GeoJSON enrichment is not available on the synchronous endpoint. "
                     + "Use a registered sourceLayerId, or submit an async batch enrichment job via the "
-                    + "'enrichment.enrich' process (POST /ogc/processes/enrichment.enrich/execution), which "
+                    + "'enrichment.enrich' process (POST /ogc/processes/processes/enrichment.enrich/execution), which "
                     + "accepts a staged FeatureCollection through its 'input' data URI."]);
         }
 
@@ -345,7 +345,7 @@ internal static class DataEnrichmentRequestHandlers
                 "Enrichment input too large for the synchronous endpoint",
                 [$"The source selection exceeds the synchronous enrichment limit of {analyticsLimits.MaxInputFeatures} features. "
                     + "Submit an async batch enrichment job via the 'enrichment.enrich' process "
-                    + "(POST /ogc/processes/enrichment.enrich/execution) for larger inputs; poll status and fetch "
+                    + "(POST /ogc/processes/processes/enrichment.enrich/execution) for larger inputs; poll status and fetch "
                     + "results through /ogc/processes/jobs/{jobId}."]);
         }
 
@@ -434,7 +434,7 @@ internal static class DataEnrichmentRequestHandlers
                         "Method not supported",
                         ["The nearest-neighbor method is not available on the synchronous layer-backed endpoint. "
                             + "Submit an async batch enrichment job via the 'enrichment.enrich' process "
-                            + "(POST /ogc/processes/enrichment.enrich/execution) with method=nearest-neighbor."]);
+                            + "(POST /ogc/processes/processes/enrichment.enrich/execution) with method=nearest-neighbor."]);
                     return false;
                 default:
                     error = new EnrichmentError(

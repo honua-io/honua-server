@@ -242,13 +242,26 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
         DagSourceRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? maxFeatures = null,
+        string? limitLabel = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
         await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Bounded admission: fail fast WHILE streaming rather than materializing an
+            // unbounded layer and only discovering the size after the whole feature set,
+            // the output set, and the serialized artifact have been allocated.
+            if (maxFeatures is { } cap && features.Count >= cap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} exceeds the configured limit of {cap} features; "
+                    + "narrow the selection (where/bbox) or raise the limit.");
+            }
+
             features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
         }
 

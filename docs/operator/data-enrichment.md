@@ -67,10 +67,15 @@ enrichment-local job lifecycle:
   dataset id and attribution embedded as foreign members.
 - **Gating**: the shared `analytics.spatial-join` (Pro) entitlement and the
   dataset's `minimumEdition` are enforced at execution.
-- **Units**: within-distance thresholds on the job path are evaluated in the CRS
-  units of the layer geometries (managed NTS join, no geodesic conversion), so
-  the sync endpoint's `distanceMeters` semantics do not apply; supply `distance`
-  explicitly.
+- **CRS**: both the source and dataset layers are streamed in a single CRS
+  (`outSrid`, default EPSG:4326), so a cross-SRID pair is never joined on
+  incomparable ordinates. Within-distance thresholds and `NEAR_DIST` are in those
+  CRS units (managed NTS join, no geodesic conversion) — the sync endpoint's
+  `distanceMeters` semantics do not apply, so supply `distance` explicitly and
+  pick a metric `outSrid` (e.g. 3857) when you need meters.
+- **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
+  while streaming, so an oversized selection fails fast with an actionable error
+  instead of exhausting worker memory.
 
 ## Registering enrichment datasets
 
