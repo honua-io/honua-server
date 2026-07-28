@@ -45,6 +45,9 @@ internal readonly record struct GeoTiffGeoreferencing
     /// </summary>
     private const double MaxRoundingFractionOfExtent = 0.1;
 
+    private const ushort GeoKeyRasterType = 1025;
+    private const ushort RasterPixelIsPoint = 2;
+
     private const ushort GeoKeyGeographicType = 2048;
     private const ushort GeoKeyProjectedCsType = 3072;
 
@@ -200,7 +203,7 @@ internal readonly record struct GeoTiffGeoreferencing
             builder.Accept(bytes, tag, type, count, dataOffset, littleEndian);
         }
 
-        return builder.TryBuild(bytes.Length, out georeferencing);
+        return builder.TryBuild(bytes, littleEndian, out georeferencing);
     }
 
     private static bool TryReadBigTiff(
@@ -263,7 +266,7 @@ internal readonly record struct GeoTiffGeoreferencing
             builder.Accept(bytes, tag, type, (uint)Math.Min(count, uint.MaxValue), dataOffset, littleEndian);
         }
 
-        return builder.TryBuild(bytes.Length, out georeferencing);
+        return builder.TryBuild(bytes, littleEndian, out georeferencing);
     }
 
     /// <summary>
@@ -389,9 +392,14 @@ internal readonly record struct GeoTiffGeoreferencing
         private double _matrixShearY;
         private bool _hasMatrix;
         private int _crsCode;
+        private int _rasterType;
         private bool _hasStorageOffsets;
-        private double _storageOffset;
-        private double _storageByteCount;
+        private int _offsetsData;
+        private ushort _offsetsType;
+        private uint _offsetsCount;
+        private int _byteCountsData;
+        private ushort _byteCountsType;
+        private uint _byteCountsCount;
 
         public void Accept(
             ReadOnlySpan<byte> bytes,
@@ -411,16 +419,20 @@ internal readonly record struct GeoTiffGeoreferencing
                     break;
                 case TagStripOffsets:
                 case TagTileOffsets:
+                    // Keep the whole array's location: a multi-strip or tiled file
+                    // declares many segments and EVERY one has to be present, so
+                    // remembering only the first would miss a payload truncated
+                    // after segment 0.
                     _hasStorageOffsets = true;
-                    _storageOffset = ReadScalar(bytes, type, dataOffset, littleEndian);
+                    _offsetsData = dataOffset;
+                    _offsetsType = type;
+                    _offsetsCount = count;
                     break;
                 case TagStripByteCounts:
                 case TagTileByteCounts:
-                    // Any positive byte count proves pixel storage is declared;
-                    // reading the first element is enough to tell data from a
-                    // header-only stub.
-                    _storageByteCount = Math.Max(
-                        _storageByteCount, ReadScalar(bytes, type, dataOffset, littleEndian));
+                    _byteCountsData = dataOffset;
+                    _byteCountsType = type;
+                    _byteCountsCount = count;
                     break;
                 case TagModelPixelScale when count >= 2 && dataOffset + 16 <= bytes.Length:
                     // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
@@ -459,14 +471,14 @@ internal readonly record struct GeoTiffGeoreferencing
                     _hasMatrix = true;
                     break;
                 case TagGeoKeyDirectory:
-                    _crsCode = ReadCrsCode(bytes, count, dataOffset, littleEndian);
+                    ReadGeoKeys(bytes, count, dataOffset, littleEndian, out _crsCode, out _rasterType);
                     break;
                 default:
                     break;
             }
         }
 
-        public bool TryBuild(long payloadLength, out GeoTiffGeoreferencing georeferencing)
+        public bool TryBuild(ReadOnlySpan<byte> bytes, bool littleEndian, out GeoTiffGeoreferencing georeferencing)
         {
             double originX;
             double originY;
@@ -522,9 +534,21 @@ internal readonly record struct GeoTiffGeoreferencing
                     Width = _width,
                     Height = _height,
                     CrsCode = _crsCode,
-                    HasRasterData = HasInBoundsStorage(payloadLength)
+                    HasRasterData = HasInBoundsStorage(bytes, littleEndian, bytes.Length)
                 };
                 return true;
+            }
+
+            // GTRasterTypeGeoKey decides what the tiepoint REFERS to: with
+            // RasterPixelIsArea (the default) it is the upper-left CORNER, with
+            // RasterPixelIsPoint it is the pixel CENTRE. Identical tiepoints under
+            // different conventions therefore describe grids offset by half a
+            // pixel, so both are normalized to the corner convention before any
+            // comparison instead of collapsing the directory to just a CRS code.
+            if (_rasterType == RasterPixelIsPoint)
+            {
+                originX -= pixelX / 2d;
+                originY += pixelY / 2d;
             }
 
             georeferencing = new GeoTiffGeoreferencing
@@ -536,23 +560,114 @@ internal readonly record struct GeoTiffGeoreferencing
                 PixelSizeX = pixelX,
                 PixelSizeY = pixelY,
                 CrsCode = _crsCode,
-                HasRasterData = HasInBoundsStorage(payloadLength),
+                HasRasterData = HasInBoundsStorage(bytes, littleEndian, bytes.Length),
                 UnsupportedTransformReason = unsupported
             };
             return true;
         }
 
         /// <summary>
-        /// A declared strip/tile region only counts as raster data when it
-        /// actually lies inside the payload. A truncated or malformed TIFF can
-        /// retain its offset/byte-count tags while the pixels they point at are
-        /// gone, which would otherwise be published as a corrupt artifact.
+        /// Declared strip/tile regions only count as raster data when EVERY one of
+        /// them actually lies inside the payload. A truncated or malformed TIFF can
+        /// retain its offset/byte-count tags while some or all of the pixels they
+        /// point at are gone, which would otherwise be published as a corrupt
+        /// artifact. Requires matching offset/count array lengths and at least one
+        /// non-empty segment.
         /// </summary>
-        private readonly bool HasInBoundsStorage(long payloadLength)
-            => _hasStorageOffsets
-                && _storageByteCount > 0
-                && _storageOffset > 0
-                && _storageOffset + _storageByteCount <= payloadLength;
+        private readonly bool HasInBoundsStorage(ReadOnlySpan<byte> bytes, bool littleEndian, long payloadLength)
+        {
+            const uint MaxSegments = 1u << 20;
+
+            if (!_hasStorageOffsets
+                || _offsetsCount == 0
+                || _offsetsCount != _byteCountsCount
+                || _offsetsCount > MaxSegments)
+            {
+                return false;
+            }
+
+            var offsetElement = ElementSize(_offsetsType);
+            var countElement = ElementSize(_byteCountsType);
+            if (offsetElement == 0 || countElement == 0)
+            {
+                return false;
+            }
+
+            if (_offsetsData + ((long)_offsetsCount * offsetElement) > bytes.Length
+                || _byteCountsData + ((long)_byteCountsCount * countElement) > bytes.Length)
+            {
+                return false;
+            }
+
+            var sawData = false;
+            for (var i = 0u; i < _offsetsCount; i++)
+            {
+                var offset = ReadScalar(
+                    bytes, _offsetsType, _offsetsData + (int)(i * (uint)offsetElement), littleEndian);
+                var byteCount = ReadScalar(
+                    bytes, _byteCountsType, _byteCountsData + (int)(i * (uint)countElement), littleEndian);
+
+                if (byteCount <= 0)
+                {
+                    continue;
+                }
+
+                if (offset <= 0 || offset + byteCount > payloadLength)
+                {
+                    return false;
+                }
+
+                sawData = true;
+            }
+
+            return sawData;
+        }
+
+        private static void ReadGeoKeys(
+            ReadOnlySpan<byte> bytes,
+            uint count,
+            int dataOffset,
+            bool littleEndian,
+            out int crsCode,
+            out int rasterType)
+        {
+            crsCode = ReadCrsCode(bytes, count, dataOffset, littleEndian);
+            rasterType = ReadGeoKeyValue(bytes, count, dataOffset, littleEndian, GeoKeyRasterType);
+        }
+
+        /// <summary>
+        /// Reads one in-line GeoKey value from the directory, or 0 when absent.
+        /// </summary>
+        private static int ReadGeoKeyValue(
+            ReadOnlySpan<byte> bytes,
+            uint count,
+            int dataOffset,
+            bool littleEndian,
+            ushort wantedKeyId)
+        {
+            if (count < 4 || dataOffset + (count * 2) > bytes.Length)
+            {
+                return 0;
+            }
+
+            var keyCount = ReadUInt16(bytes, dataOffset + 6, littleEndian);
+            for (var k = 0; k < keyCount; k++)
+            {
+                var keyOffset = dataOffset + 8 + (k * 8);
+                if (keyOffset + 8 > bytes.Length || (uint)(8 + (k * 8) + 8) > count * 2)
+                {
+                    break;
+                }
+
+                if (ReadUInt16(bytes, keyOffset, littleEndian) == wantedKeyId
+                    && ReadUInt16(bytes, keyOffset + 2, littleEndian) == 0)
+                {
+                    return ReadUInt16(bytes, keyOffset + 6, littleEndian);
+                }
+            }
+
+            return 0;
+        }
 
         private static int ReadCrsCode(
             ReadOnlySpan<byte> bytes,

@@ -607,6 +607,80 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_PixelIsPointOutputWithSameTiepoint_IsRejectedAsHalfPixelShift()
+    {
+        // Source is PixelIsArea (tiepoint = corner). An output declaring
+        // PixelIsPoint (tiepoint = pixel CENTRE) with the SAME tiepoint really
+        // covers ground shifted by half its pixel, which collapsing the
+        // GeoKeyDirectory to a bare CRS code would have accepted.
+        var pixelIsPoint = BuildGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20,
+            epsg: 32610, rasterType: 2);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(pixelIsPoint)), provider: "http");
+        var context = CreateContext("op-pixel-is-point");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("origin");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_PixelIsPointOutputDescribingTheSameGrid_IsAccepted()
+    {
+        // The same coverage honestly expressed under the point convention: the
+        // tiepoint sits half a pixel in from the corner. Normalizing both to the
+        // corner convention must make these compare equal.
+        var equivalent = BuildGeoTiff(
+            width: 32, height: 32, originX: 500010, originY: 4599990, pixelSize: 20,
+            epsg: 32610, rasterType: 2);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(equivalent)), provider: "http");
+        var context = CreateContext("op-pixel-is-point-equivalent", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded,
+            "a PixelIsPoint tiepoint half a pixel in from the corner describes the same grid");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_MultiStripTruncatedAfterFirstSegment_IsRejected()
+    {
+        // Two declared strips where only the first survives the truncation:
+        // validating just the leading segment would publish a corrupt raster.
+        var multiStrip = BuildMultiStripGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20,
+            epsg: 32610, truncateAfterFirstStrip: true);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(multiStrip)), provider: "http");
+        var context = CreateContext("op-multistrip-truncated");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("header-only");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_MultiStripComplete_IsAccepted()
+    {
+        var multiStrip = BuildMultiStripGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000, pixelSize: 20,
+            epsg: 32610, truncateAfterFirstStrip: false);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(multiStrip)), provider: "http");
+        var context = CreateContext("op-multistrip-ok", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
@@ -759,7 +833,8 @@ public sealed class ImageryInferenceJobExecutorTests
         bool georeferenced = true,
         double tiepointI = 0,
         double tiepointJ = 0,
-        bool withRasterData = true)
+        bool withRasterData = true,
+        int rasterType = 1)
     {
         // Entries (ascending tag order, as TIFF requires): ImageWidth, ImageLength,
         // StripOffsets, StripByteCounts [, ModelPixelScale, ModelTiepoint,
@@ -774,7 +849,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var pixelScaleOffset = dataStart;
         var tiepointOffset = pixelScaleOffset + 24;   // 3 doubles
         var geoKeyOffset = tiepointOffset + 48;       // 6 doubles
-        var pixelDataOffset = georeferenced ? geoKeyOffset + 16 : dataStart;
+        var pixelDataOffset = georeferenced ? geoKeyOffset + 24 : dataStart;
         var pixelDataLength = withRasterData ? width * height : 0;
         var totalLength = pixelDataOffset + pixelDataLength;
 
@@ -809,7 +884,7 @@ public sealed class ImageryInferenceJobExecutorTests
         {
             WriteOffsetEntry(span, ref entry, tag: 33550, type: 12, count: 3, offset: (uint)pixelScaleOffset);
             WriteOffsetEntry(span, ref entry, tag: 33922, type: 12, count: 6, offset: (uint)tiepointOffset);
-            WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 8, offset: (uint)geoKeyOffset);
+            WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 12, offset: (uint)geoKeyOffset);
 
             // ModelPixelScale (sx, sy, sz)
             BinaryPrimitives.WriteDoubleLittleEndian(span[pixelScaleOffset..], pixelSize);
@@ -828,14 +903,20 @@ public sealed class ImageryInferenceJobExecutorTests
 
             // GeoKeyDirectory: version/revision/minor/numberOfKeys, then one key
             // (ProjectedCSTypeGeoKey = 3072) stored in-line.
+            // header: version, revision, minor, numberOfKeys — then keys in
+            // ascending id order: 1025 GTRasterType, 3072 ProjectedCSType.
             BinaryPrimitives.WriteUInt16LittleEndian(span[geoKeyOffset..], 1);
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 2)..], 1);
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 4)..], 0);
-            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 1);
-            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 3072);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 2);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 1025);
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 10)..], 0);
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
-            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)epsg);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)rasterType);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 16)..], 3072);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 18)..], 0);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 20)..], 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 22)..], (ushort)epsg);
         }
 
         return buffer;
@@ -863,7 +944,7 @@ public sealed class ImageryInferenceJobExecutorTests
         var dataStart = ifdOffset + 2 + (entryCount * 12) + 4;
         var matrixOffset = dataStart;
         var geoKeyOffset = matrixOffset + 128; // 16 doubles
-        var pixelDataOffset = geoKeyOffset + 16;
+        var pixelDataOffset = geoKeyOffset + 24;
         var pixelDataLength = width * height;
         var buffer = new byte[pixelDataOffset + pixelDataLength];
         var span = buffer.AsSpan();
@@ -880,7 +961,7 @@ public sealed class ImageryInferenceJobExecutorTests
         WriteLongEntry(span, ref entry, tag: 273, value: (uint)pixelDataOffset);
         WriteLongEntry(span, ref entry, tag: 279, value: (uint)pixelDataLength);
         WriteOffsetEntry(span, ref entry, tag: 34264, type: 12, count: 16, offset: (uint)matrixOffset);
-        WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 8, offset: (uint)geoKeyOffset);
+        WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 12, offset: (uint)geoKeyOffset);
 
         // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
         BinaryPrimitives.WriteDoubleLittleEndian(span[matrixOffset..], scaleX);
@@ -893,15 +974,101 @@ public sealed class ImageryInferenceJobExecutorTests
         BinaryPrimitives.WriteUInt16LittleEndian(span[geoKeyOffset..], 1);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 2)..], 1);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 4)..], 0);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 1);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 3072);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 1025);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 10)..], 0);
         BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)epsg);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 16)..], 3072);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 18)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 20)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 22)..], (ushort)epsg);
 
         for (var p = 0; p < pixelDataLength; p++)
         {
             span[pixelDataOffset + p] = (byte)(p % 251);
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// Builds a georeferenced GeoTIFF whose pixels are split across TWO strips, so
+    /// the all-segments storage validation can be exercised.
+    /// <paramref name="truncateAfterFirstStrip"/> drops the second strip's bytes
+    /// while leaving both declared in the tags.
+    /// </summary>
+    private static byte[] BuildMultiStripGeoTiff(
+        int width,
+        int height,
+        double originX,
+        double originY,
+        double pixelSize,
+        int epsg,
+        bool truncateAfterFirstStrip)
+    {
+        // width, height, stripOffsets(2), stripByteCounts(2), pixelScale,
+        // tiepoint, geokeys
+        const int entryCount = 7;
+        var ifdOffset = 8;
+        var dataStart = ifdOffset + 2 + (entryCount * 12) + 4;
+
+        var offsetsArray = dataStart;              // 2 LONGs
+        var byteCountsArray = offsetsArray + 8;    // 2 LONGs
+        var pixelScaleOffset = byteCountsArray + 8;
+        var tiepointOffset = pixelScaleOffset + 24;
+        var geoKeyOffset = tiepointOffset + 48;
+        var stripBytes = width * height / 2;
+        var strip0Offset = geoKeyOffset + 24;
+        var strip1Offset = strip0Offset + stripBytes;
+        var totalLength = truncateAfterFirstStrip
+            ? strip1Offset
+            : strip1Offset + stripBytes;
+
+        var buffer = new byte[totalLength];
+        var span = buffer.AsSpan();
+
+        span[0] = 0x49;
+        span[1] = 0x49;
+        BinaryPrimitives.WriteUInt16LittleEndian(span[2..], 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[4..], (uint)ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ifdOffset..], entryCount);
+
+        var entry = ifdOffset + 2;
+        WriteLongEntry(span, ref entry, tag: 256, value: (uint)width);
+        WriteLongEntry(span, ref entry, tag: 257, value: (uint)height);
+        WriteOffsetEntry(span, ref entry, tag: 273, type: 4, count: 2, offset: (uint)offsetsArray);
+        WriteOffsetEntry(span, ref entry, tag: 279, type: 4, count: 2, offset: (uint)byteCountsArray);
+        WriteOffsetEntry(span, ref entry, tag: 33550, type: 12, count: 3, offset: (uint)pixelScaleOffset);
+        WriteOffsetEntry(span, ref entry, tag: 33922, type: 12, count: 6, offset: (uint)tiepointOffset);
+        WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 12, offset: (uint)geoKeyOffset);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(span[offsetsArray..], (uint)strip0Offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[(offsetsArray + 4)..], (uint)strip1Offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[byteCountsArray..], (uint)stripBytes);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[(byteCountsArray + 4)..], (uint)stripBytes);
+
+        BinaryPrimitives.WriteDoubleLittleEndian(span[pixelScaleOffset..], pixelSize);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(pixelScaleOffset + 8)..], pixelSize);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(tiepointOffset + 24)..], originX);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(tiepointOffset + 32)..], originY);
+
+        BinaryPrimitives.WriteUInt16LittleEndian(span[geoKeyOffset..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 2)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 4)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 1025);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 10)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 16)..], 3072);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 18)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 20)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 22)..], (ushort)epsg);
+
+        for (var p = strip0Offset; p < totalLength; p++)
+        {
+            span[p] = (byte)(p % 251);
         }
 
         return buffer;
