@@ -168,7 +168,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         services
             .AddOptions<Inference.ImageryInferenceOptions>()
             .Bind(configuration.GetSection(Inference.ImageryInferenceOptions.SectionName));
-        services.AddHttpClient(Inference.HttpImageryInferenceClient.HttpClientName);
+        // Timeout.InfiniteTimeSpan is deliberate: HttpClient's 100s default would
+        // cancel long-running inference well before the configured TimeoutSeconds
+        // (default 300, up to 3600) and the adapter would then misreport that the
+        // configured duration elapsed. The adapter's linked per-request
+        // CancellationTokenSource is the single authoritative deadline.
+        services
+            .AddHttpClient(Inference.HttpImageryInferenceClient.HttpClientName)
+            .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan);
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<Inference.IImageryInferenceClient, Inference.HttpImageryInferenceClient>());
         Register<ImageryInferenceJobExecutor>(services);

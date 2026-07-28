@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -195,6 +196,34 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     "TIFF/GeoTIFF; the output raster must preserve the source georeferencing.");
             }
 
+            // TIFF magic is not evidence of georeferencing: a plain unreferenced
+            // TIFF (or a truncated header) also starts with II*\0. Parse the IFD
+            // and require real positioning + CRS metadata, then check it against
+            // the source, so a mislocated classification can never be published
+            // under the advertised georeferencing-preservation contract.
+            if (!GeoTiffGeoreferencing.TryRead(rasterBytes, out var outputGeoreferencing)
+                || !outputGeoreferencing.IsGeoreferenced)
+            {
+                Log.OutputNotGeoreferenced(_logger, job.OperationId);
+                return JobExecutionResult.Failed(
+                    "imagery.classify inference failed: the backend returned a TIFF without usable GeoTIFF " +
+                    "georeferencing (model transform and CRS keys). The output must preserve the source " +
+                    "extent/CRS; a plain unreferenced TIFF is rejected rather than published at an unknown location.");
+            }
+
+            if (GeoTiffGeoreferencing.TryRead(inputs.SourceBytes, out var sourceGeoreferencing)
+                && sourceGeoreferencing.IsGeoreferenced)
+            {
+                var mismatch = outputGeoreferencing.DescribeMismatchAgainst(sourceGeoreferencing);
+                if (mismatch is not null)
+                {
+                    Log.GeoreferencingMismatch(_logger, job.OperationId, mismatch);
+                    return JobExecutionResult.Failed(
+                        $"imagery.classify inference failed: the output raster's georeferencing does not match the " +
+                        $"source scene ({mismatch}). The classification would be placed at the wrong location.");
+                }
+            }
+
             if (rasterBytes.Length > maxArtifactBytes)
             {
                 Log.ArtifactTooLarge(_logger, job.OperationId, rasterBytes.Length, maxArtifactBytes);
@@ -208,11 +237,23 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         else
         {
             var featureJson = outcome.FeatureCollectionJson;
-            if (featureJson is null || featureJson.Length == 0 || !IsFeatureCollection(featureJson))
+
+            // Parse with the SHARED GeoJSON codec rather than a local discriminator
+            // check: a payload whose 'features' member is missing or not an array
+            // would otherwise be published as an unusable artifact.
+            if (featureJson is null || featureJson.Length == 0)
             {
                 return JobExecutionResult.Failed(
                     "imagery.classify inference failed: the backend returned a features payload that is not a " +
-                    "GeoJSON FeatureCollection.");
+                    "valid GeoJSON FeatureCollection (empty payload).");
+            }
+
+            if (!FeatureCollectionArtifact.TryParseJson(
+                    Encoding.UTF8.GetString(featureJson), out _, out var featureParseError))
+            {
+                return JobExecutionResult.Failed(
+                    "imagery.classify inference failed: the backend returned a features payload that is not a " +
+                    $"valid GeoJSON FeatureCollection ({featureParseError}).");
             }
 
             if (featureJson.Length > maxArtifactBytes)
@@ -329,22 +370,6 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         return littleEndian || bigEndian;
     }
 
-    private static bool IsFeatureCollection(byte[] utf8Json)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(utf8Json);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("type", out var type)
-                && type.ValueKind == JsonValueKind.String
-                && string.Equals(type.GetString(), "FeatureCollection", StringComparison.Ordinal);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
     private sealed record InferenceInputs(
         byte[] SourceBytes,
         string Model,
@@ -376,6 +401,14 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         [LoggerMessage(9318, LogLevel.Warning,
             "Imagery inference executor refused job {OperationId}: artifact size {ActualBytes} exceeds limit {MaxBytes}")]
         public static partial void ArtifactTooLarge(ILogger logger, string operationId, long actualBytes, long maxBytes);
+
+        [LoggerMessage(9320, LogLevel.Warning,
+            "Imagery inference executor refused job {OperationId}: backend output TIFF carries no usable GeoTIFF georeferencing")]
+        public static partial void OutputNotGeoreferenced(ILogger logger, string operationId);
+
+        [LoggerMessage(9321, LogLevel.Warning,
+            "Imagery inference executor refused job {OperationId}: output georeferencing mismatch — {Detail}")]
+        public static partial void GeoreferencingMismatch(ILogger logger, string operationId, string detail);
 
         [LoggerMessage(9319, LogLevel.Information,
             "Imagery inference executor completed job {OperationId} via provider '{Provider}' with {OutputType} output")]

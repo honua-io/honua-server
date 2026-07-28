@@ -69,7 +69,21 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         {
             throw new ImageryInferenceException(
                 "the configured 'http' inference backend has a missing or invalid endpoint; " +
-                $"set {ImageryInferenceOptions.SectionName}:Endpoint to the backend's absolute http(s) invocation URL.");
+                $"set {ImageryInferenceOptions.SectionName}:Endpoint to the backend's absolute https invocation URL.");
+        }
+
+        // Both the API key and the full source scene leave the process on this
+        // request, so plaintext http:// is refused outright — a deployment typo or
+        // a non-TLS remote endpoint would otherwise expose credentials and
+        // potentially sensitive imagery on the wire. The only exception is a
+        // loopback host, where the traffic never leaves the machine and local
+        // model-server development is a legitimate workflow.
+        if (endpoint.Scheme == Uri.UriSchemeHttp && !endpoint.IsLoopback)
+        {
+            throw new ImageryInferenceException(
+                "the configured inference endpoint uses plaintext http:// to a non-loopback host; " +
+                "the API key and the full source raster would travel unencrypted. Use an https:// endpoint " +
+                "(plain http is permitted only for loopback development backends).");
         }
 
         var apiKey = await ResolveApiKeyAsync(options, cancellationToken).ConfigureAwait(false);
@@ -129,8 +143,30 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
                     $"the inference request failed with HTTP {(int)response.StatusCode}.");
             }
 
-            var body = await ReadBoundedBodyAsync(response, request.MaxArtifactBytes, timeoutCts.Token)
-                .ConfigureAwait(false);
+            byte[] body;
+            try
+            {
+                body = await ReadBoundedBodyAsync(response, request.MaxArtifactBytes, timeoutCts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // The endpoint answered with headers inside the budget but then stalled
+                // mid-body. Without this translation the OperationCanceledException
+                // escapes and the job service misreports the failure as
+                // "Cancelled by operator" even though the caller never cancelled.
+                Log.RequestTimedOut(_logger, endpoint.Host, (int)timeout.TotalSeconds);
+                throw new ImageryInferenceException(
+                    $"the inference response body stalled and timed out after {(int)timeout.TotalSeconds}s; " +
+                    "increase the configured TimeoutSeconds or reduce the scene size.");
+            }
+            catch (HttpRequestException ex)
+            {
+                Log.RequestFailed(_logger, endpoint.Host, ex);
+                throw new ImageryInferenceException(
+                    "the inference response body could not be read from the endpoint.", ex);
+            }
+
             return ParseResponse(body);
         }
     }
