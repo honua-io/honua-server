@@ -57,15 +57,17 @@ CREATE INDEX IF NOT EXISTS ix_honua_geocode_reference_search_text
 
 ### `search_text` normalization
 
-`search_text` must be the lowercase, trimmed, single-spaced form of the searchable address. The
-provider applies the same normalization to incoming queries, so loaders should normalize on insert:
+`search_text` must be the lowercase, trimmed, single-spaced form of the searchable address with
+separator punctuation (commas/semicolons) replaced by spaces. The provider applies the same
+normalization to incoming queries, so a comma-formatted display address and a space-joined
+structured query normalize to the same text. Loaders should normalize on insert:
 
 ```sql
 INSERT INTO honua_geocode_reference
     (display_name, search_text, address_number, street_name, city, region, postal_code, country, address_type, geom)
 VALUES
     ('380 New York St, Redlands, CA 92373',
-     lower(regexp_replace(trim('380 New York St Redlands CA 92373'), '\s+', ' ', 'g')),
+     lower(regexp_replace(trim(regexp_replace('380 New York St Redlands CA 92373', '[,;]', ' ', 'g')), '\s+', ' ', 'g')),
      '380', 'New York St', 'Redlands', 'CA', '92373', 'US', 'PointAddress',
      ST_SetSRID(ST_MakePoint(-117.1956, 34.0566), 4326));
 ```

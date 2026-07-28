@@ -14,10 +14,18 @@ namespace Honua.Geocoding.Features.Geocoding.Domain;
 internal static partial class GeocodeReferenceText
 {
     /// <summary>
-    /// Normalizes to the documented <c>search_text</c> form: lowercase, trimmed, single-spaced.
+    /// Normalizes to the documented <c>search_text</c> form: lowercase, trimmed, single-spaced,
+    /// with separator punctuation (commas/semicolons) canonicalized away. Applying the same rule
+    /// to loaded records and incoming queries keeps a comma-formatted display address
+    /// ("380 New York St, Redlands") and the provider's space-joined structured composition
+    /// ("380 New York St Redlands") equal after normalization.
     /// </summary>
     public static string Normalize(string text)
-        => WhitespaceRegex().Replace(text.Trim().ToLowerInvariant(), " ");
+        => WhitespaceRegex().Replace(
+            SeparatorRegex().Replace(text.ToLowerInvariant(), " ").Trim(), " ");
+
+    [GeneratedRegex(@"[,;]")]
+    private static partial Regex SeparatorRegex();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();

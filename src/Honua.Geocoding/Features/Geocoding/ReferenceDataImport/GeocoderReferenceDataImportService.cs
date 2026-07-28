@@ -170,21 +170,22 @@ internal sealed partial class GeocoderReferenceDataImportService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnsureReferenceTableAsync(connection, qualifiedTable, config.Table, cancellationToken).ConfigureAwait(false);
-
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         // Serialize concurrent imports (including across replicas) with a transaction-scoped
         // advisory lock keyed on the target table: under READ COMMITTED, two overlapping
         // replace-mode transactions could otherwise each DELETE their own snapshot and commit
-        // the union of both batches instead of either replacement dataset. The lock is released
-        // automatically at commit/rollback.
+        // the union of both batches instead of either replacement dataset. CREATE ... IF NOT
+        // EXISTS is not a concurrency lock either, so table/index creation also runs after the
+        // lock. The lock is released automatically at commit/rollback.
         await using (var advisoryLock = new NpgsqlCommand(
             "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))", connection, transaction))
         {
             advisoryLock.Parameters.AddWithValue("key", $"honua_geocode_reference_import:{qualifiedTable}");
             _ = await advisoryLock.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        await EnsureReferenceTableAsync(connection, transaction, qualifiedTable, config.Table, cancellationToken).ConfigureAwait(false);
 
         if (request.ReplaceExisting)
         {
@@ -408,26 +409,16 @@ internal sealed partial class GeocoderReferenceDataImportService(
             return false;
         }
 
-        // search_text must contain every stored structured component exactly once: the
-        // provider folds neighborhood and country into structured queries, but repeating
-        // components already present in the display label would demote an identical query
-        // from an exact match to a prefix match in LocalPostgisGeocodeProvider.ScoreMatch.
+        // search_text is the canonical structured form the provider composes for structured
+        // queries (streetLine neighborhood city region postal country, punctuation-free via the
+        // shared normalizer). The display label is used only when no structured components are
+        // available — folding a formatted, comma-punctuated label into search_text would demote
+        // identical structured queries from exact to approximate in ScoreMatch.
         var streetLine = string.Join(' ', new[] { addressNumber, streetName }
             .Where(static p => !string.IsNullOrWhiteSpace(p)));
-        string searchSource;
-        if (Get(RoleDisplayName) is null)
-        {
-            searchSource = string.Join(' ', new[] { streetLine, neighborhood, city, region, postalCode, country }
-                .Where(static p => !string.IsNullOrWhiteSpace(p)));
-        }
-        else
-        {
-            var normalizedDisplay = GeocodeReferenceText.Normalize(displayName);
-            var extras = new[] { streetLine, neighborhood, city, region, postalCode, country }
-                .Where(static p => !string.IsNullOrWhiteSpace(p))
-                .Where(p => !normalizedDisplay.Contains(GeocodeReferenceText.Normalize(p!), StringComparison.Ordinal));
-            searchSource = string.Join(' ', new[] { displayName }.Concat(extras));
-        }
+        var componentText = string.Join(' ', new[] { streetLine, neighborhood, city, region, postalCode, country }
+            .Where(static p => !string.IsNullOrWhiteSpace(p)));
+        var searchSource = componentText.Length > 0 ? componentText : displayName;
 
         row = new ReferenceRow(
             DisplayName: displayName,
@@ -464,6 +455,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
     private static async Task EnsureReferenceTableAsync(
         NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         string qualifiedTable,
         string table,
         CancellationToken cancellationToken)
@@ -489,7 +481,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
             CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_search_text")} ON {qualifiedTable} (search_text text_pattern_ops);
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
