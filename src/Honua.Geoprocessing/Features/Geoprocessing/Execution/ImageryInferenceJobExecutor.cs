@@ -203,8 +203,18 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             // and require real positioning + CRS metadata, then check it against
             // the source, so a mislocated classification can never be published
             // under the advertised georeferencing-preservation contract.
-            if (!GeoTiffGeoreferencing.TryRead(rasterBytes, out var outputGeoreferencing)
-                || !outputGeoreferencing.IsGeoreferenced)
+            var parsedOutput = GeoTiffGeoreferencing.TryRead(rasterBytes, out var outputGeoreferencing);
+            if (parsedOutput && outputGeoreferencing.UnsupportedTransformReason is { } outputTransformReason)
+            {
+                Log.OutputNotGeoreferenced(_logger, job.OperationId);
+                return JobExecutionResult.Failed(
+                    $"imagery.classify inference failed: the backend returned a raster whose georeferencing cannot " +
+                    $"be verified ({outputTransformReason}). Only axis-aligned north-up grids are accepted, because " +
+                    "a rotated, sheared, or axis-flipped transform can share the source corner and pixel magnitudes " +
+                    "while covering materially different ground.");
+            }
+
+            if (!parsedOutput || !outputGeoreferencing.IsGeoreferenced)
             {
                 Log.OutputNotGeoreferenced(_logger, job.OperationId);
                 return JobExecutionResult.Failed(
@@ -333,8 +343,15 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         // to SKIP the output comparison would let a backend return any georeferenced
         // raster and have it published as though the source location were preserved,
         // so an unreferenced source is rejected up front instead.
-        if (!GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing)
-            || !sourceGeoreferencing.IsGeoreferenced)
+        if (GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing)
+            && sourceGeoreferencing.UnsupportedTransformReason is { } sourceTransformReason)
+        {
+            error = $"input 'source' carries a model transform this process cannot verify against an output "
+                + $"({sourceTransformReason}). Only axis-aligned north-up GeoTIFF grids are accepted";
+            return false;
+        }
+
+        if (!sourceGeoreferencing.IsGeoreferenced)
         {
             error = "input 'source' is a TIFF without usable GeoTIFF georeferencing (a model transform plus "
                 + "CRS keys). The output location can only be verified against a georeferenced source, so an "

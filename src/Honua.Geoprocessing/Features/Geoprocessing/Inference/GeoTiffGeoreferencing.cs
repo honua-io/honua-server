@@ -60,6 +60,16 @@ internal readonly record struct GeoTiffGeoreferencing
     /// </summary>
     public int CrsCode { get; init; }
 
+    /// <summary>
+    /// Non-null when the file carries a model transform this comparison cannot
+    /// honestly verify — a rotated/sheared grid, or an axis orientation other
+    /// than the standard north-up (X increasing east, Y decreasing south).
+    /// Origin/extent comparison assumes an axis-aligned north-up grid, so rather
+    /// than silently comparing only the diagonal magnitudes (which would let a
+    /// flipped or rotated raster match) such a transform is rejected outright.
+    /// </summary>
+    public string? UnsupportedTransformReason { get; init; }
+
     /// <summary>Georeferenced extent width (<see cref="Width"/> * <see cref="PixelSizeX"/>).</summary>
     public double ExtentWidth => Width * PixelSizeX;
 
@@ -71,7 +81,8 @@ internal readonly record struct GeoTiffGeoreferencing
     /// non-degenerate pixel size) and a CRS declaration.
     /// </summary>
     public bool IsGeoreferenced =>
-        Width > 0 && Height > 0
+        UnsupportedTransformReason is null
+        && Width > 0 && Height > 0
         && PixelSizeX > 0 && PixelSizeY > 0
         && double.IsFinite(OriginX) && double.IsFinite(OriginY)
         && CrsCode != 0;
@@ -320,6 +331,8 @@ internal readonly record struct GeoTiffGeoreferencing
         private double _matrixOriginY;
         private double _matrixScaleX;
         private double _matrixScaleY;
+        private double _matrixShearX;
+        private double _matrixShearY;
         private bool _hasMatrix;
         private int _crsCode;
 
@@ -340,8 +353,12 @@ internal readonly record struct GeoTiffGeoreferencing
                     _height = ReadScalar(bytes, type, dataOffset, littleEndian);
                     break;
                 case TagModelPixelScale when count >= 2 && dataOffset + 16 <= bytes.Length:
-                    _scaleX = Math.Abs(ReadDouble(bytes, dataOffset, littleEndian));
-                    _scaleY = Math.Abs(ReadDouble(bytes, dataOffset + 8, littleEndian));
+                    // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
+                    // axis is implicitly negated for the north-up raster). A
+                    // non-positive value is malformed, not something to Math.Abs
+                    // into looking valid.
+                    _scaleX = ReadDouble(bytes, dataOffset, littleEndian);
+                    _scaleY = ReadDouble(bytes, dataOffset + 8, littleEndian);
                     _hasScale = true;
                     break;
                 case TagModelTiepoint when count >= 6 && dataOffset + 48 <= bytes.Length:
@@ -358,9 +375,16 @@ internal readonly record struct GeoTiffGeoreferencing
                     _hasTiepoint = true;
                     break;
                 case TagModelTransformation when count >= 16 && dataOffset + 128 <= bytes.Length:
-                    _matrixScaleX = Math.Abs(ReadDouble(bytes, dataOffset, littleEndian));
-                    _matrixScaleY = Math.Abs(ReadDouble(bytes, dataOffset + 40, littleEndian));
+                    // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
+                    // Signs are PRESERVED (m00 > 0 and m11 < 0 is the standard
+                    // north-up orientation) and the off-diagonal m01/m10 terms are
+                    // captured so rotation/shear can be detected rather than
+                    // silently dropped.
+                    _matrixScaleX = ReadDouble(bytes, dataOffset, littleEndian);
+                    _matrixShearX = ReadDouble(bytes, dataOffset + 8, littleEndian);
                     _matrixOriginX = ReadDouble(bytes, dataOffset + 24, littleEndian);
+                    _matrixShearY = ReadDouble(bytes, dataOffset + 32, littleEndian);
+                    _matrixScaleY = ReadDouble(bytes, dataOffset + 40, littleEndian);
                     _matrixOriginY = ReadDouble(bytes, dataOffset + 56, littleEndian);
                     _hasMatrix = true;
                     break;
@@ -379,8 +403,15 @@ internal readonly record struct GeoTiffGeoreferencing
             double pixelX;
             double pixelY;
 
+            string? unsupported = null;
+
             if (_hasScale && _hasTiepoint)
             {
+                if (_scaleX <= 0 || _scaleY <= 0)
+                {
+                    unsupported = "ModelPixelScale declares a non-positive pixel size";
+                }
+
                 // Walk the model point back along the raster offset to the
                 // upper-left corner: X decreases with i, Y increases with j
                 // (raster rows run north -> south).
@@ -391,10 +422,28 @@ internal readonly record struct GeoTiffGeoreferencing
             }
             else if (_hasMatrix)
             {
+                // Rotation/shear would make an origin+extent comparison
+                // meaningless: the same corner and diagonal magnitudes can
+                // describe a materially different grid. Reject instead of
+                // comparing a transform we do not fully model.
+                var scaleMagnitude = Math.Max(Math.Abs(_matrixScaleX), Math.Abs(_matrixScaleY));
+                var shearEpsilon = Math.Max(scaleMagnitude, 1d) * 1e-9;
+                if (Math.Abs(_matrixShearX) > shearEpsilon || Math.Abs(_matrixShearY) > shearEpsilon)
+                {
+                    unsupported = "ModelTransformation declares a rotated or sheared grid";
+                }
+                else if (_matrixScaleX <= 0 || _matrixScaleY >= 0)
+                {
+                    // Standard north-up is m00 > 0 (X increases east) and
+                    // m11 < 0 (Y decreases south). Anything else is a flipped
+                    // axis, which Math.Abs would have hidden.
+                    unsupported = "ModelTransformation declares a non-north-up axis orientation";
+                }
+
                 originX = _matrixOriginX;
                 originY = _matrixOriginY;
-                pixelX = _matrixScaleX;
-                pixelY = _matrixScaleY;
+                pixelX = Math.Abs(_matrixScaleX);
+                pixelY = Math.Abs(_matrixScaleY);
             }
             else
             {
@@ -415,7 +464,8 @@ internal readonly record struct GeoTiffGeoreferencing
                 OriginY = originY,
                 PixelSizeX = pixelX,
                 PixelSizeY = pixelY,
-                CrsCode = _crsCode
+                CrsCode = _crsCode,
+                UnsupportedTransformReason = unsupported
             };
             return true;
         }

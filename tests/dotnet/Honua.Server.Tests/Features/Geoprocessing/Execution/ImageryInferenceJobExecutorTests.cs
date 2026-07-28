@@ -450,6 +450,62 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_RotatedOutputTransform_IsRejectedNotPublished()
+    {
+        // A sheared/rotated ModelTransformation can share the source corner, CRS,
+        // dimensions, and diagonal magnitudes while covering different ground.
+        // Comparing only |m00| / |m11| would let it through.
+        var rotated = BuildMatrixGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000,
+            scaleX: 20, scaleY: -20, shearX: 5, shearY: 5, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(rotated)), provider: "http");
+        var context = CreateContext("op-rotated");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("rotated or sheared");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_AxisFlippedOutputTransform_IsRejectedNotPublished()
+    {
+        // Positive m11 means the Y axis increases southward — a vertical flip that
+        // Math.Abs on the diagonal would have hidden entirely.
+        var flipped = BuildMatrixGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000,
+            scaleX: 20, scaleY: 20, shearX: 0, shearY: 0, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(flipped)), provider: "http");
+        var context = CreateContext("op-flipped");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("north-up");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_NorthUpMatrixTransform_IsAccepted()
+    {
+        // The same grid expressed via ModelTransformation instead of
+        // ModelPixelScale + ModelTiepoint must still be accepted.
+        var matrixForm = BuildMatrixGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000,
+            scaleX: 20, scaleY: -20, shearX: 0, shearY: 0, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(matrixForm)), provider: "http");
+        var context = CreateContext("op-matrix", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
@@ -661,6 +717,62 @@ public sealed class ImageryInferenceJobExecutorTests
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
             BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)epsg);
         }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// Builds a GeoTIFF that georeferences via ModelTransformation (34264) rather
+    /// than ModelPixelScale + ModelTiepoint, so axis signs and the off-diagonal
+    /// rotation/shear terms can be exercised directly.
+    /// </summary>
+    private static byte[] BuildMatrixGeoTiff(
+        int width,
+        int height,
+        double originX,
+        double originY,
+        double scaleX,
+        double scaleY,
+        double shearX,
+        double shearY,
+        int epsg)
+    {
+        const int entryCount = 4; // width, height, transformation, geokeys
+        var ifdOffset = 8;
+        var dataStart = ifdOffset + 2 + (entryCount * 12) + 4;
+        var matrixOffset = dataStart;
+        var geoKeyOffset = matrixOffset + 128; // 16 doubles
+        var buffer = new byte[geoKeyOffset + 16];
+        var span = buffer.AsSpan();
+
+        span[0] = 0x49;
+        span[1] = 0x49;
+        BinaryPrimitives.WriteUInt16LittleEndian(span[2..], 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[4..], (uint)ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ifdOffset..], entryCount);
+
+        var entry = ifdOffset + 2;
+        WriteLongEntry(span, ref entry, tag: 256, value: (uint)width);
+        WriteLongEntry(span, ref entry, tag: 257, value: (uint)height);
+        WriteOffsetEntry(span, ref entry, tag: 34264, type: 12, count: 16, offset: (uint)matrixOffset);
+        WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 8, offset: (uint)geoKeyOffset);
+
+        // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
+        BinaryPrimitives.WriteDoubleLittleEndian(span[matrixOffset..], scaleX);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(matrixOffset + 8)..], shearX);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(matrixOffset + 24)..], originX);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(matrixOffset + 32)..], shearY);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(matrixOffset + 40)..], scaleY);
+        BinaryPrimitives.WriteDoubleLittleEndian(span[(matrixOffset + 56)..], originY);
+
+        BinaryPrimitives.WriteUInt16LittleEndian(span[geoKeyOffset..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 2)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 4)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 6)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 8)..], 3072);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 10)..], 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 12)..], 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[(geoKeyOffset + 14)..], (ushort)epsg);
 
         return buffer;
     }
