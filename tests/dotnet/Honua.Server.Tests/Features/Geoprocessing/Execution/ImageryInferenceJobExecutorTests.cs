@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
@@ -836,6 +837,69 @@ public sealed class ImageryInferenceJobExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("MaxArtifactBytes");
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public void ResultPackage_FeatureOutput_IsPublishedUnderTheFeatureLayerSlot()
+    {
+        // imagery.classify declares [Raster, FeatureLayer] because the backend
+        // decides which shape a scene yields. Positional slot assignment would
+        // label a single published GeoJSON artifact as Raster/outputRaster and
+        // leave the advertised outputFeatureLayer unreachable.
+        var job = CreateTerminalJobRecord(
+            FeatureCollectionArtifact.DataUriPrefix + Convert.ToBase64String("{}"u8.ToArray()));
+
+        var package = GeoprocessingResultPackageFactory.Create(job, new BuiltInProcessCatalog());
+
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Kind.Should().Be(ArtifactKind.FeatureLayer,
+            "a GeoJSON result must land in the declared feature slot, not the raster slot");
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        package.Artifacts[0].ContentType.Should().Be("application/geo+json");
+    }
+
+    [UnitTest]
+    public void ResultPackage_RasterOutput_StillUsesTheRasterSlot()
+    {
+        var job = CreateTerminalJobRecord(
+            ImageryInferenceJobExecutor.GeoTiffDataUriPrefix + Convert.ToBase64String(ClassifiedGeoTiff));
+
+        var package = GeoprocessingResultPackageFactory.Create(job, new BuiltInProcessCatalog());
+
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Kind.Should().Be(ArtifactKind.Raster);
+        package.Artifacts[0].Label.Should().Be("outputRaster");
+    }
+
+    private static ExecutionJobRecord CreateTerminalJobRecord(string artifactReference)
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] =
+                ImageryInferenceJobExecutor.HandledProcessId,
+            ["protocolProcessId"] = ImageryInferenceJobExecutor.HandledProcessId,
+            // Names the OGC adapter stamps at submit time, one per DECLARED output.
+            ["process.output.0"] = "outputRaster",
+            ["process.output.1"] = "outputFeatureLayer"
+        };
+
+        return new ExecutionJobRecord
+        {
+            OperationId = "op-slot",
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences = [artifactReference],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:test",
+                Parameters = parameters
+            }
+        };
     }
 
     // -------------------------------------------------------------------------

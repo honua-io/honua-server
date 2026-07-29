@@ -101,10 +101,33 @@ internal static class GeoprocessingResultPackageFactory
         {
             var reference = job.ArtifactReferences[index];
             var kind = index < outputKinds.Length ? outputKinds[index] : ArtifactKind.File;
+
+            // Positional slot assignment assumes one published artifact per declared
+            // output. A process that advertises ALTERNATIVE output shapes — e.g.
+            // imagery.classify declares [Raster, FeatureLayer] because the backend
+            // decides whether a scene yields a classification raster or detected
+            // features — publishes fewer artifacts than it declares, so index 0
+            // would label a GeoJSON result as the Raster/outputRaster slot and leave
+            // the advertised feature slot unreachable. When that mismatch exists,
+            // resolve the slot from the artifact's OWN media type instead, and use
+            // the matching declared position for the output-name lookup so the
+            // protocol adapters surface the name they advertised.
+            var slotIndex = index;
+            if (outputKinds.Length > job.ArtifactReferences.Count
+                && TryInferKindFromReference(reference, out var inferredKind))
+            {
+                var declaredIndex = Array.IndexOf(outputKinds, inferredKind);
+                if (declaredIndex >= 0)
+                {
+                    kind = inferredKind;
+                    slotIndex = declaredIndex;
+                }
+            }
+
             var outputName = job.Spec.Parameters.GetValueOrDefault(
-                    $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}")
+                    $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{slotIndex}")
                 ?? job.Spec.Parameters.GetValueOrDefault(
-                    $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}");
+                    $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{slotIndex}");
 
             Dictionary<string, string>? metadata = null;
             if (!string.IsNullOrWhiteSpace(outputName))
@@ -218,6 +241,36 @@ internal static class GeoprocessingResultPackageFactory
             ArtifactKind.AppBundle => $"bundle{index + 1}",
             _ => $"artifact{index + 1}"
         };
+
+    /// <summary>
+    /// Infers an artifact kind from a data-URI media type. Used only to
+    /// disambiguate alternative output shapes; returns false for anything it
+    /// cannot classify confidently, leaving positional assignment in charge.
+    /// </summary>
+    private static bool TryInferKindFromReference(string? reference, out ArtifactKind kind)
+    {
+        kind = ArtifactKind.File;
+
+        if (string.IsNullOrWhiteSpace(reference)
+            || !reference.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (reference.StartsWith("data:application/geo+json", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = ArtifactKind.FeatureLayer;
+            return true;
+        }
+
+        if (reference.StartsWith("data:image/tiff", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = ArtifactKind.Raster;
+            return true;
+        }
+
+        return false;
+    }
 
     private static string? InferContentType(string? reference, ArtifactKind kind)
     {
