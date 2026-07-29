@@ -101,10 +101,29 @@ internal static class GeoprocessingResultPackageFactory
         {
             var reference = job.ArtifactReferences[index];
             var kind = index < outputKinds.Length ? outputKinds[index] : ArtifactKind.File;
+
+            // Positional slot assignment assumes one published artifact per declared
+            // output. A process that advertises ALTERNATIVE output shapes — e.g.
+            // imagery.classify declares [Raster, FeatureLayer] because the backend
+            // decides whether a scene yields a classification raster or detected
+            // features — publishes fewer artifacts than it declares, so index 0
+            // would label a GeoJSON result as the Raster/outputRaster slot and leave
+            // the advertised feature slot unreachable. When that mismatch exists,
+            // resolve the slot from the artifact's OWN media type instead, and use
+            // the matching declared position for the output-name lookup so the
+            // protocol adapters surface the name they advertised.
+            var slotIndex = index;
+            if (Execution.OutputSlotResolver.TryResolveAlternativeSlot(
+                    reference, index, outputKinds, out var alternativeSlot, out var alternativeKind))
+            {
+                kind = alternativeKind;
+                slotIndex = alternativeSlot;
+            }
+
             var outputName = job.Spec.Parameters.GetValueOrDefault(
-                    $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}")
+                    $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{slotIndex}")
                 ?? job.Spec.Parameters.GetValueOrDefault(
-                    $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}");
+                    $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{slotIndex}");
 
             Dictionary<string, string>? metadata = null;
             if (!string.IsNullOrWhiteSpace(outputName))

@@ -1,0 +1,832 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Buffers.Binary;
+using System.Globalization;
+
+namespace Honua.Geoprocessing.Inference;
+
+/// <summary>
+/// Minimal, dependency-free GeoTIFF header reader used to PROVE that a delegated
+/// inference output is actually georeferenced (#2241). TIFF magic alone is not
+/// evidence: a plain unreferenced TIFF, or a truncated header, also starts with
+/// <c>II*\0</c>. Publishing such a payload as a "GeoTIFF" would silently place a
+/// classification at the wrong location while the process advertises
+/// georeferencing preservation, so the executor parses the IFD and requires real
+/// positioning + CRS metadata before the artifact is published.
+/// </summary>
+/// <remarks>
+/// Reads only what the contract needs — image size (tags 256/257), the GeoTIFF
+/// model tags (33550 ModelPixelScale, 33922 ModelTiepoint, 34264
+/// ModelTransformation) and the GeoKeyDirectory (34735) CRS keys — so it stays a
+/// pure span parse with no GDAL/native dependency and no allocation beyond the
+/// parsed values. Both classic TIFF and BigTIFF, little- and big-endian, are
+/// handled. Anything malformed simply fails to parse, which the caller surfaces
+/// as a clear job failure.
+/// </remarks>
+internal readonly record struct GeoTiffGeoreferencing
+{
+    private const ushort TagImageWidth = 256;
+    private const ushort TagImageLength = 257;
+    private const ushort TagStripOffsets = 273;
+    private const ushort TagStripByteCounts = 279;
+    private const ushort TagTileOffsets = 324;
+    private const ushort TagTileByteCounts = 325;
+    private const ushort TagModelPixelScale = 33550;
+    private const ushort TagModelTiepoint = 33922;
+    private const ushort TagModelTransformation = 34264;
+    private const ushort TagGeoKeyDirectory = 34735;
+
+    /// <summary>
+    /// Largest share of the source extent a single output pixel may span before
+    /// the extent comparison stops being meaningful (a result must be at least
+    /// ~10 cells across). Caps the resampling rounding allowance so a very coarse
+    /// result cannot pass the extent check by virtue of its own pixel size.
+    /// </summary>
+    private const double MaxRoundingFractionOfExtent = 0.1;
+
+    /// <summary>
+    /// GeoKey value meaning "the CRS is user-defined and spelled out in the
+    /// remaining GeoKeys / parameter tags" rather than named by an EPSG code.
+    /// </summary>
+    /// <summary>TIFF field type SHORT (16-bit unsigned).</summary>
+    private const ushort TiffTypeShort = 3;
+
+    /// <summary>TIFF field type LONG (32-bit unsigned).</summary>
+    private const ushort TiffTypeLong = 4;
+
+    /// <summary>TIFF field type DOUBLE (64-bit IEEE).</summary>
+    private const ushort TiffTypeDouble = 12;
+
+    /// <summary>TIFF field type LONG8 (64-bit unsigned, BigTIFF).</summary>
+    private const ushort TiffTypeLong8 = 16;
+
+    private const ushort GeoKeyUserDefined = 32767;
+
+    /// <summary>Sentinel <see cref="CrsCode"/> for a user-defined CRS.</summary>
+    internal const int UserDefinedCrsCode = -1;
+
+    private const ushort GeoKeyRasterType = 1025;
+    private const ushort RasterPixelIsPoint = 2;
+
+    private const ushort GeoKeyGeographicType = 2048;
+    private const ushort GeoKeyProjectedCsType = 3072;
+
+    /// <summary>Raster width in pixels.</summary>
+    public double Width { get; init; }
+
+    /// <summary>Raster height in pixels.</summary>
+    public double Height { get; init; }
+
+    /// <summary>Georeferenced X of the upper-left corner.</summary>
+    public double OriginX { get; init; }
+
+    /// <summary>Georeferenced Y of the upper-left corner.</summary>
+    public double OriginY { get; init; }
+
+    /// <summary>Georeferenced pixel size along X (always positive).</summary>
+    public double PixelSizeX { get; init; }
+
+    /// <summary>Georeferenced pixel size along Y (always positive).</summary>
+    public double PixelSizeY { get; init; }
+
+    /// <summary>
+    /// CRS code from the GeoKeyDirectory (ProjectedCSTypeGeoKey, else
+    /// GeographicTypeGeoKey), or 0 when the directory declares neither.
+    /// </summary>
+    public int CrsCode { get; init; }
+
+    /// <summary>
+    /// True when the file declares actual pixel storage — strip offsets +
+    /// byte counts, or their tiled equivalents — with a positive byte count.
+    /// A header-only TIFF carrying size/transform/CRS tags but no raster data
+    /// is structurally parseable yet useless as a classification artifact, so
+    /// the executor refuses to publish one.
+    /// </summary>
+    public bool HasRasterData { get; init; }
+
+    /// <summary>
+    /// Non-null when the file carries a model transform this comparison cannot
+    /// honestly verify — a rotated/sheared grid, or an axis orientation other
+    /// than the standard north-up (X increasing east, Y decreasing south).
+    /// Origin/extent comparison assumes an axis-aligned north-up grid, so rather
+    /// than silently comparing only the diagonal magnitudes (which would let a
+    /// flipped or rotated raster match) such a transform is rejected outright.
+    /// </summary>
+    public string? UnsupportedTransformReason { get; init; }
+
+    /// <summary>Georeferenced extent width (<see cref="Width"/> * <see cref="PixelSizeX"/>).</summary>
+    public double ExtentWidth => Width * PixelSizeX;
+
+    /// <summary>Georeferenced extent height (<see cref="Height"/> * <see cref="PixelSizeY"/>).</summary>
+    public double ExtentHeight => Height * PixelSizeY;
+
+    /// <summary>
+    /// True when the header carries both a usable model transform (origin +
+    /// non-degenerate pixel size) and a CRS declaration.
+    /// </summary>
+    public bool IsGeoreferenced =>
+        HasRasterData
+        && UnsupportedTransformReason is null
+        && double.IsFinite(Width) && Width > 0
+        && double.IsFinite(Height) && Height > 0
+        // Finiteness is checked EXPLICITLY rather than relying on "> 0": positive
+        // infinity satisfies a bare positivity test, and an infinite extent then
+        // makes the mismatch comparison evaluate Infinity - Infinity = NaN, which
+        // compares false against every tolerance and so reports a MATCH.
+        && double.IsFinite(PixelSizeX) && PixelSizeX > 0
+        && double.IsFinite(PixelSizeY) && PixelSizeY > 0
+        && double.IsFinite(OriginX) && double.IsFinite(OriginY)
+        // Guards the product overflowing to infinity even when both factors are finite.
+        && double.IsFinite(ExtentWidth) && double.IsFinite(ExtentHeight)
+        && CrsCode != 0;
+
+    /// <summary>
+    /// Attempts to read the georeferencing block from a TIFF/BigTIFF payload.
+    /// Returns false for non-TIFF, truncated, or unparseable input.
+    /// </summary>
+    public static bool TryRead(ReadOnlySpan<byte> bytes, out GeoTiffGeoreferencing georeferencing)
+    {
+        georeferencing = default;
+
+        if (bytes.Length < 8)
+        {
+            return false;
+        }
+
+        bool littleEndian;
+        if (bytes[0] == 0x49 && bytes[1] == 0x49)
+        {
+            littleEndian = true;
+        }
+        else if (bytes[0] == 0x4D && bytes[1] == 0x4D)
+        {
+            littleEndian = false;
+        }
+        else
+        {
+            return false;
+        }
+
+        var version = ReadUInt16(bytes, 2, littleEndian);
+        return version switch
+        {
+            42 => TryReadClassic(bytes, littleEndian, out georeferencing),
+            43 => TryReadBigTiff(bytes, littleEndian, out georeferencing),
+            _ => false
+        };
+    }
+
+    private static bool TryReadClassic(
+        ReadOnlySpan<byte> bytes,
+        bool littleEndian,
+        out GeoTiffGeoreferencing georeferencing)
+    {
+        georeferencing = default;
+
+        var ifdOffset = ReadUInt32(bytes, 4, littleEndian);
+        if (ifdOffset + 2 > (ulong)bytes.Length)
+        {
+            return false;
+        }
+
+        var entryCount = ReadUInt16(bytes, (int)ifdOffset, littleEndian);
+        var entriesStart = (long)ifdOffset + 2;
+        if (entriesStart + ((long)entryCount * 12) > bytes.Length)
+        {
+            return false;
+        }
+
+        var builder = new Builder();
+        for (var i = 0; i < entryCount; i++)
+        {
+            var entry = (int)(entriesStart + (i * 12));
+            var tag = ReadUInt16(bytes, entry, littleEndian);
+            var type = ReadUInt16(bytes, entry + 2, littleEndian);
+            var count = ReadUInt32(bytes, entry + 4, littleEndian);
+            var valueFieldOffset = entry + 8;
+
+            var elementSize = ElementSize(type);
+            if (elementSize == 0)
+            {
+                continue;
+            }
+
+            var payloadBytes = count * (ulong)elementSize;
+            int dataOffset;
+            if (payloadBytes <= 4)
+            {
+                dataOffset = valueFieldOffset;
+            }
+            else
+            {
+                var pointer = ReadUInt32(bytes, valueFieldOffset, littleEndian);
+                if (pointer + payloadBytes > (ulong)bytes.Length)
+                {
+                    continue;
+                }
+
+                dataOffset = (int)pointer;
+            }
+
+            builder.Accept(bytes, tag, type, count, dataOffset, littleEndian);
+        }
+
+        return builder.TryBuild(bytes, littleEndian, out georeferencing);
+    }
+
+    private static bool TryReadBigTiff(
+        ReadOnlySpan<byte> bytes,
+        bool littleEndian,
+        out GeoTiffGeoreferencing georeferencing)
+    {
+        georeferencing = default;
+
+        if (bytes.Length < 16 || ReadUInt16(bytes, 4, littleEndian) != 8)
+        {
+            return false;
+        }
+
+        var ifdOffset = ReadUInt64(bytes, 8, littleEndian);
+        if (!TryResolveOffset(ifdOffset, 8, bytes.Length, out var ifdStart))
+        {
+            return false;
+        }
+
+        var entryCount = ReadUInt64(bytes, ifdStart, littleEndian);
+        var entriesStart = (long)ifdStart + 8;
+        if (entryCount > 4096 || entriesStart + ((long)entryCount * 20) > bytes.Length)
+        {
+            return false;
+        }
+
+        var builder = new Builder();
+        for (var i = 0UL; i < entryCount; i++)
+        {
+            var entry = (int)(entriesStart + ((long)i * 20));
+            var tag = ReadUInt16(bytes, entry, littleEndian);
+            var type = ReadUInt16(bytes, entry + 2, littleEndian);
+            var count = ReadUInt64(bytes, entry + 4, littleEndian);
+            var valueFieldOffset = entry + 12;
+
+            var elementSize = ElementSize(type);
+            if (elementSize == 0)
+            {
+                continue;
+            }
+
+            // A declared element count larger than the whole buffer can never be
+            // valid, and rejecting it here also keeps the payload-size product
+            // below overflow range.
+            if (count > (ulong)bytes.Length)
+            {
+                continue;
+            }
+
+            var payloadBytes = count * (ulong)elementSize;
+            int dataOffset;
+            if (payloadBytes <= 8)
+            {
+                dataOffset = valueFieldOffset;
+            }
+            else
+            {
+                var pointer = ReadUInt64(bytes, valueFieldOffset, littleEndian);
+                if (!TryResolveOffset(pointer, payloadBytes, bytes.Length, out dataOffset))
+                {
+                    continue;
+                }
+            }
+
+            builder.Accept(bytes, tag, type, (uint)Math.Min(count, uint.MaxValue), dataOffset, littleEndian);
+        }
+
+        return builder.TryBuild(bytes, littleEndian, out georeferencing);
+    }
+
+    /// <summary>
+    /// Compares this georeferencing block against <paramref name="source"/> and
+    /// reports the first material mismatch, or null when the two agree. A
+    /// backend may legitimately resample (different pixel size / raster size), so
+    /// only the CRS and the covered extent are enforced — those are what place the
+    /// classification on the map.
+    /// </summary>
+    public string? DescribeMismatchAgainst(GeoTiffGeoreferencing source)
+    {
+        if (source.CrsCode != 0 && CrsCode != source.CrsCode)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"CRS code {CrsCode} does not match the source CRS code {source.CrsCode}");
+        }
+
+        // The upper-left corner must be PRESERVED, not merely close: a whole-pixel
+        // allowance here would let a coarse-imagery result shift by tens or
+        // hundreds of metres while the job reports georeferencing was preserved.
+        // So the origin tolerance covers floating-point noise only, scaled to the
+        // coordinate magnitude (projected CRS values are large).
+        var originToleranceX = OriginTolerance(source.OriginX, source.ExtentWidth);
+        var originToleranceY = OriginTolerance(source.OriginY, source.ExtentHeight);
+
+        if (Math.Abs(OriginX - source.OriginX) > originToleranceX
+            || Math.Abs(OriginY - source.OriginY) > originToleranceY)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"origin ({OriginX}, {OriginY}) does not match the source origin ({source.OriginX}, {source.OriginY})");
+        }
+
+        // Extent, unlike the origin, legitimately rounds: resampling to a cell size
+        // that does not divide the source coverage evenly forces the pixel count up
+        // or down, so ONE OUTPUT pixel of slack is genuinely needed. But that
+        // allowance must not grow without bound: a 1x1 result with a pixel wider
+        // than the scene would otherwise "match" any extent at all. So a result too
+        // coarse to compare meaningfully is REJECTED rather than waved through with
+        // an enormous tolerance.
+        var coarsenessLimitX = Math.Abs(source.ExtentWidth) * MaxRoundingFractionOfExtent;
+        var coarsenessLimitY = Math.Abs(source.ExtentHeight) * MaxRoundingFractionOfExtent;
+        if (PixelSizeX > coarsenessLimitX || PixelSizeY > coarsenessLimitY)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"output cell size {PixelSizeX} x {PixelSizeY} is too coarse to verify extent preservation against a source extent of {source.ExtentWidth} x {source.ExtentHeight}");
+        }
+
+        var extentToleranceX = Math.Max(
+            Math.Min(PixelSizeX, coarsenessLimitX), OriginTolerance(source.OriginX, source.ExtentWidth));
+        var extentToleranceY = Math.Max(
+            Math.Min(PixelSizeY, coarsenessLimitY), OriginTolerance(source.OriginY, source.ExtentHeight));
+
+        if (Math.Abs(ExtentWidth - source.ExtentWidth) > extentToleranceX
+            || Math.Abs(ExtentHeight - source.ExtentHeight) > extentToleranceY)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"extent {ExtentWidth} x {ExtentHeight} does not match the source extent {source.ExtentWidth} x {source.ExtentHeight}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Floating-point-noise tolerance scaled to the magnitude of the coordinates
+    /// involved, so a projected CRS (metre values in the millions) does not trip
+    /// on representation error while a geographic CRS stays tight.
+    /// </summary>
+    private static double OriginTolerance(double origin, double extent)
+        => Math.Max(Math.Max(Math.Abs(origin), Math.Abs(extent)) * 1e-9, 1e-6);
+
+    /// <summary>
+    /// Converts a file offset into a span index, rejecting anything that does not
+    /// address <paramref name="needed"/> readable bytes inside the payload.
+    /// </summary>
+    /// <remarks>
+    /// The comparison is deliberately written as <c>offset &gt; length - needed</c>
+    /// rather than <c>offset + needed &gt; length</c>: a BigTIFF offset near
+    /// <see cref="ulong.MaxValue"/> makes the addition WRAP, sail through the
+    /// bounds check, and then produce a negative span index when narrowed to
+    /// <see cref="int"/> — throwing out of the parser instead of returning a clean
+    /// "this input is not usable" result. Offsets beyond <see cref="int.MaxValue"/>
+    /// are refused outright since they can never index a .NET buffer.
+    /// </remarks>
+    private static bool TryResolveOffset(ulong offset, ulong needed, int bufferLength, out int start)
+    {
+        start = 0;
+
+        if (offset > int.MaxValue || bufferLength < 0)
+        {
+            return false;
+        }
+
+        var length = (ulong)bufferLength;
+        if (needed > length || offset > length - needed)
+        {
+            return false;
+        }
+
+        start = (int)offset;
+        return true;
+    }
+
+    private static int ElementSize(ushort type) => type switch
+    {
+        1 or 2 or 6 or 7 => 1,
+        3 or 8 => 2,
+        4 or 9 or 11 => 4,
+        5 or 10 or 12 or 16 or 17 or 18 => 8,
+        _ => 0
+    };
+
+    private static ushort ReadUInt16(ReadOnlySpan<byte> bytes, int offset, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..])
+            : BinaryPrimitives.ReadUInt16BigEndian(bytes[offset..]);
+
+    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, int offset, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..])
+            : BinaryPrimitives.ReadUInt32BigEndian(bytes[offset..]);
+
+    private static ulong ReadUInt64(ReadOnlySpan<byte> bytes, int offset, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..])
+            : BinaryPrimitives.ReadUInt64BigEndian(bytes[offset..]);
+
+    private static double ReadDouble(ReadOnlySpan<byte> bytes, int offset, bool littleEndian)
+        => BitConverter.Int64BitsToDouble(
+            (long)(littleEndian
+                ? BinaryPrimitives.ReadUInt64LittleEndian(bytes[offset..])
+                : BinaryPrimitives.ReadUInt64BigEndian(bytes[offset..])));
+
+    /// <summary>Accumulates the tags of interest while the IFD is walked.</summary>
+    private struct Builder
+    {
+        private double _width;
+        private double _height;
+        private double _scaleX;
+        private double _scaleY;
+        private double _tiepointI;
+        private double _tiepointJ;
+        private double _tiepointX;
+        private double _tiepointY;
+        private bool _hasTiepoint;
+        private bool _hasScale;
+        private double _matrixOriginX;
+        private double _matrixOriginY;
+        private double _matrixScaleX;
+        private double _matrixScaleY;
+        private double _matrixShearX;
+        private double _matrixShearY;
+        private bool _hasMatrix;
+        private int _crsCode;
+        private int _rasterType;
+        private bool _hasStorageOffsets;
+        private int _offsetsData;
+        private ushort _offsetsType;
+        private uint _offsetsCount;
+        private int _byteCountsData;
+        private ushort _byteCountsType;
+        private uint _byteCountsCount;
+
+        public void Accept(
+            ReadOnlySpan<byte> bytes,
+            ushort tag,
+            ushort type,
+            uint count,
+            int dataOffset,
+            bool littleEndian)
+        {
+            switch (tag)
+            {
+                // The model/geokey tags below are matched on their
+                // SPECIFICATION-DEFINED field type as well as their count. Without
+                // the type guard a tag declaring, say, SHORT still had 16/48/128
+                // bytes read off it as doubles — running past its declared payload
+                // and manufacturing plausible georeferencing out of whatever bytes
+                // follow, which then passes the extent/CRS comparison.
+                case TagImageWidth when IsIntegerFieldType(type):
+                    _width = ReadScalar(bytes, type, dataOffset, littleEndian);
+                    break;
+                case TagImageLength when IsIntegerFieldType(type):
+                    _height = ReadScalar(bytes, type, dataOffset, littleEndian);
+                    break;
+                case TagStripOffsets when IsIntegerFieldType(type):
+                case TagTileOffsets when IsIntegerFieldType(type):
+                    // Keep the whole array's location: a multi-strip or tiled file
+                    // declares many segments and EVERY one has to be present, so
+                    // remembering only the first would miss a payload truncated
+                    // after segment 0.
+                    _hasStorageOffsets = true;
+                    _offsetsData = dataOffset;
+                    _offsetsType = type;
+                    _offsetsCount = count;
+                    break;
+                case TagStripByteCounts when IsIntegerFieldType(type):
+                case TagTileByteCounts when IsIntegerFieldType(type):
+                    _byteCountsData = dataOffset;
+                    _byteCountsType = type;
+                    _byteCountsCount = count;
+                    break;
+                case TagModelPixelScale
+                    when type == TiffTypeDouble && count >= 2 && dataOffset + 16 <= bytes.Length:
+                    // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
+                    // axis is implicitly negated for the north-up raster). A
+                    // non-positive value is malformed, not something to Math.Abs
+                    // into looking valid.
+                    _scaleX = ReadDouble(bytes, dataOffset, littleEndian);
+                    _scaleY = ReadDouble(bytes, dataOffset + 8, littleEndian);
+                    _hasScale = true;
+                    break;
+                case TagModelTiepoint
+                    when type == TiffTypeDouble && count >= 6 && dataOffset + 48 <= bytes.Length:
+                    // (i, j, k, x, y, z) — the RASTER point (i, j) and the model
+                    // point (x, y) it maps to. The raster point is usually (0, 0)
+                    // but is not required to be: keep it so TryBuild can walk the
+                    // model point back to the upper-left corner. Discarding it
+                    // would make a backend that normalizes the same grid to a
+                    // (0,0) tiepoint compare as mislocated.
+                    _tiepointI = ReadDouble(bytes, dataOffset, littleEndian);
+                    _tiepointJ = ReadDouble(bytes, dataOffset + 8, littleEndian);
+                    _tiepointX = ReadDouble(bytes, dataOffset + 24, littleEndian);
+                    _tiepointY = ReadDouble(bytes, dataOffset + 32, littleEndian);
+                    _hasTiepoint = true;
+                    break;
+                case TagModelTransformation
+                    when type == TiffTypeDouble && count >= 16 && dataOffset + 128 <= bytes.Length:
+                    // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
+                    // Signs are PRESERVED (m00 > 0 and m11 < 0 is the standard
+                    // north-up orientation) and the off-diagonal m01/m10 terms are
+                    // captured so rotation/shear can be detected rather than
+                    // silently dropped.
+                    _matrixScaleX = ReadDouble(bytes, dataOffset, littleEndian);
+                    _matrixShearX = ReadDouble(bytes, dataOffset + 8, littleEndian);
+                    _matrixOriginX = ReadDouble(bytes, dataOffset + 24, littleEndian);
+                    _matrixShearY = ReadDouble(bytes, dataOffset + 32, littleEndian);
+                    _matrixScaleY = ReadDouble(bytes, dataOffset + 40, littleEndian);
+                    _matrixOriginY = ReadDouble(bytes, dataOffset + 56, littleEndian);
+                    _hasMatrix = true;
+                    break;
+                case TagGeoKeyDirectory when type == TiffTypeShort:
+                    ReadGeoKeys(bytes, count, dataOffset, littleEndian, out _crsCode, out _rasterType);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public bool TryBuild(ReadOnlySpan<byte> bytes, bool littleEndian, out GeoTiffGeoreferencing georeferencing)
+        {
+            double originX;
+            double originY;
+            double pixelX;
+            double pixelY;
+
+            string? unsupported = null;
+
+            if (_crsCode == UserDefinedCrsCode)
+            {
+                unsupported = "the GeoKeyDirectory declares a user-defined CRS (32767) rather than an EPSG code, "
+                    + "which this comparison cannot resolve";
+            }
+
+            if (_hasScale && _hasTiepoint)
+            {
+                if (_scaleX <= 0 || _scaleY <= 0)
+                {
+                    unsupported = "ModelPixelScale declares a non-positive pixel size";
+                }
+
+                // Walk the model point back along the raster offset to the
+                // upper-left corner: X decreases with i, Y increases with j
+                // (raster rows run north -> south).
+                originX = _tiepointX - (_tiepointI * _scaleX);
+                originY = _tiepointY + (_tiepointJ * _scaleY);
+                pixelX = _scaleX;
+                pixelY = _scaleY;
+            }
+            else if (_hasMatrix)
+            {
+                // Rotation/shear would make an origin+extent comparison
+                // meaningless: the same corner and diagonal magnitudes can
+                // describe a materially different grid. Reject instead of
+                // comparing a transform we do not fully model.
+                var scaleMagnitude = Math.Max(Math.Abs(_matrixScaleX), Math.Abs(_matrixScaleY));
+                var shearEpsilon = Math.Max(scaleMagnitude, 1d) * 1e-9;
+                if (Math.Abs(_matrixShearX) > shearEpsilon || Math.Abs(_matrixShearY) > shearEpsilon)
+                {
+                    unsupported = "ModelTransformation declares a rotated or sheared grid";
+                }
+                else if (_matrixScaleX <= 0 || _matrixScaleY >= 0)
+                {
+                    // Standard north-up is m00 > 0 (X increases east) and
+                    // m11 < 0 (Y decreases south). Anything else is a flipped
+                    // axis, which Math.Abs would have hidden.
+                    unsupported = "ModelTransformation declares a non-north-up axis orientation";
+                }
+
+                originX = _matrixOriginX;
+                originY = _matrixOriginY;
+                pixelX = Math.Abs(_matrixScaleX);
+                pixelY = Math.Abs(_matrixScaleY);
+            }
+            else
+            {
+                georeferencing = new GeoTiffGeoreferencing
+                {
+                    Width = _width,
+                    Height = _height,
+                    CrsCode = _crsCode,
+                    HasRasterData = HasInBoundsStorage(bytes, littleEndian, bytes.Length)
+                };
+                return true;
+            }
+
+            // GTRasterTypeGeoKey decides what the tiepoint REFERS to: with
+            // RasterPixelIsArea (the default) it is the upper-left CORNER, with
+            // RasterPixelIsPoint it is the pixel CENTRE. Identical tiepoints under
+            // different conventions therefore describe grids offset by half a
+            // pixel, so both are normalized to the corner convention before any
+            // comparison instead of collapsing the directory to just a CRS code.
+            if (_rasterType == RasterPixelIsPoint)
+            {
+                originX -= pixelX / 2d;
+                originY += pixelY / 2d;
+            }
+
+            if (unsupported is null
+                && (!double.IsFinite(pixelX) || !double.IsFinite(pixelY)
+                    || !double.IsFinite(originX) || !double.IsFinite(originY)
+                    || !double.IsFinite(_width * pixelX) || !double.IsFinite(_height * pixelY)))
+            {
+                unsupported = "the model transform declares a non-finite pixel size, origin, or extent";
+            }
+
+            georeferencing = new GeoTiffGeoreferencing
+            {
+                Width = _width,
+                Height = _height,
+                OriginX = originX,
+                OriginY = originY,
+                PixelSizeX = pixelX,
+                PixelSizeY = pixelY,
+                CrsCode = _crsCode,
+                HasRasterData = HasInBoundsStorage(bytes, littleEndian, bytes.Length),
+                UnsupportedTransformReason = unsupported
+            };
+            return true;
+        }
+
+        /// <summary>
+        /// Declared strip/tile regions only count as raster data when EVERY one of
+        /// them actually lies inside the payload. A truncated or malformed TIFF can
+        /// retain its offset/byte-count tags while some or all of the pixels they
+        /// point at are gone, which would otherwise be published as a corrupt
+        /// artifact. Requires matching offset/count array lengths and at least one
+        /// non-empty segment.
+        /// </summary>
+        private readonly bool HasInBoundsStorage(ReadOnlySpan<byte> bytes, bool littleEndian, long payloadLength)
+        {
+            const uint MaxSegments = 1u << 20;
+
+            if (!_hasStorageOffsets
+                || _offsetsCount == 0
+                || _offsetsCount != _byteCountsCount
+                || _offsetsCount > MaxSegments)
+            {
+                return false;
+            }
+
+            var offsetElement = ElementSize(_offsetsType);
+            var countElement = ElementSize(_byteCountsType);
+            if (offsetElement == 0 || countElement == 0)
+            {
+                return false;
+            }
+
+            if (_offsetsData + ((long)_offsetsCount * offsetElement) > bytes.Length
+                || _byteCountsData + ((long)_byteCountsCount * countElement) > bytes.Length)
+            {
+                return false;
+            }
+
+            var sawData = false;
+            for (var i = 0u; i < _offsetsCount; i++)
+            {
+                var offset = ReadScalar(
+                    bytes, _offsetsType, _offsetsData + (int)(i * (uint)offsetElement), littleEndian);
+                var byteCount = ReadScalar(
+                    bytes, _byteCountsType, _byteCountsData + (int)(i * (uint)countElement), littleEndian);
+
+                if (byteCount <= 0)
+                {
+                    continue;
+                }
+
+                if (offset <= 0 || offset + byteCount > payloadLength)
+                {
+                    return false;
+                }
+
+                sawData = true;
+            }
+
+            return sawData;
+        }
+
+        private static void ReadGeoKeys(
+            ReadOnlySpan<byte> bytes,
+            uint count,
+            int dataOffset,
+            bool littleEndian,
+            out int crsCode,
+            out int rasterType)
+        {
+            crsCode = ReadCrsCode(bytes, count, dataOffset, littleEndian);
+            rasterType = ReadGeoKeyValue(bytes, count, dataOffset, littleEndian, GeoKeyRasterType);
+        }
+
+        /// <summary>
+        /// Reads one in-line GeoKey value from the directory, or 0 when absent.
+        /// </summary>
+        private static int ReadGeoKeyValue(
+            ReadOnlySpan<byte> bytes,
+            uint count,
+            int dataOffset,
+            bool littleEndian,
+            ushort wantedKeyId)
+        {
+            if (count < 4 || dataOffset + (count * 2) > bytes.Length)
+            {
+                return 0;
+            }
+
+            var keyCount = ReadUInt16(bytes, dataOffset + 6, littleEndian);
+            for (var k = 0; k < keyCount; k++)
+            {
+                var keyOffset = dataOffset + 8 + (k * 8);
+                if (keyOffset + 8 > bytes.Length || (uint)(8 + (k * 8) + 8) > count * 2)
+                {
+                    break;
+                }
+
+                if (ReadUInt16(bytes, keyOffset, littleEndian) == wantedKeyId
+                    && ReadUInt16(bytes, keyOffset + 2, littleEndian) == 0)
+                {
+                    return ReadUInt16(bytes, keyOffset + 6, littleEndian);
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// TIFF field types that legitimately carry an unsigned integer value
+        /// (SHORT, LONG, or BigTIFF's LONG8).
+        /// </summary>
+        private static bool IsIntegerFieldType(ushort type)
+            => type is TiffTypeShort or TiffTypeLong or TiffTypeLong8;
+
+        private static int ReadCrsCode(
+            ReadOnlySpan<byte> bytes,
+            uint count,
+            int dataOffset,
+            bool littleEndian)
+        {
+            // GeoKeyDirectory: 4 header shorts then 4 shorts per key
+            // (keyId, tiffTagLocation, count, valueOffset). An in-line key
+            // (tiffTagLocation == 0) stores its value directly in valueOffset.
+            if (count < 4 || dataOffset + (count * 2) > bytes.Length)
+            {
+                return 0;
+            }
+
+            var keyCount = ReadUInt16(bytes, dataOffset + 6, littleEndian);
+            var geographic = 0;
+            for (var k = 0; k < keyCount; k++)
+            {
+                var keyOffset = dataOffset + 8 + (k * 8);
+                if (keyOffset + 8 > bytes.Length || (uint)(8 + (k * 8) + 8) > count * 2)
+                {
+                    break;
+                }
+
+                var keyId = ReadUInt16(bytes, keyOffset, littleEndian);
+                var location = ReadUInt16(bytes, keyOffset + 2, littleEndian);
+                var value = ReadUInt16(bytes, keyOffset + 6, littleEndian);
+                if (location != 0)
+                {
+                    continue;
+                }
+
+                if (keyId == GeoKeyProjectedCsType && value != 0)
+                {
+                    // A user-defined CRS is REPORTED, not silently dropped: the
+                    // caller can then say so precisely instead of emitting the
+                    // generic "no usable georeferencing" message for a file that
+                    // is in fact georeferenced, just not by EPSG code.
+                    return value == GeoKeyUserDefined ? UserDefinedCrsCode : value;
+                }
+
+                if (keyId == GeoKeyGeographicType && value != 0)
+                {
+                    geographic = value == GeoKeyUserDefined ? UserDefinedCrsCode : value;
+                }
+            }
+
+            return geographic;
+        }
+
+        private static double ReadScalar(
+            ReadOnlySpan<byte> bytes,
+            ushort type,
+            int dataOffset,
+            bool littleEndian)
+            => type switch
+            {
+                3 when dataOffset + 2 <= bytes.Length => ReadUInt16(bytes, dataOffset, littleEndian),
+                4 when dataOffset + 4 <= bytes.Length => ReadUInt32(bytes, dataOffset, littleEndian),
+                16 when dataOffset + 8 <= bytes.Length => ReadUInt64(bytes, dataOffset, littleEndian),
+                _ => 0d
+            };
+    }
+}

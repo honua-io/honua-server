@@ -114,6 +114,7 @@ public sealed class EsriConstructCapabilityRegistryTests
             EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
             EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
             EsriConstructCapabilityRegistry.Keys.GpDataManagement,
+            EsriConstructCapabilityRegistry.Keys.GpImageryInference,
             EsriConstructCapabilityRegistry.Keys.GpUnsupported
         ]);
     }

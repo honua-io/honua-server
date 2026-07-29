@@ -42,6 +42,23 @@ public sealed record ProcessDefinition
     public required IReadOnlyList<ArtifactKind> OutputArtifactKinds { get; init; }
 
     /// <summary>
+    /// True when <see cref="OutputArtifactKinds"/> lists MUTUALLY EXCLUSIVE output
+    /// shapes rather than outputs produced together, so exactly one of them is
+    /// emitted per run.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to false, which preserves the "one artifact per declared output"
+    /// reading every existing process relies on. It is set only where a process
+    /// genuinely chooses between shapes — <c>imagery.classify</c>, whose backend
+    /// decides whether a scene yields a classification raster or detected
+    /// features. Protocol adapters use it to avoid advertising every alternative
+    /// as a guaranteed result: GPServer marks such outputs optional, because a
+    /// client enumerating required outputs from task metadata would otherwise wait
+    /// for a second artifact that is never produced.
+    /// </remarks>
+    public bool OutputsAreAlternatives { get; init; }
+
+    /// <summary>
     /// Authorization tier required to execute this process. Analytic processes are available
     /// through the baseline process-execute permission; processes with durable side effects
     /// explicitly opt into <see cref="ProcessExecutionTier.Mutating"/>.

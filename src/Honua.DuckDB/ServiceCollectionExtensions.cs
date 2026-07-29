@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security;
@@ -172,6 +173,13 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("DuckDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("DuckDB"));
+        // The FeatureServer edit pipeline's GeometryValidator (wired unconditionally by
+        // Honua.Protocols.GeoServices regardless of provider) requires
+        // IGeometryTopologyValidator; only Postgres registers a real (ST_IsValid-backed)
+        // one. Without this stub every applyEdits request under DataSource:Provider=duckdb
+        // failed DI activation with an opaque 500 instead of the documented read-only
+        // write rejection (honua-server#2983).
+        services.AddScoped<IGeometryTopologyValidator>(_ => new ReadOnlyGeometryTopologyValidator("DuckDB"));
 
         // ReadinessCheckService requires IDatabaseHealthChecker; without this registration
         // resolving /healthz/ready under DataSource:Provider=duckdb fails DI activation

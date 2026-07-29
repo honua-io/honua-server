@@ -942,6 +942,35 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // Imagery / ML inference (1)
+        // Delegated cloud inference (#2241): Honua GP orchestrates, a configured
+        // cloud endpoint runs the model. No model runtime is bundled and no
+        // training/distributed inference exists here by design. Managed profile:
+        // the lean dispatcher executes the delegation (it is an HTTP exchange),
+        // and when no backend is configured the job FAILS with a clear
+        // unavailability message (the raster.interpolate-kriging honesty posture).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "imagery.classify",
+            Title = "Classify Imagery (Delegated Inference)",
+            Description = "Runs supervised/unsupervised classification, segmentation, or object detection on a raster scene by DELEGATING inference to a configured cloud backend (Geoprocessing:ImageryInference — generic 'http' adapter speaking Honua's own JSON inference contract, which a hosted model server or a thin gateway in front of one implements; it is NOT the OpenAI chat-completions wire format; 'sagemaker'/'vertex'/'azureml' SDK adapters are recognized but not yet supported and fail clearly). The model is a reference into the backend, never a Honua-implemented algorithm. Reads a base64-encoded GeoTIFF from 'source' (or a layerId/rasterId resolved at submit time) and publishes either a classification/segmentation GeoTIFF (georeferencing preserved byte-for-byte from the backend and verified against the source extent/CRS) or detected features as a GeoJSON FeatureCollection in WGS 84 (EPSG:4326) longitude/latitude per RFC 7946. The source must itself be an axis-aligned north-up GeoTIFF with an EPSG-coded CRS (user-defined GeoKey 32767 definitions are rejected) so the output location can be verified; detections are additionally checked against the source footprint where the CRS can be mapped to WGS 84 in-process (WGS 84, Web Mercator, and UTM zones). When no backend is configured the process is advertised but every execution fails with a clear 'no cloud inference backend is configured' message — no silent stub, no fake result.",
+            Category = "imagery",
+            Parameters =
+            [
+                .. NativeRasterSourceParameters,
+                Param("model", "Model Reference", "Model reference passed verbatim to the configured inference backend (for example a deployed model or endpoint-local model name). Optional only when Geoprocessing:ImageryInference:DefaultModel is configured; otherwise the job fails at execution with a clear message.", ProcessParameterValueType.Text),
+                Param("task", "Task", "Inference task. Allowed values: classification, segmentation, detection. Defaults to classification.", ProcessParameterValueType.Text, defaultValue: "classification",
+                    allowedValues: ["classification", "segmentation", "detection"]),
+                Param("confidenceThreshold", "Confidence Threshold", "Optional minimum score in the closed range [0, 1] forwarded to the backend for detection/segmentation filtering.", ProcessParameterValueType.FloatingPoint),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster, ArtifactKind.FeatureLayer],
+            // The backend decides which shape a scene yields, so exactly ONE of
+            // these is produced per run — they are alternatives, not a pair.
+            OutputsAreAlternatives = true
+        },
+
+        // -----------------------------------------------------------------------
         // Conversion operations (6)
         // Explicit format/CRS conversion idioms so adapters can expose them
         // without inventing a second semantic layer.

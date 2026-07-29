@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
@@ -14,41 +15,45 @@ namespace Honua.ProviderSmoke.Tests;
 /// (the existing creds-gated tests in <c>Honua.SqlServer.Tests</c> are untouched).
 /// </summary>
 /// <remarks>
-/// <see cref="FeatureServer_QueryWithWhereClause_ReturnsFilteredFeatures"/>,
-/// <see cref="OgcFeatures_Items_ReturnsAllSeededFeatures"/>,
-/// <see cref="OData_Features_ReturnsAllSeededFeatures"/>, and
-/// <see cref="Tiles_RasterTile_ReturnsNonEmptyPng"/> exercise real, working end-to-end
-/// coverage (the OData and Tiles cases route to SQL Server through
-/// <c>FeatureProviderQueryRouter</c>/<c>TileFeatureProviderResolver</c>,
-/// honua-server#2962). Every other case is present but skipped, each with a reason
-/// pointing at a specific finding rather than silently omitting the coverage:
+/// <para>
+/// The FeatureServer where/bbox, OGC API Features items, OData, and raster-tile cases
+/// exercise real, working end-to-end coverage: reads route to SQL Server through
+/// <c>FeatureProviderQueryRouter</c>/<c>TileFeatureProviderResolver</c> (honua-server#2962),
+/// and the bbox/envelope path works since the honua-server#2965 EWKB/plain-WKB converter
+/// fix. Two cases remain intentionally not-green, each with a specific reason rather than
+/// silently omitting the coverage:
 /// <list type="bullet">
-///   <item>bbox/envelope (FeatureServer <c>geometry=</c>) — real product bug,
-///   honua-server#2965 (shared EWKB/plain-WKB mismatch, also reproduces on MySQL).</item>
-///   <item>CQL2 <c>filter=</c> (OGC API Features) — pre-existing, already-documented
-///   limitation (sql-server.md), not a new finding.</item>
+///   <item>CQL2 <c>filter=</c> (OGC API Features) — still-real, documented limitation
+///   (sql-server.md's WHERE Clause section): no SQL Server <c>ISqlFilterTranslator</c>
+///   exists, unaffected by #2965/#2962. See the skip reason.</item>
 ///   <item>OGC API Tiles vector (MVT) — not a routing gap: native MVT generation is a
 ///   per-provider capability that only the PostGIS provider implements, so a
 ///   SQL-Server-backed collection returns <c>501 Not Implemented</c> for vector tiles
 ///   regardless of routing.</item>
 /// </list>
+/// </para>
+/// <para>
+/// Write posture: SQL Server is a read/query-only additional provider
+/// (<c>SqlServerFeatureStore.Writer</c> is <see langword="null"/>,
+/// <c>FeatureProviderEditCapabilities.ReadOnly</c>; sql-server.md documents "no edits").
+/// The edit round-trip test proves the documented fail-closed rejection:
+/// <c>ODataFeatureProviderResolver.CheckWriteSupportAsync</c> refuses writes for layers
+/// routed to a secondary provider with a clean <c>501 ProviderWriteNotSupported</c>
+/// OData error — never a 500, and never a silent write into the primary provider.
+/// </para>
 /// </remarks>
 [Trait("Provider", "SqlServer")]
 public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProviderWebAppFixture>
 {
     private const string Cql2FilterUnsupportedReason =
-        "Pre-existing, already-documented limitation (sql-server.md's WHERE Clause section): " +
-        "the shared ISqlFilterTranslator pipeline only registers a PostgreSQL translator, so " +
-        "CQL2/OGC API Features filter=... throws NotSupportedException for SQL Server. " +
-        "FeatureServer's where= (canonical Where text) path works and is covered by " +
+        "Still-real, documented limitation re-confirmed after the #2965/#2962 fixes landed " +
+        "(sql-server.md's WHERE Clause section): no SQL Server ISqlFilterTranslator is " +
+        "registered, so the shared CQL2 pipeline either produces a Postgres-flavored " +
+        "SqlFilter that SqlServerFeatureQueryBuilder explicitly rejects with " +
+        "NotSupportedException, or fails translation outright. Neither #2965 (EWKB " +
+        "converter) nor #2962 (query routing) touched filter translation. FeatureServer's " +
+        "where= (canonical Where text) path works and is covered by " +
         "FeatureServer_QueryWithWhereClause_ReturnsFilteredFeatures.";
-
-    private const string BboxEwkbGapReason =
-        "Real product bug found via this suite: GeoServicesGeometryConverter emits EWKB " +
-        "(SRID-embedded WKB); SQL Server's geometry::STGeomFromWKB(wkb, srid) expects plain " +
-        "WKB with the SRID as a separate argument, so the embedded SRID header corrupts ring/" +
-        "point-count parsing (\"Polygon input... exterior ring does not have enough points\"). " +
-        "Same root cause as the MySQL bbox skip; tracked in honua-server#2965.";
 
     private readonly SqlServerProviderWebAppFixture _fixture;
 
@@ -81,12 +86,29 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
         }
     }
 
-    [Fact(Skip = BboxEwkbGapReason)]
-    [Trait("Category", "Integration")]
+    [IntegrationTest]
     [Protocol(ProtocolNames.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public Task FeatureServer_QueryWithBbox_NotSupportedForSqlServer_SeeIssue2965() => Task.CompletedTask;
+    public async Task FeatureServer_QueryWithBbox_ReturnsWindowedFeatures()
+    {
+        // Enabled since the honua-server#2965 EWKB/plain-WKB converter fix landed: filter
+        // geometries are now translated to the plain WKB flavor SQL Server's
+        // geometry::STGeomFromWKB(wkb, srid) expects (previously the embedded SRID header
+        // corrupted ring/point-count parsing and every bbox query 500'd).
+        var (west, south, east, north) = ProviderSmokeData.NarrowBbox;
+        var response = await Client.GetAsync(
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +
+            $"?where=1%3D1&geometry={west},{south},{east},{north}&geometryType=esriGeometryEnvelope" +
+            "&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().HaveCount(ProviderSmokeData.NarrowBboxCount);
+    }
 
     [IntegrationTest]
     [Protocol(ProtocolNames.OgcApiFeatures)]
@@ -145,5 +167,61 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
 
         var bytes = await response.Content.ReadAsByteArrayAsync();
         bytes.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Protocol(ProtocolNames.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task OData_CreateUpdateDelete_SecondaryReadOnlyProvider_Returns501AndLeavesDataUnchanged()
+    {
+        // SQL Server is a read/query-only additional provider (Writer is null,
+        // FeatureProviderEditCapabilities.ReadOnly). The OData adapter's write-support
+        // guard (ODataFeatureProviderResolver.CheckWriteSupportAsync) must fail closed
+        // for layers routed to a secondary provider: a clean 501 ProviderWriteNotSupported
+        // for create, update, and delete — never a 500, and never a write applied to the
+        // primary (Postgres) provider for a SQL-Server-backed layer.
+        using var createContent = new StringContent(
+            /*lang=json,strict*/ """{"Attributes":{"name":"Should Not Exist","type":"commercial"}}""",
+            Encoding.UTF8,
+            "application/json");
+        var createResponse = await Client.PostAsync(
+            $"/odata/Layers({ProviderSmokeGraph.LayerId})/Features",
+            createContent);
+        await AssertProviderWriteNotSupportedAsync(createResponse);
+
+        using var updateContent = new StringContent(
+            /*lang=json,strict*/ """{"Attributes":{"name":"Should Not Change"}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var updateRequest = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/odata/Layers({ProviderSmokeGraph.LayerId})/Features(1)")
+        {
+            Content = updateContent,
+        };
+        var updateResponse = await Client.SendAsync(updateRequest);
+        await AssertProviderWriteNotSupportedAsync(updateResponse);
+
+        var deleteResponse = await Client.DeleteAsync(
+            $"/odata/Layers({ProviderSmokeGraph.LayerId})/Features(2)");
+        await AssertProviderWriteNotSupportedAsync(deleteResponse);
+
+        // Round-trip proof: the rejected mutations changed nothing in the SQL
+        // Server-backed layer — all 5 seeded rows are still served.
+        var readResponse = await Client.GetAsync($"/odata/Features({ProviderSmokeGraph.LayerId})");
+        readResponse.StatusCode.Should().Be(HttpStatusCode.OK, await readResponse.Content.ReadAsStringAsync());
+
+        using var document = JsonDocument.Parse(await readResponse.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("value").GetArrayLength().Should().Be(ProviderSmokeData.Parcels.Count);
+    }
+
+    private static async Task AssertProviderWriteNotSupportedAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
+        body.Should().Contain("ProviderWriteNotSupported");
+        // Sanitized rejection — no provider internals, SQL, or stack traces.
+        body.Should().NotContainAny("Exception", "SqlClient", "stack");
     }
 }

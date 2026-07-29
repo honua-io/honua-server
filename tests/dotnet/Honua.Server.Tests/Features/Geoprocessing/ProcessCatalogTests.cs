@@ -75,7 +75,9 @@ public sealed class ProcessCatalogTests
         // conversion.rasterize (#2240).
         // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
         // Analysis / Getis-Ord Gi*) added by #2142.
-        all.Should().HaveCount(96);
+        // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
+        // delegation with no bundled model runtime) added by #2241.
+        all.Should().HaveCount(97);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -104,6 +106,68 @@ public sealed class ProcessCatalogTests
         // + analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis, #2142).
         analytics.Should().HaveCount(9);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_ImageryCategory_AdvertisesDelegatedInferenceProcess()
+    {
+        var imagery = _catalog.GetProcessesByCategory("imagery");
+
+        // #2241: one delegated-inference process. Managed profile (the lean
+        // dispatcher performs the HTTP delegation itself), raster sourcing shared
+        // with the native raster family (inline source OR layerId/rasterId), and
+        // both raster and feature outputs advertised because the backend decides
+        // whether classification lands as a raster map or detected features.
+        imagery.Should().ContainSingle();
+        var classify = imagery[0];
+        classify.ProcessId.Should().Be("imagery.classify");
+        classify.RuntimeProfile.Should().Be(Core.Features.ControlPlane.Domain.RuntimeProfiles.Managed);
+        classify.Parameters.Should().Contain(p => p.Name == "source" && !p.Required);
+        classify.Parameters.Should().Contain(p => p.Name == "layerId" && !p.Required);
+        classify.Parameters.Should().Contain(p => p.Name == "rasterId" && !p.Required);
+        classify.Parameters.Should().Contain(p => p.Name == "model");
+        classify.Parameters.Should().Contain(p =>
+            p.Name == "task" && p.AllowedValues != null && p.AllowedValues.Contains("segmentation"));
+        classify.OutputArtifactKinds.Should().Contain(ArtifactKind.Raster);
+        classify.OutputArtifactKinds.Should().Contain(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_ImageryClassify_MissingSourceAndBadInputs_ProducesViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "imagery.classify",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["model"] = "landcover-v2",
+                        ["task"] = "styling",
+                        ["confidenceThreshold"] = "1.5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" && v.FieldPath == "steps[s1].inputs.source");
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" && v.FieldPath == "steps[s1].inputs.task");
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" && v.FieldPath == "steps[s1].inputs.confidenceThreshold");
     }
 
     [UnitTest]

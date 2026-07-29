@@ -352,6 +352,14 @@ internal static partial class ProcessPlanValidator
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
                 break;
+            case "imagery.classify":
+                // Delegated cloud inference (#2241). Shape/semantic validation only:
+                // whether a backend is actually configured is a deployment concern the
+                // static validator cannot see, so an unconfigured deployment surfaces
+                // the clear "no cloud inference backend is configured" message as a
+                // job failure at execution (the raster.interpolate-kriging posture).
+                ValidateImageryClassifySemantics(step, violations);
+                break;
             case "raster.map-algebra":
                 ValidateRasterMapAlgebraSemantics(step, violations);
                 break;
@@ -517,6 +525,31 @@ internal static partial class ProcessPlanValidator
         // an empty result at execution. A buffer requires a strictly positive,
         // finite distance.
         RequirePositiveFiniteDouble(step, "distance", violations);
+    }
+
+    private static void ValidateImageryClassifySemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // Same raster sourcing contract as the native raster family: an inline
+        // base64 'source' OR a layerId/rasterId materialized at submit time.
+        ValidateSharedRasterSourceSemantics(step, violations);
+
+        if (step.Inputs.TryGetValue("task", out var task)
+            && !string.IsNullOrWhiteSpace(task)
+            && task is not ("classification" or "segmentation" or "detection"))
+        {
+            AddEnumViolation(step, "task", task, "classification, segmentation, detection", violations);
+        }
+
+        if (step.Inputs.TryGetValue("confidenceThreshold", out var thresholdRaw)
+            && !string.IsNullOrWhiteSpace(thresholdRaw)
+            && (!double.TryParse(thresholdRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var threshold)
+                || double.IsNaN(threshold) || threshold < 0d || threshold > 1d))
+        {
+            AddRangeViolationIfNew(step, "confidenceThreshold",
+                $"expected a number between 0 and 1, got '{thresholdRaw}'", violations);
+        }
     }
 
     private static void ValidateExternalPostgisSinkSemantics(

@@ -306,6 +306,18 @@ internal sealed class FeatureServerEditsHandler(
         {
             throw;
         }
+        // A read/query-only provider's writer (ReadOnlyFeatureWriter for DuckDB and
+        // MySQL/MariaDB) rejects every write with NotSupportedException. That is the
+        // provider's documented posture, not an internal failure, so map it through the
+        // shared exception mapping (405 Method Not Allowed) instead of a generic 500 —
+        // mirroring the explicit NotSupportedException handling the OGC API Features
+        // transaction handlers already do (honua-server#2983).
+        catch (NotSupportedException ex)
+        {
+            FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateFromException(httpContext, ex);
+        }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex) when (ex is not OutOfMemoryException)

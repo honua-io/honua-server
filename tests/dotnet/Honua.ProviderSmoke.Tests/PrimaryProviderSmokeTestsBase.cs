@@ -50,13 +50,29 @@ public abstract class PrimaryProviderSmokeTestsBase
         }
     }
 
-    // FeatureServer_QueryWithBbox_ReturnsWindowedFeatures is NOT shared here: MySQL fails it
-    // due to a real product bug (honua-server#2965 — GeoServicesGeometryConverter emits
-    // EWKB, MySQL's ST_GeomFromWKB expects plain WKB), so each concrete subclass declares
-    // its own copy (DuckDbProviderSmokeTests runs it for real; MySqlProviderSmokeTests
-    // documents the skip). xunit's analyzer (xUnit1024) forbids a derived class from
-    // hiding a same-named base class [Fact], so this cannot live here as a single
-    // overridable method.
+    // Shared since the honua-server#2965 EWKB/plain-WKB converter fix landed: spatial
+    // filter geometries are now translated to each provider's expected WKB flavor, so the
+    // same bbox assertion runs for real against every primary provider (previously MySQL
+    // 500'd here and each subclass declared its own copy, MySql's skipped).
+    [IntegrationTest]
+    [Protocol(ProtocolNames.FeatureServer)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task FeatureServer_QueryWithBbox_ReturnsWindowedFeatures()
+    {
+        var (west, south, east, north) = ProviderSmokeData.NarrowBbox;
+        var response = await Client.GetAsync(
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +
+            $"?where=1%3D1&geometry={west},{south},{east},{north}&geometryType=esriGeometryEnvelope" +
+            "&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().HaveCount(ProviderSmokeData.NarrowBboxCount);
+    }
 
     [IntegrationTest]
     [Protocol(ProtocolNames.OgcApiFeatures)]
@@ -143,8 +159,26 @@ public abstract class PrimaryProviderSmokeTestsBase
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
-    // Tiles_RasterTile_ReturnsNonEmptyPng is NOT shared here for the same reason as the
-    // bbox test above: MySQL returns an empty (204) tile for the same request that renders
-    // real content for DuckDB, tracked under the same real-bug umbrella (honua-server#2965).
-    // Each concrete subclass declares its own copy.
+    [IntegrationTest]
+    [Protocol(ProtocolNames.OgcApiTiles)]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task Tiles_RasterTile_ReturnsNonEmptyPng()
+    {
+        // WorldCRS84Quad (native EPSG:4326, matching the seeded layer's storage SRID), not
+        // WebMercatorQuad (EPSG:3857): a WebMercatorQuad tile request would require the
+        // provider to reproject 4326 storage geometry into 3857 tile space. WorldCRS84Quad
+        // needs no reprojection. Zoom 0 / row 0 / col 0 covers the western hemisphere
+        // (-180..0 longitude), so the seeded parcels (~-122 longitude) always fall inside it.
+        // Shared since honua-server#2965 landed: the tile renderer's envelope-intersects
+        // query previously matched zero rows on MySQL (silent empty 204 tile) because of the
+        // same EWKB/plain-WKB converter bug that broke the explicit bbox path.
+        var response = await Client.GetAsync(
+            $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Length.Should().BeGreaterThan(0);
+    }
 }
