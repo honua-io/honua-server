@@ -9,7 +9,7 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry-*|flake-retry-*|classify-flake|autofix|attribute|land|done",
+#       "phase": one of TRAIN_STATE_PHASES (below — the canonical list),
 #       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>,
 #       "included_heads": [{"number":<pr>,"head":"<sha>"}], "batch_sha": "<sha|null>",
 #       "timeout_reruns": <n>, "timeout_reruns_total": <n>,
@@ -22,6 +22,51 @@
 # Issue title: "Merge Train State". We find-or-create by the train:state label.
 
 TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
+
+# TRAIN_STATE_PHASES is the ONLY list of phases a persisted state may carry, and
+# the single source of truth for two things that must never drift apart:
+#   1. the train_state_read schema below (it accepts exactly these), and
+#   2. the startup-recovery dispatch table TRAIN_PHASE_RECOVERY (train.sh).
+# A phase accepted here but unclassified there is a repo-wide merge deadlock:
+# the train persists a state it cannot recover from, so every later dispatch
+# fails closed before selection and the machine-managed state issue has to be
+# hand-edited (#3045, hit twice on `attribute`). The drift guard in
+# fixtures/validate-timeout-retry.sh fails the build when the two disagree.
+TRAIN_STATE_PHASES=(
+  select
+  assemble
+  smart-ci
+  forward-fix
+  preexisting-filter
+  classify-timeout
+  timeout-retry-intent
+  timeout-retry-requesting
+  timeout-retry-accepted
+  timeout-retry-rejected
+  flake-retry-intent
+  flake-retry-requesting
+  flake-retry-accepted
+  flake-retry-rejected
+  rerun-command-failed
+  classify-flake
+  autofix
+  attribute
+  ci-incomplete
+  land
+  pre-land-cleanup
+  post-land-finalize
+  trunk-moved-reassemble
+  requeue
+  done
+)
+
+# train_state_phases_json: TRAIN_STATE_PHASES as a compact JSON array. Computed
+# on demand rather than at source time so sourcing state.sh never depends on jq
+# being installed (train.sh checks prerequisites after sourcing).
+train_state_phases_json() {
+  printf '%s\n' "${TRAIN_STATE_PHASES[@]}" \
+    | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
 
 # train_state_render <branch> <trunk_base> <included-csv> <phase> <run_id> \
 #   <fwdfix> <flake_reruns> <last_landed> [included_heads] [batch_sha]
@@ -131,22 +176,95 @@ train_state_write() {
   fi
 }
 
+# train_state_body <issue-number>: emit the state issue body verbatim. Shared by
+# train_state_read and the operator salvage path so both observe the same bytes.
+# Returns 2 when the body cannot be fetched.
+train_state_body() {
+  local num="$1"
+  if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
+    printf '%s' "${TRAIN_STATE_BODY_OVERRIDE}"
+    return 0
+  fi
+  if [[ -n "${TRAIN_STATE_ISSUE_VIEW_CMD:-}" ]]; then
+    "${TRAIN_STATE_ISSUE_VIEW_CMD}" "${num}" || return 2
+    return 0
+  fi
+  gh issue view "${num}" --json body --jq '.body' 2>/dev/null || return 2
+}
+
+# train_state_salvage: last-resort reader for a state body the schema REJECTS —
+# exactly the shape an emergency hand edit produces (the live `active_batch:
+# null` repair that made train_state_read fail outright). train_state_read
+# cannot serve the operator reset here, so this recovers whatever is still
+# legible and normalizes it to the fields the reset needs:
+#   {active_batch:{phase,trunk_base,included,timeout_reruns_total},
+#    last_landed_trunk}
+# It REFUSES (2) when the RAW TEXT still shows a LAND-FAMILY PHASE, because that
+# state must reconcile against trunk rather than be discarded. The check works on
+# raw text so it holds even when no part of the body parses as JSON.
+#
+# The phase is the only honest land-intent signal here. `batch_sha` and
+# `included_heads` are NOT: _write_state populates both for every state with an
+# assembled branch (smart-ci, attribute, the retry phases), so refusing on a
+# batch SHA would refuse the ordinary stuck batch this escape hatch exists for.
+# The residual risk is a body corrupted so badly that even its land phase is
+# illegible; clearing that loses post-land PR bookkeeping (GitHub still resolves
+# merged heads on its own) but cannot double-land, because landing is an FF-CAS
+# against current trunk.
+# Returns 1 when no state issue exists, 2 on refusal or lookup/fetch failure.
+train_state_salvage() {
+  local num body block lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
+  [[ -z "${num}" ]] && return 1
+  body="$(train_state_body "${num}")" || return 2
+  # The land-intent check must survive NEWLINES, not just spaces. A damaged
+  # block can put the value on its own line ("phase":\n"land"); a line-oriented
+  # grep misses that, the parse below then fails on the accompanying syntax
+  # error, and the empty fallback would ERASE a durable land journal instead of
+  # refusing it. Compacting whitespace makes the match newline-insensitive while
+  # keeping it token-exact — it still requires the literal "phase" key followed
+  # by a quoted land-family value, so a branch name (train/batch/...), a
+  # last_landed_trunk field, or a phase like "landing" cannot trigger a refusal,
+  # and a real land-family phase such as pre-land-cleanup still does.
+  local compact
+  compact="$(tr -d '[:space:]' <<<"${body}")"
+  if grep -qE '"phase":"(land|pre-land-cleanup|post-land-finalize)"' <<<"${compact}"; then
+    return 2
+  fi
+  block="$(printf '%s\n' "${body}" | awk '
+    /^```json[[:space:]]*$/ { inblk=1; next }
+    /^```[[:space:]]*$/     { inblk=0; next }
+    inblk                   { print }
+  ')"
+  jq -sc '
+    (.[0] // {}) as $raw
+    | (if ($raw | type) == "object" then $raw else {} end) as $s
+    | (if ($s.active_batch | type) == "object" then $s.active_batch else {} end) as $ab
+    | {
+        active_batch: {
+          phase:      (if ($ab.phase      | type) == "string" then $ab.phase      else ""   end),
+          trunk_base: (if ($ab.trunk_base | type) == "string" then $ab.trunk_base else ""   end),
+          included:   [ (if ($ab.included | type) == "array" then $ab.included[] else empty end)
+                        | select(type == "number") ],
+          timeout_reruns_total:
+            (if ($ab.timeout_reruns_total | type) == "number" then $ab.timeout_reruns_total else 0 end)
+        },
+        last_landed_trunk:
+          (if ($s.last_landed_trunk | type) == "string" then $s.last_landed_trunk else null end)
+      }' <<<"${block}" 2>/dev/null \
+    || jq -nc '{active_batch:{phase:"",trunk_base:"",included:[],timeout_reruns_total:0},last_landed_trunk:null}'
+}
+
 # train_state_read: emit the parsed JSON block of the state issue (or empty).
 # READ-ONLY; used on startup to resume.
 train_state_read() {
-  local num body json lookup_rc=0
+  local num body json lookup_rc=0 body_rc=0
   num="$(train_state_issue_number)" || lookup_rc=$?
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 0
-  if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
-    body="${TRAIN_STATE_BODY_OVERRIDE}"
-  else
-    if [[ -n "${TRAIN_STATE_ISSUE_VIEW_CMD:-}" ]]; then
-      body="$("${TRAIN_STATE_ISSUE_VIEW_CMD}" "${num}")" || return 2
-    else
-      body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 2
-    fi
-  fi
+  body="$(train_state_body "${num}")" || body_rc=$?
+  [[ "${body_rc}" == "0" ]] || return 2
   # An existing issue must contain exactly one parseable machine-state block.
   # Fence markers may have trailing whitespace, but no other suffix.
   # Empty output is reserved for a confirmed absent issue.
@@ -167,22 +285,16 @@ train_state_read() {
     }
   ')" || return 3
   [[ -n "${json}" ]] || return 3
-  jq -se '
+  local phases_json
+  phases_json="$(train_state_phases_json)" || return 3
+  jq -se --argjson phases "${phases_json}" '
     length == 1 and (.[0] |
       type == "object" and
       (.active_batch | type == "object") and
       (.active_batch.branch | type == "string") and
       (.active_batch.trunk_base | type == "string") and
       (.active_batch.included | type == "array" and all(.[]; type == "number")) and
-      (.active_batch.phase | type == "string" and IN(
-        "select","assemble","smart-ci","forward-fix","preexisting-filter",
-        "classify-timeout","timeout-retry-intent","timeout-retry-requesting",
-        "timeout-retry-accepted","timeout-retry-rejected",
-        "flake-retry-intent","flake-retry-requesting","flake-retry-accepted",
-        "flake-retry-rejected","rerun-command-failed","classify-flake","autofix",
-        "attribute","ci-incomplete","land","pre-land-cleanup",
-        "post-land-finalize","trunk-moved-reassemble","requeue","done"
-      )) and
+      (.active_batch.phase | type == "string" and IN($phases[])) and
       (.active_batch.run_id == null or (.active_batch.run_id | type == "number" or type == "string")) and
       (.active_batch.fwdfix_attempts == null or (.active_batch.fwdfix_attempts | type == "number")) and
       (.active_batch.flake_reruns == null or (.active_batch.flake_reruns | type == "number")) and

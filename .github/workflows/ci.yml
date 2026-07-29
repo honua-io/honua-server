@@ -580,7 +580,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     needs: changes
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -589,6 +589,17 @@ jobs:
           scripts/ci/validate-ci-router.sh
           scripts/ci/merge-train/fixtures/validate-mode.sh
           bash scripts/ci/validate-single-merge-authority.sh
+
+      # The merge train is the sole merge authority, so its offline fixtures
+      # gate every CI run rather than only a local pre-PR check. They carry the
+      # startup-recovery drift guard: a phase added to the persisted-state
+      # schema without a recovery class deadlocks all merging repo-wide (#3045),
+      # and a guard that never runs in CI would not have caught it. Both are
+      # offline (no network, no gh, no dotnet) and run in ~90s together.
+      - name: Validate merge-train recovery and landing fixtures
+        run: |
+          scripts/ci/merge-train/fixtures/validate-merge-train.sh
+          scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
 
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh
