@@ -71,3 +71,68 @@ execution results before broader process portability wording is used.
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
   --filter "FullyQualifiedName~ProcessMigrationEvidence|FullyQualifiedName~OgcProcessesEndpointsTests|FullyQualifiedName~OgcProcessesJobResultsTests|FullyQualifiedName~GPServerDurableRuntimeTests"
 ```
+
+## Toolbox Translation Lane (#2145)
+
+The arcpy/toolbox (`.pyt`/`.tbx`/`.atbx`) translation lane is split across
+repos by design:
+
+- **honua-sdk-python** (`honua-migrate`, sdk issues #59/#123/#124) owns
+  parsing toolbox sources, scanning arcpy constructs, and proposing per-tool
+  mappings onto native Honua processes. Binary `.tbx`/`.atbx` parsing remains
+  an explicit `UnsupportedToolboxError` stub SDK-side.
+- **honua-server** owns the round-trip proof and the canonical runtime. The
+  process catalog is the single source of truth for executable signatures, so
+  the server validates SDK-translated manifests via
+  `POST /api/v1/admin/import/toolbox/translation/validate`
+  (`ToolboxTranslationEndpoints` -> `ToolboxTranslationValidator`) and returns
+  a `honua.migration.toolbox-translation-report` artifact: per-tool
+  classification (`translated` / `partially-translated` / `unsupported`),
+  round-tripped canonical parameter bindings, and explicit issue codes
+  (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
+  `duplicate-target-parameter`, `missing-required-parameter`,
+  `unsupported-construct`, `unsatisfied-conditional-inputs`,
+  `unverifiable-conditional-branches`, `process-not-job-executable`). Tools that cannot
+  supply a required parameter are `unsupported`, never stubbed as executable.
+  Inbound manifests must carry a supported `artifactKind`/`artifactVersion`;
+  an incompatible identity is rejected rather than reinterpreted.
+
+Static `Required` flags are not the whole admissibility contract: several
+processes declare mutually-substitutable optional inputs (for example the
+raster `source`/`layerId`/`rasterId` trio) that only the canonical plan
+validator enforces at submit time. Rather than re-implement those rules, the
+lane asks the canonical validator itself through
+`IProcessConditionalInputProbe` (Core abstraction, implemented in
+`Honua.Geoprocessing` by `ProcessConditionalInputProbe` over
+`ProcessPlanValidator`). A mapping the submit path would reject is reported
+`unsatisfied-conditional-inputs` and classified `unsupported`, so the report
+never certifies a tool that submit-time validation will refuse. The probe
+answers strictly from parameter presence and filters to
+`MISSING_REQUIRED_PARAMETER` failures, because callers supply parameter names
+rather than real values. The probe runs the direct-submit guards alongside
+`ProcessPlanValidator`, so a target that is not job-dispatchable at all (the
+sync-only `analytics.cluster`/`analytics.density` ids, which run only through
+the synchronous layer-scoped analytics surface) is reported
+`process-not-job-executable` and classified `unsupported` whatever its
+parameter mapping looks like — translated tools execute through the canonical
+job runtime, so callers are pointed at the `-managed` counterparts.
+
+The probe can only exercise the branch its substituted values select, and the
+catalog does not enumerate legal values for most discriminator parameters
+(only two parameters repo-wide declare `allowedValues`). So a mapping that
+leaves a parameter both unmapped and undefaulted cannot be proven for every
+caller-supplied value — for example `analytics.cluster-managed` requires `k`
+only when `algorithm=kmeans`. Those mappings are reported
+`unverifiable-conditional-branches` and classified `partially-translated`:
+reviewable, never certified executable. Enumerating discriminator branches
+exactly would require catalog-level value domains or SDK-supplied source value
+constraints, tracked as follow-up.
+
+The server never parses toolbox sources and never emulates arcpy execution;
+translated tools execute only as existing native processes through the
+canonical process/job runtime (OGC API Processes / GPServer).
+
+Contract fixtures live under `tests/fixtures/toolbox-translation/`
+(translatable, partially translatable, and fully unsupported toolboxes) and
+are exercised end-to-end by `ToolboxTranslationEndpointTests` plus the
+classification-rule unit tests in `ToolboxTranslationValidatorTests`.
