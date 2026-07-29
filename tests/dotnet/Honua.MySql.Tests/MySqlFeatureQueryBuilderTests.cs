@@ -367,6 +367,45 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EnvelopeOnlyIntersectsOnMultiPointLayer_KeepsExactIntersects()
+    {
+        // The shortcut is exact only for single points. A MultiPoint's bounding rectangle can
+        // overlap the window while none of its constituent points do (two points straddling a
+        // small bbox), so MBRIntersects alone would over-match. Mirrors the Postgres gate,
+        // which is likewise GeometryType.Point-only.
+        var mapping = new MySqlLayerMapping
+        {
+            LayerId = 3,
+            TableName = "parcels_multipoints",
+            SchemaName = "honua",
+            GeometryColumn = "geom",
+            PrimaryKeyColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            GeometryType = GeometryType.MultiPoint
+        };
+        var builder = new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping]));
+
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [0x01, 0x02, 0x03],
+                spatialRelationship: SpatialRelationship.Intersects,
+                srid: 4326,
+                isSimpleEnvelope: true,
+                allowEnvelopeOnly: true,
+                envelopeMinX: -180,
+                envelopeMinY: -90,
+                envelopeMaxX: 0,
+                envelopeMaxY: 90)
+        };
+
+        var result = builder.BuildSelectQuery(3, query);
+
+        Assert.Contains("ST_Intersects", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_EnvelopeOnlyIntersectsOnPolygonLayer_KeepsExactIntersects()
     {
         // The envelope-only shortcut is point-layer-only (mirrors the Postgres builder's

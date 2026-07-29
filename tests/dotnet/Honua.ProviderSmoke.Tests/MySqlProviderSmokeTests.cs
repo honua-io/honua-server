@@ -106,4 +106,52 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
         byId.Should().ContainKey(1L).WhoseValue.GetProperty("name").GetString().Should().Be("Parcel 1");
         byId.Should().ContainKey(2L);
     }
+
+    [IntegrationTest]
+    [Protocol(ProtocolNames.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureServer_ApplyEdits_GeometryOnlyAddOnReadOnlyProvider_Returns405()
+    {
+        // Adds-only batch: the geometry-bearing add must still reach ReadOnlyFeatureWriter
+        // and produce the documented 405. Regression guard for the topology-validator
+        // placeholder — when it threw, the shared GeometryValidator converted the exception
+        // into a per-feature geometry validation error, ExecuteEdits finished with an empty
+        // write set, and the request returned an Esri validation response instead of the
+        // read-only rejection. The mixed batch above missed this because its update/delete
+        // operations reached the writer regardless.
+        var payload = /*lang=json,strict*/ """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Should Not Exist", "area": 2.5, "type": "residential" },
+                  "geometry": { "x": -122.37, "y": 37.82 }
+                }
+              ]
+            }
+            """;
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/applyEdits")
+        {
+            Content = content,
+        };
+        request.Headers.Add("X-API-Key", "provider-smoke-admin");
+        var response = await Client.SendAsync(request);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var errorDocument = JsonDocument.Parse(body);
+        errorDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(405, body);
+
+        // Nothing was written.
+        var queryResponse = await Client.GetAsync(
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +
+            "?where=1%3D1&outFields=*&f=json");
+        using var document = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("features").EnumerateArray().Should()
+            .HaveCount(ProviderSmokeData.Parcels.Count);
+    }
 }
