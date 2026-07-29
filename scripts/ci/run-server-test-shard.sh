@@ -41,7 +41,26 @@ poll_seconds="${HONUA_SERVER_TEST_POLL_SECONDS:-5}"
 # Warn when a completed shard consumed at least this fraction of its inner
 # timeout. A shard above the line still passed, but it has no room left for the
 # next test the capability gate forces into it.
-headroom_warn_ratio="${HONUA_SERVER_TEST_HEADROOM_WARN_RATIO:-0.80}"
+#
+# The threshold is policy, and `.github/ci-shards.json` is where that policy
+# lives: scripts/ci/audit-shard-headroom.py reads
+# `shard_budget_policy.warn_utilization` from it. The runner reads the same key so
+# a change to the policy moves both together -- hardcoding a second default here
+# meant a shard between the old and new thresholds got one status in CI and a
+# different one in the fleet audit, which makes the audit look wrong about the
+# runner it is auditing. Env var still wins (the fixture pins it explicitly), and
+# the literal only applies when the policy cannot be read at all.
+shard_policy_file="${HONUA_SERVER_TEST_SHARD_POLICY_FILE:-.github/ci-shards.json}"
+default_headroom_warn_ratio="0.80"
+if [[ -f "${shard_policy_file}" ]] && command -v jq >/dev/null 2>&1; then
+  policy_warn_ratio="$(jq -r '.shard_budget_policy.warn_utilization // empty' "${shard_policy_file}" 2>/dev/null || true)"
+  if [[ "${policy_warn_ratio}" =~ ^0*\.[0-9]+$|^1(\.0+)?$ ]]; then
+    default_headroom_warn_ratio="${policy_warn_ratio}"
+  elif [[ -n "${policy_warn_ratio}" ]]; then
+    echo "::warning::Ignoring unusable shard_budget_policy.warn_utilization='${policy_warn_ratio}' in ${shard_policy_file}; falling back to ${default_headroom_warn_ratio}." >&2
+  fi
+fi
+headroom_warn_ratio="${HONUA_SERVER_TEST_HEADROOM_WARN_RATIO:-${default_headroom_warn_ratio}}"
 # A timed-out shard whose log had not grown for at least this many seconds is
 # reported as a suspected hang; one that was still emitting output when the cap
 # fired is reported as capacity exhaustion. Honua integration shards stream host

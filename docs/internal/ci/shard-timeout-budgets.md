@@ -51,11 +51,20 @@ distinguishes the second.
 
 137 on its own is ambiguous — an OOM kill or any other external SIGKILL produces
 it too — so it is not blanket-mapped to a timeout. The clock is the
-discriminator: `timeout` cannot escalate to SIGKILL before the cap has elapsed,
-so a 137 at or beyond the budget is a kill-escalated timeout, while a 137 well
-inside the budget is reported as `status: killed` with
-`::error::HONUA_SHARD_KILLED` (suspect an out-of-memory kill) rather than being
-laundered into a capacity signal.
+discriminator, and it accounts for the **full** escalation schedule rather than
+the cap alone: `timeout` sends SIGTERM at `test_timeout_minutes` and only sends
+SIGKILL after `HONUA_SERVER_TEST_KILL_AFTER_SECONDS` (default 30s) has elapsed on
+top of that. So the earliest 137 attributable to the runner is at
+`timeout_seconds + kill_after_seconds`, less a small tolerance
+(`HONUA_SERVER_TEST_KILL_ESCALATION_TOLERANCE_SECONDS`, default 2s) covering
+whole-second sampling truncation, and never earlier than the cap itself.
+
+A 137 at or beyond that deadline is a kill-escalated timeout. A 137 **before** it
+— including a host OOM kill landing inside the grace window, which is exactly when
+a memory-starved runner is most likely to reap the test host — is reported as
+`status: killed` with `::error::HONUA_SHARD_KILLED` (suspect an out-of-memory
+kill) rather than being laundered into a capacity signal, because the two need
+different remediations.
 
 The merge train consumes those markers in
 `scripts/ci/merge-train/classify-timeout.sh`. A `hang_suspected`/generic timeout

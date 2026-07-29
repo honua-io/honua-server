@@ -201,6 +201,40 @@ if grep -q 'HONUA_SHARD_CAPACITY_EXHAUSTED' "${out_file}"; then
 fi
 pass "output produced after the deadline does not mask a hang"
 
+# --- 4e. The warn threshold comes from shard policy, not a second default. ----
+# `.github/ci-shards.json` -> shard_budget_policy.warn_utilization is what the
+# fleet audit reads. The runner must read the same key, or a shard sitting between
+# the old and new thresholds gets one status in CI and a different one in the
+# audit. Deliberately does NOT set HONUA_SERVER_TEST_HEADROOM_WARN_RATIO, so a
+# regression to a hardcoded 0.80 makes this case fail: a ~2s run under a 60s cap
+# is ~3% utilisation, far under 0.80, but over a policy warn line of 0.01.
+policy_file="${workdir}/policy-shards.json"
+printf '{"shard_budget_policy":{"warn_utilization":0.01},"shards":[]}\n' > "${policy_file}"
+results_dir="${workdir}/policywarn"
+out_file="${workdir}/policywarn.out"
+timing_file="${results_dir}/fixture-policywarn.timing.json"
+rc=0
+PATH="${stub_dir}:${PATH}" \
+HONUA_FIXTURE_MODE=chatty \
+HONUA_FIXTURE_SECONDS=2 \
+HONUA_SERVER_TEST_SHARD_NAME="Fixture policywarn" \
+HONUA_SERVER_TEST_FILTER="FullyQualifiedName~Fixture" \
+HONUA_SERVER_TEST_LOG_NAME="fixture-policywarn" \
+HONUA_SERVER_TEST_RESULTS_DIR="${results_dir}" \
+HONUA_SERVER_TEST_TIMEOUT_MINUTES=1 \
+HONUA_SERVER_TEST_SHARD_POLICY_FILE="${policy_file}" \
+HONUA_SERVER_TEST_STALL_SECONDS=60 \
+HONUA_SERVER_TEST_HEARTBEAT_SECONDS=1 \
+HONUA_SERVER_TEST_POLL_SECONDS=1 \
+GITHUB_STEP_SUMMARY="${workdir}/policywarn.summary" \
+  "${RUNNER}" > "${out_file}" 2>&1 || rc=$?
+[[ "${rc}" == "0" ]] || fail "policy-warn case did not exit 0 (rc=${rc})"
+[[ "$(timing_field .capacity_status)" == "low_headroom" ]] \
+  || fail "runner ignored shard_budget_policy.warn_utilization (capacity_status=$(timing_field .capacity_status))"
+grep -q '^::warning::HONUA_SHARD_LOW_HEADROOM' "${out_file}" \
+  || fail "policy-driven warn threshold did not emit the low-headroom warning"
+pass "warn threshold is read from shard policy rather than a private default"
+
 # --- 5. No inner timeout configured: nothing to measure, nothing to claim. ---
 run_case unbounded chatty 2 "" 0.80 60
 [[ "${rc}" == "0" ]] || fail "unbounded case did not exit 0 (rc=${rc})"
