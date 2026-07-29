@@ -13,7 +13,10 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class TeamsAlertDeliverySinkTests
 {
-    private static AlertDeliveryOptions CreateOptionsWithTeams(string webhookUrl = "https://outlook.office.com/webhook/xxx") =>
+    // Destination is an IP literal so the sink's outbound SSRF guard does not perform a live DNS
+    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+    private static AlertDeliveryOptions CreateOptionsWithTeams(
+        string webhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx") =>
         new()
         {
             Dispatch = new AlertDeliveryDispatchOptions

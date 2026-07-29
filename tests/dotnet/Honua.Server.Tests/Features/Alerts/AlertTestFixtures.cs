@@ -14,6 +14,29 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// </summary>
 internal static class AlertTestFixtures
 {
+    /// <summary>
+    /// Base URL for delivery-sink tests whose expected outcome requires the outbound SSRF guard to
+    /// admit the destination.
+    /// <para>
+    /// The IP literal is deliberate. Every webhook sink validates its destination through
+    /// <c>OutboundHttpUrlValidator</c>, which resolves a <em>hostname</em> with a live
+    /// <c>Dns.GetHostAddressesAsync</c> call and — by design — treats any <c>SocketException</c> as an
+    /// unresolvable, therefore blocked, destination. A hostname here makes the test depend on CI DNS:
+    /// a transient resolution failure turns a delivery that should succeed into a non-retryable
+    /// failure and the test fails for reasons unrelated to the sink (#3056). An IP literal is vetted
+    /// arithmetically with no DNS call, so the guard still runs but the test is hermetic. This matches
+    /// the existing convention in <c>AlertOptionsValidatorTests</c> and <c>GeocodingOptionsValidatorTests</c>.
+    /// </para>
+    /// <para>
+    /// Hostname resolution behaviour itself (private, unresolvable, empty, and public results) is
+    /// covered directly by <c>OutboundHttpUrlValidatorTests</c> with an injected resolver, and the
+    /// sink-level rejection path stays covered by
+    /// <c>WebhookAlertDeliverySinkTests.DeliverAsync_WithUnsafeDestination_DoesNotSendRequest</c>,
+    /// which uses a loopback host rejected before any DNS lookup.
+    /// </para>
+    /// </summary>
+    public const string RoutableWebhookBaseUrl = "https://8.8.8.8";
+
     public static AlertDispatchItem CreateDispatchItem(
         AlertChannelType channelType,
         string? destination = null) => new()
