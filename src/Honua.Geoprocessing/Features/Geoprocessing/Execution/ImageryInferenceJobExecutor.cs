@@ -292,6 +292,21 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     $"valid GeoJSON FeatureCollection ({featureParseError}).");
             }
 
+            // Legacy (pre-RFC 7946) GeoJSON could carry a `crs` member. The shared
+            // reader builds geometries through a factory fixed to SRID 4326 and
+            // ignores that member, so a backend declaring e.g. EPSG:3857 would have
+            // its coordinates silently reinterpreted as degrees. An explicit
+            // non-WGS 84 declaration is the backend telling us the payload is NOT
+            // what the contract requires, so it is refused rather than ignored.
+            if (!TryValidateDeclaredCrs(featureJson, out var declaredCrsError))
+            {
+                Log.FeatureOutputNotWgs84(_logger, job.OperationId, declaredCrsError);
+                return JobExecutionResult.Failed(
+                    "imagery.classify inference failed: the backend returned a feature collection that declares " +
+                    $"a non-WGS 84 CRS ({declaredCrsError}). GeoJSON output must be WGS 84 (EPSG:4326) " +
+                    "longitude/latitude per RFC 7946.");
+            }
+
             // RFC 7946 GeoJSON is WGS 84 lon/lat, and every downstream GP consumer
             // reads this artifact through GeoJsonArtifactCodec, whose geometry
             // factory is fixed to SRID 4326. A backend that echoed detections in a
@@ -451,6 +466,68 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         var littleEndian = bytes[0] == 0x49 && bytes[1] == 0x49 && (bytes[2] == 0x2A || bytes[2] == 0x2B) && bytes[3] == 0x00;
         var bigEndian = bytes[0] == 0x4D && bytes[1] == 0x4D && bytes[2] == 0x00 && (bytes[3] == 0x2A || bytes[3] == 0x2B);
         return littleEndian || bigEndian;
+    }
+
+    /// <summary>
+    /// Rejects a legacy GeoJSON <c>crs</c> member that names anything other than
+    /// WGS 84. RFC 7946 dropped the member entirely and fixes the CRS at WGS 84,
+    /// so an explicit WGS 84 spelling is tolerated for compatibility while any
+    /// other declaration is refused.
+    /// </summary>
+    private static bool TryValidateDeclaredCrs(byte[] featureJson, out string error)
+    {
+        error = "";
+
+        try
+        {
+            using var document = JsonDocument.Parse(featureJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("crs", out var crs))
+            {
+                return true;
+            }
+
+            if (crs.ValueKind == JsonValueKind.Null)
+            {
+                return true;
+            }
+
+            var name = crs.ValueKind == JsonValueKind.Object
+                && crs.TryGetProperty("properties", out var properties)
+                && properties.ValueKind == JsonValueKind.Object
+                && properties.TryGetProperty("name", out var nameElement)
+                && nameElement.ValueKind == JsonValueKind.String
+                    ? nameElement.GetString()
+                    : null;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                error = "the 'crs' member does not name a recognizable coordinate reference system";
+                return false;
+            }
+
+            // Accepted spellings of WGS 84 lon/lat.
+            if (name.Contains("CRS84", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("4326", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            error = $"the 'crs' member declares '{Truncate(name)}'";
+            return false;
+        }
+        catch (JsonException)
+        {
+            // Shape problems are reported by the shared GeoJSON reader instead.
+            return true;
+        }
+    }
+
+    /// <summary>Bounds a backend-supplied value before it reaches a message or log.</summary>
+    private static string Truncate(string value)
+    {
+        const int MaxLength = 48;
+        return value.Length <= MaxLength ? value : value[..MaxLength] + "...";
     }
 
     /// <summary>

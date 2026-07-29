@@ -49,6 +49,18 @@ internal readonly record struct GeoTiffGeoreferencing
     /// GeoKey value meaning "the CRS is user-defined and spelled out in the
     /// remaining GeoKeys / parameter tags" rather than named by an EPSG code.
     /// </summary>
+    /// <summary>TIFF field type SHORT (16-bit unsigned).</summary>
+    private const ushort TiffTypeShort = 3;
+
+    /// <summary>TIFF field type LONG (32-bit unsigned).</summary>
+    private const ushort TiffTypeLong = 4;
+
+    /// <summary>TIFF field type DOUBLE (64-bit IEEE).</summary>
+    private const ushort TiffTypeDouble = 12;
+
+    /// <summary>TIFF field type LONG8 (64-bit unsigned, BigTIFF).</summary>
+    private const ushort TiffTypeLong8 = 16;
+
     private const ushort GeoKeyUserDefined = 32767;
 
     /// <summary>Sentinel <see cref="CrsCode"/> for a user-defined CRS.</summary>
@@ -466,14 +478,20 @@ internal readonly record struct GeoTiffGeoreferencing
         {
             switch (tag)
             {
-                case TagImageWidth:
+                // The model/geokey tags below are matched on their
+                // SPECIFICATION-DEFINED field type as well as their count. Without
+                // the type guard a tag declaring, say, SHORT still had 16/48/128
+                // bytes read off it as doubles — running past its declared payload
+                // and manufacturing plausible georeferencing out of whatever bytes
+                // follow, which then passes the extent/CRS comparison.
+                case TagImageWidth when IsIntegerFieldType(type):
                     _width = ReadScalar(bytes, type, dataOffset, littleEndian);
                     break;
-                case TagImageLength:
+                case TagImageLength when IsIntegerFieldType(type):
                     _height = ReadScalar(bytes, type, dataOffset, littleEndian);
                     break;
-                case TagStripOffsets:
-                case TagTileOffsets:
+                case TagStripOffsets when IsIntegerFieldType(type):
+                case TagTileOffsets when IsIntegerFieldType(type):
                     // Keep the whole array's location: a multi-strip or tiled file
                     // declares many segments and EVERY one has to be present, so
                     // remembering only the first would miss a payload truncated
@@ -483,13 +501,14 @@ internal readonly record struct GeoTiffGeoreferencing
                     _offsetsType = type;
                     _offsetsCount = count;
                     break;
-                case TagStripByteCounts:
-                case TagTileByteCounts:
+                case TagStripByteCounts when IsIntegerFieldType(type):
+                case TagTileByteCounts when IsIntegerFieldType(type):
                     _byteCountsData = dataOffset;
                     _byteCountsType = type;
                     _byteCountsCount = count;
                     break;
-                case TagModelPixelScale when count >= 2 && dataOffset + 16 <= bytes.Length:
+                case TagModelPixelScale
+                    when type == TiffTypeDouble && count >= 2 && dataOffset + 16 <= bytes.Length:
                     // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
                     // axis is implicitly negated for the north-up raster). A
                     // non-positive value is malformed, not something to Math.Abs
@@ -498,7 +517,8 @@ internal readonly record struct GeoTiffGeoreferencing
                     _scaleY = ReadDouble(bytes, dataOffset + 8, littleEndian);
                     _hasScale = true;
                     break;
-                case TagModelTiepoint when count >= 6 && dataOffset + 48 <= bytes.Length:
+                case TagModelTiepoint
+                    when type == TiffTypeDouble && count >= 6 && dataOffset + 48 <= bytes.Length:
                     // (i, j, k, x, y, z) — the RASTER point (i, j) and the model
                     // point (x, y) it maps to. The raster point is usually (0, 0)
                     // but is not required to be: keep it so TryBuild can walk the
@@ -511,7 +531,8 @@ internal readonly record struct GeoTiffGeoreferencing
                     _tiepointY = ReadDouble(bytes, dataOffset + 32, littleEndian);
                     _hasTiepoint = true;
                     break;
-                case TagModelTransformation when count >= 16 && dataOffset + 128 <= bytes.Length:
+                case TagModelTransformation
+                    when type == TiffTypeDouble && count >= 16 && dataOffset + 128 <= bytes.Length:
                     // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
                     // Signs are PRESERVED (m00 > 0 and m11 < 0 is the standard
                     // north-up orientation) and the off-diagonal m01/m10 terms are
@@ -525,7 +546,7 @@ internal readonly record struct GeoTiffGeoreferencing
                     _matrixOriginY = ReadDouble(bytes, dataOffset + 56, littleEndian);
                     _hasMatrix = true;
                     break;
-                case TagGeoKeyDirectory:
+                case TagGeoKeyDirectory when type == TiffTypeShort:
                     ReadGeoKeys(bytes, count, dataOffset, littleEndian, out _crsCode, out _rasterType);
                     break;
                 default:
@@ -737,6 +758,13 @@ internal readonly record struct GeoTiffGeoreferencing
 
             return 0;
         }
+
+        /// <summary>
+        /// TIFF field types that legitimately carry an unsigned integer value
+        /// (SHORT, LONG, or BigTIFF's LONG8).
+        /// </summary>
+        private static bool IsIntegerFieldType(ushort type)
+            => type is TiffTypeShort or TiffTypeLong or TiffTypeLong8;
 
         private static int ReadCrsCode(
             ReadOnlySpan<byte> bytes,

@@ -890,6 +890,67 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_FeaturePayloadDeclaringNonWgs84Crs_IsRejected()
+    {
+        // The shared reader ignores the legacy crs member and builds geometries
+        // through a factory fixed to SRID 4326, so an explicit EPSG:3857
+        // declaration would have its coordinates silently reinterpreted as
+        // degrees. The backend is telling us the payload is not what the contract
+        // requires, so refuse it rather than ignore it.
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::3857"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-declared-crs");
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("non-WGS 84 CRS");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_FeaturePayloadDeclaringWgs84Crs_IsStillAccepted()
+    {
+        // A legacy but WGS 84 crs member is harmless and must not break a
+        // conforming backend.
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:OGC:1.3:CRS84"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-declared-crs-ok", out _);
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ModelTagWithWrongFieldType_IsNotTreatedAsGeoreferenced()
+    {
+        // ModelPixelScale declared as SHORT rather than DOUBLE: reading 16 bytes
+        // off it would run past the tag's declared payload and manufacture
+        // georeferencing out of neighbouring IFD bytes.
+        var spoofed = BuildGeoTiff(
+            width: 64, height: 64, originX: 500000, originY: 4600000, pixelSize: 10,
+            epsg: 32610, pixelScaleFieldType: 3);
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-wrong-field-type");
+
+        var record = CreateJobRecord(source: Convert.ToBase64String(spoofed));
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        handler.LastRequestBody.Should().BeNull(
+            "a tag whose field type violates the spec must not yield usable georeferencing");
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
@@ -1106,7 +1167,8 @@ public sealed class ImageryInferenceJobExecutorTests
         double tiepointI = 0,
         double tiepointJ = 0,
         bool withRasterData = true,
-        int rasterType = 1)
+        int rasterType = 1,
+        ushort pixelScaleFieldType = 12)
     {
         // Entries (ascending tag order, as TIFF requires): ImageWidth, ImageLength,
         // StripOffsets, StripByteCounts [, ModelPixelScale, ModelTiepoint,
@@ -1154,7 +1216,8 @@ public sealed class ImageryInferenceJobExecutorTests
 
         if (georeferenced)
         {
-            WriteOffsetEntry(span, ref entry, tag: 33550, type: 12, count: 3, offset: (uint)pixelScaleOffset);
+            WriteOffsetEntry(
+                span, ref entry, tag: 33550, type: pixelScaleFieldType, count: 3, offset: (uint)pixelScaleOffset);
             WriteOffsetEntry(span, ref entry, tag: 33922, type: 12, count: 6, offset: (uint)tiepointOffset);
             WriteOffsetEntry(span, ref entry, tag: 34735, type: 3, count: 12, offset: (uint)geoKeyOffset);
 
