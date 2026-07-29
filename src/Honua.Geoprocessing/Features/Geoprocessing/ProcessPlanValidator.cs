@@ -737,6 +737,14 @@ internal static partial class ProcessPlanValidator
             AddRangeViolationIfNew(step, "distance", "expected a finite positive number (CRS units)", violations);
         }
 
+        if (step.Inputs.TryGetValue("maxCarriedMatchValues", out var budgetRaw)
+            && !string.IsNullOrWhiteSpace(budgetRaw)
+            && (!long.TryParse(budgetRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var budget)
+                || budget < 0))
+        {
+            AddRangeViolationIfNew(step, "maxCarriedMatchValues", "expected a non-negative integer", violations);
+        }
+
         if (step.Inputs.TryGetValue("maxInputFeatures", out var maxInputRaw)
             && !string.IsNullOrWhiteSpace(maxInputRaw)
             && (!int.TryParse(maxInputRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxInput)

@@ -95,7 +95,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// carried fields), so two individually permitted but highly overlapping layers
     /// cannot exhaust the worker before the artifact-size check.
     /// </summary>
-    private const long MaxCarriedMatchValues = 20_000_000L;
+    private const long DefaultMaxCarriedMatchValues = 20_000_000L;
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -206,7 +206,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         try
         {
             targets = hasInline
-                ? ParseInlineSource(inlineUri!)
+                ? ParseInlineSource(inlineUri!, plan.MaxInputFeatures)
                 : await ReadSourceLayerAsync(source, inputs, plan, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -252,6 +252,13 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (TransformInputException ex)
+        {
+            // The cumulative match budget surfaces here with concrete remedies (narrow
+            // where/bbox, carry fewer outputFields, use a less permissive method), so it
+            // must reach the caller verbatim rather than collapsing to a type name.
+            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -318,12 +325,22 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         services.GetServices<IDagFeatureSource>()
             .FirstOrDefault(candidate => string.Equals(candidate.SourceId, HonuaLayerSourceId, StringComparison.Ordinal));
 
-    private List<IFeature> ParseInlineSource(string inlineUri)
+    private List<IFeature> ParseInlineSource(string inlineUri, int maxFeatures)
     {
         if (!FeatureCollectionArtifact.TryParseDataUri(
                 inlineUri, out var collection, out var error, _options.CurrentValue.MaxArtifactBytes))
         {
             throw new TransformInputException($"'input' {error}");
+        }
+
+        // The admission cap is a property of the REQUEST, not of the source form: an
+        // inline collection must trip the same guard a layer-backed selection would,
+        // before the dataset layer is read and the join is computed.
+        if (collection.Count > maxFeatures)
+        {
+            throw new TransformInputException(
+                $"staged 'input' source exceeds the configured limit of {maxFeatures} features; "
+                + "stage fewer features or raise the limit.");
         }
 
         return [.. collection];
@@ -426,8 +443,28 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             TryReadPositiveInt(inputs, "maxInputFeatures") ?? DefaultMaxInputFeatures,
             MaxInputFeaturesCeiling);
 
+        // Same posture as the input cap: the caller may only LOWER the join budget.
+        var maxCarriedMatchValues = Math.Min(
+            TryReadNonNegativeLong(inputs, "maxCarriedMatchValues") ?? DefaultMaxCarriedMatchValues,
+            DefaultMaxCarriedMatchValues);
+
         return new EnrichmentPlan(
-            methodName, nearest, predicate, distance, carryFields, stats, maxInputFeatures);
+            methodName, nearest, predicate, distance, carryFields, stats, maxInputFeatures, maxCarriedMatchValues);
+    }
+
+    private static long? TryReadNonNegativeLong(StepInputReader inputs, string name)
+    {
+        if (!inputs.TryGet(name, out var raw))
+        {
+            return null;
+        }
+
+        if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value < 0)
+        {
+            throw new TransformInputException($"'{name}' must be a non-negative integer.");
+        }
+
+        return value;
     }
 
     private static int? TryReadPositiveInt(StepInputReader inputs, string name)
@@ -482,7 +519,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // One budget for the WHOLE join: the per-layer caps bound each input, but the
         // match set is a Cartesian product, so overlapping layers can buffer far more
         // carried values than either input has features.
-        var budget = new SpatialJoinSupport.MatchBudget(MaxCarriedMatchValues);
+        var budget = new SpatialJoinSupport.MatchBudget(plan.MaxCarriedMatchValues);
         foreach (var target in targets)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -570,6 +607,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// Per-layer admission cap enforced WHILE streaming, so an oversized selection fails
     /// fast instead of exhausting worker memory before the artifact-size check.
     /// </param>
+    /// <param name="MaxCarriedMatchValues">
+    /// Cumulative ceiling on carried match values across the whole join, bounding the
+    /// Cartesian growth the per-layer caps cannot see.
+    /// </param>
     private sealed record EnrichmentPlan(
         string MethodName,
         bool Nearest,
@@ -577,7 +618,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         double Distance,
         IReadOnlyList<string> CarryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> Stats,
-        int MaxInputFeatures);
+        int MaxInputFeatures,
+        long MaxCarriedMatchValues);
 
     private static partial class Log
     {

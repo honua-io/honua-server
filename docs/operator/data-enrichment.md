@@ -77,9 +77,10 @@ enrichment-local job lifecycle:
 - **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
   while streaming, so an oversized selection fails fast with an actionable error
   instead of exhausting worker memory. The value is clamped to an operator
-  ceiling of 1000000 — a caller may only lower the cap, never disable it. A
-  cumulative carried-match budget additionally bounds the join itself, which is a
-  Cartesian product the per-layer caps cannot see.
+  ceiling of 1000000 — a caller may only lower the cap, never disable it — and it
+  applies equally to a staged `input` collection. `maxCarriedMatchValues`
+  (default 20000000, likewise lower-only) additionally bounds the join itself,
+  which is a Cartesian product the per-layer caps cannot see.
 
 ## Registering enrichment datasets
 

@@ -381,7 +381,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("aggregates", "Aggregates", "Semicolon-separated 'field:stat' aggregates computed over the matched dataset features (join methods only). Supported stats: count (emitted as JOIN_COUNT), sum, mean, min, max, stddev on numeric dataset fields.", ProcessParameterValueType.Text),
                 Param("where", "Where", "ArcGIS SQL filter applied to the source layer (layerId source only).", ProcessParameterValueType.Text),
                 Param("bbox", "BBox", "Bounding-box filter applied to the source layer (layerId source only), as minx,miny,maxx,maxy in EPSG:4326.", ProcessParameterValueType.Text),
-                Param("maxInputFeatures", "Max Input Features", "Per-layer admission cap enforced while streaming, so an oversized selection fails fast instead of exhausting worker memory. Defaults to 250000 and is clamped to an operator ceiling of 1000000 — a caller may only LOWER the cap, never disable the guard.", ProcessParameterValueType.WholeNumber, defaultValue: "250000"),
+                Param("maxInputFeatures", "Max Input Features", "Per-layer admission cap enforced while streaming, so an oversized selection fails fast instead of exhausting worker memory. Defaults to 250000 and is clamped to an operator ceiling of 1000000 — a caller may only LOWER the cap, never disable the guard. Applies equally to a staged 'input' collection.", ProcessParameterValueType.WholeNumber, defaultValue: "250000"),
+                Param("maxCarriedMatchValues", "Max Carried Match Values", "Cumulative ceiling on carried match values across the whole join, bounding the Cartesian growth the per-layer caps cannot see. Defaults to 20000000 and may only be LOWERED by the caller.", ProcessParameterValueType.WholeNumber, defaultValue: "20000000"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
