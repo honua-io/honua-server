@@ -673,10 +673,17 @@ internal sealed class InMemoryCollaborationSessionService
                 operationEvicted |= IsOperationBearing(state.Outbox.Dequeue());
             }
 
+            // Queue order must stay sequence order: `ev` is already stamped, so the resync
+            // notice — which necessarily draws a HIGHER sequence — has to follow it. Queuing the
+            // notice first would hand the client S+1 before S, and the monotonic v1 reducer
+            // would discard `ev` itself; for a cursor/selection/presence frame that loss is not
+            // recoverable by replaying the operation log (honua-server#2999 review).
+            state.Outbox.Enqueue(ev);
+
             if (operationEvicted)
             {
-                // Keep the outbox at its cap after adding both the notice and the new event.
-                if (state.Outbox.Count >= MaxOutboxDepth - 1)
+                // Keep the outbox at its cap now that the notice is being added as well.
+                if (state.Outbox.Count >= MaxOutboxDepth)
                 {
                     _ = IsOperationBearing(state.Outbox.Dequeue());
                 }
@@ -696,7 +703,6 @@ internal sealed class InMemoryCollaborationSessionService
                     }));
             }
 
-            state.Outbox.Enqueue(ev);
             state.OutboxSignal.Set();
             delivered++;
         }

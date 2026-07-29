@@ -383,9 +383,40 @@ public sealed class InMemoryCollaborationSessionServiceTests
             e.Event.Code == CollaborationErrorCodes.ResyncRequired &&
             e.Event.ResyncRequired == true);
         drained.Length.Should().BeLessThanOrEqualTo(InMemoryCollaborationSessionService.MaxOutboxDepth);
-        // The newest committed operation is still delivered after the resync notice.
-        drained[^1].Event.Operation!.Cursor.Should().Be(
-            total.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        // The newest committed operation is still delivered, and the resync notice follows it:
+        // the notice necessarily draws a higher sequence than the event that triggered it, so
+        // emitting it first would make a monotonic reducer discard that event.
+        var newest = drained.Should().ContainSingle(e =>
+            e.Event.Operation != null &&
+            e.Event.Operation.Cursor == total.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .Subject;
+        var lastNotice = drained.Last(e => e.Event.Code == CollaborationErrorCodes.ResyncRequired);
+        lastNotice.Sequence.Should().BeGreaterThan(newest.Sequence);
+    }
+
+    [UnitTest]
+    public async Task PublishOperation_OutboxEviction_KeepsQueueInSequenceOrder()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
+        _ = service.DrainEvents(local.SessionId);
+
+        // Overflow the outbox so the eviction/resync path runs, then keep publishing presence
+        // frames through the same path.
+        for (var i = 1; i <= InMemoryCollaborationSessionService.MaxOutboxDepth + 5; i++)
+        {
+            service.PublishOperation("map-a", CreateWireOperation("map-a", cursor: i));
+        }
+
+        var drained = service.DrainEvents(local.SessionId);
+
+        // A monotonic reducer must be able to apply every delivered frame: queue order has to be
+        // sequence order, otherwise the newer event is discarded and a cursor/presence update
+        // would be lost with no op-log replay able to recover it.
+        drained.Select(static e => e.Sequence).Should().BeInAscendingOrder();
+        drained.Should().Contain(e => e.Event.Code == CollaborationErrorCodes.ResyncRequired);
     }
 
     [UnitTest]

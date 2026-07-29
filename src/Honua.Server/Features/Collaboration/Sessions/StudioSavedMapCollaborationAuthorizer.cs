@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
@@ -74,6 +75,19 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
         var draft = await lifecycle.GetDraftAsync(resolvedId, cancellationToken).ConfigureAwait(false);
         if (draft is not null)
         {
+            // Only composition-eligible families (Map/App) can be checkpointed: the checkpoint
+            // applies operations onto the Studio composition body via
+            // StudioCompositionBodyEditor, which rejects every other family. Authorizing a
+            // query/analysis/dashboard/report/form draft would hand clients accepted cursors and
+            // live broadcasts for edits no checkpoint could ever persist, so refuse before any
+            // operation enters the log (honua-server#2999 review).
+            if (!StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(draft.Family))
+            {
+                return SavedMapCollaborationAuthorizationResult.Forbid(
+                    $"Saved-map collaboration is not available for '{draft.Family}' drafts; only " +
+                    "map and app drafts can be checkpointed.");
+            }
+
             var decision = await authorization.AuthorizeAsync(
                 context,
                 StudioAuthorizationOperation.UpdateDraft,

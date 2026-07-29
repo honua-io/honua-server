@@ -433,6 +433,38 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+
+        // Only Map/App drafts are composition-eligible, so only they can be checkpointed.
+        StudioCompositionBodyEditor.CompositionEligibleFamilies.Should()
+            .NotContain(StudioPackageFamily.Query);
+
+        var draft = await CreateDraftAsync(client, StudioPackageFamily.Query, "honua_query_package.v1");
+        var mapId = draft.DraftId.ToString("D");
+
+        // Authorizing this draft would hand out accepted cursors and live broadcasts for edits
+        // no checkpoint could ever persist, so both surfaces must refuse up front.
+        using var joinContent = new StringContent(
+            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
+        using var joinResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var appendContent = new StringContent(
+            """{"operationId":"op-1","kind":"SetViewport","baseCursor":0,"payload":{"zoom":3}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var appendResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/operations", appendContent);
+        appendResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
     {
@@ -567,7 +599,13 @@ public sealed class CollaborationLiveCoEditingTests
         return client;
     }
 
-    private static async Task<StudioPackageDraft> CreateMapDraftAsync(HttpClient client)
+    private static Task<StudioPackageDraft> CreateMapDraftAsync(HttpClient client) =>
+        CreateDraftAsync(client, StudioPackageFamily.Map, "honua_map_package.v1");
+
+    private static async Task<StudioPackageDraft> CreateDraftAsync(
+        HttpClient client,
+        StudioPackageFamily family,
+        string format)
     {
         using var body = JsonDocument.Parse(
             """{"layers":[{"id":"parcels","title":"Parcels","visible":true}]}""");
@@ -577,9 +615,9 @@ public sealed class CollaborationLiveCoEditingTests
             WorkspaceId = "studio",
             Envelope = new StudioPackageEnvelope
             {
-                Family = StudioPackageFamily.Map,
+                Family = family,
                 SchemaVersion = "1.0",
-                Format = "honua_map_package.v1",
+                Format = format,
                 Body = body.RootElement.Clone(),
             },
         };
