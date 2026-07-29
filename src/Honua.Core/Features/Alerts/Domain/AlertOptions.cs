@@ -30,7 +30,13 @@ public sealed class AlertOptions
     /// only restrict features below what the license grants; it never unlocks features the
     /// license does not include.
     /// </summary>
-    public AlertEdition? Edition { get; init; }
+    /// <remarks>
+    /// Declared <c>set</c> rather than <c>init</c> deliberately: the configuration binding
+    /// source generator (<c>EnableConfigurationBindingGenerator</c>) does not assign init-only
+    /// properties when binding an existing options instance, so an init-only cap would silently
+    /// stay null no matter what an operator configured. Covered by AlertOptionsBindingTests.
+    /// </remarks>
+    public AlertEdition? Edition { get; set; }
 
     /// <summary>
     /// Evaluator worker settings.

@@ -225,9 +225,9 @@ internal static class EntitlementProbeRegistry
             new(FeatureCatalog.ChannelsWebhookKey, HttpMethod.Post, AlertRulesPath,
                 EnterRuleJson("webhook")),
             new(FeatureCatalog.AlertsDwellKey, HttpMethod.Post, AlertRulesPath,
-                """{"serviceId":"entitlement-sweep","layerId":0,"zoneId":1,"ruleName":"sweep dwell probe","triggerType":"dwell","conditionsJson":"{\"dwellSeconds\":60}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
+                """{"serviceId":"entitlement-sweep","layerId":1,"zoneId":1,"ruleName":"sweep dwell probe","triggerType":"dwell","conditionsJson":"{\"dwellSeconds\":60}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
             new(FeatureCatalog.AlertsThresholdKey, HttpMethod.Post, AlertRulesPath,
-                """{"serviceId":"entitlement-sweep","layerId":0,"ruleName":"sweep threshold probe","triggerType":"threshold","conditionsJson":"{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
+                """{"serviceId":"entitlement-sweep","layerId":1,"ruleName":"sweep threshold probe","triggerType":"threshold","conditionsJson":"{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["webhook"],"isActive":true}"""),
             new(FeatureCatalog.AlertsEvaluationKey, HttpMethod.Post, AlertRulesPath + "/test",
                 $$"""{"rule":{{EnterRuleJson("webhook")}}}"""),
             new(FeatureCatalog.ChannelsEmailKey, HttpMethod.Post, AlertRulesPath,
@@ -253,7 +253,7 @@ internal static class EntitlementProbeRegistry
     /// alongside alerts.enter-exit, which still satisfies the per-key body assertion.
     /// </summary>
     private static string EnterRuleJson(string channel)
-        => $$"""{"serviceId":"entitlement-sweep","layerId":0,"zoneId":1,"ruleName":"sweep {{channel}} probe","triggerType":"enter","conditionsJson":"{}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["{{channel}}"],"isActive":true}""";
+        => $$"""{"serviceId":"entitlement-sweep","layerId":1,"zoneId":1,"ruleName":"sweep {{channel}} probe","triggerType":"enter","conditionsJson":"{}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["{{channel}}"],"isActive":true}""";
 
     private static string BuildMarkers(int count)
         => string.Join('|', Enumerable.Range(0, count).Select(i => $"-122.{400 + i},37.7{i},red"));

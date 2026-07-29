@@ -3,12 +3,14 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -26,23 +28,33 @@ public sealed class AlertEntitlementGateTests
 {
     private const string RulesRoute = "/api/v1/admin/alerts/rules";
 
-    private static WebAppFixture CreateFixture(HonuaEdition edition, string? alertsEditionCap = null)
-        => new WebAppFixture()
+    private static WebAppFixture CreateFixture(HonuaEdition edition, AlertEdition? alertsEditionCap = null)
+    {
+        var fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .WithTestLicense(edition)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                if (alertsEditionCap is not null)
-                {
-                    builder.UseSetting("Alerts:Edition", alertsEditionCap);
-                }
-            });
+            .ConfigureWebHost(builder => builder.UseEnvironment("Test"));
+
+        if (alertsEditionCap is { } cap)
+        {
+            // The cap is injected as the bound options instance rather than as configuration:
+            // WebAppFixture's web-host callbacks do not surface an "Alerts" configuration
+            // section to the app's options binding, so a config-based cap silently stays null
+            // here. The configuration -> AlertOptions.Edition binding itself is covered
+            // directly by AlertOptionsBindingTests.
+            fixture = fixture.ReplaceService<IOptions<AlertOptions>>(
+                Options.Create(new AlertOptions { Edition = cap }));
+        }
+
+        return fixture;
+    }
 
     private static object RulePayload(string triggerType, string channel, string conditionsJson = "{}") => new
     {
         serviceId = $"gate-{Guid.NewGuid():N}",
-        layerId = 0,
+        // Must be positive: rule-shape validation (TryCreateRuleDefinition) runs before the
+        // entitlement gate, so layerId 0 would 400 and mask the 402 under test.
+        layerId = 1,
         zoneId = triggerType is "enter" or "exit" or "dwell" ? (long?)1 : null,
         ruleName = $"{triggerType} gate probe",
         triggerType,
@@ -57,8 +69,10 @@ public sealed class AlertEntitlementGateTests
     private static async Task AssertBlockedAsync(HttpClient client, object payload, string expectedKey)
     {
         using var response = await client.PostAsJsonAsync(RulesRoute, payload);
-        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.PaymentRequired,
+            $"Expected 402 for '{expectedKey}' but got {(int)response.StatusCode}: {body}");
         Assert.Contains($"entitlement: {expectedKey}", body);
     }
 
@@ -68,6 +82,8 @@ public sealed class AlertEntitlementGateTests
         // channel) may still 400, which is out of scope here.
         using var response = await client.PostAsJsonAsync(RulesRoute, payload);
         Assert.NotEqual(HttpStatusCode.PaymentRequired, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("entitlement: ", body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
@@ -156,11 +172,17 @@ public sealed class AlertEntitlementGateTests
     {
         // Alerts:Edition=Pro is a downward cap: Enterprise features are blocked even though
         // the license grants them, while Pro features keep working.
-        var fixture = CreateFixture(HonuaEdition.Enterprise, alertsEditionCap: "Pro");
+        var fixture = CreateFixture(HonuaEdition.Enterprise, alertsEditionCap: AlertEdition.Pro);
         await fixture.InitializeAsync();
         try
         {
             using var client = fixture.CreateAdminClient();
+
+            // The cap only means anything if it actually reached the policy: assert it first so
+            // a wiring regression cannot masquerade as a passing gate test.
+            Assert.Equal(
+                AlertEdition.Pro,
+                fixture.GetService<IOptions<AlertOptions>>().Value.Edition);
 
             await AssertBlockedAsync(
                 client,
@@ -181,7 +203,7 @@ public sealed class AlertEntitlementGateTests
     {
         // Alerts:Edition can never grant upward: with a Community license, setting the knob to
         // Enterprise still leaves every alert feature blocked (the license wins).
-        var fixture = CreateFixture(HonuaEdition.Community, alertsEditionCap: "Enterprise");
+        var fixture = CreateFixture(HonuaEdition.Community, alertsEditionCap: AlertEdition.Enterprise);
         await fixture.InitializeAsync();
         try
         {
