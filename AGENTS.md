@@ -83,16 +83,16 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 |---|---|---|
 | `honua-server` | Public | Server runtime, protocol adapters, canonical pipelines, API governance, conformance/test infrastructure. |
 | `Honua.Server` | Private | Archived legacy server/reference implementation only. It is not an active development target; do not open issues or PRs there and do not copy code from it. Use it only to understand historical behavior. |
-| `honua-server-admin` | Public | **Archived/dead — not an active target.** Former Blazor WebAssembly + MudBlazor admin UI. All admin/console UI work has moved to `honua-console`. Do not open issues/PRs or route new work here. |
+| `honua-server-admin` | Private (archived) | **Archived/dead — not an active target.** Former Blazor WebAssembly + MudBlazor admin UI. All admin/console UI work has moved to `honua-console`. Do not open issues/PRs or route new work here. |
 | `honua-console` | Public | **Active admin/console UI home.** Hosts the Studio map builder and the styleId-keyed style editor (dual-mode: MapLibre/Maputnik + Esri-renderer `drawingInfo` authoring over `/ogc/styles`; ADR-0007/ADR-0048). |
 | `honua-sdk-js` | Public | JavaScript/TypeScript SDKs for Honua, including the MCP server package. |
 | `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
 | `honua-sdk-python` | Public | Python SDK for Honua. |
 | `honua-mobile` | Public | MAUI-first mobile SDK and GeoPackage/offline field-collection foundation. |
-| `honua-site` | Public | Honua public website. |
-| `honua-site-preview` | Public | Preview deployment repo for honua.io site changes. |
+| `honua-site` | Private | Honua public website. |
+| `honua-site-preview` | Private | Preview deployment repo for honua.io site changes. |
 | `honua-helm` | Public | Helm chart for deploying Honua. |
-| `honua-terraform` | Public | Terraform modules, environments, and validation CI for Honua. |
+| `honua-iac` | Private | Infrastructure as code (Terraform, CloudFormation, Bicep). **Renamed from `honua-terraform`** — the old name only resolves by GitHub redirect, so use `honua-iac`. |
 | `honua-agentflow` | Private | CLI workflow for multi-agent ticket execution and state tracking. |
 | `honua-devops` | Private | AI DevOps operations agent for Honua. |
 | `honua-marketplace` | Private | AWS/Azure Marketplace seller packaging, listing assets, and fulfillment automation. |
@@ -101,6 +101,16 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `geospatial-mcp` | Public | Open geospatial MCP standard for analyst, map, and app-builder workflows. |
 | `geospatial-grpc` | Public | Open geospatial gRPC protocol definitions for feature services, spatial types, and forms. |
 | `geobench` | Public | Benchmark suite for Honua. |
+| `honua-release` | Private | Platform release engineering: platform manifest, compatibility matrix, automated release train, cross-repo certification + E2E, BOM/release notes. **Release gates live here** — carry the `first-release-gate` label for anything that must block the first platform RC. |
+| `honua-evidence` | Public | Capability evidence aggregation ("every claim has a receipt"): joins tests, CITE, interop, benchmarks, and samples into `capability-matrix.v1.json` + the evidence index. |
+| `honua-samples` | Public | Runnable samples as executable evidence — capability-keyed manifests run in CI against a real server, published at samples.honua.io. |
+| `honua-studio` | Public | Natural-language-to-map-app BYOM builder (composed, versioned, reversible map applications). Distinct from the Studio map builder UI hosted in `honua-console`. |
+| `honua-migrate` | Public | Unified migration CLI: assessment, planning, code migration, service import, reconciliation. Owns the arcpy/toolbox translation CLI surface. |
+| `honua-collect` | Public | Offline-first mobile field data collection (ELv2 open core). |
+| `honua-esri-compat` | Private | Automated Esri client compatibility verification (ArcGIS Pro/arcpy, ArcGIS API for Python, ArcGIS Maps SDK for .NET). Home for anything needing a licensed Esri environment. |
+| `honua-compliance` | Private | Security/compliance system of record: policies, CSA CCM v4 control mappings, self-attestations (STAR/CAIQ, OWASP ASVS, NIST CSF), evidence index. |
+| `honua-demo` | Private | demo.honua.io environment: Terraform root module (consumes `honua-iac`), seeding, runbook, demo ops. |
+| `agent-delivery-spec` | Private | Canonical Specifica contract store for agent delivery. Epic/issue bodies marked as Specifica projections are generated from here — **edit the markdown here and resync; editing the GitHub issue body directly is overwritten.** |
 
 ### Proto Ownership
 
