@@ -7198,7 +7198,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.ProviderSmoke.Tests.DuckDbProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
+        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
@@ -16715,6 +16715,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OData_CreateUpdateDelete_SecondaryReadOnlyProvider_Returns501AndLeavesDataUnchanged",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.CreateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.CreateFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientCertificationTests.CertAuth01_UnauthenticatedWriteIs401",
@@ -18172,6 +18173,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.MySqlProviderSmokeTests.FeatureServer_ApplyEdits_GeometryOnlyAddOnReadOnlyProvider_Returns405",
+        "Honua.ProviderSmoke.Tests.MySqlProviderSmokeTests.FeatureServer_ApplyEdits_ReadOnlyProvider_Returns405AndLeavesDataUnchanged",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithAddOperationAndCallerObjectId_ReturnsGeneratedObjectId",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithAddOperation_ReturnsNewObjectId",
