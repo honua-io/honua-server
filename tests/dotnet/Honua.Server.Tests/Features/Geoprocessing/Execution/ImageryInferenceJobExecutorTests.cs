@@ -824,6 +824,31 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_UnrecognizedOutputType_DoesNotEchoBackendContentIntoJobStatus()
+    {
+        // outputType is backend-controlled. Interpolating it into the failure
+        // message would put provider-chosen content of unbounded length onto the
+        // client-visible job status, contradicting the adapter's sanitization
+        // contract.
+        var hostile = "SECRET-" + new string('z', 5000);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                "{\"outputType\":\"" + hostile + "\"}")),
+            provider: "http");
+        var context = CreateContext("op-hostile-outputtype");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("unrecognized outputType");
+        result.ErrorMessage.Should().NotContain("SECRET",
+            "backend-controlled values must never be echoed onto the job status");
+        result.ErrorMessage!.Length.Should().BeLessThan(500,
+            "the job status must stay bounded regardless of what the backend sends");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(

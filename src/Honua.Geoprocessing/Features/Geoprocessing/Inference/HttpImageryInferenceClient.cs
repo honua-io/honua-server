@@ -187,7 +187,7 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
                     "the inference response body could not be read from the endpoint.", ex);
             }
 
-            return ParseResponse(body);
+            return ParseResponse(body, endpoint.Host);
         }
     }
 
@@ -285,7 +285,7 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         return buffer.ToArray();
     }
 
-    private static ImageryInferenceOutcome ParseResponse(byte[] body)
+    private ImageryInferenceOutcome ParseResponse(byte[] body, string host)
     {
         JsonDocument document;
         try
@@ -353,10 +353,32 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
                 };
             }
 
+            // The raw value is backend-controlled: echoing it into the exception
+            // would put provider-chosen content — potentially sensitive, and of
+            // unbounded length — straight onto the client-visible job status,
+            // breaking this adapter's sanitization contract. It is logged
+            // server-side, truncated, and the client sees a fixed message.
+            Log.UnrecognizedOutputType(_logger, host, Truncate(outputType));
             throw new ImageryInferenceException(
-                $"the inference backend returned an unrecognized outputType '{outputType}'; " +
+                "the inference backend returned an unrecognized outputType; " +
                 "expected 'raster' or 'features'.");
         }
+    }
+
+    /// <summary>
+    /// Bounds a backend-supplied value before it reaches a log sink, so a hostile
+    /// or misconfigured endpoint cannot flood the logs either.
+    /// </summary>
+    private static string Truncate(string? value)
+    {
+        const int MaxLength = 64;
+
+        if (string.IsNullOrEmpty(value))
+        {
+            return "<none>";
+        }
+
+        return value.Length <= MaxLength ? value : value[..MaxLength] + "...";
     }
 
     private static partial class Log
@@ -368,6 +390,10 @@ internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClie
         [LoggerMessage(9311, LogLevel.Warning,
             "Imagery inference request to backend host {Host} failed at transport level")]
         public static partial void RequestFailed(ILogger logger, string host, Exception exception);
+
+        [LoggerMessage(9323, LogLevel.Warning,
+            "Imagery inference backend host {Host} returned an unrecognized outputType '{OutputType}'")]
+        public static partial void UnrecognizedOutputType(ILogger logger, string host, string outputType);
 
         [LoggerMessage(9312, LogLevel.Warning,
             "Imagery inference backend host {Host} returned HTTP {StatusCode}")]
