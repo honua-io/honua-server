@@ -3109,7 +3109,9 @@
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_ValidJwt_IsAccepted",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_WrongAudience_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_WrongIssuer_IsRejected",
-        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.ListProviders_Empty_ReturnsEmptyList"
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.ListProviders_Empty_ReturnsEmptyList",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.ListProviders_WithoutEntitlement_Returns402WithEntitlementDetail",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13091,7 +13093,12 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.CreateRule_RecordsAuditEvidence",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.CreateRule_WithUnconfiguredChannel_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.CreateRule_WithZoneIdOnThresholdRule_ReturnsBadRequestWithoutPersisting",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityLicense_ProAlertFeatures_AreBlockedWithEntitlementDetail",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityLicense_WithEnterpriseCap_DoesNotGrantFeatures",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseLicense_AllowsEnterpriseFeatures",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseLicense_WithProCap_BlocksEnterpriseFeaturesOnly",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProLicense_AllowsProFeatures_BlocksEnterpriseFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13108,7 +13115,9 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithDraftZoneAndDisabledRule_ReturnsValidationStatesWithoutPersisting",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithInvalidThresholdExpression_ReturnsValidationError",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithUnauthorizedChannel_ReturnsChannelState",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityLicense_ProAlertFeatures_AreBlockedWithEntitlementDetail",
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProLicense_AllowsProFeatures_BlocksEnterpriseFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -14961,7 +14970,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.CreateProvider_ValidRequest_ReturnsCreated"
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.CreateProvider_ValidRequest_ReturnsCreated",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithEnterpriseEntitlement_AllowsMultipleProviders",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
