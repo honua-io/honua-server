@@ -149,6 +149,92 @@ public sealed class ApplyEditsIdempotencyStoreTests
             "all other concurrent callers must lose the reservation and return 409");
     }
 
+    // ─── #3052: reservation release ──────────────────────────────────────────────
+
+    /// <summary>
+    /// #3052: a reservation that will never be replaced by a recorded response (the edit threw,
+    /// was rejected, rolled back, or committed no rows) must be releasable, so the client's retry
+    /// wins the reservation again instead of losing it and getting a 409.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_AfterReservation_AllowsTheSameKeyToReserveAgain()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "release-then-retry");
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue();
+        (await store.TryReserveAsync(scope)).Should().BeFalse("the reservation is still held");
+
+        await store.ReleaseAsync(scope);
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue(
+            "a released reservation must not pin the key for the rest of the reservation window");
+    }
+
+    /// <summary>
+    /// #3052: the in-process fallback path (no IDistributedCache configured) must release too.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_WithInProcessFallback_AllowsTheSameKeyToReserveAgain()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            cache: null,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "release-then-retry-fallback");
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue();
+        await store.ReleaseAsync(scope);
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #3052 correctness guard, the direction that matters most: release is a compare-and-delete on
+    /// the pending sentinel. Once a response has been recorded the key must stay reserved for the
+    /// whole dedupe window, otherwise a late release would discard the replay value and let a
+    /// duplicate retry re-apply an already-committed edit.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_AfterRecordedResponse_LeavesTheReplayValueIntact()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "recorded-then-released");
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue();
+        await store.SetAsync(scope, SampleResponse(objectId: 1234));
+
+        await store.ReleaseAsync(scope);
+
+        var replay = await store.TryGetAsync(scope);
+        replay.Should().NotBeNull("a recorded response must survive a release");
+        replay!.AddResults![0].ObjectId.Should().Be(1234);
+    }
+
+    /// <summary>
+    /// #3052: releasing a key that was never reserved is a harmless no-op rather than a throw —
+    /// the handler calls it from a finally block on already-failing paths.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_WithoutReservation_IsANoOp()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "never-reserved");
+
+        await store.ReleaseAsync(scope);
+
+        (await store.TryReserveAsync(scope)).Should().BeTrue();
+    }
+
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
     public void TryResolveKey_NoHeader_ReturnsNullKeyWithoutError()

@@ -52,6 +52,23 @@ internal interface IApplyEditsIdempotencyStore
         ApplyEditsIdempotencyScope scope,
         ApplyEditsResponse response,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Releases a reservation taken by <see cref="TryReserveAsync"/> that will never be replaced by a
+    /// recorded response (#3052) — the edit threw, was rejected, rolled back, or committed no rows. Without
+    /// this the pending sentinel lingers for the whole reservation window and a genuine client retry gets
+    /// 409 Conflict instead of a deterministic repeat of the original outcome.
+    ///
+    /// Release is a compare-and-delete on the pending sentinel: a key that already holds a recorded
+    /// response is left untouched, so a late release can never discard another request's committed replay
+    /// value and re-open the door to a duplicate edit. Best-effort — the store swallows failures because
+    /// this runs on an already-failing path and must never mask the original error.
+    ///
+    /// Deliberately takes no <see cref="CancellationToken"/>: the release must still run when the
+    /// request that owns the reservation was cancelled or timed out — those are exactly the failures
+    /// that would otherwise pin the key — so there is no token a caller could correctly pass.
+    /// </summary>
+    Task ReleaseAsync(ApplyEditsIdempotencyScope scope);
 }
 
 /// <summary>
@@ -138,7 +155,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
                 var payload = await _redisDatabase.StringGetAsync(key).ConfigureAwait(false);
                 if (!payload.HasValue) return null;
                 var bytes = (byte[])payload!;
-                if (bytes.Length == 1 && bytes[0] == 0xFF) return null; // pending sentinel
+                if (IsPendingSentinel(bytes)) return null; // another request is in-flight
                 return Deserialize(bytes);
             }
             // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
@@ -155,7 +172,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         {
             if (_fallback.TryGetValue(key, out var entry) && entry.ExpiresAt > now)
             {
-                if (entry.Payload == PendingSentinel || (entry.Payload.Length == 1 && entry.Payload[0] == 0xFF))
+                if (IsPendingSentinel(entry.Payload))
                     return null; // pending sentinel - another request is in-flight
                 return Deserialize(entry.Payload);
             }
@@ -167,7 +184,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         {
             var payload = await _cache.GetAsync(key, cancellationToken).ConfigureAwait(false);
             if (payload is null) return null;
-            if (payload.Length == 1 && payload[0] == 0xFF) return null; // pending sentinel
+            if (IsPendingSentinel(payload)) return null; // another request is in-flight
             return Deserialize(payload);
         }
         // Intentionally generic: the configured IDistributedCache implementation can throw a
@@ -275,6 +292,57 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         _fallback[key] = new FallbackEntry(payload, now.Add(DedupeWindow));
         CleanupFallback(now);
     }
+
+    public async Task ReleaseAsync(ApplyEditsIdempotencyScope scope)
+    {
+        var key = BuildKey(scope);
+
+        if (_redisDatabase != null)
+        {
+            try
+            {
+                // Atomic compare-and-delete: only remove the key while it still holds THIS
+                // reservation's pending sentinel. A key that already carries a recorded response
+                // (a concurrent owner that completed after this request's reservation lapsed)
+                // must survive, otherwise releasing would re-open the duplicate-edit window the
+                // reservation exists to close.
+                await _redisDatabase.ScriptEvaluateAsync(
+                    ReleaseIfPendingScript,
+                    [key],
+                    [PendingSentinel]).ConfigureAwait(false);
+            }
+            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
+            // exceptions here; best-effort — a failed release only means the reservation lingers
+            // until it expires, which is the pre-fix behavior, and must never mask the original
+            // failure that triggered the release.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
+            }
+
+            return;
+        }
+
+        // Non-Redis paths: TryReserveAsync always writes the pending sentinel to the in-process
+        // fallback dictionary (BH7-002), never to IDistributedCache, so the reservation is released
+        // from the fallback only. Recorded responses (which SetAsync writes to both the cache and
+        // the fallback) are left in place by the sentinel check.
+        if (_fallback.TryGetValue(key, out var entry) && IsPendingSentinel(entry.Payload))
+        {
+            _fallback.TryRemove(key, out _);
+        }
+    }
+
+    /// <summary>
+    /// Compare-and-delete: removes the reservation key only while it still holds the pending
+    /// sentinel supplied as <c>ARGV[1]</c>, leaving a recorded response untouched. Runs
+    /// server-side so the read and the delete cannot interleave with another request.
+    /// </summary>
+    private const string ReleaseIfPendingScript =
+        "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
+
+    private static bool IsPendingSentinel(byte[] payload)
+        => payload.Length == 1 && payload[0] == 0xFF;
 
     private static string BuildKey(ApplyEditsIdempotencyScope scope)
     {

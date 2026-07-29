@@ -8,6 +8,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -3186,6 +3188,144 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
         requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
         return await _fixture.Client.SendAsync(requestMessage);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
+    {
+        // #3052: the rollbackOnFailure validation-failure response returns before the handler
+        // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
+        // held for the whole reservation window. A client retrying inside that window found no
+        // replay value, lost the reserve, and got 409 Conflict instead of a deterministic repeat of
+        // the original rejection.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var editsRequest = new ApplyEditsRequest
+        {
+            Updates = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = 987654321L,
+                        ["name"] = "no such row"
+                    }
+                }
+            },
+            RollbackOnFailure = true
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var firstResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        firstResponse.Be200Ok();
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
+        var first = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            firstBody, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        first.Should().NotBeNull();
+        first!.Success.Should().BeFalse("updating a non-existent objectid with rollbackOnFailure must fail");
+
+        var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        secondResponse.StatusCode.Should().NotBe(HttpStatusCode.Conflict,
+            "the failed request released its reservation, so the retry must not be treated as a concurrent request");
+        secondResponse.Be200Ok();
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        secondBody.Should().Be(firstBody, "the retry must reproduce the original rejection deterministically");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
+    {
+        // #3052: a committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
+        // re-attempted rather than replaying a no-op failure — but before the fix the still-held
+        // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var editsRequest = new ApplyEditsRequest
+        {
+            Deletes = new object[] { 987654321L }
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var firstResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        firstResponse.Be200Ok();
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
+        var first = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            firstBody, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        first.Should().NotBeNull();
+        first!.Success.Should().BeFalse("deleting a non-existent objectid commits no rows");
+        first.DeleteResults.Should().HaveCount(1);
+        first.DeleteResults![0].Success.Should().BeFalse();
+
+        var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        secondResponse.StatusCode.Should().NotBe(HttpStatusCode.Conflict,
+            "a zero-row commit records nothing, so its reservation must be released for the retry");
+        secondResponse.Be200Ok();
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        secondBody.Should().Be(firstBody, "the retry is genuinely re-attempted and reaches the same outcome");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
+    {
+        // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
+        // reservation is genuinely held, a second request carrying the same key must be rejected as a
+        // conflict rather than executing a duplicate edit. Reserving directly through the store makes
+        // the race deterministic — no timing window to lose.
+        //
+        // This also pins the conflict body's code: the branch used to build its payload with
+        // Results.Conflict(new { ... }), an anonymous type that cannot serialize under
+        // JsonSerializerIsReflectionEnabledByDefault=false, so the conflict reached clients as error
+        // code 405 instead of 409.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
+        // "admin" is the ClaimTypes.Name the admin API-key authentication handler stamps for the
+        // fixture client's X-API-Key. A mismatch cannot make this test silently pass: the reservation
+        // would target a different scope, the request would apply the edit, and the assertions below
+        // would fail.
+        var reserved = await store.TryReserveAsync(
+            new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, "admin", idempotencyKey));
+        reserved.Should().BeTrue();
+
+        var editsRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = $"Conflicted-{idempotencyKey}"
+                    },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            }
+        };
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var response = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+
+        // GeoServices REST signals errors Esri-style: HTTP 200 with an {"error":{"code":...}} body.
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(
+            "a held reservation must reject the concurrent request instead of applying the edit: {0}", body);
+        error.GetProperty("code").GetInt32().Should().Be(409, body);
+
+        // Nothing was written by the rejected request.
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where=name='Conflicted-{idempotencyKey}'&returnCountOnly=true&f=json");
+        countResponse.Be200Ok();
+        var countQuery = JsonSerializer.Deserialize<QueryResponse>(
+            await countResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.QueryResponse);
+        countQuery!.Count.Should().Be(0);
     }
 
     [IntegrationTest]

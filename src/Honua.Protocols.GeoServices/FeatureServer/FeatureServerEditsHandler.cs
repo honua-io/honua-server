@@ -92,6 +92,14 @@ internal sealed class FeatureServerEditsHandler(
             httpContext.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
+        // Tracks the idempotency reservation this request owns but has not yet replaced with a
+        // recorded response (#3052). It is set the moment TryReserveAsync wins and cleared only when
+        // SetAsync records the replay value; the finally block below releases whatever is still held,
+        // so no post-reservation exit — exception, rejection, rollback, cancellation, or a
+        // committed-zero-row response — can leave the key pinned and turn a genuine client retry into
+        // a 409 Conflict.
+        ApplyEditsIdempotencyScope? heldReservation = null;
+
         try
         {
             FeatureServerLog.ApplyEditsRequested(_logger, serviceId, layerId,
@@ -245,8 +253,16 @@ internal sealed class FeatureServerEditsHandler(
                 if (!reserved)
                 {
                     FeatureServerLog.ApplyEditsIdempotencyConflict(_logger, serviceId, layerId);
-                    return Results.Conflict(new { error = "A concurrent request with the same Idempotency-Key is already being processed. Retry after a brief delay." });
+                    // Must go through the shared error helper, not Results.Conflict(new { ... }):
+                    // Honua.Server builds with JsonSerializerIsReflectionEnabledByDefault=false, so
+                    // serializing an anonymous type threw at response-write time and the failure was
+                    // mapped as a NotSupportedException — the conflict surfaced to clients as an
+                    // Esri error code 405, never the 409 this branch intends (#3052).
+                    return StandardErrorHelpers.CreateConflict(httpContext,
+                        "A concurrent request with the same Idempotency-Key is already being processed. Retry after a brief delay.");
                 }
+
+                heldReservation = replayScope;
             }
 
             // Process edit operations
@@ -297,6 +313,10 @@ internal sealed class FeatureServerEditsHandler(
             if (idempotencyScope is { } recordScope && !editResult.WasRolledBack && featureCount > 0)
             {
                 await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
+                // The reservation has been replaced by the recorded response: it MUST NOT be released.
+                // A successful key stays reserved for the whole dedupe window so a duplicate retry
+                // replays this response instead of re-applying the edit (#2250).
+                heldReservation = null;
             }
 
             return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
@@ -325,6 +345,23 @@ internal sealed class FeatureServerEditsHandler(
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(httpContext, "Apply edits failed");
+        }
+        finally
+        {
+            // Release whatever reservation is still held (#3052). Reached from every post-reservation
+            // exit that did not record a replay value: the NotSupportedException read-only rejection,
+            // the catch-all 500 boundary, the rethrown cancellation, the rollbackOnFailure validation
+            // response, and the committed-but-zero-row response (which deliberately does not record so
+            // a genuine retry is re-attempted — the retry it must not then block with a 409).
+            //
+            // ReleaseAsync takes no cancellation token on purpose, so an aborted/cancelled request
+            // still frees its key. This covers in-process failures only: a process crash between
+            // reserve and release still leaves the sentinel behind, which is what the store's
+            // ReservationWindow TTL exists to bound.
+            if (heldReservation is { } releaseScope)
+            {
+                await _idempotencyStore.ReleaseAsync(releaseScope).ConfigureAwait(false);
+            }
         }
     }
 
