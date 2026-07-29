@@ -11,6 +11,36 @@ triggered by GitHub events, none needing a live session:
 | `auto-rerun-flaky.yml` | `workflow_run` (CI) completed, `run_attempt == 1` | Gives a PR's CI exactly **one** retry when only known-flaky shards failed (40P01 deadlock, Testcontainers/Docker). Never reruns a real gate. |
 | `ci-failure-triage.yml` | `workflow_run` (CI) completed, `conclusion == failure` | The missing piece (#2021): **AI triage of genuinely-real failures** + autonomous rerun-orchestration backstop. Does *not* merge — that stays in the train. |
 
+## Recovering a stuck merge train (never hand-edit the state issue)
+
+`merge-train.yml` keeps its resume point in the machine-managed **Merge Train State** issue
+(label `train:state`). On startup the train reads that state and recovers before selecting:
+`land`/`pre-land-cleanup`/`post-land-finalize` reconcile against trunk, the `*-retry-*` phases
+resume their in-flight failed-job rerun, and every other phase is a terminal cleanup that
+releases the batch. **Every phase the read schema accepts has a recovery owner** — a drift guard
+in `scripts/ci/merge-train/fixtures/validate-timeout-retry.sh` fails the build if a phase is ever
+added to `TRAIN_STATE_PHASES` (`state.sh`) without a `TRAIN_PHASE_RECOVERY` class (`train.sh`).
+Before that guard existed, a run that ended during `attribute` deadlocked all merging repo-wide
+(#3045).
+
+If the train still refuses to start ("active merge-train state is unknown, malformed, or
+incompletely recovered", or "durable state lookup failed"), use the sanctioned reset rather than
+editing the issue body:
+
+```bash
+gh workflow run merge-train.yml -f train_apply=true -f reset_state=true
+```
+
+It clears `active_batch` to the exact cleared shape the train itself writes (`branch: ""`,
+`included: []`, `phase: "select"`, null run/batch fields), preserves `config` and
+`last_landed_trunk`, removes `train:landing` from the recorded members, and stops without
+selecting or landing. It **refuses** while a batch carries durable land intent (`land`,
+`pre-land-cleanup`, `post-land-finalize`) — that state has to reconcile against trunk first.
+Then dispatch an ordinary live run.
+
+Do not repair the state issue by hand. `active_batch: null` in particular is **invalid**: the
+read schema requires `active_batch` to be an object, so that edit swaps one deadlock for another.
+
 ## What `ci-failure-triage.yml` does
 
 1. Resolves the associated PR(s) from the CI run's head SHA (incl. fork PRs, via a head-SHA search).

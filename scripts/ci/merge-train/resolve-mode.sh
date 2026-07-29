@@ -13,6 +13,7 @@ output_file="${1:?usage: resolve-mode.sh <github-output-file>}"
 : "${DISPATCH_USE_LLM:=}"
 : "${DISPATCH_USE_AUTOFIX:=}"
 : "${DISPATCH_AUTOFIX_MODEL:=}"
+: "${DISPATCH_RESET_STATE:=}"
 : "${HAVE_BEDROCK_KEYS:=false}"
 
 apply=0
@@ -36,12 +37,23 @@ if [[ "${apply}" == "1" && "${DISPATCH_USE_AUTOFIX}" == "true" && "${HAVE_BEDROC
   autofix=1
 fi
 
+# Recovery-only state reset. Like every other side effect it requires an
+# explicit live dispatch, so no automatic trigger can clear the state issue.
+reset_state=0
+if [[ "${apply}" == "1" && "${DISPATCH_RESET_STATE}" == "true" ]]; then
+  reset_state=1
+fi
+if [[ "${DISPATCH_RESET_STATE}" == "true" && "${reset_state}" != "1" ]]; then
+  echo "::warning::reset_state=true is ignored without an explicit live dispatch (train_apply=true)."
+fi
+
 {
   echo "train_apply=${apply}"
   echo "max_batch=${max_batch}"
   echo "train_llm=${llm}"
   echo "train_autofix=${autofix}"
   echo "autofix_model=${DISPATCH_AUTOFIX_MODEL}"
+  echo "train_reset_state=${reset_state}"
 } >>"${output_file}"
 
-echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${max_batch} TRAIN_LLM=${llm} TRAIN_AUTOFIX=${autofix}"
+echo "Resolved TRAIN_APPLY=${apply} (event=${EVENT_NAME}) MAX_BATCH=${max_batch} TRAIN_LLM=${llm} TRAIN_AUTOFIX=${autofix} TRAIN_RESET_STATE=${reset_state}"

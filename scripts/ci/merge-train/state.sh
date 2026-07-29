@@ -9,7 +9,7 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry-*|flake-retry-*|classify-flake|autofix|attribute|land|done",
+#       "phase": one of TRAIN_STATE_PHASES (below — the canonical list),
 #       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>,
 #       "included_heads": [{"number":<pr>,"head":"<sha>"}], "batch_sha": "<sha|null>",
 #       "timeout_reruns": <n>, "timeout_reruns_total": <n>,
@@ -22,6 +22,51 @@
 # Issue title: "Merge Train State". We find-or-create by the train:state label.
 
 TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
+
+# TRAIN_STATE_PHASES is the ONLY list of phases a persisted state may carry, and
+# the single source of truth for two things that must never drift apart:
+#   1. the train_state_read schema below (it accepts exactly these), and
+#   2. the startup-recovery dispatch table TRAIN_PHASE_RECOVERY (train.sh).
+# A phase accepted here but unclassified there is a repo-wide merge deadlock:
+# the train persists a state it cannot recover from, so every later dispatch
+# fails closed before selection and the machine-managed state issue has to be
+# hand-edited (#3045, hit twice on `attribute`). The drift guard in
+# fixtures/validate-timeout-retry.sh fails the build when the two disagree.
+TRAIN_STATE_PHASES=(
+  select
+  assemble
+  smart-ci
+  forward-fix
+  preexisting-filter
+  classify-timeout
+  timeout-retry-intent
+  timeout-retry-requesting
+  timeout-retry-accepted
+  timeout-retry-rejected
+  flake-retry-intent
+  flake-retry-requesting
+  flake-retry-accepted
+  flake-retry-rejected
+  rerun-command-failed
+  classify-flake
+  autofix
+  attribute
+  ci-incomplete
+  land
+  pre-land-cleanup
+  post-land-finalize
+  trunk-moved-reassemble
+  requeue
+  done
+)
+
+# train_state_phases_json: TRAIN_STATE_PHASES as a compact JSON array. Computed
+# on demand rather than at source time so sourcing state.sh never depends on jq
+# being installed (train.sh checks prerequisites after sourcing).
+train_state_phases_json() {
+  printf '%s\n' "${TRAIN_STATE_PHASES[@]}" \
+    | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
 
 # train_state_render <branch> <trunk_base> <included-csv> <phase> <run_id> \
 #   <fwdfix> <flake_reruns> <last_landed> [included_heads] [batch_sha]
@@ -167,22 +212,16 @@ train_state_read() {
     }
   ')" || return 3
   [[ -n "${json}" ]] || return 3
-  jq -se '
+  local phases_json
+  phases_json="$(train_state_phases_json)" || return 3
+  jq -se --argjson phases "${phases_json}" '
     length == 1 and (.[0] |
       type == "object" and
       (.active_batch | type == "object") and
       (.active_batch.branch | type == "string") and
       (.active_batch.trunk_base | type == "string") and
       (.active_batch.included | type == "array" and all(.[]; type == "number")) and
-      (.active_batch.phase | type == "string" and IN(
-        "select","assemble","smart-ci","forward-fix","preexisting-filter",
-        "classify-timeout","timeout-retry-intent","timeout-retry-requesting",
-        "timeout-retry-accepted","timeout-retry-rejected",
-        "flake-retry-intent","flake-retry-requesting","flake-retry-accepted",
-        "flake-retry-rejected","rerun-command-failed","classify-flake","autofix",
-        "attribute","ci-incomplete","land","pre-land-cleanup",
-        "post-land-finalize","trunk-moved-reassemble","requeue","done"
-      )) and
+      (.active_batch.phase | type == "string" and IN($phases[])) and
       (.active_batch.run_id == null or (.active_batch.run_id | type == "number" or type == "string")) and
       (.active_batch.fwdfix_attempts == null or (.active_batch.fwdfix_attempts | type == "number")) and
       (.active_batch.flake_reruns == null or (.active_batch.flake_reruns | type == "number")) and

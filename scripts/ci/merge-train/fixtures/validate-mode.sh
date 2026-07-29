@@ -30,7 +30,31 @@ assert_output() {
 
 # Even injected truthy dispatch values and available secrets cannot make an
 # automatic schedule live.
+assert_reset() {
+  local case_name="$1" event_name="$2" dispatch_apply="$3" dispatch_reset="$4" expected_reset="$5"
+  local output_file="${SCRATCH}/${case_name}.reset.out"
+
+  EVENT_NAME="${event_name}" \
+  DISPATCH_APPLY="${dispatch_apply}" \
+  DISPATCH_MAX_BATCH="10" \
+  DISPATCH_RESET_STATE="${dispatch_reset}" \
+  HAVE_BEDROCK_KEYS="false" \
+    "${RESOLVER}" "${output_file}" >/dev/null
+
+  [[ "$(sed -n 's/^train_reset_state=//p' "${output_file}")" == "${expected_reset}" ]]
+  printf 'PASS: %s\n' "${case_name}"
+}
+
+# Even injected truthy dispatch values and available secrets cannot make an
+# automatic schedule live.
 assert_output scheduled-dry-run schedule true true true true 0 0 0
 assert_output manual-dry-run workflow_dispatch false true true true 0 0 0
 assert_output explicit-manual-live workflow_dispatch true true true true 1 1 1
 assert_output manual-live-without-bedrock workflow_dispatch true true true false 1 0 0
+
+# The recovery-only state reset is never reachable from an automatic trigger or
+# a dry-run dispatch; it needs an explicit live dispatch.
+assert_reset reset-default-off workflow_dispatch true '' 0
+assert_reset reset-scheduled-ignored schedule true true 0
+assert_reset reset-dry-run-ignored workflow_dispatch false true 0
+assert_reset reset-explicit-live workflow_dispatch true true 1

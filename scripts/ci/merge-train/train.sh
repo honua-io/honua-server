@@ -312,54 +312,139 @@ train_refine_attribute_candidates() {
   printf '%s\n' "${queue[@]}" | sort -u
 }
 
+# TRAIN_PHASE_RECOVERY: the startup-recovery disposition for EVERY phase the
+# persisted-state schema accepts (TRAIN_STATE_PHASES in state.sh). Keeping this
+# table TOTAL is what stops the train from persisting a state it cannot recover
+# from: `attribute` used to be an accepted phase with no recovery branch, so a
+# run that ended mid-attribution (cancellation, or attribute probes that all
+# failed on infrastructure) deadlocked every later dispatch repo-wide until the
+# machine-managed state issue was hand-edited (#3045, twice).
+#
+# Classes:
+#   post-land  durable land intent. Owned by train_restore_post_land (land.sh),
+#              which runs FIRST in main, so terminal recovery must never see
+#              one; if it does, that is an invariant violation and it fails
+#              closed rather than let selection overwrite a half-landed batch.
+#   retry      an in-flight failed-job rerun. Owned by train_restore_retry_intent
+#              (resume-retry.sh), which runs AFTER terminal recovery; terminal
+#              recovery defers by reporting "no terminal recovery".
+#   escalate   terminal, and the batch's CI evidence is unusable rather than
+#              merely incomplete: escalate every member (excluding them from
+#              future batches), release the landing label, clear the batch.
+#   release    terminal, and nothing in the interrupted phase condemns an
+#              individual member: members KEEP any escalation already applied,
+#              the landing label is released, and the batch is cleared for
+#              reassembly. Never adds an unattributed escalation.
+declare -A TRAIN_PHASE_RECOVERY=(
+  [select]=release
+  [assemble]=release
+  [smart-ci]=release
+  [forward-fix]=release
+  [preexisting-filter]=release
+  [classify-timeout]=release
+  [classify-flake]=release
+  [autofix]=release
+  [attribute]=release
+  [trunk-moved-reassemble]=release
+  [requeue]=release
+  [done]=release
+  [ci-incomplete]=escalate
+  [rerun-command-failed]=escalate
+  [timeout-retry-rejected]=escalate
+  [flake-retry-rejected]=escalate
+  [timeout-retry-intent]=retry
+  [timeout-retry-requesting]=retry
+  [timeout-retry-accepted]=retry
+  [flake-retry-intent]=retry
+  [flake-retry-requesting]=retry
+  [flake-retry-accepted]=retry
+  [land]=post-land
+  [pre-land-cleanup]=post-land
+  [post-land-finalize]=post-land
+)
+
+# train_phase_recovery_reason <phase>: the human explanation recorded against
+# each released member. Cosmetic only; the disposition comes from the table.
+train_phase_recovery_reason() {
+  case "$1" in
+    timeout-retry-rejected|flake-retry-rejected)
+      printf 'Actions definitively rejected the failed-job rerun request; manual CI correction required\n' ;;
+    ci-incomplete)
+      printf 'Batch CI evidence was incomplete or unusable; fresh explicit validation is required\n' ;;
+    rerun-command-failed)
+      printf 'Failed-job rerun command failed before safe completion; manual CI correction required\n' ;;
+    trunk-moved-reassemble)
+      printf 'Trunk moved before FF-CAS landing; release members for fresh reassembly\n' ;;
+    attribute)
+      printf 'Attribution was interrupted; keeping any escalation already attributed and releasing the batch for reassembly\n' ;;
+    *)
+      printf 'Controller stopped during %s before the batch was released; releasing members for fresh reassembly\n' "$1" ;;
+  esac
+}
+
+# train_state_phase_recovery_drift: emit one line per phase whose recovery
+# disposition has drifted from the persisted-state schema. Empty output means no
+# drift. The fixtures assert emptiness, so a phase cannot be added to
+# TRAIN_STATE_PHASES (state.sh) without a TRAIN_PHASE_RECOVERY class, a class
+# cannot survive removal of its phase, and no class value can be a typo.
+train_state_phase_recovery_drift() {
+  local phase
+  for phase in "${TRAIN_STATE_PHASES[@]}"; do
+    case "${TRAIN_PHASE_RECOVERY[${phase}]:-}" in
+      escalate|release|retry|post-land) ;;
+      "") printf 'unrecoverable-phase %s\n' "${phase}" ;;
+      *)  printf 'unknown-recovery-class %s=%s\n' "${phase}" "${TRAIN_PHASE_RECOVERY[${phase}]}" ;;
+    esac
+  done
+  for phase in "${!TRAIN_PHASE_RECOVERY[@]}"; do
+    printf '%s\n' "${TRAIN_STATE_PHASES[@]}" | grep -Fxq -- "${phase}" \
+      || printf 'orphan-recovery-class %s\n' "${phase}"
+  done
+}
+
 # train_recover_terminal_batch: finish known terminal cleanup transactions after
 # a controller crashed before releasing the batch. Required label mutations
-# precede active-state clear, so any crash remains safely retryable. Every other
-# nonempty active phase fails closed rather than being overwritten by selection.
+# precede active-state clear, so any crash remains safely retryable. Dispatch is
+# driven by TRAIN_PHASE_RECOVERY, which covers every accepted phase; only state
+# the read schema itself rejects can reach the fail-closed default.
 # Returns 0=recovered, 1=no terminal recovery, 2=unknown/malformed/cleanup failure.
 train_recover_terminal_batch() {
-  local state phase branch trunk included included_count total last body pr reason escalate=1 state_rc=0
+  local state phase class branch trunk included included_count total last body pr reason escalate=1 state_rc=0
   state="$(train_state_read 2>/dev/null)" || state_rc=$?
   [[ "${state_rc}" == "0" ]] || return 2
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  class="${TRAIN_PHASE_RECOVERY[${phase}]:-}"
   branch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
   included_count="$(jq -r '(.active_batch.included // []) | length' <<<"${state}" 2>/dev/null)" || return 2
   if [[ -z "${branch}" && "${included_count}" == "0" ]]; then
-    # An empty "assemble" phase can only be the pre-assembly write (state is
-    # persisted BEFORE train_assemble runs, with no branch/included yet, purely
-    # local git ops with no GitHub side effects). A crash anywhere in that
-    # window — including "every selected PR conflicted" — leaves exactly this
-    # signature and has produced zero label/state mutations to undo, so it is
-    # always safe to treat as no-terminal-recovery-needed and let selection run.
-    case "${phase}" in select|done|assemble|"") return 1 ;; *) return 2 ;; esac
+    # No branch and no members: there is nothing durable to release, and the
+    # phase produced zero label/state mutations to undo (e.g. the pre-assembly
+    # "assemble" write, or "every selected PR conflicted"). Selection may safely
+    # overwrite. The one exception is a durable land intent, which land.sh owns
+    # and which must never be discarded here.
+    [[ "${class}" == "post-land" ]] && return 2
+    [[ -n "${class}" || -z "${phase}" ]] && return 1
+    return 2
   fi
-  case "${phase}" in
-    timeout-retry-rejected|flake-retry-rejected)
-      reason="Actions definitively rejected the failed-job rerun request; manual CI correction required"
-      ;;
-    ci-incomplete)
-      reason="Batch CI evidence was incomplete or unusable; fresh explicit validation is required"
-      ;;
-    rerun-command-failed)
-      reason="Failed-job rerun command failed before safe completion; manual CI correction required"
-      ;;
-    trunk-moved-reassemble)
-      reason="Trunk moved before FF-CAS landing; release members for fresh reassembly"
-      escalate=0
-      ;;
-    timeout-retry-requesting|timeout-retry-accepted|timeout-retry-intent|\
-    flake-retry-requesting|flake-retry-accepted|flake-retry-intent)
-      return 1
-      ;;
-    *) return 2 ;;
+  case "${class}" in
+    retry)     return 1 ;;
+    post-land) return 2 ;;
+    escalate)  escalate=1 ;;
+    release)   escalate=0 ;;
+    *)         return 2 ;;
   esac
-  jq -e '.active_batch.branch | type == "string" and startswith("train/batch/")' >/dev/null <<<"${state}" || return 2
+  reason="$(train_phase_recovery_reason "${phase}")"
+  # An empty branch is legitimate here: the attribution rebuild persists
+  # "assemble" with the surviving members but no branch yet, so a crash in that
+  # window leaves members holding train:landing with nothing assembled. Any
+  # other branch value is corrupt state and still fails closed.
+  jq -e '.active_batch.branch | type == "string" and (length == 0 or startswith("train/batch/"))' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.trunk_base | type == "string" and test("^[0-9a-fA-F]{40}$")' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.run_id == null or
     ((.active_batch.run_id | type) == "number" and (.active_batch.run_id | floor) == .active_batch.run_id and .active_batch.run_id > 0)' >/dev/null <<<"${state}" || return 2
-  jq -e '.active_batch.included | type == "array" and length > 0
+  jq -e '.active_batch.included | type == "array"
     and all(.[]; type == "number" and floor == .) and (unique | length) == length' >/dev/null <<<"${state}" || return 2
   jq -e '(.active_batch.timeout_reruns_total // 0) as $t
     | ($t | type) == "number" and $t >= 0 and ($t | floor) == $t' >/dev/null <<<"${state}" || return 2
@@ -385,12 +470,66 @@ train_recover_terminal_batch() {
   rm -f "${body}"
   train_notice "completed terminal ${phase} cleanup for batch members ${included}"
 }
+
+# train_reset_active_batch: the sanctioned operator escape hatch, reached only
+# via `gh workflow run merge-train.yml -f train_apply=true -f reset_state=true`.
+# It clears the active batch to EXACTLY the shape train_state_render emits for
+# no batch (branch "", included [], phase "select", null run/batch fields),
+# preserving config and last_landed_trunk, and releases the landing label from
+# every recorded member. It exists so a stuck train is never repaired by
+# hand-editing the machine-managed state issue — the workaround used twice for
+# #3045, once with an `active_batch: null` body that the read schema rejects,
+# which turned a recovery deadlock into a "durable state lookup failed" one.
+# Refuses while durable land intent is outstanding: land.sh must reconcile a
+# half-landed batch against trunk, and discarding that record could lose the
+# record of what already landed. Returns 0=reset, 2=refused or failed.
+train_reset_active_batch() {
+  local state phase trunk included last total body pr state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
+  if [[ -z "${state}" ]]; then
+    train_notice "state reset requested but no state issue exists; nothing to clear"
+    return 0
+  fi
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  if [[ "${TRAIN_PHASE_RECOVERY[${phase}]:-}" == "post-land" ]]; then
+    train_err "refusing to reset state in phase ${phase}: durable land intent must reconcile against trunk first"
+    return 2
+  fi
+  trunk="$(jq -r '.active_batch.trunk_base // empty' <<<"${state}")"
+  included="$(jq -r '(.active_batch.included // []) | map(tostring) | join(",")' <<<"${state}")"
+  last="$(jq -r '.last_landed_trunk // "null"' <<<"${state}")"
+  total="$(jq -r '.active_batch.timeout_reruns_total // 0' <<<"${state}")"
+  [[ "${total}" =~ ^[0-9]+$ ]] || total=0
+  body="$(mktemp)"
+  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" \
+    '[]' '' 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
+  for pr in $(tr ',' ' ' <<<"${included}"); do
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" \
+      || { rm -f "${body}"; return 2; }
+    train_decision "STATE RESET #${pr}: released by an operator-requested merge-train state reset"
+  done
+  train_state_write "${body}" || { rm -f "${body}"; return 2; }
+  rm -f "${body}"
+  train_notice "operator state reset cleared the active batch (phase=${phase:-none}, members=${included:-none})"
+}
+
 main() {
   train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
   local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    # Operator escape hatch. Deliberately terminal: a reset is one auditable
+    # action, and the operator dispatches an ordinary live run afterwards.
+    if [[ "${TRAIN_RESET_STATE:-0}" == "1" ]]; then
+      train_reset_active_batch || {
+        train_err "operator-requested merge-train state reset was refused or failed; state left untouched"
+        return 1
+      }
+      return 0
+    fi
+
     local post_land_rc=1
     if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
     if [[ "${post_land_rc}" == "4" ]]; then
