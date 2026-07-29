@@ -116,16 +116,16 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
             ExecutionJobParameterKeys.MetadataListSeparator,
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var kinds = new List<ArtifactKind>(parts.Length);
-        foreach (var part in parts)
-        {
-            if (Enum.TryParse<ArtifactKind>(part, ignoreCase: true, out var parsed))
-            {
-                kinds.Add(parsed);
-            }
-        }
-
-        return kinds;
+        // Mirrors the projection GeoprocessingResultPackageFactory.ResolveOutputArtifactKinds
+        // uses for the same serialized list, so both readers of this spec parameter
+        // parse it identically.
+        return parts
+            .Select(raw => Enum.TryParse<ArtifactKind>(raw, ignoreCase: true, out var parsed)
+                ? (ArtifactKind?)parsed
+                : null)
+            .Where(kind => kind.HasValue)
+            .Select(kind => kind!.Value)
+            .ToList();
     }
 
     private static string ResolveOutputLabel(ExecutionJobRecord job, int index)
