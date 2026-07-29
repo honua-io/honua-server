@@ -60,6 +60,16 @@ runs:
       shell: bash
       run: scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
 
+    # Cheap, service-free governance step (~1s): every OpenAPI document Honua
+    # advertises must agree with EndpointRegistry, and every deliberate omission
+    # from the curated admin bundle must be declared. Runs here, in the required
+    # gate, so a new route cannot ship undocumented and undeclared
+    # (honua-server#3051). The dedicated openapi-drift.yml workflow runs the same
+    # script plus its unit tests.
+    - name: OpenAPI <-> EndpointRegistry drift
+      shell: bash
+      run: python3 scripts/ci/openapi-drift-check.py
+
     - name: Restore
       shell: bash
       run: scripts/ci/dotnet-restore-retry.sh Honua.sln

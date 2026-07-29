@@ -1,0 +1,1755 @@
+{
+  "$comment": "Machine-readable declaration of registered /api/v1/admin routes that admin-api.json intentionally does not document. Read by scripts/ci/openapi-drift-check.py: a registered admin route that is neither documented nor listed here fails the drift gate, and an entry here that is no longer registered (or has since been documented) also fails it. Absence from the bundle is therefore always a deliberate, reviewable declaration.",
+  "spec": "docs/developer/api-specs/admin-api.json",
+  "reasons": {
+    "method-not-allowed-responder": "Route registered only to answer 405 Method Not Allowed for a non-primary verb on a path whose primary verb is handled elsewhere. Never an OpenAPI operation; permanent exclusion.",
+    "undocumented-backlog": "Live, supported admin route that the curated bundle does not yet describe. Temporary; burn-down tracked by honua-server#3063."
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/channels",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/pause",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/resume",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/dispatch/redrive",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/events",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/auth/bearer",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/auth/logout",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/authorize-url",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/logout-url",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/token",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/auth/session",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/cache/invalidate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/cache/status",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/cloud-rasters/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters/{id}/refresh",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/config",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/config",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/config",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/config",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/audit",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/auto-documentation",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/discover",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/metadata",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/secrets/validate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/summary",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/connections/tables",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/extents/refresh",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/connections/{id}/tables",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/connections/{id}/tables",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/tables",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}/tables",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/tables/validate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{path}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/promote",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/dev/fixtures/operate-observability/{profile}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys/{id}/revoke",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys/{id}/rotate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/embed/usage",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/external-services/discover",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/feature-events/replay",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources/{id}/plan",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/field-mask-policies",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/field-mask-policies/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/exports",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/exports",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/comments",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/decision",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/generate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/geocoding/providers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/geocoding/reference-data/import",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/geoprocessing/tools/usage-ranking",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers/{providerType}/test",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/formats",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/formats",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/formats",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/formats",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/discover",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/start",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/discover",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/start",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/jobs",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/jobs",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/jobs",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/jobs",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/jobs/{jobId}",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/jobs/{jobId}",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/jobs/{jobId}",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/jobs/{jobId}",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/limits",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/limits",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/limits",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/limits",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/migrations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/migrations/{batchId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-api-features/collection",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-tiles/export",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wcs/import",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wfs/start",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc/coverages/import",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/preview",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/preview",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/preview",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/preview",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/preview-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/preview-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/preview-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/preview-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/raster",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/raster/formats",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/raster/{rasterId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/raster/{rasterId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/tile-package",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/upload",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/upload",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/upload",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/upload",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/upload-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/upload-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/upload-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/upload-url",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/uploads",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/uploads",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/uploads",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/uploads",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/investigations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/investigations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/investigations/{investigationId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/investigations/{investigationId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/links",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/links/{linkId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins/{pinId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/steps",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/license/capacity",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/license/capacity/surge",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/coordinated-releases/{packageId}/operation",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/validation",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/releases/operations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/history",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/latest",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/{evidenceId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/complete",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/evidence-pack",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/jobs/{jobId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/multidim-coverages/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages/{id}/refresh",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/promote",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/promotions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/rollback",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/oauth-clients",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-clients/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-scopes",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/oauth-scopes",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-scopes/{scope}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts/{eventId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/acknowledge",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/resolve",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/suppress",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/export",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/verify",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/settings",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/settings",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/events",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/findings",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/observability/findings/{findingId}/propose",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/logs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health/history",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers/{id}/test",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/openapi.json",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/openapi.json",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/openapi.json",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/openapi.json",
+      "reason": "method-not-allowed-responder"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/active",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/health",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/operations/cache/invalidate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/redis",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/statistics",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/configuration",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/providers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/alerts",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/subscribers",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/operations/streaming/subscribers/{subscriberId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/type/{operationType}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/operations/{operationId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/operations/{operationId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/database/query-cache/statistics",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/effectiveness",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/performance/enhanced/cache/invalidate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/statistics",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/query-performance",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/slow-queries",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/recent",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/statistics",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/potential-leaks",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/performance/enhanced/resources/scan-leaks",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/tracking",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/summary",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/platform-release/converge",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/proposals",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/proposals/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/approve",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/reject",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/rate-limits",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/status",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/rls-policies",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/rls-policies/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/roles",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/roles",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/roles/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}/permissions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}/permissions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/scenes",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/scenes",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/generate",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/citygml",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/pointcloud",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/scenes/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/scenes/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}/resolve",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/export",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/pause",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/resume",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs/{runId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/trigger",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic/series",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/streaming/features/sessions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/streaming/features/sessions/{sessionId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/tenants",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tenants",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/usage",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/tenants/{tenantId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/{tenantId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/resume",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/suspend",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/evict",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/cancel",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/retry",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/users/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}/effective-permissions",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/users/{id}/roles",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/zarr-stores/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores/{id}",
+      "reason": "undocumented-backlog"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores/{id}/refresh",
+      "reason": "undocumented-backlog"
+    }
+  ]
+}
