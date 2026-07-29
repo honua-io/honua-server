@@ -9,6 +9,16 @@ train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
 }
 
+# #3054: a shard that ran out of its CONFIGURED budget while still executing
+# tests is a capacity failure, not a hang. scripts/ci/run-server-test-shard.sh
+# emits HONUA_SHARD_CAPACITY_EXHAUSTED for that case and
+# HONUA_SHARD_HANG_SUSPECTED when the shard had gone silent before the cap
+# fired. Rerunning a capacity failure just reproduces it at full runner cost,
+# so it must never consume a retry.
+train_log_is_capacity_exhaustion() {
+  grep -Fq 'HONUA_SHARD_CAPACITY_EXHAUSTED' <<<"$1"
+}
+
 # train_wait_for_rerun_visibility <run-id> <base-attempt>: bounded grace for an
 # asynchronously accepted request to expose attempt > base.
 train_wait_for_rerun_visibility() {
@@ -174,12 +184,27 @@ train_request_failed_job_rerun() {
   return 0
 }
 
+# train_match_timeout_text <log-text>: 0 when the text is a timeout, and sets
+# TRAIN_TIMEOUT_KIND to capacity or hang for the caller.
+train_match_timeout_text() {
+  local text="$1"
+  train_log_is_timeout "${text}" || return 1
+  if train_log_is_capacity_exhaustion "${text}"; then
+    TRAIN_TIMEOUT_KIND=capacity
+  else
+    TRAIN_TIMEOUT_KIND=hang
+  fi
+  return 0
+}
+
 # train_run_logs_match_timeout <run-id> [failing-job-names]
+# Sets TRAIN_TIMEOUT_KIND to capacity|hang on a match (empty otherwise).
 # Test override: TRAIN_RUN_LOG_TEXT supplies the log text directly.
 train_run_logs_match_timeout() {
   local run_id="$1" failing_names="${2:-}"
+  TRAIN_TIMEOUT_KIND=""
   if [[ -n "${TRAIN_RUN_LOG_TEXT:-}" ]]; then
-    train_log_is_timeout "${TRAIN_RUN_LOG_TEXT}"
+    train_match_timeout_text "${TRAIN_RUN_LOG_TEXT}"
     return $?
   fi
 
@@ -193,13 +218,13 @@ train_run_logs_match_timeout() {
       continue
     fi
     saw_job=1
-    if train_log_is_timeout "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
+    if train_match_timeout_text "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
       return 0
     fi
   done <<<"${rows}"
 
   if [[ "${saw_job}" == "0" ]]; then
-    train_log_is_timeout "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
+    train_match_timeout_text "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
     return $?
   fi
   return 1
@@ -211,6 +236,16 @@ train_run_logs_match_timeout() {
 train_classify_timeout() {
   local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}" callback="${4:-}"
   train_run_logs_match_timeout "${run_id}" "${failing_names}" || return 1
+  if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
+    # #3054: the shard was still executing tests when its configured budget
+    # expired. A rerun burns another full shard's worth of runner time and
+    # reproduces the same exhaustion, and the resulting attribution blames
+    # whichever PRs happened to be in the batch. Fail straight through so the
+    # capacity problem is fixed in .github/ci-shards.json instead of being
+    # retried indefinitely.
+    train_warn "shard capacity exhausted (HONUA_SHARD_CAPACITY_EXHAUSTED): the test step used its whole configured budget while still running tests; this is not a hang and not attributable to one PR. Raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json instead of rerunning."
+    return 2
+  fi
   if [[ "${retry_count}" -ge "${TRAIN_TIMEOUT_RERUN_CAP}" ]]; then
     train_warn "timeout/exit-124 failure persisted after ${TRAIN_TIMEOUT_RERUN_CAP} failed-job retry; treating as real"
     return 2

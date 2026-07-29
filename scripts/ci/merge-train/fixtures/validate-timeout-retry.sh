@@ -72,6 +72,38 @@ train_classify_timeout 123 0 || fail "first exit-124 failure was not retried"
 grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "retry did not target failed jobs only"
 pass "failed-job-only timeout retry"
 
+# #3054: a shard that consumed its whole CONFIGURED budget while still running
+# tests is a capacity failure. It must be treated as real immediately — never
+# rerun — because a rerun reproduces it at full runner cost and the resulting
+# attribution blames an arbitrary member of the batch.
+TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \
+  "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget while still producing output 2s ago." \
+  "::error::Server test shard 'Migration' timed out after 29 minute(s).")"
+: >"${record}"
+rc=0
+train_classify_timeout 123 0 || rc=$?
+[[ "${rc}" == "2" ]] || fail "capacity exhaustion was not classified as a real failure (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
+if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun"; fi
+rc=0
+train_classify_retry_candidate 123 0 0 || rc=$?
+[[ "${rc}" == "1" ]] || fail "capacity exhaustion did not reach attribution as a real failure (rc=${rc})"
+if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun through the orchestration policy"; fi
+pass "shard capacity exhaustion is real, not retried"
+
+# A timeout that stalled (suspected hang) keeps the existing one-rerun budget.
+TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \
+  "::error::HONUA_SHARD_HANG_SUSPECTED shard='Migration' hit its 29m test budget after producing no output for 900s." \
+  "::error::Server test shard 'Migration' timed out after 29 minute(s).")"
+: >"${record}"
+train_classify_timeout 123 0 || fail "suspected hang was not retried once"
+[[ "${TRAIN_TIMEOUT_KIND}" == "hang" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected hang"
+grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "suspected hang did not retry failed jobs only"
+pass "suspected hang keeps the one-rerun budget"
+
+TRAIN_RUN_LOG_TEXT='Error: Process completed with exit code 124.'
+: >"${record}"
+
 # Command failure is propagated distinctly for the main loop to fail closed.
 side_effect_fails=1
 rc=0
