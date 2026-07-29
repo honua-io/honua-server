@@ -46,7 +46,7 @@ public sealed class AlertEditionPolicyTests
         };
 
     [UnitTest]
-    public void IsChannelAllowed_CommunityLicense_AllowsNothing()
+    public void IsChannelAllowed_CommunityEdition_AllowsNothing()
     {
         var policy = CreatePolicy(HonuaEdition.Community);
 
@@ -57,7 +57,7 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
-    public void IsChannelAllowed_ProLicense_AllowsWebhookOnly()
+    public void IsChannelAllowed_ProEdition_AllowsWebhookOnly()
     {
         var policy = CreatePolicy(HonuaEdition.Pro);
 
@@ -74,7 +74,7 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
-    public void IsChannelAllowed_EnterpriseLicense_AllowsAllChannels()
+    public void IsChannelAllowed_EnterpriseEdition_AllowsAllChannels()
     {
         var policy = CreatePolicy(HonuaEdition.Enterprise);
 
@@ -85,7 +85,7 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
-    public void IsRuleAllowed_FollowsLicenseDerivedTriggerTiers()
+    public void IsRuleAllowed_FollowsEditionDerivedTriggerTiers()
     {
         var community = CreatePolicy(HonuaEdition.Community);
         var pro = CreatePolicy(HonuaEdition.Pro);
@@ -105,7 +105,7 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
-    public void EditionCap_RestrictsBelowLicense_ButNeverGrantsAbove()
+    public void EditionCap_RestrictsBelowGrantedTier_ButNeverGrantsAbove()
     {
         // Enterprise license capped to Pro: Enterprise features blocked, Pro features intact.
         var capped = CreatePolicy(HonuaEdition.Enterprise, editionCap: AlertEdition.Pro);

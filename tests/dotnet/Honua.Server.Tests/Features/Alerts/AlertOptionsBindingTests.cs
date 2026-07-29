@@ -82,11 +82,11 @@ public sealed class AlertOptionsBindingTests
         => Assert.Equal(AlertEdition.Enterprise, Bind(("Alerts:Edition", "Enterprise")).Edition);
 
     [UnitTest]
-    public void Bind_EditionAbsent_LeavesCapNullSoTheLicenseDecides()
+    public void Bind_EditionAbsent_LeavesCapNullSoTheEntitlementDecides()
         => Assert.Null(Bind(("Alerts:Enabled", "true")).Edition);
 
     [UnitTest]
-    public void Bind_EditionEmpty_LeavesCapNullSoTheLicenseDecides()
+    public void Bind_EditionEmpty_LeavesCapNullSoTheEntitlementDecides()
         => Assert.Null(Bind(("Alerts:Edition", string.Empty)).Edition);
 }
 

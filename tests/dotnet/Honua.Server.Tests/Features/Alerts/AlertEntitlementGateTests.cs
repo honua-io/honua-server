@@ -21,6 +21,15 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// Enterprise. <c>Alerts:Edition</c> is a downward-only cap — it can restrict below the
 /// license-derived tier but never grants features the license does not include.
 /// </summary>
+/// <remarks>
+/// Naming constraint (ADR-0037): test methods here must say "Edition", never "License".
+/// "Server Features Admin and Console" in .github/ci-shards.json is the only shard claiming
+/// <c>Honua.Server.Tests.Features.Alerts.*</c>, and it carries
+/// <c>FullyQualifiedName!~License</c> so that <c>Features.Admin</c> licensing classes route to
+/// "Server Features Admin Platform and Governance" instead. A "License" token anywhere in an
+/// Alerts test's fully-qualified name therefore drops that test out of every CI shard and it
+/// silently never runs.
+/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -89,7 +98,7 @@ public sealed class AlertEntitlementGateTests
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     [Endpoint("POST /api/v1/admin/alerts/rules/test")]
-    public async Task CommunityLicense_ProAlertFeatures_AreBlockedWithEntitlementDetail()
+    public async Task CommunityEdition_ProAlertFeatures_AreBlockedWithEntitlementDetail()
     {
         var fixture = CreateFixture(HonuaEdition.Community);
         await fixture.InitializeAsync();
@@ -116,7 +125,7 @@ public sealed class AlertEntitlementGateTests
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     [Endpoint("POST /api/v1/admin/alerts/rules/test")]
-    public async Task ProLicense_AllowsProFeatures_BlocksEnterpriseFeatures()
+    public async Task ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures()
     {
         var fixture = CreateFixture(HonuaEdition.Pro);
         await fixture.InitializeAsync();
@@ -149,7 +158,7 @@ public sealed class AlertEntitlementGateTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
-    public async Task EnterpriseLicense_AllowsEnterpriseFeatures()
+    public async Task EnterpriseEdition_AllowsEnterpriseFeatures()
     {
         var fixture = CreateFixture(HonuaEdition.Enterprise);
         await fixture.InitializeAsync();
@@ -168,7 +177,7 @@ public sealed class AlertEntitlementGateTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
-    public async Task EnterpriseLicense_WithProCap_BlocksEnterpriseFeaturesOnly()
+    public async Task EnterpriseEdition_WithProCap_BlocksEnterpriseFeaturesOnly()
     {
         // Alerts:Edition=Pro is a downward cap: Enterprise features are blocked even though
         // the license grants them, while Pro features keep working.
@@ -199,7 +208,7 @@ public sealed class AlertEntitlementGateTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
-    public async Task CommunityLicense_WithEnterpriseCap_DoesNotGrantFeatures()
+    public async Task CommunityEdition_WithEnterpriseCap_DoesNotGrantFeatures()
     {
         // Alerts:Edition can never grant upward: with a Community license, setting the knob to
         // Enterprise still leaves every alert feature blocked (the license wins).
