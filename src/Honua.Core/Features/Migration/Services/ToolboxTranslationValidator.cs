@@ -155,10 +155,11 @@ public static class ToolboxTranslationValidator
         }
 
         var missingRequired = false;
+        // A declared-required parameter must be mapped even when it carries a default: the
+        // canonical validator requires the input *key* to be present regardless, so a
+        // default does not stand in for a missing mapping at submit time.
         var unmappedRequired = definition.Parameters.Where(parameter =>
-            parameter.Required
-            && parameter.DefaultValue is null
-            && !mappedTargets.Contains(parameter.Name));
+            parameter.Required && !mappedTargets.Contains(parameter.Name));
 
         foreach (var parameter in unmappedRequired)
         {
@@ -166,7 +167,7 @@ public static class ToolboxTranslationValidator
             issues.Add(new ToolboxTranslationIssue
             {
                 Code = ToolboxTranslationIssueCodes.MissingRequiredParameter,
-                Message = $"Required parameter '{parameter.Name}' of process '{definition.ProcessId}' has no default and is not mapped; the tool cannot execute.",
+                Message = $"Required parameter '{parameter.Name}' of process '{definition.ProcessId}' is not mapped; the canonical validator requires the input key to be present even when the parameter declares a default, so the tool cannot execute.",
                 ParameterName = parameter.Name
             });
         }

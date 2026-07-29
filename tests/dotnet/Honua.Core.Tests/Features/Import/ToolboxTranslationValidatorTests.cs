@@ -110,10 +110,28 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
-    public void Validate_RequiredParameterWithDefault_DoesNotRequireMapping()
+    public void Validate_RequiredParameterWithDefault_StillRequiresMapping()
     {
+        // ProcessPlanValidator requires a declared-required input key to be present even
+        // when the parameter declares a default, so an unmapped one is not executable.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("SimplifyTool", "test.simplify", Mapping("in_geom", "wkb"))),
+            new FakeCatalog());
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Unsupported);
+        var issue = tool.Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.MissingRequiredParameter);
+        issue.ParameterName.Should().Be("tolerance");
+    }
+
+    [Fact]
+    public void Validate_AllRequiredParametersMapped_IsTranslated()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("SimplifyTool", "test.simplify",
+                Mapping("in_geom", "wkb"),
+                Mapping("tol", "tolerance"))),
             new FakeCatalog());
 
         report.Tools.Single().Classification.Should().Be(ToolboxToolClassifications.Translated);
