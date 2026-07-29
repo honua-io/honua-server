@@ -221,6 +221,47 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_InlineSourceAboveCap_FailsLikeTheLayerBackedSource()
+    {
+        // Codex P2: the admission cap is a property of the request, not the source form.
+        // An inline collection above the cap must fail exactly as the equivalent
+        // layer-backed selection does, before the dataset read and the join.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("input", InlineFeatureCollection(PointNtsFeature(5, 5), PointNtsFeature(6, 6))),
+            ("maxInputFeatures", "1"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("limit of 1 features");
+    }
+
+    [UnitTest]
+    public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
+    {
+        // Codex P2: the budget's remedies must reach the caller verbatim rather than
+        // collapsing to "computation failed: TransformInputException". Two 1-feature
+        // layers with a carried field exceed a budget of zero on the first match.
+        var services = DefaultServices(
+            dataset: Dataset(),
+            datasetFeatures: [PointFeature(5, 5, ("name", "p1"))],
+            sourceFeatures: [BoxFeature(0, 0, 10, 10, ("zone", "a"))]);
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("outputFields", "name"),
+            ("maxCarriedMatchValues", "0"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("cumulative match budget");
+        error.Should().Contain("outputFields", "the remedies must survive the failure path");
+    }
+
+    [UnitTest]
     public void MatchBudget_ExhaustedByCumulativeCarriedValues_ThrowsActionableError()
     {
         // Codex P1: the per-layer input caps cannot see the join's Cartesian growth
