@@ -141,13 +141,13 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
 
         await context.ReportProgressAsync(5, "Parsing imagery inference inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadStepInputs(parameters, options, out var inputs, out var inputError))
+        var maxArtifactBytes = _executorOptions.CurrentValue.MaxArtifactBytes;
+
+        if (!TryReadStepInputs(parameters, options, maxArtifactBytes, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid imagery.classify inputs: {inputError}");
         }
-
-        var maxArtifactBytes = _executorOptions.CurrentValue.MaxArtifactBytes;
         var request = new ImageryInferenceRequest
         {
             Model = inputs.Model,
@@ -340,6 +340,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     private static bool TryReadStepInputs(
         IReadOnlyDictionary<string, string> parameters,
         ImageryInferenceOptions options,
+        long maxArtifactBytes,
         out InferenceInputs inputs,
         out string error)
     {
@@ -355,6 +356,20 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             return false;
         }
 
+        // Bound the payload BEFORE allocating it. Base64 carries 3 bytes per 4
+        // characters, so the encoded length gives the decoded size without
+        // decoding; checking only afterwards would already have materialized the
+        // array (and the outbound JSON request duplicates it again), letting a
+        // caller drive worker-memory allocation straight past the configured
+        // artifact ceiling before any backend call happens.
+        var estimatedDecodedBytes = (long)source.Length / 4 * 3;
+        if (estimatedDecodedBytes > maxArtifactBytes)
+        {
+            error = $"input 'source' is approximately {estimatedDecodedBytes} bytes once decoded, which exceeds "
+                + $"configured MaxArtifactBytes={maxArtifactBytes}";
+            return false;
+        }
+
         byte[] sourceBytes;
         try
         {
@@ -363,6 +378,16 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         catch (FormatException)
         {
             error = "input 'source' is not valid base64";
+            return false;
+        }
+
+        // Exact enforcement once the true size is known: the estimate above is
+        // deliberately cheap and padding-insensitive, so it is a pre-filter rather
+        // than the authority.
+        if (sourceBytes.Length > maxArtifactBytes)
+        {
+            error = $"input 'source' is {sourceBytes.Length} bytes, which exceeds configured "
+                + $"MaxArtifactBytes={maxArtifactBytes}";
             return false;
         }
 

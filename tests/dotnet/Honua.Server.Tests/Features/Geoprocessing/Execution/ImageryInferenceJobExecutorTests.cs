@@ -951,6 +951,41 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_OversizedInlineSource_IsRejectedBeforeDecoding()
+    {
+        // The ceiling has to bite on the ENCODED value: decoding first would have
+        // already allocated the array, and the outbound JSON request duplicates it
+        // again, so a caller could drive allocation past MaxArtifactBytes before
+        // any backend call.
+        var oversized = Convert.ToBase64String(new byte[64 * 1024]);
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http", maxArtifactBytes: 4096);
+        var context = CreateContext("op-oversized-source");
+
+        var record = CreateJobRecord(source: oversized);
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("MaxArtifactBytes");
+        result.ErrorMessage.Should().Contain("source");
+        handler.LastRequestBody.Should().BeNull("an oversized source must never reach the backend");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_SourceWithinCeiling_IsStillAccepted()
+    {
+        // Guard against the new bound over-rejecting a normal scene.
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http", maxArtifactBytes: 64 * 1024);
+        var context = CreateContext("op-source-within-ceiling", out _);
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(
