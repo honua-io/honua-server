@@ -147,5 +147,6 @@ public sealed class GPServerEsriTaskAliasesTests
         "generalization.dissolve",
         "analytics.spatial-join-managed",
         "analytics.hotspot-managed",
+        "enrichment.enrich",
     ];
 }

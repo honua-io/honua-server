@@ -166,7 +166,9 @@ internal static class DataEnrichmentRequestHandlers
                 context,
                 "Inline GeoJSON source not supported",
                 ["Inline GeoJSON enrichment is not available on the synchronous endpoint. "
-                    + "Use a registered sourceLayerId, or submit an async batch enrichment job via OGC API Processes."]);
+                    + "Use a registered sourceLayerId, or submit an async batch enrichment job via the "
+                    + "'enrichment.enrich' process (POST /ogc/processes/processes/enrichment.enrich/execution), which "
+                    + "accepts a staged FeatureCollection through its 'input' data URI."]);
         }
 
         // ----- Resolve the enrichment dataset from the managed/config catalog -----
@@ -342,7 +344,9 @@ internal static class DataEnrichmentRequestHandlers
                 context,
                 "Enrichment input too large for the synchronous endpoint",
                 [$"The source selection exceeds the synchronous enrichment limit of {analyticsLimits.MaxInputFeatures} features. "
-                    + "Submit an async batch enrichment job via OGC API Processes for larger inputs."]);
+                    + "Submit an async batch enrichment job via the 'enrichment.enrich' process "
+                    + "(POST /ogc/processes/processes/enrichment.enrich/execution) for larger inputs; poll status and fetch "
+                    + "results through /ogc/processes/jobs/{jobId}."]);
         }
 
         var features = new SpatialAnalyticsFeature[rows.Length];
@@ -429,7 +433,8 @@ internal static class DataEnrichmentRequestHandlers
                         StatusCodes.Status501NotImplemented,
                         "Method not supported",
                         ["The nearest-neighbor method is not available on the synchronous layer-backed endpoint. "
-                            + "Submit an async batch enrichment job via OGC API Processes."]);
+                            + "Submit an async batch enrichment job via the 'enrichment.enrich' process "
+                            + "(POST /ogc/processes/processes/enrichment.enrich/execution) with method=nearest-neighbor."]);
                     return false;
                 default:
                     error = new EnrichmentError(

@@ -46,6 +46,42 @@ spatial predicates, supports `outputFields` and per-match `aggregates`
 `X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
 async batch path) when the source selection exceeds the synchronous input cap.
 
+## Async batch enrichment jobs (`enrichment.enrich`)
+
+Large or staged-input enrichment runs as a **canonical geoprocessing job**
+(#2283) through the existing OGC API Processes surface — there is no
+enrichment-local job lifecycle:
+
+- **Submit**: `POST /ogc/processes/processes/enrichment.enrich/execution` with
+  the same enrichment vocabulary as `POST /api/enrich` — `datasetId` (required),
+  `method` (`intersects`, `point-in-polygon`, `within`, `within-distance`,
+  `nearest-neighbor`), `outputFields`, `aggregates` (`field:stat` pairs), and the
+  source as EITHER a registered `layerId` (with optional `where`/`bbox`
+  windowing) OR a staged inline FeatureCollection via `input`
+  (`data:application/geo+json;base64` data URI). Returns `201` with a job id.
+- **Poll / results / dismiss**: the standard job endpoints —
+  `GET /ogc/processes/jobs/{jobId}`, `GET /ogc/processes/jobs/{jobId}/results`,
+  `DELETE /ogc/processes/jobs/{jobId}`.
+- **Results** are an enriched GeoJSON FeatureCollection artifact (`JOIN_COUNT`,
+  carried attributes, aggregates; `NEAR_DIST` for nearest-neighbor) with the
+  dataset id and attribution embedded as foreign members.
+- **Gating**: the shared `analytics.spatial-join` (Pro) entitlement and the
+  dataset's `minimumEdition` are enforced at execution.
+- **CRS**: both the source and dataset layers are streamed in EPSG:4326 and the
+  result is published in EPSG:4326, so a cross-SRID pair is never joined on
+  incomparable ordinates and the GeoJSON output is valid WGS 84 (RFC 7946).
+  `bbox` is likewise EPSG:4326. Within-distance thresholds and `NEAR_DIST` are
+  therefore in degrees (managed NTS join, no geodesic conversion) — the sync
+  endpoint's `distanceMeters` semantics do not apply, so supply `distance`
+  explicitly in degrees.
+- **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
+  while streaming, so an oversized selection fails fast with an actionable error
+  instead of exhausting worker memory. The value is clamped to an operator
+  ceiling of 1000000 — a caller may only lower the cap, never disable it — and it
+  applies equally to a staged `input` collection. `maxCarriedMatchValues`
+  (default 20000000, likewise lower-only) additionally bounds the join itself,
+  which is a Cartesian product the per-layer caps cannot see.
+
 ## Registering enrichment datasets
 
 The catalog is **operator-curated** and configuration-driven. Publish the
@@ -116,12 +152,14 @@ enterprise/revenue features in the ticket:
   demographic data** (ACS/Census/OSM extracts, Natural Earth boundaries, etc.) —
   no such dataset ships with the server. Operators bring their own reference data
   and register it as above.
-- **No inline-GeoJSON source feature sets.** The source must be a registered
-  layer; ad-hoc inline feature sets are not yet supported.
+- **No inline-GeoJSON source feature sets on the synchronous endpoint.** The
+  sync source must be a registered layer; inline/staged feature sets run through
+  the async `enrichment.enrich` job's `input` data URI instead.
 - **Synchronous spatial-join method only.** The point-in-polygon / within /
   contains / dwithin predicates are served through the shared spatial-join
-  pipeline. Nearest-neighbour, buffer+aggregate weighting, and intersection
-  area-weighting as *enrichment methods*, plus async/batch jobs and
-  CDC-triggered enrichment, are deferred to follow-up work.
+  pipeline. Nearest-neighbour is available on the async `enrichment.enrich` job
+  path (#2283); buffer+aggregate weighting and intersection area-weighting as
+  *enrichment methods*, plus CDC-triggered enrichment, are deferred to
+  follow-up work.
 
 These deferrals are tracked under [#374](https://github.com/honua-io/honua-server/issues/374).

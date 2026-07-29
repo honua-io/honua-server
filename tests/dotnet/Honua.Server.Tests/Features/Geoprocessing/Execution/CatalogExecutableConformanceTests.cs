@@ -87,6 +87,10 @@ public sealed class CatalogExecutableConformanceTests
         // Two-layer analytics.spatial-join (#2322): resolves both the target layerId and
         // the joinLayerId through source.honua-layer and joins them in one dispatched job.
         "analytics.spatial-join",
+        // Async batch enrichment (#2283): resolves a managed enrichment dataset by id
+        // and joins a layer-backed or staged inline target set against the dataset's
+        // layer through the shared spatial-join computation.
+        "enrichment.enrich",
         // Layer-aware overlay tool pack (#2206, #2139): managed NTS, two
         // FeatureCollections in, one FeatureCollection/table out.
         "overlay.clip",
@@ -400,6 +404,7 @@ public sealed class CatalogExecutableConformanceTests
             new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),
+            new EnrichmentJobExecutor(scopeFactory, monitor, NullLogger<EnrichmentJobExecutor>.Instance),
             new OverlayClipExecutor(monitor),
             new OverlayIntersectExecutor(monitor),
             new OverlayUnionExecutor(monitor),
