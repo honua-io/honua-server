@@ -68,6 +68,14 @@ case "${mode}" in
       sleep 0.2
     done
     ;;
+  stall-then-cleanup)
+    # Wedged: silent for the whole budget, then noisy while it is torn down.
+    # Real shards do this -- cancellation and disposal messages land after
+    # `timeout` sends SIGTERM. That teardown output must not count as progress.
+    trap 'echo "stub cancelling outstanding work"; echo "stub disposing fixtures"; echo "stub teardown complete"; exit 143' TERM
+    sleep 600 &
+    wait $!
+    ;;
   selfkill)
     sleep 0.3
     kill -9 $$
@@ -173,6 +181,25 @@ if grep -q 'HONUA_SHARD_CAPACITY_EXHAUSTED' "${out_file}"; then
   fail "a stalled shard must not be reported as capacity exhaustion"
 fi
 pass "budget exhaustion after a stall is reported as a suspected hang"
+
+# --- 4a. Hang whose teardown is chatty: still a hang. ------------------------
+# A wedged shard that stays silent through its whole budget and then emits
+# cancellation/disposal output while `timeout` kills it. Crediting that teardown
+# output as progress made idle_seconds_at_exit collapse to ~0 and reported
+# capacity_exhausted, so the train escalated the whole batch instead of running
+# its hang retry. Only pre-deadline output may count as progress.
+run_case hangchattyteardown stall-then-cleanup 0 0.1 0.80 3
+[[ "${rc}" == "124" ]] || fail "chatty-teardown hang did not time out (rc=${rc}); fixture premise is wrong"
+grep -q 'stub teardown complete' "${results_dir}/fixture-hangchattyteardown.log" \
+  || fail "fixture premise is wrong: no teardown output was produced after SIGTERM"
+[[ "$(timing_field .capacity_status)" == "hang_suspected" ]] \
+  || fail "teardown output after the deadline was credited as progress (capacity_status=$(timing_field .capacity_status))"
+grep -q '^::error::HONUA_SHARD_HANG_SUSPECTED' "${out_file}" \
+  || fail "chatty-teardown hang did not emit the hang annotation"
+if grep -q 'HONUA_SHARD_CAPACITY_EXHAUSTED' "${out_file}"; then
+  fail "a shard silent until its deadline must not be reported as capacity exhaustion"
+fi
+pass "output produced after the deadline does not mask a hang"
 
 # --- 5. No inner timeout configured: nothing to measure, nothing to claim. ---
 run_case unbounded chatty 2 "" 0.80 60

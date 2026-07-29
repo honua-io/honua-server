@@ -115,8 +115,24 @@ if [[ -n "${timeout_minutes}" ]]; then
   fi
 fi
 
+# The configured budget in seconds. Needed before the supervision loop so progress
+# tracking can be frozen at the deadline, and again afterwards by the exit-code
+# classification and the headroom ratio.
+timeout_seconds=""
+if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
+  timeout_seconds="$(awk -v m="${timeout_minutes}" 'BEGIN { printf "%.0f", m * 60 }')"
+fi
+
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 start_epoch="$(date +%s)"
+
+# The instant `timeout` sends its SIGTERM. Output produced after this point is the
+# shard being torn down, not the shard making progress, so progress tracking stops
+# here (see the guard in the supervision loop below).
+progress_deadline_epoch=""
+if [[ -n "${timeout_seconds}" ]]; then
+  progress_deadline_epoch=$((start_epoch + timeout_seconds))
+fi
 
 {
   echo "Shard: ${shard_name}"
@@ -150,10 +166,17 @@ while kill -0 "${test_pid}" 2>/dev/null; do
   # Progress = the shard's own stdout growing. Honua shards stream host/test
   # output continuously, so this is what separates "still working, ran out of
   # budget" from "wedged" when the inner timeout fires.
+  # Only growth observed BEFORE the timeout deadline counts. Once `timeout` has
+  # sent SIGTERM, a wedged shard commonly emits cancellation/cleanup output while
+  # it is being killed; crediting that as progress made `idle_seconds_at_exit`
+  # look small and misfiled a genuine hang as `capacity_exhausted`, which sends
+  # the train down capacity escalation instead of the hang retry.
   current_log_size="$(log_size)"
   if [[ "${current_log_size}" != "${last_log_size}" ]]; then
     last_log_size="${current_log_size}"
-    last_progress_epoch="${now_epoch}"
+    if [[ -z "${progress_deadline_epoch}" ]] || (( now_epoch < progress_deadline_epoch )); then
+      last_progress_epoch="${now_epoch}"
+    fi
   fi
 
   if (( now_epoch >= next_heartbeat_epoch )); then
@@ -183,13 +206,6 @@ duration_seconds=$((completed_epoch - start_epoch))
 timed_out="false"
 kill_escalated="false"
 status="failed"
-
-# The configured budget in seconds. Needed by the exit-code classification
-# immediately below as well as by the headroom ratio further down.
-timeout_seconds=""
-if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
-  timeout_seconds="$(awk -v m="${timeout_minutes}" 'BEGIN { printf "%.0f", m * 60 }')"
-fi
 
 # ---------------------------------------------------------------------------
 # Exit-code classification.
@@ -257,7 +273,16 @@ fi
 #   capacity_exhausted - hit the cap while still producing output.
 #   hang_suspected     - hit the cap after going silent for >= stall_seconds.
 # ---------------------------------------------------------------------------
-idle_seconds_at_exit=$((completed_epoch - last_progress_epoch))
+# Measured at the timeout deadline rather than at process exit. Progress tracking
+# already stops at the deadline, so measuring to `completed_epoch` would add the
+# whole SIGKILL grace period to every timed-out shard's idle figure and could tip a
+# still-progressing run over the stall threshold. The question the classification
+# asks is "had it gone quiet when the cap fired", so that is the instant to measure.
+progress_measured_at_epoch="${completed_epoch}"
+if [[ -n "${progress_deadline_epoch}" ]] && (( completed_epoch > progress_deadline_epoch )); then
+  progress_measured_at_epoch="${progress_deadline_epoch}"
+fi
+idle_seconds_at_exit=$((progress_measured_at_epoch - last_progress_epoch))
 headroom_ratio=""
 headroom_percent=""
 capacity_status="unbounded"
