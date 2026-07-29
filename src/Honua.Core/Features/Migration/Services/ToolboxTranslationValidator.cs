@@ -182,16 +182,16 @@ public static class ToolboxTranslationValidator
             .Select(parameter => parameter.Name)
             .ToArray();
 
-        // Static Required flags are not the whole admissibility contract: several processes
-        // declare mutually-substitutable optional inputs (for example the raster
-        // source/layerId/rasterId trio) that only the canonical plan validator enforces at
-        // submit time. Ask that validator through the shared probe rather than
-        // re-implementing its conditional rules here, so a tool this report certifies is
-        // one the submit path will actually accept.
+        // Static Required flags are not the whole admissibility contract: processes declare
+        // mutually-substitutable optional inputs (the raster source/layerId/rasterId trio)
+        // and mutually-exclusive ones (connectionName XOR connectionId) that only the
+        // canonical plan validator enforces at submit time. Ask that validator through the
+        // shared probe rather than re-implementing its rules here, so a tool this report
+        // certifies is one the submit path will actually accept.
         if (!missingRequired && conditionalInputProbe is not null)
         {
             var suppliedNames = bindings.Select(binding => binding.TargetParameter).ToArray();
-            foreach (var violation in conditionalInputProbe.FindMissingRequiredInputs(definition.ProcessId, suppliedNames))
+            foreach (var violation in conditionalInputProbe.FindAdmissibilityViolations(definition.ProcessId, suppliedNames))
             {
                 missingRequired = true;
                 issues.Add(new ToolboxTranslationIssue

@@ -290,7 +290,7 @@ public sealed class ToolboxTranslationValidatorTests
     /// </summary>
     private sealed class FakeProbe(string[] requiredAnyOf) : IProcessConditionalInputProbe
     {
-        public IReadOnlyList<string> FindMissingRequiredInputs(
+        public IReadOnlyList<string> FindAdmissibilityViolations(
             string processId,
             IReadOnlyCollection<string> suppliedParameterNames)
             => requiredAnyOf.Any(name => suppliedParameterNames.Contains(name, StringComparer.OrdinalIgnoreCase))

@@ -28,7 +28,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<string> FindMissingRequiredInputs(
+    public IReadOnlyList<string> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
     {
@@ -69,6 +69,75 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                     : "1";
         }
 
+        var violations = Validate(definition.ProcessId, inputs);
+
+        var results = new List<string>();
+        foreach (var violation in violations)
+        {
+            // Missing-input failures are presence-based by construction.
+            if (string.Equals(violation.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
+            {
+                results.Add(violation.Message);
+                continue;
+            }
+
+            // Anything else is only meaningful if it stems from the combination of supplied
+            // parameters rather than from a value this probe fabricated. Withdraw each
+            // other supplied parameter in turn: if the violation disappears, the inputs
+            // conflict (for example the mutually-exclusive connectionName/connectionId
+            // pair). If it survives every withdrawal, it is a complaint about the
+            // substituted value and must not be reported.
+            if (IsPresenceConflict(definition.ProcessId, inputs, violation))
+            {
+                results.Add(violation.Message);
+            }
+        }
+
+        return results;
+    }
+
+    private bool IsPresenceConflict(
+        string processId,
+        Dictionary<string, string> inputs,
+        GeoprocessingValidationFailure violation)
+    {
+        var attributedTo = ParameterNameOf(violation.FieldPath);
+
+        foreach (var candidate in inputs.Keys)
+        {
+            // Withdrawing the parameter the violation is attributed to would clear a plain
+            // value complaint too, so it proves nothing.
+            if (string.Equals(candidate, attributedTo, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var reduced = new Dictionary<string, string>(inputs, StringComparer.Ordinal);
+            reduced.Remove(candidate);
+
+            // Match on the message as well as the code/field: withdrawing one half of a
+            // mutually-exclusive pair can substitute a *different* complaint about the same
+            // parameter (dropping connectionName leaves a GUID-format violation on
+            // connectionId, sharing its code and field path), which would otherwise read as
+            // the original violation surviving.
+            var stillPresent = Validate(processId, reduced)
+                .Any(remaining => string.Equals(remaining.FieldPath, violation.FieldPath, StringComparison.Ordinal)
+                    && string.Equals(remaining.Code, violation.Code, StringComparison.Ordinal)
+                    && string.Equals(remaining.Message, violation.Message, StringComparison.Ordinal));
+
+            if (!stillPresent)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private List<GeoprocessingValidationFailure> Validate(
+        string processId,
+        Dictionary<string, string> inputs)
+    {
         var plan = new AnalysisPlan
         {
             PlanId = "toolbox-translation-probe",
@@ -79,21 +148,29 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 {
                     StepId = "probe",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = definition.ProcessId,
+                    ProcessId = processId,
                     Inputs = inputs
                 }
             ]
         };
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+        return violations;
+    }
 
-        // Only presence-based failures are meaningful here; placeholder values can trip
-        // value-format rules that say nothing about whether the mapping is admissible.
-        return [.. violations
-            .Where(violation => string.Equals(
-                violation.Code,
-                MissingRequiredParameterCode,
-                StringComparison.Ordinal))
-            .Select(violation => violation.Message)];
+    /// <summary>
+    /// Extracts the parameter name from a <c>steps[id].inputs.name</c> field path.
+    /// </summary>
+    private static string? ParameterNameOf(string? fieldPath)
+    {
+        if (string.IsNullOrEmpty(fieldPath))
+        {
+            return null;
+        }
+
+        var separator = fieldPath.LastIndexOf('.');
+        return separator >= 0 && separator < fieldPath.Length - 1
+            ? fieldPath[(separator + 1)..]
+            : null;
     }
 }

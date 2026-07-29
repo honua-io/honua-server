@@ -426,6 +426,81 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_MutuallyExclusiveInputsMapped_IsNotCertifiedExecutable()
+    {
+        // sink.external-postgis accepts a registered connectionName XOR connectionId.
+        // Mapping both is rejected by ProcessPlanValidator, so it must not be certified even
+        // though every defaultless parameter is mapped.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "SinkToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ExportBothConnections",
+                  "targetProcessId": "sink.external-postgis",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "conn_name", "targetParameter": "connectionName" },
+                    { "sourceName": "conn_id", "targetParameter": "connectionId" },
+                    { "sourceName": "out_table", "targetParameter": "table" },
+                    { "sourceName": "out_srid", "targetParameter": "targetSrid" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().NotBe("translated");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("message").GetString())
+            .Should().Contain(message => message!.Contains("exactly one of", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_SingleConnectionMapped_ReportsNoValueArtifact()
+    {
+        // Mapping only connectionId must not surface the probe's own substituted value as a
+        // violation (the validator would otherwise complain the placeholder is not a GUID).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "SinkToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ExportByConnectionId",
+                  "targetProcessId": "sink.external-postgis",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "conn_id", "targetParameter": "connectionId" },
+                    { "sourceName": "out_table", "targetParameter": "table" },
+                    { "sourceName": "out_srid", "targetParameter": "targetSrid" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("message").GetString())
+            .Should().NotContain(message => message!.Contains("GUID", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_BranchDependentRequirement_IsNotCertifiedExecutable()
     {
         // analytics.cluster-managed requires 'k' only when algorithm=kmeans. The probe can

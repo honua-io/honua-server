@@ -20,23 +20,28 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 /// <para>
 /// Implementations answer strictly from parameter <em>presence</em>; they must not report
 /// value-format violations, because callers supply parameter names rather than real
-/// values. This is the seam consumed by the arcpy/toolbox translation lane (#2145).
+/// values. A violation counts as presence-based when it disappears once some <em>other</em>
+/// supplied parameter is withdrawn — that separates a genuine mutually-exclusive-input
+/// conflict from a complaint about a probe-substituted value. This is the seam consumed by
+/// the arcpy/toolbox translation lane (#2145).
 /// </para>
 /// </remarks>
 public interface IProcessConditionalInputProbe
 {
     /// <summary>
-    /// Returns the canonical missing-required-input violations a plan step for
+    /// Returns the canonical presence-based violations a plan step for
     /// <paramref name="processId"/> would raise when exactly
-    /// <paramref name="suppliedParameterNames"/> are supplied.
+    /// <paramref name="suppliedParameterNames"/> are supplied. This covers both missing
+    /// required inputs (including conditionally-required ones) and conflicts between
+    /// mutually-exclusive inputs.
     /// </summary>
     /// <param name="processId">Canonical process identifier.</param>
     /// <param name="suppliedParameterNames">Parameter names the caller would supply.</param>
     /// <returns>
     /// Human-readable violation messages, or an empty list when the supplied set satisfies
-    /// every presence-based requirement (including conditional ones).
+    /// every presence-based requirement.
     /// </returns>
-    IReadOnlyList<string> FindMissingRequiredInputs(
+    IReadOnlyList<string> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames);
 }
