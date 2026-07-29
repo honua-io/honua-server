@@ -237,6 +237,35 @@ else
   [[ "$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")" == "ok" ]] \
     || fail "not_assessed run skewed the shard's classification"
   pass "fleet audit excludes not_assessed runs from the sample"
+
+  # Legacy artifacts predate capacity_status. A failed run must still be
+  # filtered out via the long-standing `status` field, or re-basing from an
+  # older CI run mixes aborted/retried failures back into the sample.
+  rm -f "${audit_dir}"/*.timing.json
+  jq -nc --arg shard "${audit_shard}" --argjson d "${comfortable_seconds}" \
+    '{shard: $shard, duration_seconds: $d, timed_out: false, status: "passed"}' \
+    > "${audit_dir}/legacy-pass.timing.json"
+  jq -nc --arg shard "${audit_shard}" \
+    --argjson d "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 * 0.99 }')" \
+    '{shard: $shard, duration_seconds: $d, timed_out: false, status: "failed"}' \
+    > "${audit_dir}/legacy-fail.timing.json"
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  runs="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .runs' <<<"${audit_json}")"
+  [[ "${runs}" == "1" ]] || fail "legacy failed record was counted as a capacity sample (runs=${runs})"
+  pass "fleet audit filters legacy failed records without capacity_status"
+
+  # Nearest rank must not round DOWN past the slowest observation: with six
+  # runs, p90 is the sixth value, and dropping it would classify an undersized
+  # shard as ok and suppress the budget recommendation.
+  rm -f "${audit_dir}"/*.timing.json
+  slow_seconds="$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 * 0.95 }')"
+  for i in 1 2 3 4 5; do write_timing "${comfortable_seconds}" false "p90-${i}"; done
+  write_timing "${slow_seconds}" false p90-slow
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  status="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")"
+  [[ "${status}" == "low_headroom" ]] \
+    || fail "p90 over 6 runs dropped the slowest observation (status=${status})"
+  pass "p90 uses nearest rank and keeps the slowest observation"
 fi
 
 echo "✅ shard headroom instrumentation fixture passed"

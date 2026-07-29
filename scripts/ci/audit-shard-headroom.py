@@ -35,9 +35,33 @@ DEFAULT_CONFIG = REPO_ROOT / ".github" / "ci-shards.json"
 
 
 def percentile(values: list[float], fraction: float) -> float:
-    """Nearest-rank percentile over an already-sorted, non-empty list."""
-    index = min(len(values) - 1, max(0, int(round(fraction * (len(values) - 1)))))
-    return values[index]
+    """Nearest-rank percentile over an already-sorted, non-empty list.
+
+    Nearest rank is `ceil(fraction * n)` (1-indexed). Interpolating between
+    ranks instead would round *down* for several small sample sizes — with six
+    runs it picks the fifth value, dropping the slowest one — which is exactly
+    the observation that proves a shard needs a bigger budget.
+    """
+    rank = max(1, math.ceil(fraction * len(values)))
+    return values[min(len(values), rank) - 1]
+
+
+def is_capacity_sample(record: dict) -> bool:
+    """True when a timing record's duration says something about capacity.
+
+    A run that neither passed nor hit its cap may have aborted early or run long
+    on retries, so its duration would depress or inflate p90 for no reason. The
+    shard runner marks those `not_assessed`, but artifacts predating that field
+    must be filtered the same way via the long-standing `status` field, or
+    re-basing from an older run mixes failed runs back into the sample.
+    """
+    capacity_status = record.get("capacity_status")
+    if capacity_status is not None:
+        return capacity_status not in {"not_assessed", "unbounded"}
+    status = record.get("status")
+    if status is None:
+        return True
+    return status in {"passed", "timed_out"}
 
 
 def load_timings(directory: Path) -> dict[str, list[dict]]:
@@ -51,11 +75,7 @@ def load_timings(directory: Path) -> dict[str, list[dict]]:
         shard = record.get("shard")
         if not shard:
             continue
-        # A run that neither passed nor hit its cap may have aborted early or
-        # run long on retries, so its duration is not a capacity sample. The
-        # shard runner marks those `not_assessed`; older artifacts without the
-        # field are kept for backwards compatibility.
-        if record.get("capacity_status") in {"not_assessed", "unbounded"}:
+        if not is_capacity_sample(record):
             continue
         observations.setdefault(shard, []).append(record)
     return observations

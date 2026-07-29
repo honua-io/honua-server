@@ -63,15 +63,16 @@ Collect several runs into the same directory for a usable p90. Add
 ## Measured margins (2026-07-29)
 
 Test-step durations from the `Run server test shard` step of the 20 most recent
-`ci.yml` runs (batch CI, trunk and nightly). `p50`/`p90` are in minutes and
-exclude runs that were killed at the cap; `Timeouts` counts runs that reached
-the cap. Bold values are the budgets this audit changed.
+`ci.yml` runs (batch CI, trunk and nightly). `p50`/`p90` are nearest-rank
+percentiles in minutes and exclude runs that were killed at the cap; `Timeouts`
+counts runs that reached the cap. Bold values are the budgets this audit
+changed.
 
 | Shard | Runs | Timeouts | p50 | p90 | Old cap | p90/old | New cap | New job cap | p90/new |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | OData Core | 20 | 7 | 19.0 | 19.5 | 20 | 98% | **29** | **39** | 67% |
 | Server Features Admin and Console | 19 | 5 | 47.6 | 49.1 | 50 | 98% | **72** | **82** | 68% |
-| OData Query and Spatial | 20 | 0 | 29.5 | 30.6 | 32 | 96% | **44** | **54** | 70% |
+| OData Query and Spatial | 20 | 0 | 29.1 | 30.6 | 32 | 96% | **44** | **54** | 70% |
 | GeoServices ImageServer | 20 | 1 | 22.6 | 23.1 | 24 | 96% | **35** | **45** | 66% |
 | Server Features Collaboration and Content | 24 | 0 | 41.6 | 46.1 | 48 | 96% | **66** | **76** | 70% |
 | GeoServices MapServer | 20 | 5 | 18.5 | 19.0 | 20 | 95% | **29** | **39** | 66% |
@@ -82,12 +83,12 @@ the cap. Bold values are the budgets this audit changed.
 | Server Features Admin Platform and Governance | 19 | 0 | 32.5 | 33.5 | 45 | 74% | 45 | 55 | 74% |
 | Operator Eval Harness | 23 | 0 | 13.1 | 14.1 | 20 | 70% | 20 | 30 | 70% |
 | Scene | 20 | 0 | 18.5 | 20.0 | 30 | 67% | 30 | 40 | 67% |
-| STAC Protocol | 20 | 0 | 9.5 | 10.0 | 15 | 67% | 15 | 25 | 67% |
+| STAC Protocol | 20 | 0 | 9.0 | 10.0 | 15 | 67% | 15 | 25 | 67% |
 | Server Features Misc | 25 | 0 | 26.1 | 29.1 | 48 | 61% | 48 | 60 | 61% |
 | FileImport | 21 | 0 | 11.0 | 11.5 | 20 | 58% | 20 | 30 | 58% |
 | WFS | 20 | 0 | 13.5 | 14.5 | 25 | 58% | 25 | 35 | 58% |
 | OGC API Tiles Coverages and Processes | 22 | 0 | 11.5 | 12.5 | 22 | 57% | 22 | **32** | 57% |
-| Geocoding | 20 | 0 | 7.5 | 8.5 | 15 | 57% | 15 | 25 | 57% |
+| Geocoding | 20 | 0 | 7.0 | 8.5 | 15 | 57% | 15 | 25 | 57% |
 | Core Endpoints | 20 | 0 | 17.0 | 18.0 | 32 | 56% | 32 | **42** | 56% |
 | Core | 23 | 0 | 14.0 | 14.5 | 26 | 56% | 26 | **36** | 56% |
 | MCP | 21 | 0 | 7.5 | 8.0 | 15 | 53% | 15 | 25 | 53% |
@@ -99,7 +100,7 @@ the cap. Bold values are the budgets this audit changed.
 | WFS Endpoints | 20 | 0 | 9.5 | 10.0 | 22 | 45% | 22 | **32** | 45% |
 | Server Features Admin Operations | 20 | 0 | 14.5 | 15.0 | 35 | 43% | 35 | 45 | 43% |
 | Core Attachments and Records | 20 | 0 | 9.5 | 10.0 | 26 | 38% | 26 | **36** | 38% |
-| OGC Classic WMTS | 20 | 0 | 7.5 | 7.5 | 20 | 38% | 20 | 30 | 38% |
+| OGC Classic WMTS | 20 | 0 | 7.0 | 7.5 | 20 | 38% | 20 | 30 | 38% |
 | Server Features Spec Printing and Static Maps | 25 | 0 | 15.0 | 16.0 | 48 | 33% | 48 | 60 | 33% |
 | GeoServices Geometry VectorTile and Versioning | 20 | 0 | 6.5 | 7.0 | 24 | 29% | 24 | **34** | 29% |
 | OData Mutations and Batch | 20 | 0 | 5.0 | 5.5 | 20 | 28% | 20 | 30 | 28% |
@@ -107,7 +108,7 @@ the cap. Bold values are the budgets this audit changed.
 | FeatureServer Maintenance and Temporal | 20 | 0 | 6.0 | 6.0 | 22 | 27% | 22 | **32** | 27% |
 | Raster & Scene Analysis | 22 | 0 | 5.0 | 5.0 | 20 | 25% | 20 | 30 | 25% |
 | FeatureServer Endpoints | 20 | 0 | 6.0 | 6.5 | 26 | 25% | 26 | **36** | 25% |
-| Server Features Admin Tiles and Scenes | 20 | 0 | 7.0 | 7.0 | 35 | 20% | 35 | 45 | 20% |
+| Server Features Admin Tiles and Scenes | 20 | 0 | 6.5 | 7.0 | 35 | 20% | 35 | 45 | 20% |
 | STAC and API Governance | 20 | 0 | 3.5 | 3.5 | 20 | 18% | 20 | 30 | 18% |
 | OData Client Certification | 20 | 0 | 4.0 | 4.0 | 25 | 16% | 25 | 35 | 16% |
 | FeatureServer Replication | 20 | 0 | 3.0 | 3.0 | 20 | 15% | 20 | 30 | 15% |
