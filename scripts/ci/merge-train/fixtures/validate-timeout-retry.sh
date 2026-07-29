@@ -739,11 +739,28 @@ reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
   || fail "salvaging reset lost cumulative rerun telemetry"
 pass "operator state reset salvages members and telemetry from invalid state"
 
+# A batch SHA is NOT land intent: _write_state records one for every assembled
+# phase (smart-ci, attribute, the retry phases). Refusing on it would refuse the
+# ordinary stuck batch this escape hatch exists for.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":"bad-run-id-type","included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"dddddddddddddddddddddddddddddddddddddddd","fwdfix_attempts":"nope"}}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: assembled-batch body is still readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "assembled-batch salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused an assembled non-land batch merely for carrying a batch SHA"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+  || fail "assembled-batch salvage did not release its member"
+[[ -s "${reset_capture}" ]] || fail "assembled-batch salvage never cleared state"
+pass "salvage treats an assembled batch SHA as recoverable, not land intent"
+
 # Salvage must refuse durable land intent even when the body is schema-invalid
 # or not JSON at all — the raw-text guard, not the parser, is what protects it.
 for salvage_land_body in \
   $'```json\n{"active_batch":{"phase":"land","included":["oops"]}}\n```' \
-  $'```json\n{"active_batch":{"phase":"not-a-real-phase","batch_sha":"dddddddddddddddddddddddddddddddddddddddd"}}\n```' \
+  $'```json\n{"active_batch":{"phase":"pre-land-cleanup","included":[101],"batch_sha":"nope"}}\n```' \
   $'```json\n{"active_batch": {"phase": "post-land-finalize", NOT VALID JSON\n```'
 do
   TRAIN_STATE_BODY_OVERRIDE="${salvage_land_body}"

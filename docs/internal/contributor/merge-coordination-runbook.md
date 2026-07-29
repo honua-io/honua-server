@@ -34,14 +34,17 @@ gh workflow run merge-train.yml -f train_apply=true -f reset_state=true
 It clears `active_batch` to the exact cleared shape the train itself writes (`branch: ""`,
 `included: []`, `phase: "select"`, null run/batch fields), preserves `config` and
 `last_landed_trunk`, removes `train:landing` from the recorded members, and stops without
-selecting or landing. It **refuses** while a batch carries durable land intent (`land`,
-`pre-land-cleanup`, `post-land-finalize`, or a persisted `batch_sha`) — that state has to
-reconcile against trunk first. Then dispatch an ordinary live run.
+selecting or landing. It **refuses** while a batch carries durable land intent (phase `land`,
+`pre-land-cleanup`, or `post-land-finalize`) — that state has to reconcile against trunk first.
+A reset-only run never self-chains, so nothing lands until you dispatch an ordinary live run
+yourself.
 
 The reset also repairs a body the read schema *rejects* (an already-hand-edited issue, or one
 whose JSON block no longer parses): it falls back to a best-effort salvage that keeps whatever
 members, trunk base and telemetry are still legible, and applies the land-intent refusal to the
-raw text so the guard holds even when nothing parses.
+raw text so the guard holds even when nothing parses. The refusal keys on the *phase* only — a
+`batch_sha` is recorded for every assembled batch (`smart-ci`, `attribute`, the retry phases),
+so treating it as land intent would refuse the ordinary stuck batch this exists for.
 
 Do not repair the state issue by hand. `active_batch: null` in particular is **invalid**: the
 read schema requires `active_batch` to be an object, so that edit swaps a recovery deadlock for

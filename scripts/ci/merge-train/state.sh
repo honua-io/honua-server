@@ -199,11 +199,19 @@ train_state_body() {
 # legible and normalizes it to the fields the reset needs:
 #   {active_batch:{phase,trunk_base,included,timeout_reruns_total},
 #    last_landed_trunk}
-# It REFUSES (2) whenever the RAW TEXT shows any sign of durable land intent — a
-# land-family phase or a batch SHA — because that state must reconcile against
-# trunk rather than be discarded. The refusal works on raw text so it still
-# holds when no part of the body parses as JSON. Returns 1 when no state issue
-# exists, 2 on refusal or lookup/fetch failure.
+# It REFUSES (2) when the RAW TEXT still shows a LAND-FAMILY PHASE, because that
+# state must reconcile against trunk rather than be discarded. The check works on
+# raw text so it holds even when no part of the body parses as JSON.
+#
+# The phase is the only honest land-intent signal here. `batch_sha` and
+# `included_heads` are NOT: _write_state populates both for every state with an
+# assembled branch (smart-ci, attribute, the retry phases), so refusing on a
+# batch SHA would refuse the ordinary stuck batch this escape hatch exists for.
+# The residual risk is a body corrupted so badly that even its land phase is
+# illegible; clearing that loses post-land PR bookkeeping (GitHub still resolves
+# merged heads on its own) but cannot double-land, because landing is an FF-CAS
+# against current trunk.
+# Returns 1 when no state issue exists, 2 on refusal or lookup/fetch failure.
 train_state_salvage() {
   local num body block lookup_rc=0
   num="$(train_state_issue_number)" || lookup_rc=$?
@@ -211,9 +219,6 @@ train_state_salvage() {
   [[ -z "${num}" ]] && return 1
   body="$(train_state_body "${num}")" || return 2
   if grep -Eq '"phase"[[:space:]]*:[[:space:]]*"(land|pre-land-cleanup|post-land-finalize)"' <<<"${body}"; then
-    return 2
-  fi
-  if grep -Eq '"batch_sha"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{40}"' <<<"${body}"; then
     return 2
   fi
   block="$(printf '%s\n' "${body}" | awk '

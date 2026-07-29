@@ -254,7 +254,11 @@ jobs:
       # re-primes it. A normal run (landed / merged-through / escalated) exits 0 and
       # chains as intended.
       - name: Self-chain next run while PRs remain
-        if: success() && steps.mode.outputs.train_apply == '1'
+        # NEVER chain off a reset-only run. `reset_state=true` clears the state
+        # and exits 0 without selecting or landing; chaining here would
+        # immediately dispatch an ordinary live train that could land a batch
+        # the operator has not looked at yet, breaking the reset's contract.
+        if: success() && steps.mode.outputs.train_apply == '1' && steps.mode.outputs.train_reset_state == '0'
         env:
           # MUST be the PAT: a `gh workflow run` authenticated with GITHUB_TOKEN does
           # NOT trigger a new workflow run (GitHub's recursion guard), so the chain

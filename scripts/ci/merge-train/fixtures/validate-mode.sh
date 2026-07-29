@@ -58,3 +58,17 @@ assert_reset reset-default-off workflow_dispatch true '' 0
 assert_reset reset-scheduled-ignored schedule true true 0
 assert_reset reset-dry-run-ignored workflow_dispatch false true 0
 assert_reset reset-explicit-live workflow_dispatch true true 1
+
+# A reset-only run clears state and exits 0 without selecting or landing, so the
+# live self-chain must not fire off it — otherwise the chained ordinary run can
+# land a batch the operator has not looked at yet.
+WORKFLOW="$(cd "${FIXTURE_DIR}/../../../.." && pwd)/.github/workflows/merge-train.yml"
+[[ -f "${WORKFLOW}" ]] || { printf 'FAIL: merge-train.yml not found at %s\n' "${WORKFLOW}" >&2; exit 1; }
+self_chain_if="$(awk '
+  /^      - name: Self-chain next run while PRs remain$/ { found=1; next }
+  found && /^ *if:/ { print; exit }
+' "${WORKFLOW}")"
+[[ -n "${self_chain_if}" ]] || { printf 'FAIL: self-chain step or its if: condition is missing\n' >&2; exit 1; }
+grep -Fq "steps.mode.outputs.train_reset_state == '0'" <<<"${self_chain_if}" \
+  || { printf 'FAIL: self-chain condition does not exclude reset-only runs: %s\n' "${self_chain_if}" >&2; exit 1; }
+printf 'PASS: self-chain excludes reset-only runs\n'
