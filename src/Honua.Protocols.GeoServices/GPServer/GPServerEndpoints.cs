@@ -1524,7 +1524,13 @@ internal static class GPServerEndpoints
                 Description = $"Output artifact of type {kind}.",
                 DataType = GPServerParameterTranslation.ToEsriDataType(kind),
                 Direction = "esriGPParameterDirectionOutput",
-                ParameterType = "esriGPParameterTypeRequired"
+                // Mutually exclusive outputs must NOT all be advertised as
+                // required: exactly one is produced per run, so a client that
+                // enumerates required outputs from task metadata would otherwise
+                // wait forever for the alternative that never arrives.
+                ParameterType = definition.OutputsAreAlternatives
+                    ? "esriGPParameterTypeOptional"
+                    : "esriGPParameterTypeRequired"
             });
         }
 

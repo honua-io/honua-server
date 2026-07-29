@@ -94,6 +94,9 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
         /// <summary>Non-destructive data-management geoprocessing family.</summary>
         public const string GpDataManagement = "gp.data-management";
 
+        /// <summary>Delegated imagery/ML inference geoprocessing family (#2241).</summary>
+        public const string GpImageryInference = "gp.imagery-inference";
+
         /// <summary>Geoprocessing family not included in the first migration evidence slice.</summary>
         public const string GpUnsupported = "gp.unsupported";
     }
@@ -338,6 +341,23 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             Reason = "Data-management process is inventoried for migration review, not projected as automated runtime evidence.",
             CanTransform = false,
             CanServe = false,
+            RequiresCheck = false
+        },
+        new EsriConstructCapabilityDescriptor
+        {
+            // Imagery/ML GP lane (#2241): inference is DELEGATED to a configured
+            // cloud endpoint (SageMaker/Vertex/Azure ML/OpenAI-compatible REST) —
+            // Honua bundles no model runtime. CanServe = true so imagery.classify
+            // is projected through OGC API Processes / GPServer for direct
+            // discovery and execution; the automation tier stays Assisted because
+            // execution requires an operator-configured inference backend, and an
+            // unconfigured deployment fails the job with a clear message.
+            ConstructKey = Keys.GpImageryInference,
+            AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
+            Code = ImportCompatibilityCodes.ManualReview,
+            Reason = "Imagery/ML inference family delegated to a configured cloud inference endpoint; projected through OGC API Processes and failing clearly when no backend is configured.",
+            CanTransform = false,
+            CanServe = true,
             RequiresCheck = false
         },
         new EsriConstructCapabilityDescriptor

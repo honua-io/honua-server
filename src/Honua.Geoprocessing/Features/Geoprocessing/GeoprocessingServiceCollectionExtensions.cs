@@ -157,6 +157,37 @@ internal static class GeoprocessingServiceCollectionExtensions
         //  - import.dataset durable import orchestration (#1630).
         AddProcessExecutors(services);
 
+        // Imagery/ML inference delegation (#2241): imagery.classify submits the
+        // source raster + a model reference to a configured cloud endpoint and
+        // lands the result as a GP artifact. DELIBERATELY DORMANT when
+        // unconfigured — no startup validation, no eager probe; an unconfigured
+        // deployment fails the job at execution with a clear message. Provider
+        // adapters sit behind IImageryInferenceClient; the generic 'http' REST
+        // adapter, which speaks Honua's own JSON inference contract (implemented
+        // by a model server directly or by a thin gateway in front of one), is the
+        // supported backend in this build.
+        services
+            .AddOptions<Inference.ImageryInferenceOptions>()
+            .Bind(configuration.GetSection(Inference.ImageryInferenceOptions.SectionName));
+        // Timeout.InfiniteTimeSpan is deliberate: HttpClient's 100s default would
+        // cancel long-running inference well before the configured TimeoutSeconds
+        // (default 300, up to 3600) and the adapter would then misreport that the
+        // configured duration elapsed. The adapter's linked per-request
+        // CancellationTokenSource is the single authoritative deadline.
+        services
+            .AddHttpClient(Inference.HttpImageryInferenceClient.HttpClientName)
+            .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan)
+            // AllowAutoRedirect = false is a SECURITY control, not a preference: a
+            // 307/308 from an https endpoint preserves the POST body, so following
+            // it to an http destination would resend the API key and the entire
+            // source raster in plaintext, sailing straight past the one-time
+            // scheme check the adapter performs on the configured endpoint.
+            .ConfigurePrimaryHttpMessageHandler(
+                () => new HttpClientHandler { AllowAutoRedirect = false });
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<Inference.IImageryInferenceClient, Inference.HttpImageryInferenceClient>());
+        Register<ImageryInferenceJobExecutor>(services);
+
         // First-class remote DAG source connectors (source.honua-layer,
         // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis).
         // One RemoteSourceExecutor is registered per source process id; each resolves

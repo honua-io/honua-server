@@ -137,6 +137,11 @@ public sealed class CatalogExecutableConformanceTests
         // Durable import pipeline (#1630): managed orchestration job that composes
         // the import / publishing / raster services through an IServiceScopeFactory.
         "import.dataset",
+        // Imagery/ML delegated inference (#2241): the managed dispatcher executes
+        // the delegation itself (an HTTP exchange with the configured cloud
+        // backend); an unconfigured deployment fails the job with a clear
+        // unavailability message rather than stubbing a result.
+        "imagery.classify",
     };
 
     // Processes that execute ONLY through the synchronous PostGIS SpatialAnalytics
@@ -434,6 +439,11 @@ public sealed class CatalogExecutableConformanceTests
                 Substitute.For<IServiceScopeFactory>(),
                 NullLogger<ImportDatasetJobExecutor>.Instance,
                 Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>()),
+            new ImageryInferenceJobExecutor(
+                Substitute.For<IOptionsMonitor<Honua.Geoprocessing.Inference.ImageryInferenceOptions>>(),
+                monitor,
+                [],
+                NullLogger<ImageryInferenceJobExecutor>.Instance),
         };
 
         // Remote DAG source connectors self-register as IProcessExecutor, so they flow

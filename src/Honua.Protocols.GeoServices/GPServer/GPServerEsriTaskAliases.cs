@@ -99,6 +99,9 @@ internal static class GPServerEsriTaskAliases
         ["raster.mosaic"] = "MosaicToNewRaster",
         ["raster.reclassify"] = "Reclassify",
 
+        // Imagery / ML (delegated cloud inference, #2241)
+        ["imagery.classify"] = "ClassifyRaster",
+
         // Conversion
         ["conversion.feature-project"] = "Project",
         ["conversion.polygonize"] = "RasterToPolygon",
