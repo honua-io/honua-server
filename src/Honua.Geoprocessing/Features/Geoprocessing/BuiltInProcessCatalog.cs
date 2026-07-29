@@ -964,7 +964,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                     allowedValues: ["classification", "segmentation", "detection"]),
                 Param("confidenceThreshold", "Confidence Threshold", "Optional minimum score in the closed range [0, 1] forwarded to the backend for detection/segmentation filtering.", ProcessParameterValueType.FloatingPoint),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster, ArtifactKind.FeatureLayer]
+            OutputArtifactKinds = [ArtifactKind.Raster, ArtifactKind.FeatureLayer],
+            // The backend decides which shape a scene yields, so exactly ONE of
+            // these is produced per run — they are alternatives, not a pair.
+            OutputsAreAlternatives = true
         },
 
         // -----------------------------------------------------------------------

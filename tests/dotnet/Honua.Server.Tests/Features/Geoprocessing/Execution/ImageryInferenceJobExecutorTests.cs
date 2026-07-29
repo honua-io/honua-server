@@ -998,6 +998,65 @@ public sealed class ImageryInferenceJobExecutorTests
         package.Artifacts[0].Label.Should().Be("outputRaster");
     }
 
+    [UnitTest]
+    public void OutputSlotResolver_RemapsFeatureArtifactForAlternativeOutputs()
+    {
+        // imagery.classify declares [Raster, FeatureLayer] as alternatives; a lone
+        // GeoJSON artifact must land in the feature slot, not slot 0.
+        ArtifactKind[] declared = [ArtifactKind.Raster, ArtifactKind.FeatureLayer];
+
+        var remapped = OutputSlotResolver.TryResolveAlternativeSlot(
+            FeatureCollectionArtifact.DataUriPrefix + "e30=", 0, declared, out var slot, out var kind);
+
+        remapped.Should().BeTrue();
+        slot.Should().Be(1);
+        kind.Should().Be(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    public void OutputSlotResolver_LeavesSimultaneousOutputProcessesAlone()
+    {
+        // The [FeatureLayer, Table] analytics ops publish their outputs TOGETHER.
+        // Their first artifact matches slot 0, so it must not be remapped, and a
+        // later artifact is never remapped regardless of media type.
+        ArtifactKind[] declared = [ArtifactKind.FeatureLayer, ArtifactKind.Table];
+        var geoJson = FeatureCollectionArtifact.DataUriPrefix + "e30=";
+
+        OutputSlotResolver.TryResolveAlternativeSlot(geoJson, 0, declared, out _, out _)
+            .Should().BeFalse("the first artifact already matches its declared slot");
+        OutputSlotResolver.TryResolveAlternativeSlot(geoJson, 1, declared, out _, out _)
+            .Should().BeFalse("only the first published artifact may ever be remapped");
+    }
+
+    [UnitTest]
+    public void Catalog_ImageryClassify_DeclaresOutputsAsAlternatives()
+    {
+        var definition = new BuiltInProcessCatalog().GetProcess(ImageryInferenceJobExecutor.HandledProcessId);
+
+        definition.Should().NotBeNull();
+        definition!.OutputsAreAlternatives.Should().BeTrue(
+            "the backend emits exactly one of the declared shapes per run");
+    }
+
+    [UnitTest]
+    public void Catalog_SimultaneousOutputProcesses_DoNotDeclareAlternatives()
+    {
+        // Guard the default: the flag must stay off for the analytics ops whose
+        // outputs are produced together, so GPServer keeps advertising them as
+        // required results.
+        var catalog = new BuiltInProcessCatalog();
+
+        foreach (var processId in new[]
+                 {
+                     "analytics.cluster", "analytics.spatial-join", "analytics.density",
+                     "generalization.dissolve"
+                 })
+        {
+            catalog.GetProcess(processId)!.OutputsAreAlternatives.Should().BeFalse(
+                $"'{processId}' produces its declared outputs together");
+        }
+    }
+
     private static ExecutionJobRecord CreateTerminalJobRecord(string artifactReference)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)

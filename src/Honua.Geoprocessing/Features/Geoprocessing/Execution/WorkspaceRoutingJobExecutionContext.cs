@@ -68,8 +68,20 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
     public async Task PublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
     {
         var index = _publishedArtifactIndex++;
-        var label = ResolveOutputLabel(_job, index);
-        var kind = ResolveOutputKind(_job, index);
+
+        // A process advertising mutually exclusive output shapes publishes one
+        // artifact, which positional assignment would always file under slot 0.
+        // The shared resolver keeps this durable workspace entry in agreement with
+        // the result package built later from the same job.
+        var slotIndex = index;
+        if (OutputSlotResolver.TryResolveAlternativeSlot(
+                artifactReference, index, ResolveDeclaredKinds(_job), out var alternativeSlot, out _))
+        {
+            slotIndex = alternativeSlot;
+        }
+
+        var label = ResolveOutputLabel(_job, slotIndex);
+        var kind = ResolveOutputKind(_job, slotIndex);
 
         // The durable publish is the gate: the real JobExecutionService rechecks
         // that the job still exists and is still owned, and can no-op/reject the
@@ -86,6 +98,34 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
             _overwrite,
             uri: artifactReference,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Declared output kinds carried on the durable spec by the submit path.
+    /// </summary>
+    private static List<ArtifactKind> ResolveDeclaredKinds(ExecutionJobRecord job)
+    {
+        if (!job.Spec.Parameters.TryGetValue(
+                ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds, out var serialized)
+            || string.IsNullOrWhiteSpace(serialized))
+        {
+            return [];
+        }
+
+        var parts = serialized.Split(
+            ExecutionJobParameterKeys.MetadataListSeparator,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var kinds = new List<ArtifactKind>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (Enum.TryParse<ArtifactKind>(part, ignoreCase: true, out var parsed))
+            {
+                kinds.Add(parsed);
+            }
+        }
+
+        return kinds;
     }
 
     private static string ResolveOutputLabel(ExecutionJobRecord job, int index)
