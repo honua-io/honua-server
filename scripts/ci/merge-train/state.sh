@@ -218,7 +218,18 @@ train_state_salvage() {
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 1
   body="$(train_state_body "${num}")" || return 2
-  if grep -Eq '"phase"[[:space:]]*:[[:space:]]*"(land|pre-land-cleanup|post-land-finalize)"' <<<"${body}"; then
+  # The land-intent check must survive NEWLINES, not just spaces. A damaged
+  # block can put the value on its own line ("phase":\n"land"); a line-oriented
+  # grep misses that, the parse below then fails on the accompanying syntax
+  # error, and the empty fallback would ERASE a durable land journal instead of
+  # refusing it. Compacting whitespace makes the match newline-insensitive while
+  # keeping it token-exact — it still requires the literal "phase" key followed
+  # by a quoted land-family value, so a branch name (train/batch/...), a
+  # last_landed_trunk field, or a phase like "landing" cannot trigger a refusal,
+  # and a real land-family phase such as pre-land-cleanup still does.
+  local compact
+  compact="$(tr -d '[:space:]' <<<"${body}")"
+  if grep -qE '"phase":"(land|pre-land-cleanup|post-land-finalize)"' <<<"${compact}"; then
     return 2
   fi
   block="$(printf '%s\n' "${body}" | awk '

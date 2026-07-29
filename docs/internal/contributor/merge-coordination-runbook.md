@@ -42,9 +42,12 @@ yourself.
 The reset also repairs a body the read schema *rejects* (an already-hand-edited issue, or one
 whose JSON block no longer parses): it falls back to a best-effort salvage that keeps whatever
 members, trunk base and telemetry are still legible, and applies the land-intent refusal to the
-raw text so the guard holds even when nothing parses. The refusal keys on the *phase* only — a
-`batch_sha` is recorded for every assembled batch (`smart-ci`, `attribute`, the retry phases),
-so treating it as land intent would refuse the ordinary stuck batch this exists for.
+raw text — across newlines, so a damaged block that puts the value on its own line
+(`"phase":` ⏎ `"land"`) still refuses instead of erasing the durable land journal. The refusal
+keys on the *phase token* only: a `batch_sha` is recorded for every assembled batch
+(`smart-ci`, `attribute`, the retry phases), and a branch name or `last_landed_trunk` can
+contain the same letters, so matching any of those would refuse the ordinary stuck batch this
+exists for.
 
 Do not repair the state issue by hand. `active_batch: null` in particular is **invalid**: the
 read schema requires `active_batch` to be an object, so that edit swaps a recovery deadlock for

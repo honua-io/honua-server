@@ -761,7 +761,10 @@ pass "salvage treats an assembled batch SHA as recoverable, not land intent"
 for salvage_land_body in \
   $'```json\n{"active_batch":{"phase":"land","included":["oops"]}}\n```' \
   $'```json\n{"active_batch":{"phase":"pre-land-cleanup","included":[101],"batch_sha":"nope"}}\n```' \
-  $'```json\n{"active_batch": {"phase": "post-land-finalize", NOT VALID JSON\n```'
+  $'```json\n{"active_batch": {"phase": "post-land-finalize", NOT VALID JSON\n```' \
+  $'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"land","included":[101],,\n```' \
+  $'```json\n{"active_batch":{"phase"\n:\n"post-land-finalize" BROKEN\n```' \
+  $'```json\n{"active_batch":{"phase"\t:\t"land" BROKEN\n```'
 do
   TRAIN_STATE_BODY_OVERRIDE="${salvage_land_body}"
   export TRAIN_STATE_BODY_OVERRIDE
@@ -774,6 +777,56 @@ do
     || fail "salvage did not refuse durable land intent without mutation"
 done
 pass "salvage refuses durable land intent in unreadable state"
+
+# Newline-robust detection must NOT swing to refusing everything: a damaged
+# state whose non-land phase sits on its own line still resets, or the
+# sanctioned reset becomes useless for exactly the bodies it exists to repair.
+# Schema-invalid but still parseable, so the members are recoverable too.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"attribute","included":[101,102],"fwdfix_attempts":"nope"}}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: multiline non-land body is still readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "multiline non-land salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused a damaged non-land state after the newline fix"
+for reset_pr in 101 102; do
+  grep -Fqx "gh pr edit ${reset_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "multiline non-land salvage did not release #${reset_pr}"
+done
+[[ -s "${reset_capture}" ]] || fail "multiline non-land salvage never cleared state"
+pass "salvage still resets a damaged non-land state across newlines"
+
+# Same shape, but now unparseable as well. Members cannot be recovered from a
+# body that does not parse, so the contract here is narrower: it must still
+# RESET rather than refuse, and must not enter selection.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"attribute","included":[101,102],,\n```'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "unparseable non-land salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused an unparseable non-land state after the newline fix"
+[[ -s "${reset_capture}" ]] || fail "unparseable non-land salvage never cleared state"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] \
+  || fail "unparseable non-land salvage did not return to select"
+pass "salvage resets an unparseable non-land state instead of refusing"
+
+# Token-exactness: only a real land-family PHASE refuses. Text that merely
+# contains those letters — a branch name, last_landed_trunk, a phase like
+# "landing" — must not, or the guard refuses every reset.
+for salvage_ok_body in \
+  $'```json\n{"active_batch":{"branch":"train/batch/pre-land-cleanup-topic/9","phase":"smart-ci","included":[101],,\n```' \
+  $'```json\n{"active_batch":{"phase":"requeue","included":[101]},"last_landed_trunk":"land","x":,\n```' \
+  $'```json\n{"active_batch":{"phase":"landing","included":[101],,\n```'
+do
+  TRAIN_STATE_BODY_OVERRIDE="${salvage_ok_body}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  train_state_salvage >/dev/null 2>&1 \
+    || fail "salvage refused a state whose land-like text is not a land phase"
+done
+pass "salvage refusal keys on the phase token, not stray land-like text"
 
 # Totally illegible state still resets: there is no detectable land intent to
 # protect, and this is the last resort that replaces a hand edit.
