@@ -51,6 +51,15 @@ stall_seconds="${HONUA_SERVER_TEST_STALL_SECONDS:-300}"
 # it escalates to. A shard that ignores the TERM exits 137 rather than 124 (see
 # the exit-code classification below).
 kill_after_seconds="${HONUA_SERVER_TEST_KILL_AFTER_SECONDS:-30}"
+# Slack allowed when deciding whether an exit 137 could have come from `timeout`
+# itself. It covers measurement error ONLY: `start_epoch` is sampled before the
+# child is launched and the supervisor polls the child every `poll_seconds`, so
+# both can only make `duration_seconds` larger than the child's true runtime.
+# The single way the measurement can come out short is whole-second truncation
+# of the two `date +%s` samples, which costs at most a second. Keeping this
+# tight is the point: every second added back is a second of the SIGKILL grace
+# window in which an out-of-memory kill would be misfiled as a timeout.
+kill_escalation_tolerance_seconds="${HONUA_SERVER_TEST_KILL_ESCALATION_TOLERANCE_SECONDS:-2}"
 
 mkdir -p "${results_dir}"
 
@@ -193,18 +202,33 @@ fi
 #
 # 137 is ambiguous on its own — an OOM kill or any other external SIGKILL
 # produces it too — so it is NOT blanket-mapped to a timeout. The discriminator
-# is the clock: `timeout` cannot escalate to SIGKILL before the cap has already
-# elapsed, so a 137 at or beyond the budget is a kill-escalated timeout, while a
-# 137 well inside the budget is a genuine external kill and is reported as such
-# rather than being laundered into a timeout signal.
+# is the clock, and it has to account for the FULL escalation schedule, not just
+# the cap: `timeout` sends SIGTERM at `timeout_seconds` and only sends SIGKILL
+# after `--kill-after` has elapsed on top of that. So the earliest instant a
+# SIGKILL attributable to this script can be observed is
+# `timeout_seconds + kill_after_seconds`; anything killed before that deadline —
+# including a host OOM kill during the grace window, which is precisely when a
+# memory-starved runner is most likely to reap the test host — was killed by
+# something else and must keep that diagnosis. Misreading it as a timeout emits
+# HONUA_SHARD_CAPACITY_EXHAUSTED and sends the merge train down its batch-wide
+# capacity escalation, whose remediation (raise/split the shard budget) is not
+# the remediation an OOM kill needs.
 # ---------------------------------------------------------------------------
+kill_escalation_floor_seconds=""
 if [[ "${test_exit_code}" -eq 0 ]]; then
   status="passed"
 elif [[ -n "${timeout_command}" && "${test_exit_code}" -eq 124 ]]; then
   status="timed_out"
   timed_out="true"
 elif [[ -n "${timeout_command}" && -n "${timeout_seconds}" && "${test_exit_code}" -eq 137 ]]; then
-  if (( duration_seconds >= timeout_seconds )); then
+  kill_escalation_floor_seconds=$((timeout_seconds + kill_after_seconds - kill_escalation_tolerance_seconds))
+  # A tolerance larger than the configured grace must never drag the deadline
+  # back below the cap itself; before the cap, `timeout` has not even sent the
+  # first signal.
+  if (( kill_escalation_floor_seconds < timeout_seconds )); then
+    kill_escalation_floor_seconds="${timeout_seconds}"
+  fi
+  if (( duration_seconds >= kill_escalation_floor_seconds )); then
     status="timed_out"
     timed_out="true"
     kill_escalated="true"
@@ -335,10 +359,11 @@ case "${capacity_status}" in
 esac
 
 if [[ "${status}" == "killed" ]]; then
-  # exit 137 well inside the budget: something outside this script SIGKILLed the
-  # test host (an OOM kill is the usual cause). Say so plainly rather than
-  # laundering it into a timeout signal it is not.
-  echo "::error::HONUA_SHARD_KILLED shard='${shard_name}' was SIGKILLed after ${duration_seconds}s, well inside its ${timeout_minutes}m budget, so this is not a timeout. Suspect an out-of-memory kill or an external cancellation of the test host."
+  # exit 137 before this script's own SIGKILL deadline (cap + --kill-after
+  # grace): something outside this script SIGKILLed the test host (an OOM kill
+  # is the usual cause). Say so plainly rather than laundering it into a timeout
+  # signal it is not.
+  echo "::error::HONUA_SHARD_KILLED shard='${shard_name}' was SIGKILLed after ${duration_seconds}s, before this runner's own SIGKILL deadline of ${kill_escalation_floor_seconds}s (${timeout_minutes}m budget + ${kill_after_seconds}s grace), so this is not a timeout. Suspect an out-of-memory kill or an external cancellation of the test host."
 fi
 
 if [[ "${timed_out}" == "true" ]]; then

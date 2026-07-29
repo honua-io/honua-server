@@ -34,6 +34,11 @@ mkdir -p "${stub_dir}"
 #                  escalate to SIGKILL and reports 137 instead of 124.
 #   selfkill     - emit one line, then SIGKILL itself almost immediately. Stands
 #                  in for an OOM kill: also 137, but nowhere near the budget.
+#   ppidkill     - ignore SIGTERM like sigterm-proof, then SIGKILL the `timeout`
+#                  wrapper itself HONUA_FIXTURE_SECONDS in. Stands in for a host
+#                  OOM kill reaping the test-host tree inside `timeout`'s
+#                  --kill-after grace window: the runner observes 137 past the
+#                  cap, yet at an instant `timeout` could not have produced.
 cat > "${stub_dir}/dotnet" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -67,6 +72,18 @@ case "${mode}" in
     sleep 0.3
     kill -9 $$
     sleep 600
+    ;;
+  ppidkill)
+    trap '' TERM
+    kill_at=$(( $(date +%s) + seconds ))
+    while :; do
+      echo "stub progress $(date -u +'%H:%M:%S')"
+      if [[ "$(date +%s)" -ge "${kill_at}" ]]; then
+        kill -9 "${PPID}" 2>/dev/null || true
+        exit 0
+      fi
+      sleep 0.2
+    done
     ;;
 esac
 STUB
@@ -171,6 +188,11 @@ pass "unconfigured budget reports unbounded instead of inventing a ratio"
 # enough to ignore SIGTERM. `timeout --kill-after` escalates to SIGKILL and
 # exits 128+9 = 137, NOT 124, so recognising only 124 would attribute the most
 # stuck shard in the fleet as an ordinary real failure.
+#
+# The grace is widened to 6s (CI uses 30s) so the escalation deadline is a
+# distinct instant from the cap: `timeout` TERMs at ~3s and only KILLs at ~9s.
+# That separation is what case 4d below exercises from the other side.
+HONUA_FIXTURE_KILL_AFTER=6
 run_case killescalated sigterm-proof 0 0.05 0.80 60
 [[ "${rc}" == "137" ]] || fail "kill-escalated case did not exit 137 (rc=${rc}); fixture premise is wrong"
 [[ "$(timing_field .status)" == "timed_out" ]] \
@@ -206,6 +228,40 @@ if grep -q 'timed out after\|HONUA_SHARD_CAPACITY_EXHAUSTED\|HONUA_SHARD_HANG_SU
   fail "an external SIGKILL must not be reported as a timeout or capacity problem"
 fi
 pass "SIGKILL well inside the budget is reported as a kill, not a timeout"
+
+# --- 4d. External SIGKILL inside the --kill-after GRACE window. ---------------
+# The dangerous middle ground: `timeout` sends SIGTERM at the cap but cannot
+# send SIGKILL until the full --kill-after grace has also elapsed. A host OOM
+# kill landing in that window produces 137 PAST the cap, so a `duration >= cap`
+# discriminator calls it a kill-escalated timeout and emits
+# HONUA_SHARD_CAPACITY_EXHAUSTED — sending the merge train into batch-wide
+# capacity escalation for what is actually an out-of-memory kill. The deadline
+# must therefore be cap + grace (less measurement tolerance), not cap.
+#
+# Cap 3s, grace 12s, wrapper SIGKILLed at 5s: past the cap, nowhere near the 13s
+# instant at which `timeout` could first have done it itself.
+HONUA_FIXTURE_KILL_AFTER=12
+run_case gracekill ppidkill 5 0.05 0.80 60
+unset HONUA_FIXTURE_KILL_AFTER
+[[ "${rc}" == "137" ]] || fail "grace-window kill case did not exit 137 (rc=${rc}); fixture premise is wrong"
+grace_duration="$(timing_field .duration_seconds)"
+grace_cap_seconds=3
+(( grace_duration >= grace_cap_seconds )) \
+  || fail "grace-window kill landed before the cap (${grace_duration}s); fixture proves nothing"
+[[ "$(timing_field .status)" == "killed" ]] \
+  || fail "SIGKILL inside the grace window was classified as $(timing_field .status), expected killed"
+[[ "$(timing_field .timed_out)" == "false" ]] \
+  || fail "a kill inside the grace window must not set timed_out"
+[[ "$(timing_field .kill_escalated)" == "false" ]] \
+  || fail "a kill inside the grace window is not a kill escalation"
+[[ "$(timing_field .capacity_status)" == "not_assessed" ]] \
+  || fail "grace-window kill capacity_status was $(timing_field .capacity_status)"
+grep -q '^::error::HONUA_SHARD_KILLED' "${out_file}" \
+  || fail "grace-window kill did not emit the external-kill annotation"
+if grep -q 'timed out after\|HONUA_SHARD_CAPACITY_EXHAUSTED\|HONUA_SHARD_HANG_SUSPECTED' "${out_file}"; then
+  fail "an OOM kill inside the grace window must not be reported as a timeout or capacity problem"
+fi
+pass "SIGKILL at the cap but inside the kill-after grace is a kill, not a timeout"
 
 # --- 5b. A FAILING shard never claims anything about its headroom. -----------
 # A test/infrastructure failure can abort early or run long on retries, so its
@@ -362,6 +418,42 @@ else
   [[ "${recommended}" == "${audit_cap}" ]] \
     || fail "old-cap timeout should leave the current cap alone, got ${recommended}"
   pass "fleet audit bounds a censored sample by its own recorded budget"
+
+  # ...and the finding itself must clear with the recommendation. Keying
+  # over_capacity off "this shard has ever timed out" made the verdict
+  # permanent: a history containing one timeout under the old cap could never
+  # pass --fail-on-warn again, not even after the cap raise this audit
+  # prescribed, so the gate had no clean state to return to.
+  status="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")"
+  [[ "${status}" == "ok" ]] \
+    || fail "a timeout the current cap already clears still reports '${status}'"
+  rc=0
+  "${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" \
+    --timings-dir "${audit_dir}" --fail-on-warn >/dev/null 2>&1 || rc=$?
+  [[ "${rc}" == "0" ]] \
+    || fail "--fail-on-warn still gates on a stale timeout the current cap covers (rc=${rc})"
+  pass "a rebased budget clears a stale timeout finding"
+
+  # The other direction: a timeout recorded under TODAY's cap is live evidence
+  # and must still be over capacity and still gate.
+  rm -f "${audit_dir}"/*.timing.json
+  jq -nc --arg shard "${audit_shard}" --argjson cap "${audit_cap}" \
+    --argjson d "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 }')" \
+    '{shard: $shard, duration_seconds: $d, timed_out: true, timeout_minutes: $cap, capacity_status: "capacity_exhausted"}' \
+    > "${audit_dir}/current-cap-timeout.timing.json"
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  status="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")"
+  [[ "${status}" == "over_capacity" ]] \
+    || fail "a timeout at the current cap reported '${status}' instead of over_capacity"
+  recommended="$(jq -r --arg s "${audit_shard}" \
+    '.[] | select(.shard == $s) | .recommended_test_timeout_minutes' <<<"${audit_json}")"
+  (( recommended > audit_cap )) \
+    || fail "a timeout at the current cap did not raise the recommendation (${recommended})"
+  rc=0
+  "${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" \
+    --timings-dir "${audit_dir}" --fail-on-warn >/dev/null 2>&1 || rc=$?
+  [[ "${rc}" == "1" ]] || fail "--fail-on-warn did not gate a timeout at the current cap (rc=${rc})"
+  pass "a timeout recorded at the current cap still gates"
 fi
 
 echo "✅ shard headroom instrumentation fixture passed"

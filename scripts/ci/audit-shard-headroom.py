@@ -135,14 +135,15 @@ def audit(config: dict, observations: dict[str, list[dict]]) -> list[dict]:
             "p50": None,
             "p90": None,
             "utilization": None,
+            "reference_minutes": None,
+            "reference_utilization": None,
             "status": "no_data",
             "recommended_test_timeout_minutes": cap_minutes,
         }
         if durations:
             row["p50"] = round(percentile(durations, 0.5), 1)
             row["p90"] = round(percentile(durations, 0.9), 1)
-            utilization = row["p90"] / cap_minutes
-            row["utilization"] = round(utilization, 3)
+            row["utilization"] = round(row["p90"] / cap_minutes, 3)
             # A censored sample: a shard killed at its cap would have run
             # longer, so its true p90 is at least the cap **that record was run
             # under**, not whatever is configured today.
@@ -151,10 +152,25 @@ def audit(config: dict, observations: dict[str, list[dict]]) -> list[dict]:
                 for floor in (censored_floor_minutes(r) for r in records if r.get("timed_out"))
                 if floor is not None
             ]
-            reference = max([row["p90"], *floors]) if floors else row["p90"]
-            if utilization >= 1.0 or timeouts:
+            reference = max([row["p90"], *floors])
+            row["reference_minutes"] = round(reference, 1)
+            # The finding is "how much of the CURRENT cap does the evidence
+            # demand", not "has this shard ever timed out". Keying it off the
+            # mere existence of a timeout made the verdict permanent: a run
+            # killed at a 20-minute cap would keep the shard `over_capacity`
+            # against a since-raised 29-minute cap forever, so `--fail-on-warn`
+            # over a collected history could never go clean — not even after the
+            # very budget rebase this audit prescribed. The recorded floor is
+            # re-measured against the configured cap instead; a timeout whose
+            # floor the current cap already clears no longer flags, while a
+            # timeout recorded at (or above) today's cap still yields a ratio
+            # >= 1.0 and stays `over_capacity`. `timeouts` remains on the row as
+            # a fact for the reader.
+            reference_utilization = reference / cap_minutes
+            row["reference_utilization"] = round(reference_utilization, 3)
+            if reference_utilization >= 1.0:
                 row["status"] = "over_capacity"
-            elif utilization >= warn:
+            elif reference_utilization >= warn:
                 row["status"] = "low_headroom"
             else:
                 row["status"] = "ok"
@@ -224,7 +240,8 @@ def main(argv: list[str] | None = None) -> int:
         for row in flagged:
             print(
                 f"::warning::HONUA_SHARD_LOW_HEADROOM shard='{row['shard']}' p90="
-                f"{row['p90']}m of {row['test_timeout_minutes']}m; recommended cap "
+                f"{row['p90']}m (reference {row['reference_minutes']}m, including any "
+                f"censored timeout floor) of {row['test_timeout_minutes']}m; recommended cap "
                 f"{row['recommended_test_timeout_minutes']}m",
                 file=sys.stderr,
             )
