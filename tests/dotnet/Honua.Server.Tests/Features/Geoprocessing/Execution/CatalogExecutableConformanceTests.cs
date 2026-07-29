@@ -294,6 +294,30 @@ public sealed class CatalogExecutableConformanceTests
     }
 
     [UnitTest]
+    public void EveryAllowedValuesParameter_DeclaresChoicesThatDifferByMoreThanCase()
+    {
+        // Protocol adapters match GP choice lists case-insensitively (Esri's GP
+        // framework does) and then normalize to the CATALOG spelling so the
+        // ordinally-comparing canonical validators still accept the value
+        // (honua-server#3053). Two choices differing only by case would make that
+        // normalization target ambiguous, so the catalog must never declare them.
+        foreach (var definition in _catalog.ListProcesses())
+        {
+            foreach (var parameter in definition.Parameters)
+            {
+                if (parameter.AllowedValues is not { Count: > 0 } allowed)
+                {
+                    continue;
+                }
+
+                allowed.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(
+                    allowed.Count,
+                    $"'{definition.ProcessId}' parameter '{parameter.Name}' must not declare two choices differing only by case");
+            }
+        }
+    }
+
+    [UnitTest]
     public void GeometryFamily_IsFullyJobExecutable_AndMatchesTheSyncExecutionPolicy()
     {
         // The geometry.* family is the canonical job-executable vector set: every
