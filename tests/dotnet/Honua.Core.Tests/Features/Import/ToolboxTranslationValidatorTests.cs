@@ -249,6 +249,42 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_ProbeReportsNoBranchDependentParameter_IsTranslated()
+    {
+        // 'source' of test.optional-only is unmapped and defaultless, but the canonical
+        // validator requires it on no branch once 'layerId' is supplied. An unconditional
+        // omission is admissible at submit time, so the tool must be certified rather than
+        // downgraded for a review that has nothing to review.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(["source", "layerId"]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Translated);
+        tool.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_ProbeReportsBranchDependentParameter_ClassifiesPartiallyTranslated()
+    {
+        // The mirror image: when the canonical validator CAN require the unmapped 'source' on
+        // some admissible branch, the mapping stays uncertified. Narrowing the signal must not
+        // collapse into "never downgrade" — an over-claimed 'translated' tells a migrating user
+        // a tool works when submit-time validation will reject it.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(["source", "layerId"], branchDependent: ["source"]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        var issue = tool.Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.UnverifiableConditionalBranches);
+        issue.ParameterName.Should().Be("source");
+    }
+
+    [Fact]
     public void Validate_ProbeNotConsultedWhenStaticRequiredParameterMissing()
     {
         // A statically-missing required parameter already makes the tool unsupported; the
@@ -304,9 +340,11 @@ public sealed class ToolboxTranslationValidatorTests
 
     /// <summary>
     /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
-    /// missing conditional input unless at least one member of the group is supplied.
+    /// missing conditional input unless at least one member of the group is supplied, and
+    /// reports the parameters it was told are branch-dependent.
     /// </summary>
-    private sealed class FakeProbe(string[] requiredAnyOf) : IProcessConditionalInputProbe
+    private sealed class FakeProbe(string[] requiredAnyOf, string[]? branchDependent = null)
+        : IProcessConditionalInputProbe
     {
         public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
             string processId,
@@ -316,6 +354,12 @@ public sealed class ToolboxTranslationValidatorTests
                 : [new ProcessAdmissibilityViolation(
                     ProcessAdmissibilityViolationKind.Inputs,
                     $"Step requires one of {string.Join('/', requiredAnyOf)} for process '{processId}'.")];
+
+        public IReadOnlyList<string> FindUnverifiableConditionalParameters(
+            string processId,
+            IReadOnlyCollection<string> suppliedParameterNames)
+            => [.. (branchDependent ?? [])
+                .Where(name => !suppliedParameterNames.Contains(name, StringComparer.OrdinalIgnoreCase))];
     }
 
     private sealed class FakeCatalog : IProcessCatalog

@@ -21,6 +21,20 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
     /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
     private const int MaxProbeCombinations = 32;
 
+    /// <summary>
+    /// Structurally different, individually legal-looking values used to tell a parameter the
+    /// validator constrains to a finite token set it does not declare (an undeclared
+    /// discriminator such as <c>algorithm</c> or <c>op</c>) from one it merely constrains by
+    /// format. A token domain rejects all three; a GUID rule accepts the second, an identifier
+    /// rule the first, and a numeric-list rule the third, so those are not reported.
+    /// </summary>
+    private static readonly string[] DomainProbeValues =
+    [
+        "honuaProbeSentinel",
+        "8f0a1c4e-6f1d-4a3a-9c2b-0d5e7f9a1b3c",
+        "0,0,1,1"
+    ];
+
     private readonly IProcessCatalog _catalog;
 
     /// <summary>
@@ -46,33 +60,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             return [];
         }
 
-        // Presence is what the conditional rules test, so every supplied parameter is
-        // probed with a non-blank placeholder. Declared defaults are preferred where
-        // available so any value-shaped check sees a legal value; value-format violations
-        // are filtered out below regardless, because the caller supplies names, not values.
-        var defaults = definition.Parameters.ToDictionary(
-            parameter => parameter.Name,
-            parameter => parameter.DefaultValue,
-            StringComparer.OrdinalIgnoreCase);
-
-        var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var name in suppliedParameterNames)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-
-            var canonicalName = definition.Parameters
-                .FirstOrDefault(parameter =>
-                    string.Equals(parameter.Name, name, StringComparison.OrdinalIgnoreCase))?.Name
-                ?? name;
-
-            inputs[canonicalName] = defaults.TryGetValue(canonicalName, out var declaredDefault)
-                && !string.IsNullOrWhiteSpace(declaredDefault)
-                    ? declaredDefault
-                    : "1";
-        }
+        var inputs = BuildProbeInputs(definition, suppliedParameterNames);
 
         // A mapped parameter's value is caller-supplied, so assuming the catalog default
         // would reject mappings that are executable under a different value: transform.dedup
@@ -118,18 +106,175 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         return results;
     }
 
-    /// <summary>
-    /// Validates every admissible assignment of the mapped parameters that have a finite
-    /// value domain and returns only the violations common to all of them.
-    /// </summary>
-    private List<GeoprocessingValidationFailure> FindUniversalViolations(
-        ProcessDefinition definition,
-        Dictionary<string, string> baseInputs,
+    /// <inheritdoc />
+    public IReadOnlyList<string> FindUnverifiableConditionalParameters(
+        string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
     {
-        var supplied = new HashSet<string>(suppliedParameterNames, StringComparer.OrdinalIgnoreCase);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processId);
+        ArgumentNullException.ThrowIfNull(suppliedParameterNames);
 
-        // Keep the cross-product bounded; parameters beyond the cap keep their base value.
+        var definition = _catalog.GetProcess(processId);
+        if (definition is null)
+        {
+            return [];
+        }
+
+        var supplied = new HashSet<string>(
+            suppliedParameterNames.Where(name => !string.IsNullOrWhiteSpace(name)),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Only a parameter that is neither supplied nor defaulted can go silently missing at
+        // submit time, so those are the only candidates for an unprovable requirement.
+        var candidates = definition.Parameters
+            .Where(parameter => parameter.DefaultValue is null && !supplied.Contains(parameter.Name))
+            .Select(parameter => parameter.Name)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            return [];
+        }
+
+        var baseInputs = BuildProbeInputs(definition, suppliedParameterNames);
+
+        // When a supplied parameter's legal values cannot be enumerated, a caller can select a
+        // branch this probe never visits, so nothing about the candidates is provable and the
+        // pessimistic answer stands: over-claiming 'executable' is worse than over-reporting.
+        if (HasUnenumerableDiscriminator(definition, supplied, baseInputs))
+        {
+            return candidates;
+        }
+
+        // The branch space IS enumerable here, so a candidate is unverifiable exactly when
+        // some admissible assignment makes the canonical validator require it. A candidate no
+        // assignment ever requires is unconditionally optional — the submit path accepts its
+        // omission, and reporting it would misclassify an executable mapping.
+        var branchDependent = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var assignment in Assignments(VariableDomains(definition, supplied)))
+        {
+            var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
+            foreach (var (name, value) in assignment)
+            {
+                inputs[name] = value;
+            }
+
+            foreach (var failure in Validate(definition.ProcessId, inputs))
+            {
+                if (!string.Equals(failure.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var name = ParameterNameOf(failure.FieldPath);
+                if (name is not null)
+                {
+                    branchDependent.Add(name);
+                }
+            }
+        }
+
+        return [.. candidates.Where(branchDependent.Contains)];
+    }
+
+    /// <summary>
+    /// Returns true when some supplied parameter's value domain is a finite token set the
+    /// canonical validator enforces but the catalog does not declare, so branch enumeration
+    /// is impossible. Declared <c>AllowedValues</c> and boolean flags are enumerated exactly
+    /// and never qualify; only free <c>Text</c> carries the undeclared token domains the
+    /// per-process rules branch on (<c>algorithm</c>, <c>op</c>). Numeric parameters are
+    /// range-constrained rather than token-constrained, and a numeric discriminator would
+    /// have to declare <c>AllowedValues</c> to be enumerable at all.
+    /// </summary>
+    private bool HasUnenumerableDiscriminator(
+        ProcessDefinition definition,
+        HashSet<string> supplied,
+        Dictionary<string, string> baseInputs)
+    {
+        foreach (var parameter in definition.Parameters)
+        {
+            if (!supplied.Contains(parameter.Name)
+                || parameter.ValueType != ProcessParameterValueType.Text
+                || parameter.AllowedValues is { Count: > 0 })
+            {
+                continue;
+            }
+
+            var rejectsEveryProbeValue = true;
+            foreach (var probeValue in DomainProbeValues)
+            {
+                var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal)
+                {
+                    [parameter.Name] = probeValue
+                };
+
+                var constrained = Validate(definition.ProcessId, inputs).Any(failure =>
+                    string.Equals(
+                        ParameterNameOf(failure.FieldPath),
+                        parameter.Name,
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (!constrained)
+                {
+                    rejectsEveryProbeValue = false;
+                    break;
+                }
+            }
+
+            if (rejectsEveryProbeValue)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Builds the probe's base input set: presence is what the conditional rules test, so every
+    /// supplied parameter gets a non-blank placeholder. Declared defaults are preferred where
+    /// available so any value-shaped check sees a legal value; value-format violations are
+    /// filtered out by the callers regardless, because callers supply names, not values.
+    /// </summary>
+    private static Dictionary<string, string> BuildProbeInputs(
+        ProcessDefinition definition,
+        IReadOnlyCollection<string> suppliedParameterNames)
+    {
+        var defaults = definition.Parameters.ToDictionary(
+            parameter => parameter.Name,
+            parameter => parameter.DefaultValue,
+            StringComparer.OrdinalIgnoreCase);
+
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in suppliedParameterNames)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var canonicalName = definition.Parameters
+                .FirstOrDefault(parameter =>
+                    string.Equals(parameter.Name, name, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? name;
+
+            inputs[canonicalName] = defaults.TryGetValue(canonicalName, out var declaredDefault)
+                && !string.IsNullOrWhiteSpace(declaredDefault)
+                    ? declaredDefault
+                    : "1";
+        }
+
+        return inputs;
+    }
+
+    /// <summary>
+    /// Returns the supplied parameters whose value domain the catalog enumerates, keeping the
+    /// cross-product bounded; parameters beyond the cap keep their base value.
+    /// </summary>
+    private static List<(string Name, IReadOnlyList<string> Values)> VariableDomains(
+        ProcessDefinition definition,
+        HashSet<string> supplied)
+    {
         var variable = new List<(string Name, IReadOnlyList<string> Values)>();
         var combinationCount = 1;
         foreach (var parameter in definition.Parameters)
@@ -149,8 +294,22 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             combinationCount *= domain.Count;
         }
 
+        return variable;
+    }
+
+    /// <summary>
+    /// Validates every admissible assignment of the mapped parameters that have a finite
+    /// value domain and returns only the violations common to all of them.
+    /// </summary>
+    private List<GeoprocessingValidationFailure> FindUniversalViolations(
+        ProcessDefinition definition,
+        Dictionary<string, string> baseInputs,
+        IReadOnlyCollection<string> suppliedParameterNames)
+    {
+        var supplied = new HashSet<string>(suppliedParameterNames, StringComparer.OrdinalIgnoreCase);
+
         List<GeoprocessingValidationFailure>? universal = null;
-        foreach (var assignment in Assignments(variable))
+        foreach (var assignment in Assignments(VariableDomains(definition, supplied)))
         {
             var candidate = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
             foreach (var (name, value) in assignment)

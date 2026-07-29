@@ -28,7 +28,10 @@ public static class ToolboxTranslationValidator
     /// Optional seam onto the canonical plan validator's presence-based input requirements.
     /// When supplied, a mapping that would be rejected at submit time (for example because
     /// it satisfies no member of a mutually-substitutable input group) is reported instead
-    /// of being certified. When <c>null</c>, only static <c>Required</c> flags are checked.
+    /// of being certified, and it also decides which unmapped parameters are genuinely
+    /// branch-dependent rather than unconditionally optional. When <c>null</c>, only static
+    /// <c>Required</c> flags are checked and every unmapped, defaultless parameter is
+    /// reported, because the two cases cannot be told apart without the validator.
     /// </param>
     /// <returns>Per-tool classification report with round-tripped signatures.</returns>
     public static ToolboxTranslationReport Validate(
@@ -172,16 +175,7 @@ public static class ToolboxTranslationValidator
             });
         }
 
-        // The probe can only exercise the branch selected by the values it substitutes, so a
-        // parameter that is neither mapped nor defaulted leaves its value undetermined: a
-        // caller-supplied discriminator could select a branch that requires it (for example
-        // analytics.cluster-managed requires 'k' only when algorithm=kmeans, and the
-        // catalog does not enumerate that parameter's legal values). Certifying such a
-        // mapping executable would over-claim, so it is reported for review instead.
-        var undetermined = definition.Parameters
-            .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
-            .Select(parameter => parameter.Name)
-            .ToArray();
+        var suppliedNames = bindings.Select(binding => binding.TargetParameter).ToArray();
 
         // Static Required flags are not the whole admissibility contract: processes declare
         // mutually-substitutable optional inputs (the raster source/layerId/rasterId trio)
@@ -191,7 +185,6 @@ public static class ToolboxTranslationValidator
         // certifies is one the submit path will actually accept.
         if (!missingRequired && conditionalInputProbe is not null)
         {
-            var suppliedNames = bindings.Select(binding => binding.TargetParameter).ToArray();
             foreach (var violation in conditionalInputProbe.FindAdmissibilityViolations(definition.ProcessId, suppliedNames))
             {
                 missingRequired = true;
@@ -205,14 +198,36 @@ public static class ToolboxTranslationValidator
             }
         }
 
-        if (!missingRequired && undetermined.Length > 0)
+        if (!missingRequired)
         {
-            issues.Add(new ToolboxTranslationIssue
+            // The catalog models no conditional requirements at all — ProcessParameterSpec
+            // carries only Required/DefaultValue/AllowedValues — so they live exclusively as
+            // per-process rules inside the canonical plan validator. Ask that validator, through
+            // the probe, which unmapped parameters it can actually require under some admissible
+            // branch instead of treating every optional omission as one: the submit path accepts
+            // geometry.dissolve without 'groupKeys', so downgrading that mapping would report an
+            // executable tool as unproven. The probe still answers pessimistically wherever a
+            // discriminator's legal values are not enumerable (analytics.cluster-managed requires
+            // 'k' only when algorithm=kmeans, and the catalog declares no allowedValues for
+            // 'algorithm'), because certifying an unproven branch over-claims executability.
+            IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
+                    definition.ProcessId, suppliedNames)
+                // With no probe the two cases cannot be told apart, so the pessimistic answer
+                // stands rather than guessing which omissions are branch-dependent.
+                ?? definition.Parameters
+                    .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
+                    .Select(parameter => parameter.Name)
+                    .ToArray();
+
+            if (unverifiable.Count > 0)
             {
-                Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
-                Message = $"Parameter(s) {string.Join(", ", undetermined)} of process '{definition.ProcessId}' are neither mapped nor defaulted, so branch-dependent requirements cannot be proven for every caller-supplied value; review before treating this tool as executable.",
-                ParameterName = undetermined[0]
-            });
+                issues.Add(new ToolboxTranslationIssue
+                {
+                    Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
+                    Message = $"Parameter(s) {string.Join(", ", unverifiable)} of process '{definition.ProcessId}' are neither mapped nor defaulted and the canonical validator can require them on a branch this report cannot pin down, so execution cannot be proven for every caller-supplied value; review before treating this tool as executable.",
+                    ParameterName = unverifiable[0]
+                });
+            }
         }
 
         // A tool that cannot supply a required parameter is not executable against the

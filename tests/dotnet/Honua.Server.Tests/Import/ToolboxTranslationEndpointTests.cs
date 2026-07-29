@@ -378,12 +378,87 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         using var report = await ReadJsonAsync(response);
         var tool = report.RootElement.GetProperty("tools")[0];
 
-        // layerId/rasterId remain unmapped and defaultless, so the mapping is reported for
-        // review rather than certified; the conditional-input requirement itself is satisfied.
+        // layerId/rasterId remain unmapped and defaultless, but supplying 'source' is exactly
+        // what the source/layerId/rasterId rule asks for and no branch can require the other
+        // two, so the mapping is certified rather than downgraded.
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_GenuinelyOptionalParameterOmitted_IsCertifiedTranslated()
+    {
+        // geometry.dissolve's 'groupKeys' is optional, defaultless, and required on no branch:
+        // the canonical plan validator accepts a wkbs+srid plan that omits it, so the report
+        // must not downgrade the tool. Downgrading unconditional omissions would mark most
+        // executable mappings 'partially-translated' and tell migrating users to review a
+        // mapping the submit path already accepts.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "DissolveToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "DissolveGeometries",
+                  "targetProcessId": "geometry.dissolve",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "wkbs" },
+                    { "sourceName": "spatial_ref", "targetParameter": "srid" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("processId").GetString().Should().Be("geometry.dissolve");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+        report.RootElement.GetProperty("summary").GetProperty("translatedCount").GetInt32()
+            .Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_UndeclaredDiscriminatorDomain_IsNotCertifiedExecutable()
+    {
+        // transform.computed-field requires 'fields' when op=concat and 'left'/'right' for the
+        // arithmetic ops, but the catalog declares no allowedValues for 'op'. Its legal values
+        // cannot be enumerated, so no branch can be ruled out and the mapping stays reported.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "FieldToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "CalculateField",
+                  "targetProcessId": "transform.computed-field",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "field_name", "targetParameter": "target" },
+                    { "sourceName": "operation", "targetParameter": "op" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
         tool.GetProperty("classification").GetString().Should().Be("partially-translated");
-        tool.GetProperty("issues").EnumerateArray()
-            .Select(issue => issue.GetProperty("code").GetString())
-            .Should().OnlyContain(code => code == "unverifiable-conditional-branches");
+        var issue = tool.GetProperty("issues").EnumerateArray()
+            .Single(entry => entry.GetProperty("code").GetString() == "unverifiable-conditional-branches");
+        issue.GetProperty("message").GetString().Should().Contain("fields");
     }
 
     [IntegrationTest]

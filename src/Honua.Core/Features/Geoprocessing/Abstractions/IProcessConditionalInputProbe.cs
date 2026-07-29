@@ -44,6 +44,39 @@ public interface IProcessConditionalInputProbe
     IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames);
+
+    /// <summary>
+    /// Returns the parameters that are neither supplied nor defaulted and whose requiredness
+    /// depends on a caller-supplied value the probe cannot pin down, so no static report can
+    /// prove the process executes for every admissible input.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is deliberately narrower than "every unsupplied, defaultless parameter". The
+    /// catalog models no conditional requirements at all — <see cref="Domain.ProcessParameterSpec"/>
+    /// carries only <c>Required</c>, <c>DefaultValue</c> and <c>AllowedValues</c> — so they
+    /// exist solely as per-process rules inside the canonical plan validator. A parameter that
+    /// rule set never requires is unconditionally optional, and omitting it is accepted at
+    /// submit time; reporting it would misclassify an executable mapping.
+    /// </para>
+    /// <para>
+    /// The result is conservative in the other direction: when a supplied parameter's value
+    /// domain cannot be enumerated (the catalog declares no <c>AllowedValues</c> for a
+    /// discriminator such as <c>analytics.cluster-managed</c>'s <c>algorithm</c>), no branch
+    /// can be ruled out and every candidate is returned. Claiming a tool executable when a
+    /// branch is genuinely unproven is the worse error, so an unenumerable domain always
+    /// yields the pessimistic answer.
+    /// </para>
+    /// </remarks>
+    /// <param name="processId">Canonical process identifier.</param>
+    /// <param name="suppliedParameterNames">Parameter names the caller would supply.</param>
+    /// <returns>
+    /// Unsupplied parameter names whose conditional requiredness cannot be ruled out, or an
+    /// empty list when every omission is unconditionally optional.
+    /// </returns>
+    IReadOnlyList<string> FindUnverifiableConditionalParameters(
+        string processId,
+        IReadOnlyCollection<string> suppliedParameterNames);
 }
 
 /// <summary>
