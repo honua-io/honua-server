@@ -49,7 +49,9 @@ public sealed class WebhookAlertDeliverySinkTests
             Options.Create(CreateOptions()));
 
         var result = await sink.DeliverAsync(
-            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Webhook, destination: "https://example.com/webhook"),
+            AlertTestFixtures.CreateDispatchItem(
+                AlertChannelType.Webhook,
+                destination: AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook"),
             AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-\r\n123"));
 
         Assert.True(result.Succeeded);
@@ -84,7 +86,9 @@ public sealed class WebhookAlertDeliverySinkTests
         {
             Dispatch = new AlertDispatchOptions
             {
-                DefaultWebhookUrl = "https://example.com/webhook",
+                // IP literal keeps the outbound SSRF guard off live DNS; see
+                // AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+                DefaultWebhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook",
                 DefaultWebhookSecret = "signing-secret"
             }
         };

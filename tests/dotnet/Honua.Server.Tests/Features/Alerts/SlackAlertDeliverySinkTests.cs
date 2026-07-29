@@ -12,7 +12,10 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class SlackAlertDeliverySinkTests
 {
-    private static AlertDeliveryOptions CreateOptionsWithSlack(string webhookUrl = "https://hooks.slack.com/services/T00/B00/xxx") =>
+    // Destination is an IP literal so the sink's outbound SSRF guard does not perform a live DNS
+    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+    private static AlertDeliveryOptions CreateOptionsWithSlack(
+        string webhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx") =>
         new()
         {
             Dispatch = new AlertDeliveryDispatchOptions
