@@ -50,6 +50,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IProcessCatalog _processCatalog;
     private readonly AnalyticsLimits _analyticsLimits;
     private readonly GeoprocessingJobAuthorizer _authorizer;
+    private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
     private readonly GeoprocessingJobDispatcher _dispatcher;
     private readonly CustomCodeJobSubmissionGate _customCodeGate;
     private readonly GeoprocessingJobArtifactService _artifacts;
@@ -66,6 +67,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IProcessCatalog processCatalog,
         GeoprocessingJobAuthorizer authorizer,
+        GeoprocessingLayerAccessGuard layerAccessGuard,
         GeoprocessingJobDispatcher dispatcher,
         CustomCodeJobSubmissionGate customCodeGate,
         GeoprocessingJobArtifactService artifacts,
@@ -78,6 +80,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
         _authorizer = authorizer;
+        _layerAccessGuard = layerAccessGuard;
         _dispatcher = dispatcher;
         _customCodeGate = customCodeGate;
         _artifacts = artifacts;
@@ -113,7 +116,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         IOperationGateway? operationGateway = null,
-        IOperatorScopeAuthorizer? scopeAuthorizer = null)
+        IOperatorScopeAuthorizer? scopeAuthorizer = null,
+        IHttpContextAccessor? httpContextAccessor = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -123,6 +127,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 approvalEvaluator,
                 scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
                 logger),
+            // Always composed (never null): the submit-time layer read gate must not be
+            // skippable by construction path, so a caller that omits the accessor gets one
+            // that reports no ambient request — which the gate treats as unevaluable and
+            // therefore denies for layer-sourced plans.
+            new GeoprocessingLayerAccessGuard(httpContextAccessor ?? new HttpContextAccessor(), logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
             new CustomCodeJobSubmissionGate(
@@ -356,6 +365,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorResourceType.Process,
                 OperatorOperation.ExecuteMutatingProcess,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        // Per-LAYER read authorization for layer-sourced processes (#2283 review).
+        // Process.Execute authorizes running a process; it does not authorize the specific
+        // catalog layers that process will read. This is the only point in the job's life
+        // where the submitter's real principal (roles, grants, tenant scope) is still in
+        // hand — the durable record keeps only the submitter id — so the gate runs here
+        // and a caller that cannot read a layer is refused at submission instead of being
+        // handed a queued job that would read it. Skipped on the approval-resume path for
+        // the same reason as the gates above: it already ran, against the live submitter,
+        // when the proposal was created.
+        if (!resumingApproved)
+        {
+            await _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (!resumingApproved)

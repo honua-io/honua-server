@@ -5,8 +5,11 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
 using Honua.TestKit;
@@ -43,6 +46,12 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     private const string DatasetKey = "test-boundaries";
     private const string ProcessId = "enrichment.enrich";
     private const string DataUriPrefix = "data:application/geo+json;base64,";
+
+    /// <summary>Seed layer the configured enrichment dataset is backed by.</summary>
+    private const int DatasetLayerId = 1;
+
+    /// <summary>A role no test client holds, used to lock a layer down.</summary>
+    private const string RestrictedReaderRole = "enrichment-restricted-reader";
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -202,11 +211,120 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         }
     }
 
+    // Layer read authorization (#2283 review). Process.Execute authorizes RUNNING a
+    // process; it does not authorize the specific catalog layers that process reads. The
+    // synchronous POST /api/enrich handler calls ValidateLayerWithAccessV2Async at
+    // AccessScope.Read for BOTH the caller-selected source layer and the dataset's
+    // backing layer, so the async job path must refuse the same two reads.
+    //
+    // Both tests model the finding's principal exactly: Process.Execute is held, but the
+    // caller has NO layer-read grant, so the coarse AccessPolicy decides the read. The
+    // default InMemoryRoleStore seeds `admin` with a wildcard `*:*:*` grant that would
+    // authorize every layer regardless of policy, so it is replaced with a store that
+    // grants only `process:*:execute` — otherwise the test would pass vacuously.
+    //
+    // Each test submits the SAME request twice against the same fixture — once with the
+    // seed policy (accepted) and once with the layer restricted to a role the caller does
+    // not hold (refused) — so the refusal is attributable to the layer policy alone.
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task EnrichJob_SubmitterLacksReadOnSourceLayer_RefusesSubmissionWithoutQueueingJob()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture(HonuaEdition.Pro, configureServices: SeedProcessExecuteOnlyRole);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+
+            // Positive control: the identical submission is accepted while the caller can
+            // read both layers.
+            using (var allowed = await PostExecutionAsync(client, ExecuteRequestBody()))
+            {
+                allowed.StatusCode.Should().Be(
+                    HttpStatusCode.Created,
+                    "an entitled principal must still be able to submit the enrichment job");
+            }
+
+            fixture.UpdateV2ResourceMetadata(
+                WebAppFixture.TestLayerId,
+                accessPolicy: new AccessPolicy { AllowedRoles = [RestrictedReaderRole] });
+
+            using var denied = await PostExecutionAsync(client, ExecuteRequestBody());
+            denied.StatusCode.Should().Be(
+                HttpStatusCode.Forbidden,
+                "a caller that cannot read the source layer must not be able to read it through an async enrichment job");
+
+            var deniedBody = await denied.Content.ReadAsStringAsync();
+            deniedBody.Should().NotContain("jobID", "a refused submission must not queue a job");
+
+            // Non-leakage: an unknown layer id must be refused with the SAME response as a
+            // policy denial, so the submit surface cannot be used to probe which layers exist.
+            using var unknown = await PostExecutionAsync(client, ExecuteRequestBody(sourceLayerId: 987654));
+            unknown.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await unknown.Content.ReadAsStringAsync()).Should().Be(deniedBody);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task EnrichJob_SubmitterLacksReadOnDatasetLayer_RefusesSubmissionWithoutQueueingJob()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture(HonuaEdition.Pro, configureServices: SeedProcessExecuteOnlyRole);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+
+            using (var allowed = await PostExecutionAsync(client, ExecuteRequestBody()))
+            {
+                allowed.StatusCode.Should().Be(
+                    HttpStatusCode.Created,
+                    "an entitled principal must still be able to submit the enrichment job");
+            }
+
+            // The dataset's backing layer is never named by the caller — it is resolved
+            // from the catalog — so it is the gap a caller-parameter check would miss.
+            fixture.UpdateV2ResourceMetadata(
+                DatasetLayerId,
+                accessPolicy: new AccessPolicy { AllowedRoles = [RestrictedReaderRole] });
+
+            using var denied = await PostExecutionAsync(client, ExecuteRequestBody());
+            denied.StatusCode.Should().Be(
+                HttpStatusCode.Forbidden,
+                "a caller that cannot read the enrichment dataset's backing layer must not be able to read it through an async enrichment job");
+
+            (await denied.Content.ReadAsStringAsync()).Should().NotContain(
+                "jobID", "a refused submission must not queue a job");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers (mirrors VectorProcessParityIntegrationTests' durable-runtime wiring)
     // -------------------------------------------------------------------------
 
-    private WebAppFixture BuildFixture(HonuaEdition edition, Dictionary<string, string?>? extraConfig = null)
+    private WebAppFixture BuildFixture(
+        HonuaEdition edition,
+        Dictionary<string, string?>? extraConfig = null,
+        Action<IServiceCollection>? configureServices = null)
         => new WebAppFixture()
             .WithTestLicense(edition)
             .ConfigureWebHost(builder =>
@@ -233,7 +351,75 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
                     configBuilder.AddInMemoryCollection(config);
                 });
             })
-            .ConfigureServices(WireDurableRuntime);
+            .ConfigureServices(WireDurableRuntime)
+            .ConfigureServices(services => configureServices?.Invoke(services));
+
+    /// <summary>
+    /// Replaces the default role store — whose seeded <c>admin</c> role carries a wildcard
+    /// <c>*:*:*</c> grant that authorizes every layer read regardless of the layer's
+    /// <see cref="AccessPolicy"/> — with one granting only <c>process:*:execute</c>. That
+    /// leaves the caller with process-execution authority and NO layer-read grant, which is
+    /// precisely the principal the finding describes; layer reads then fall through to the
+    /// coarse access policy.
+    /// </summary>
+    private static void SeedProcessExecuteOnlyRole(IServiceCollection services)
+    {
+        services.RemoveAll<IRoleStore>();
+        services.AddSingleton<IRoleStore>(new ProcessExecuteOnlyRoleStore());
+    }
+
+    /// <summary>
+    /// Minimal role store granting every caller only <c>process:*:execute</c>. The grant
+    /// service is the literal <c>process</c> operator resource, so it can never match a
+    /// catalog <c>(service, layer, query)</c> tuple and never authorizes a layer read.
+    /// </summary>
+    private sealed class ProcessExecuteOnlyRoleStore : IRoleStore
+    {
+        private static readonly PermissionGrant ExecuteGrant = new()
+        {
+            Service = "process",
+            Layer = "*",
+            Operation = "execute"
+        };
+
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = [ExecuteGrant],
+                ResolvedAt = DateTimeOffset.UtcNow
+            });
+
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>([]);
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(
+            Guid roleId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
+            Guid roleId,
+            IReadOnlyList<PermissionGrant> permissions,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
+    }
 
     private void WireDurableRuntime(IServiceCollection services)
     {
@@ -278,18 +464,23 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
 
     // OGC execution request carrying the enrichment vocabulary: dataset id, the
     // registered source layer, and the enrichment method.
-    private static string ExecuteRequestBody() => JsonSerializer.Serialize(new
+    private static string ExecuteRequestBody(int? sourceLayerId = null) => JsonSerializer.Serialize(new
     {
         response = "document",
         inputs = new Dictionary<string, object>
         {
             ["datasetId"] = DatasetKey,
-            ["layerId"] = WebAppFixture.TestLayerId,
+            ["layerId"] = sourceLayerId ?? WebAppFixture.TestLayerId,
             ["method"] = "intersects",
         },
     });
 
-    private static async Task<string> SubmitJobAsync(HttpClient client, string body)
+    /// <summary>
+    /// Posts an execution request and hands the raw response back so authorization
+    /// outcomes can be asserted without the 201-only expectation
+    /// <see cref="SubmitJobAsync"/> bakes in.
+    /// </summary>
+    private static async Task<HttpResponseMessage> PostExecutionAsync(HttpClient client, string body)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -297,7 +488,12 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         request.Headers.Add("Prefer", "respond-async");
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        using var submit = await client.SendAsync(request);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<string> SubmitJobAsync(HttpClient client, string body)
+    {
+        using var submit = await PostExecutionAsync(client, body);
         submit.StatusCode.Should().Be(HttpStatusCode.Created);
         using var doc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
         var jobId = doc.RootElement.GetProperty("jobID").GetString();

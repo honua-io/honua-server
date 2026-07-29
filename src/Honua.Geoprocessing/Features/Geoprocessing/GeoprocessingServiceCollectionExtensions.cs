@@ -115,6 +115,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         // GeoprocessingJobService constructor binds them; their own optional collaborators
         // resolve to null/empty when the backing infrastructure is absent.
         services.TryAddSingleton<GeoprocessingJobAuthorizer>();
+        // Submit-time per-layer read gate (#2283 review). Needs the ambient request to
+        // reach the shared access pipeline (grants, tenant scope, metadata snapshot), so
+        // the accessor is registered here rather than assumed from the host wiring.
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
