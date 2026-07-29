@@ -2,7 +2,8 @@ name: Capability Matrix Aggregation
 
 # Phase-A aggregation for the canonical capability layer (issue #2893, epic
 # #2892). Joins feature-catalog.json, docs/cite-status.md, the geoservices
-# REST parity index, and capability-keys.v1.json's crosswalks into
+# REST parity index, capability-keys.v1.json's crosswalks, and the committed
+# client-compat evidence envelopes (interop freshness, #2897) into
 # docs/gis/data/capability-matrix.v1.json.
 #
 # ci.yml intentionally has no per-PR pull_request trigger (to avoid storming
@@ -22,7 +23,12 @@ on:
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
+      - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
+      # generate-capability-matrix.py imports parse_timestamp/is_green/
+      # freshness_state from capability-impact.py, so helper changes can
+      # change the committed matrix.
+      - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'
@@ -39,7 +45,9 @@ on:
       - 'docs/gis/data/geoservices-rest-parity.json'
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
+      - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'

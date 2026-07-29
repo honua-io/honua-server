@@ -1420,6 +1420,7 @@ app.MapIdentityAdminEndpoints();
 app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
+app.MapGeocodingReferenceDataImportEndpoints();
 app.MapGeoprocessingUsageEndpoints();
 app.MapFeatureOverviewEndpoints();
 

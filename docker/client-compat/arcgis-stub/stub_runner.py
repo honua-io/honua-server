@@ -40,10 +40,11 @@ PORTAL_ADMIN_PASSWORD = os.environ.get("ARCGIS_STUB_ADMIN_PASSWORD")
 
 # CERT-PRTL-* — the ArcGIS Portal/Sharing facade certification slice. These IDs
 # cover the request sequence ArcGIS Pro "Add Portal" and Field Maps issue against
-# a portal: info -> portals/self -> search -> content/items, plus token issuance
-# (generateToken), the RBAC access projection, the named-user token widening
-# discovery, and the OAuth2 token endpoint's error shape. Append-only, per the
-# certification matrix ID-stability policy.
+# a portal: info -> portals/self -> community/self -> search -> content/items,
+# plus token issuance (generateToken success and bad-credential shapes), the RBAC
+# access projection, the named-user token widening discovery and identity
+# documents, and the OAuth2 token endpoint's invalid-grant / invalid-refresh
+# error shapes. Append-only, per the certification matrix ID-stability policy.
 PORTAL_IDS = [
     "CERT-PRTL-INFO-01",
     "CERT-PRTL-SELF-01",
@@ -53,6 +54,11 @@ PORTAL_IDS = [
     "CERT-PRTL-TOKN-01",
     "CERT-PRTL-AUTH-01",
     "CERT-PRTL-OAUTH-01",
+    "CERT-PRTL-SELF-02",
+    "CERT-PRTL-COMM-01",
+    "CERT-PRTL-COMM-02",
+    "CERT-PRTL-TOKN-02",
+    "CERT-PRTL-OAUTH-02",
 ]
 
 CORE_IDS = [
@@ -362,6 +368,25 @@ def _write_portal_envelope(results: dict[str, dict], run_id: str) -> Path:
     return out_path
 
 
+def _geoservices_error_code(body: object) -> int | None:
+    """Return the GeoServices ``error.code`` carried in a response body, if any.
+
+    Honua emits GeoServices REST errors as HTTP 200 with the real status in the
+    JSON body (``{"error": {"code": N}}``), so a disabled or guarded
+    ``/sharing/rest`` surface answers 200/404 rather than transport 404. Reading
+    the transport status alone would mis-grade those deployments. OAuth2 error
+    bodies use a *string* ``error`` (RFC 6749), so the dict check also
+    discriminates the two envelopes.
+    """
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None
+    code = error.get("code")
+    return code if isinstance(code, int) else None
+
+
 def _issue_portal_token(client: httpx.Client) -> str | None:
     """Mint a named-user token via /sharing/rest/generateToken.
 
@@ -393,8 +418,10 @@ def _issue_portal_token(client: httpx.Client) -> str | None:
 def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     """Issue the Portal/Sharing REST sequence packaged Esri clients emit when a
     user runs ArcGIS Pro "Add Portal" or signs in to Field Maps: discover the
-    portal (info), resolve identity (portals/self), search for items, open an
-    item, and exchange credentials for a token. Records one CERT-PRTL-* row each.
+    portal (info), resolve identity (portals/self, community/self), search for
+    items, open an item, and exchange credentials for a token — including the
+    bad-credential and invalid-refresh error shapes the clients key their
+    sign-in prompts off. Records one CERT-PRTL-* row each.
     """
     results: dict[str, dict] = {}
 
@@ -542,30 +569,165 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     # CERT-PRTL-OAUTH-01 — the OAuth2 token endpoint returns an RFC 6749-shaped
     # error envelope for an invalid grant (validates the oauth2 bridge contract
     # without a full IdP round-trip).
-    # Skip only for the explicit 404-disabled deployment (or an unreachable
-    # endpoint); an enabled bridge that answers with the wrong status or a
-    # non-RFC-6749 body for an invalid grant is a `fail` the gate must catch.
+    # Skip only for the disabled bridge (or an unreachable endpoint); an enabled
+    # bridge that answers with the wrong status or a non-RFC-6749 body for an
+    # invalid grant is a `fail` the gate must catch. A disabled bridge answers
+    # with the GeoServices envelope (HTTP 200, body error.code 404), not a
+    # transport 404, so detect it from the body.
     try:
         r = client.post(
             "/sharing/rest/oauth2/token",
             data={"grant_type": "unsupported_grant", "f": "json"},
         )
-        if r.status_code == 404:
+        try:
+            body = r.json()
+        except ValueError:
+            body = {}
+        if _geoservices_error_code(body) == 404:
             oauth_status = "skip"  # bridge disabled in this deployment.
+        elif r.status_code in (400, 401) and isinstance(body, dict) and "error" in body:
+            oauth_status = "pass"
         else:
-            try:
-                body = r.json()
-            except ValueError:
-                body = {}
-            if r.status_code in (400, 401) and isinstance(body, dict) and "error" in body:
-                oauth_status = "pass"
-            else:
-                oauth_status = "fail"
+            oauth_status = "fail"
     except httpx.HTTPError:
         oauth_status = "skip"
     results["CERT-PRTL-OAUTH-01"] = _new_result(
         "CERT-PRTL-OAUTH-01", oauth_status,
         notes="oauth2/token returns RFC 6749 error envelope for an invalid grant",
+    )
+
+    # CERT-PRTL-SELF-02 — a named-user token populates the portals/self `user`
+    # block (ArcGIS Pro reads it right after sign-in to display the signed-in
+    # identity). Anonymous portals/self keeps `user` null, so this is the
+    # authenticated identity contract.
+    if token is None:
+        results["CERT-PRTL-SELF-02"] = _new_result(
+            "CERT-PRTL-SELF-02", "skip",
+            notes="no named-user token available (see CERT-PRTL-TOKN-01).",
+        )
+    else:
+        self2_ok = False
+        try:
+            r = client.get(f"/sharing/rest/portals/self?f=json&token={token}")
+            if r.status_code == 200:
+                user = r.json().get("user")
+                self2_ok = isinstance(user, dict) and user.get("username") == PORTAL_ADMIN_USERNAME
+        except (httpx.HTTPError, ValueError):
+            self2_ok = False
+        results["CERT-PRTL-SELF-02"] = _new_result(
+            "CERT-PRTL-SELF-02", "pass" if self2_ok else "fail",
+            notes="portals/self with a named-user token populates the user block",
+        )
+
+    # CERT-PRTL-COMM-01 — anonymous community/self returns the Esri error
+    # envelope (HTTP 200 transport with body error.code 401/499 TokenRequired),
+    # never an anonymous user document. Field Maps keys its sign-in prompt off
+    # this shape.
+    comm_anon_status = "fail"
+    try:
+        r = client.get("/sharing/rest/community/self?f=json")
+        if r.status_code == 200:
+            body = r.json()
+            error = body.get("error")
+            code = error.get("code") if isinstance(error, dict) else None
+            comm_anon_status = "pass" if code in (401, 499) and "username" not in body else "fail"
+    except (httpx.HTTPError, ValueError):
+        comm_anon_status = "fail"
+    results["CERT-PRTL-COMM-01"] = _new_result(
+        "CERT-PRTL-COMM-01", comm_anon_status,
+        notes="anonymous community/self returns Esri error envelope 401/499, no user document",
+    )
+
+    # CERT-PRTL-COMM-02 — an authenticated community/self returns the signed-in
+    # user document (`username`), which Pro/Field Maps read to label the session.
+    if token is None:
+        results["CERT-PRTL-COMM-02"] = _new_result(
+            "CERT-PRTL-COMM-02", "skip",
+            notes="no named-user token available (see CERT-PRTL-TOKN-01).",
+        )
+    else:
+        comm_auth_ok = False
+        try:
+            r = client.get(f"/sharing/rest/community/self?f=json&token={token}")
+            if r.status_code == 200:
+                body = r.json()
+                comm_auth_ok = "error" not in body and body.get("username") == PORTAL_ADMIN_USERNAME
+        except (httpx.HTTPError, ValueError):
+            comm_auth_ok = False
+        results["CERT-PRTL-COMM-02"] = _new_result(
+            "CERT-PRTL-COMM-02", "pass" if comm_auth_ok else "fail",
+            notes="community/self with a named-user token returns the user document",
+        )
+
+    # CERT-PRTL-TOKN-02 — generateToken with bad credentials returns the Esri
+    # error envelope (HTTP 200 transport, body error.code 401/499) and never
+    # leaks a token. Esri clients key their credential-retry prompt off this
+    # exact shape; a raw 4xx/5xx or a stray token breaks them. Deterministic —
+    # needs no configured credentials, only the reachable token surface.
+    tokn2_status = "fail"
+    tokn2_notes = "generateToken with invalid credentials returns Esri error envelope 401/499, no token"
+    try:
+        r = client.post(
+            "/sharing/rest/generateToken",
+            data={
+                "username": PORTAL_ADMIN_USERNAME or "portal-stub-unknown-user",
+                "password": "portal-stub-invalid-password",
+                "client": "requestip",
+                "f": "json",
+            },
+        )
+        body = r.json()
+        code = _geoservices_error_code(body)
+        if code == 403:
+            # HTTPS-only guard active (RequireHttps deployment): the
+            # credential path is unreachable over this transport.
+            tokn2_status = "skip"
+            tokn2_notes = "generateToken rejects the insecure transport (403 https-only guard); credential shape not reachable."
+        elif code == 404:
+            # Disabled surfaces answer with the GeoServices envelope (HTTP 200,
+            # body error.code 404), not a transport 404.
+            tokn2_status = "skip"
+            tokn2_notes = "generateToken surface disabled in this deployment (error.code 404)."
+        else:
+            tokn2_status = "pass" if code in (401, 499) and "token" not in body else "fail"
+    except (httpx.HTTPError, ValueError):
+        tokn2_status = "fail"
+    results["CERT-PRTL-TOKN-02"] = _new_result(
+        "CERT-PRTL-TOKN-02", tokn2_status, notes=tokn2_notes,
+    )
+
+    # CERT-PRTL-OAUTH-02 — the refresh_token grant with an unknown/expired
+    # refresh token returns the RFC 6749 `invalid_grant` envelope (400). This is
+    # the path Field Maps hits when its cached refresh token ages out; a wrong
+    # error code sends clients into a retry loop instead of re-login. Skips only
+    # for the 404-disabled bridge, mirroring CERT-PRTL-OAUTH-01.
+    try:
+        r = client.post(
+            "/sharing/rest/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": "portal-stub-invalid-refresh-token",
+                "client_id": "arcgis-stub",
+                "f": "json",
+            },
+        )
+        try:
+            body = r.json()
+        except ValueError:
+            body = {}
+        if _geoservices_error_code(body) == 404:
+            oauth2_status = "skip"  # bridge disabled in this deployment.
+        else:
+            oauth2_status = (
+                "pass"
+                if r.status_code == 400 and isinstance(body, dict) and body.get("error") == "invalid_grant"
+                else "fail"
+            )
+    except httpx.HTTPError:
+        oauth2_status = "skip"
+    results["CERT-PRTL-OAUTH-02"] = _new_result(
+        "CERT-PRTL-OAUTH-02", oauth2_status,
+        notes="oauth2/token refresh_token grant returns invalid_grant for an unknown refresh token",
     )
 
     return results
@@ -750,8 +912,10 @@ def run() -> int:
     _write_envelope("mapserver", map_results, run_id)
 
     # Portal/Sharing facade envelope (epic #1240 / #1372). Exercises the
-    # /sharing/rest surface (info, portals/self, search, content/items),
-    # generateToken, the RBAC access projection, and the OAuth2 error shape.
+    # /sharing/rest surface (info, portals/self, community/self, search,
+    # content/items), generateToken success + bad-credential shapes, the RBAC
+    # access projection, the authenticated identity documents, and the OAuth2
+    # invalid-grant / invalid-refresh error shapes.
     with httpx.Client(base_url=BASE_URL, timeout=TIMEOUT, follow_redirects=True) as client:
         portal_results = _exercise_portal(client)
     _write_portal_envelope(portal_results, run_id)

@@ -2,8 +2,8 @@
 
 The local geocoder (`provider = "local"`) is a self-hosted, offline geocoding backend that runs
 entirely against a PostGIS reference dataset you load yourself. It makes **no external service
-calls**, so it is suitable for air-gapped and data-sovereignty deployments and is the substrate the
-Esri `.loc`/`.lox` locator import targets.
+calls**, so it is suitable for air-gapped and data-sovereignty deployments; the admin reference data
+import loads records into it.
 
 It plugs into the shared geocoding provider abstraction, so once enabled it is served through the
 same `GeocodeServer` endpoints (`findAddressCandidates`, `reverseGeocode`, `suggest`,
@@ -57,15 +57,23 @@ CREATE INDEX IF NOT EXISTS ix_honua_geocode_reference_search_text
 
 ### `search_text` normalization
 
-`search_text` must be the lowercase, trimmed, single-spaced form of the searchable address. The
-provider applies the same normalization to incoming queries, so loaders should normalize on insert:
+`search_text` must be the lowercase, trimmed, single-spaced form of the searchable address with
+separator punctuation (commas/semicolons) replaced by spaces. The provider applies the same
+normalization to incoming queries, so a comma-formatted display address and a space-joined
+structured query normalize to the same text. Loaders should normalize on insert:
+
+> **Migrating pre-existing data:** rows loaded under the earlier rule (commas preserved in
+> `search_text`) are re-normalized automatically on boot for the default
+> `public.honua_geocode_reference` table (migration 091). Custom schema/table configurations
+> must run the equivalent once:
+> `UPDATE <your_table> SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'));`
 
 ```sql
 INSERT INTO honua_geocode_reference
     (display_name, search_text, address_number, street_name, city, region, postal_code, country, address_type, geom)
 VALUES
     ('380 New York St, Redlands, CA 92373',
-     lower(regexp_replace(trim('380 New York St Redlands CA 92373'), '\s+', ' ', 'g')),
+     lower(regexp_replace(trim(regexp_replace('380 New York St Redlands CA 92373', '[,;]', ' ', 'g')), '\s+', ' ', 'g')),
      '380', 'New York St', 'Redlands', 'CA', '92373', 'US', 'PointAddress',
      ST_SetSRID(ST_MakePoint(-117.1956, 34.0566), 4326));
 ```
@@ -73,9 +81,9 @@ VALUES
 ## Load path
 
 1. Create the table and indexes (above).
-2. Bulk-load reference records (e.g. address points, OpenAddresses extracts, or an imported Esri
-   locator) with `COPY`/`INSERT`, populating `search_text` with the normalized form and `geom` as a
-   WGS84 point.
+2. Bulk-load reference records (e.g. address points or OpenAddresses extracts) with
+   `COPY`/`INSERT` — or the admin reference data import endpoint below — populating `search_text`
+   with the normalized form and `geom` as a WGS84 point.
 3. `ANALYZE honua_geocode_reference;`
 
 ## Configuration
@@ -99,6 +107,26 @@ VALUES
   }
 }
 ```
+
+## Importing reference data
+
+`POST /api/v1/admin/geocoding/reference-data/import` (admin-authorized, `multipart/form-data`)
+loads CSV reference data into the reference table above so it can be served through GeocodeServer
+by the local provider:
+
+| Part | Required | Content |
+| --- | --- | --- |
+| `referenceData` | yes | CSV (header row required) with the geocodable records. |
+| `locatorName` | no | Must match the configured `Geocoding:LocatorName` service name (case-insensitive) when supplied; defaults to it when omitted. The server registers a single GeocodeServer locator route, so any other name is rejected with `400` until per-locator registration exists. |
+| `mode` | no | `replace` (default) clears the reference table first; `append` adds to it. |
+| `fieldMap` | no | JSON object mapping canonical roles (`displayName`, `addressNumber`, `streetName`, `city`, `region`, `postalCode`, `country`, `neighborhood`, `addressType`, `x`, `y`) to CSV column names. Roles not listed are auto-mapped from well-known header aliases commonly found in address-point exports (`HOUSE_NUM`, `STREET_NAME`, `ZIP`, `POINT_X`, `LON`, `LAT`, ...). |
+
+Coordinates must be WGS84 longitude/latitude. `search_text` is populated with the same
+normalization the provider applies at query time. The response contains a **column report** with
+one entry per CSV header column (`supported` with the mapped roles, or `ignored`) — unmapped
+columns are reported explicitly rather than silently dropped — plus per-row skip reasons for rows
+with missing/invalid coordinates or no address text. A `replace`-mode import that would load zero
+rows is aborted and the existing reference data is left unchanged.
 
 ## Scoring
 

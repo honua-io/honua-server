@@ -12,6 +12,11 @@ services:
       - PUBLIC_BASE_URL=http://honua-server:8080
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
+      # The CITE seed writes its service directly into the legacy (v1) catalog
+      # after the server's first migration start. Disable the default GP sample
+      # seeder so it cannot activate a GP-only Metadata v2 snapshot that shadows
+      # the subsequently seeded v1-compat catalog.
+      - HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false
       - Cache__Enabled=false
       - DataSource__Provider=postgres
       - HostValidation__Enabled=false

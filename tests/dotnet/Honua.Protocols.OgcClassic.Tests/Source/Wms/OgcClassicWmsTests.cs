@@ -89,10 +89,40 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetCapabilities_UnsupportedVersion_ReturnsServiceException()
+    public async Task Wms_GetCapabilities_InvalidVersion_ReturnsServiceException()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2.0");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=not-a-version");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_TwoComponentVersion_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_FourComponentVersion_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2.3.4");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
@@ -116,11 +146,45 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.wms_xml");
         content.Should().Contain("<WMT_MS_Capabilities");
         content.Should().Contain("version=\"1.1.1\"");
+        content.Should().Contain("<Name>OGC:WMS</Name>");
         content.Should().Contain("<Format>application/vnd.ogc.wms_xml</Format>");
         content.Should().Contain("<SRS>EPSG:4326</SRS>");
         content.Should().Contain("<LatLonBoundingBox");
         content.Should().Contain("<BoundingBox SRS=\"EPSG:4326\" minx=\"-123.000000\" miny=\"37.000000\" maxx=\"-122.000000\" maxy=\"38.000000\"");
+        content.Should().MatchRegex("<LegendURL width=\"[1-9][0-9]*\" height=\"[1-9][0-9]*\">");
         content.Should().NotContain("<WMS_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetCapabilities_WithLegacyRequestAndVersionAliases_ReturnsLegacyXml()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=capabilities&WMTVER=1.1.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.wms_xml");
+        content.Should().Contain("<WMT_MS_Capabilities version=\"1.1.1\">");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetCapabilities_WithLowerUnsupportedVersion_NegotiatesLowestSupportedVersion()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=0.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.wms_xml");
+        content.Should().Contain("<WMT_MS_Capabilities version=\"1.1.1\">");
     }
 
     [IntegrationTest]
@@ -169,6 +233,23 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         extent.Should().BeGreaterThan(dimension);
         metadataUrl.Should().BeGreaterThan(extent);
         style.Should().BeGreaterThan(metadataUrl);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetCapabilities_ElevationDimensionUsesEpsgVerticalDatum()
+    {
+        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Lakes");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<Dimension name=\"elevation\" units=\"EPSG:5703\" unitSymbol=\"m\" />");
     }
 
     [IntegrationTest]
@@ -322,6 +403,22 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetMap")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetMap_WithLegacyRequestAndVersionAliases_ReturnsImage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=map&WMTVER=1.1.1&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&SRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetMap_InvalidBbox_ReturnsLegacyServiceException()
@@ -334,6 +431,22 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("<ServiceExceptionReport version=\"1.1.1\">");
         content.Should().NotContain("xmlns=\"http://www.opengis.net/ogc\"");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetMap_MinXGreaterThanMaxX_ReturnsLegacyServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&BBOX=1,0,0,1&WIDTH=200&HEIGHT=200&SRS=EPSG:4326&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
     }
 
     [IntegrationTest]
@@ -457,38 +570,40 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_Crs84MinXGreaterThanMaxX_RendersAntimeridianWrap()
+    public async Task Wms_GetMap_Crs84MinXGreaterThanMaxX_ReturnsXmlServiceException()
     {
-        // A geographic bbox with MinX > MaxX (both in range) is a valid
-        // antimeridian-crossing request, matching the WFS bbox path. GetMap must
-        // accept it and render rather than rejecting it as a coordinate-ordering
-        // error: CreateBboxSpatialFilter splits the wrapped extent into a
-        // multi-polygon and the render transform handles the longitude wrap.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=1,0,0,1&WIDTH=200&HEIGHT=200&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
-
-        var content = await response.Content.ReadAsByteArrayAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
-        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        content.Length.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Wms)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_GeographicBboxOutsideCrsBounds_ReturnsXmlServiceException()
-    {
-        // A geographic bbox whose coordinates fall outside the valid CRS range
-        // (here latitude 90..110) is rejected at parse time, matching the WFS
-        // bbox path which validates geographic coordinate ranges.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-10,90,10,110&WIDTH=100&HEIGHT=100&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_BboxOutsideCrsBounds_ReturnsBlankImage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-10,90,10,110&WIDTH=100&HEIGHT=100&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+        using var bitmap = SKBitmap.Decode(content);
+        bitmap.Should().NotBeNull();
+
+        for (var y = 0; y < bitmap!.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                bitmap.GetPixel(x, y).Should().Be(SKColors.White);
+            }
+        }
     }
 
     [IntegrationTest]
@@ -575,10 +690,6 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetFeatureInfo_WithGmlFormat_ReturnsGml()
     {
-        // WMS 1.1.1 GML FeatureInfo conformance class (ets-wms11
-        // wms:wms-getfeatureinfo): the advertised application/vnd.ogc.gml
-        // INFO_FORMAT must be served as a well-formed GML document whose
-        // Content-Type echoes the requested format (not a service exception).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.1.1&BBOX=-180,-90,180,90&SRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/vnd.ogc.gml&X=41&Y=74");
 
@@ -587,9 +698,46 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.gml");
         content.Should().Contain("<?xml");
         content.Should().Contain("msGMLOutput");
-        // Document must be well-formed XML.
-        var act = () => System.Xml.Linq.XDocument.Parse(content);
-        act.Should().NotThrow();
+
+        var document = System.Xml.Linq.XDocument.Parse(content);
+        var schemaLocation = document.Root?.Attribute(
+            System.Xml.Linq.XName.Get(
+                "noNamespaceSchemaLocation",
+                System.Xml.Schema.XmlSchema.InstanceNamespace))?.Value
+            ?? throw new InvalidOperationException("GML output is missing xsi:noNamespaceSchemaLocation.");
+        schemaLocation.Should().NotBeNullOrWhiteSpace();
+
+        var schemaResponse = await _fixture.Client.GetAsync(schemaLocation);
+        var schemaContent = await schemaResponse.Content.ReadAsStringAsync();
+        schemaResponse.StatusCode.Should().Be(HttpStatusCode.OK, schemaContent);
+
+        var schemas = new System.Xml.Schema.XmlSchemaSet();
+        using (var schemaStringReader = new StringReader(schemaContent))
+        using (var schemaReader = System.Xml.XmlReader.Create(schemaStringReader))
+        {
+            schemas.Add(targetNamespace: null, schemaReader);
+        }
+
+        var validationErrors = new List<string>();
+        var settings = new System.Xml.XmlReaderSettings
+        {
+            DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+            ValidationType = System.Xml.ValidationType.Schema,
+            XmlResolver = null
+        };
+        settings.Schemas.Add(schemas);
+        settings.ValidationEventHandler += (_, args) => validationErrors.Add(args.Message);
+
+        using (var gmlStringReader = new StringReader(content))
+        using (var validatingReader = System.Xml.XmlReader.Create(gmlStringReader, settings))
+        {
+            while (validatingReader.Read())
+            {
+                // Reading to the end drives schema validation; errors surface via ValidationEventHandler.
+            }
+        }
+
+        validationErrors.Should().BeEmpty();
     }
 
     [IntegrationTest]

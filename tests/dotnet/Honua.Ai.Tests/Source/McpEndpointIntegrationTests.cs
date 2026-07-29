@@ -1062,14 +1062,56 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task Request_WithUnknownSessionId_Returns404()
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task Request_WithUnknownWellFormedSessionId_IsServedStatelessly()
     {
-        // The Streamable-HTTP transport requires HTTP 404 when a client presents
-        // an Mcp-Session-Id the server never issued (or that has expired), so the
-        // client knows to re-run initialize.
+        // honua-server#3027: session state is per instance, so on a
+        // multi-instance deployment without sticky routing an id minted by one
+        // container is unknown to its peers. By default
+        // (Mcp:StatelessSessionFallback=true) a well-formed unknown id is served
+        // as if the request were session-less instead of the strict spec 404 —
+        // every POST is independently authenticated, so nothing rides the id.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
             sessionId: "deadbeefdeadbeefdeadbeefdeadbeef");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Only initialize mints: a fallback-served request must not echo or
+        // issue a session id.
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        document.RootElement.GetProperty("result").GetProperty("tools").ValueKind
+            .Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Request_WithMalformedSessionId_Returns404()
+    {
+        // The stateless fallback (#3027) only applies to well-formed ids —
+        // visible ASCII per the Streamable-HTTP spec. An id containing a space
+        // could never have been minted by a spec-compliant server, so it keeps
+        // the strict 404.
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: "dead beef");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Request_WithOverlongSessionId_Returns404()
+    {
+        // The stateless fallback (#3027) bounds the id length (server-minted ids
+        // are 64 hex chars); an overlong id keeps the strict 404.
+        var response = await PostRpcAsync(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: new string('a', 129));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -1077,7 +1119,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("DELETE /mcp")]
-    public async Task Delete_TerminatesSession_AndSubsequentUseReturns404()
+    public async Task Delete_TerminatesSession_AndSubsequentPostIsServedStatelessly()
     {
         var sessionId = await InitializeAndGetSessionIdAsync();
 
@@ -1086,11 +1128,18 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         var deleteResponse = await _client.SendAsync(deleteRequest);
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // After termination the same id must be rejected with 404.
+        // A terminated session validates as unknown; under the default stateless
+        // fallback (#3027) the well-formed id is therefore served statelessly
+        // (200, no session header) rather than the strict 404. Disable
+        // Mcp:StatelessSessionFallback to restore the pre-#3027 404 — covered by
+        // McpStatelessSessionFallbackDisabledTests.
         var afterDelete = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":3,"method":"tools/list"}""",
             sessionId);
-        afterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        afterDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        afterDelete.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+        using var document = await ReadJsonAsync(afterDelete);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
