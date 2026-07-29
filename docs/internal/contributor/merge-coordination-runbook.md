@@ -35,11 +35,17 @@ It clears `active_batch` to the exact cleared shape the train itself writes (`br
 `included: []`, `phase: "select"`, null run/batch fields), preserves `config` and
 `last_landed_trunk`, removes `train:landing` from the recorded members, and stops without
 selecting or landing. It **refuses** while a batch carries durable land intent (`land`,
-`pre-land-cleanup`, `post-land-finalize`) — that state has to reconcile against trunk first.
-Then dispatch an ordinary live run.
+`pre-land-cleanup`, `post-land-finalize`, or a persisted `batch_sha`) — that state has to
+reconcile against trunk first. Then dispatch an ordinary live run.
+
+The reset also repairs a body the read schema *rejects* (an already-hand-edited issue, or one
+whose JSON block no longer parses): it falls back to a best-effort salvage that keeps whatever
+members, trunk base and telemetry are still legible, and applies the land-intent refusal to the
+raw text so the guard holds even when nothing parses.
 
 Do not repair the state issue by hand. `active_batch: null` in particular is **invalid**: the
-read schema requires `active_batch` to be an object, so that edit swaps one deadlock for another.
+read schema requires `active_batch` to be an object, so that edit swaps a recovery deadlock for
+a "durable state lookup failed" one.
 
 ## What `ci-failure-triage.yml` does
 

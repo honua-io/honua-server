@@ -697,6 +697,82 @@ export TRAIN_STATE_BODY_OVERRIDE
 train_state_read >/dev/null || fail "state reset wrote a body the read schema cannot parse"
 pass "operator state reset clears the batch to a readable cleared shape"
 
+# Schema-INVALID state is exactly what an emergency hand edit leaves behind
+# (the live `active_batch: null` repair). The reset must repair it too, or the
+# operator is sent straight back to editing the machine-managed issue by hand.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":null,"config":{"max_batch":10},"last_landed_trunk":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: active_batch:null is readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "salvaging state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair schema-invalid state"
+[[ -s "${reset_capture}" ]] || fail "salvaging reset never wrote the state issue"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch | type' <<<"${reset_json}")" == "object" ]] \
+  || fail "salvaging reset left active_batch non-object"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] || fail "salvaging reset did not return to select"
+[[ "$(jq -r '.last_landed_trunk' <<<"${reset_json}")" == "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]] \
+  || fail "salvaging reset lost the last-landed record it could still read"
+TRAIN_STATE_BODY_OVERRIDE="$(printf '```json\n%s\n```' "${reset_json}")"
+export TRAIN_STATE_BODY_OVERRIDE
+train_state_read >/dev/null || fail "salvaging reset wrote a body the read schema cannot parse"
+pass "operator state reset repairs schema-invalid state"
+
+# Salvage still releases members and preserves telemetry it can read.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101,102],"phase":"not-a-real-phase","run_id":123,"timeout_reruns_total":4},"last_landed_trunk":null}\n```'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "salvaging state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair an unknown persisted phase"
+for reset_pr in 101 102; do
+  grep -Fqx "gh pr edit ${reset_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "salvaging reset did not release #${reset_pr}"
+done
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.trunk_base' <<<"${reset_json}")" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]] \
+  || fail "salvaging reset lost the recorded trunk base"
+[[ "$(jq -r '.active_batch.timeout_reruns_total' <<<"${reset_json}")" == "4" ]] \
+  || fail "salvaging reset lost cumulative rerun telemetry"
+pass "operator state reset salvages members and telemetry from invalid state"
+
+# Salvage must refuse durable land intent even when the body is schema-invalid
+# or not JSON at all — the raw-text guard, not the parser, is what protects it.
+for salvage_land_body in \
+  $'```json\n{"active_batch":{"phase":"land","included":["oops"]}}\n```' \
+  $'```json\n{"active_batch":{"phase":"not-a-real-phase","batch_sha":"dddddddddddddddddddddddddddddddddddddddd"}}\n```' \
+  $'```json\n{"active_batch": {"phase": "post-land-finalize", NOT VALID JSON\n```'
+do
+  TRAIN_STATE_BODY_OVERRIDE="${salvage_land_body}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  : >"${record}"
+  train_select() { fail "refused salvage reached selection"; }
+  unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+  rc=0
+  main || rc=$?
+  [[ "${rc}" == "1" && ! -s "${record}" ]] \
+    || fail "salvage did not refuse durable land intent without mutation"
+done
+pass "salvage refuses durable land intent in unreadable state"
+
+# Totally illegible state still resets: there is no detectable land intent to
+# protect, and this is the last resort that replaces a hand edit.
+export TRAIN_STATE_BODY_OVERRIDE='this body has no machine-state block at all'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "illegible-state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair an illegible body"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] || fail "illegible-state reset did not clear"
+TRAIN_STATE_BODY_OVERRIDE="$(printf '```json\n%s\n```' "${reset_json}")"
+export TRAIN_STATE_BODY_OVERRIDE
+train_state_read >/dev/null || fail "illegible-state reset wrote an unreadable body"
+pass "operator state reset repairs a body with no machine-state block"
+
 # A durable land intent must reconcile against trunk before any reset.
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"land","run_id":123,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"dddddddddddddddddddddddddddddddddddddddd"}}\n```'
 : >"${record}"

@@ -363,6 +363,14 @@ declare -A TRAIN_PHASE_RECOVERY=(
   [post-land-finalize]=post-land
 )
 
+# train_phase_recovery_class <phase>: the recovery class for a phase, or empty
+# when it has none. Bash rejects an EMPTY associative-array subscript with "bad
+# array subscript", so a missing/blank phase must never reach the lookup.
+train_phase_recovery_class() {
+  [[ -n "${1:-}" ]] || return 0
+  printf '%s' "${TRAIN_PHASE_RECOVERY[$1]:-}"
+}
+
 # train_phase_recovery_reason <phase>: the human explanation recorded against
 # each released member. Cosmetic only; the disposition comes from the table.
 train_phase_recovery_reason() {
@@ -390,10 +398,10 @@ train_phase_recovery_reason() {
 train_state_phase_recovery_drift() {
   local phase
   for phase in "${TRAIN_STATE_PHASES[@]}"; do
-    case "${TRAIN_PHASE_RECOVERY[${phase}]:-}" in
+    case "$(train_phase_recovery_class "${phase}")" in
       escalate|release|retry|post-land) ;;
       "") printf 'unrecoverable-phase %s\n' "${phase}" ;;
-      *)  printf 'unknown-recovery-class %s=%s\n' "${phase}" "${TRAIN_PHASE_RECOVERY[${phase}]}" ;;
+      *)  printf 'unknown-recovery-class %s=%s\n' "${phase}" "$(train_phase_recovery_class "${phase}")" ;;
     esac
   done
   for phase in "${!TRAIN_PHASE_RECOVERY[@]}"; do
@@ -415,7 +423,7 @@ train_recover_terminal_batch() {
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
-  class="${TRAIN_PHASE_RECOVERY[${phase}]:-}"
+  class="$(train_phase_recovery_class "${phase}")"
   branch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
   included_count="$(jq -r '(.active_batch.included // []) | length' <<<"${state}" 2>/dev/null)" || return 2
   if [[ -z "${branch}" && "${included_count}" == "0" ]]; then
@@ -483,16 +491,39 @@ train_recover_terminal_batch() {
 # Refuses while durable land intent is outstanding: land.sh must reconcile a
 # half-landed batch against trunk, and discarding that record could lose the
 # record of what already landed. Returns 0=reset, 2=refused or failed.
+#
+# When the persisted body is SCHEMA-INVALID (train_state_read rc 3) the reset
+# must still work: that is precisely the state a hand edit leaves behind, and
+# refusing there would send the operator straight back to editing the issue by
+# hand. It falls back to train_state_salvage, which recovers what is legible and
+# refuses on any raw-text sign of durable land intent. Lookup/API failures
+# (rc 1/2) are NOT salvageable — without a confirmed state issue there is
+# nothing to safely rewrite.
 train_reset_active_batch() {
-  local state phase trunk included last total body pr state_rc=0
+  local state phase trunk included last total body pr state_rc=0 salvaged=0
   state="$(train_state_read 2>/dev/null)" || state_rc=$?
-  [[ "${state_rc}" == "0" ]] || return 2
+  if [[ "${state_rc}" == "3" ]]; then
+    local salvage_rc=0
+    state="$(train_state_salvage)" || salvage_rc=$?
+    if [[ "${salvage_rc}" == "1" ]]; then
+      train_notice "state reset requested but no state issue exists; nothing to clear"
+      return 0
+    fi
+    [[ "${salvage_rc}" == "0" ]] || {
+      train_err "refusing to reset schema-invalid state: it still shows durable land intent, or could not be read"
+      return 2
+    }
+    salvaged=1
+    train_warn "persisted state does not satisfy the read schema; resetting from a salvaged best-effort parse"
+  elif [[ "${state_rc}" != "0" ]]; then
+    return 2
+  fi
   if [[ -z "${state}" ]]; then
     train_notice "state reset requested but no state issue exists; nothing to clear"
     return 0
   fi
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
-  if [[ "${TRAIN_PHASE_RECOVERY[${phase}]:-}" == "post-land" ]]; then
+  if [[ "$(train_phase_recovery_class "${phase}")" == "post-land" ]]; then
     train_err "refusing to reset state in phase ${phase}: durable land intent must reconcile against trunk first"
     return 2
   fi
@@ -511,7 +542,7 @@ train_reset_active_batch() {
   done
   train_state_write "${body}" || { rm -f "${body}"; return 2; }
   rm -f "${body}"
-  train_notice "operator state reset cleared the active batch (phase=${phase:-none}, members=${included:-none})"
+  train_notice "operator state reset cleared the active batch (phase=${phase:-none}, members=${included:-none}, salvaged=${salvaged})"
 }
 
 main() {

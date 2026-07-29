@@ -176,22 +176,79 @@ train_state_write() {
   fi
 }
 
+# train_state_body <issue-number>: emit the state issue body verbatim. Shared by
+# train_state_read and the operator salvage path so both observe the same bytes.
+# Returns 2 when the body cannot be fetched.
+train_state_body() {
+  local num="$1"
+  if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
+    printf '%s' "${TRAIN_STATE_BODY_OVERRIDE}"
+    return 0
+  fi
+  if [[ -n "${TRAIN_STATE_ISSUE_VIEW_CMD:-}" ]]; then
+    "${TRAIN_STATE_ISSUE_VIEW_CMD}" "${num}" || return 2
+    return 0
+  fi
+  gh issue view "${num}" --json body --jq '.body' 2>/dev/null || return 2
+}
+
+# train_state_salvage: last-resort reader for a state body the schema REJECTS —
+# exactly the shape an emergency hand edit produces (the live `active_batch:
+# null` repair that made train_state_read fail outright). train_state_read
+# cannot serve the operator reset here, so this recovers whatever is still
+# legible and normalizes it to the fields the reset needs:
+#   {active_batch:{phase,trunk_base,included,timeout_reruns_total},
+#    last_landed_trunk}
+# It REFUSES (2) whenever the RAW TEXT shows any sign of durable land intent — a
+# land-family phase or a batch SHA — because that state must reconcile against
+# trunk rather than be discarded. The refusal works on raw text so it still
+# holds when no part of the body parses as JSON. Returns 1 when no state issue
+# exists, 2 on refusal or lookup/fetch failure.
+train_state_salvage() {
+  local num body block lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
+  [[ -z "${num}" ]] && return 1
+  body="$(train_state_body "${num}")" || return 2
+  if grep -Eq '"phase"[[:space:]]*:[[:space:]]*"(land|pre-land-cleanup|post-land-finalize)"' <<<"${body}"; then
+    return 2
+  fi
+  if grep -Eq '"batch_sha"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{40}"' <<<"${body}"; then
+    return 2
+  fi
+  block="$(printf '%s\n' "${body}" | awk '
+    /^```json[[:space:]]*$/ { inblk=1; next }
+    /^```[[:space:]]*$/     { inblk=0; next }
+    inblk                   { print }
+  ')"
+  jq -sc '
+    (.[0] // {}) as $raw
+    | (if ($raw | type) == "object" then $raw else {} end) as $s
+    | (if ($s.active_batch | type) == "object" then $s.active_batch else {} end) as $ab
+    | {
+        active_batch: {
+          phase:      (if ($ab.phase      | type) == "string" then $ab.phase      else ""   end),
+          trunk_base: (if ($ab.trunk_base | type) == "string" then $ab.trunk_base else ""   end),
+          included:   [ (if ($ab.included | type) == "array" then $ab.included[] else empty end)
+                        | select(type == "number") ],
+          timeout_reruns_total:
+            (if ($ab.timeout_reruns_total | type) == "number" then $ab.timeout_reruns_total else 0 end)
+        },
+        last_landed_trunk:
+          (if ($s.last_landed_trunk | type) == "string" then $s.last_landed_trunk else null end)
+      }' <<<"${block}" 2>/dev/null \
+    || jq -nc '{active_batch:{phase:"",trunk_base:"",included:[],timeout_reruns_total:0},last_landed_trunk:null}'
+}
+
 # train_state_read: emit the parsed JSON block of the state issue (or empty).
 # READ-ONLY; used on startup to resume.
 train_state_read() {
-  local num body json lookup_rc=0
+  local num body json lookup_rc=0 body_rc=0
   num="$(train_state_issue_number)" || lookup_rc=$?
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 0
-  if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
-    body="${TRAIN_STATE_BODY_OVERRIDE}"
-  else
-    if [[ -n "${TRAIN_STATE_ISSUE_VIEW_CMD:-}" ]]; then
-      body="$("${TRAIN_STATE_ISSUE_VIEW_CMD}" "${num}")" || return 2
-    else
-      body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 2
-    fi
-  fi
+  body="$(train_state_body "${num}")" || body_rc=$?
+  [[ "${body_rc}" == "0" ]] || return 2
   # An existing issue must contain exactly one parseable machine-state block.
   # Fence markers may have trailing whitespace, but no other suffix.
   # Empty output is reserved for a confirmed absent issue.
