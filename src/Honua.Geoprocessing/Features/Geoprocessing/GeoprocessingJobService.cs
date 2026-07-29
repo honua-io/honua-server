@@ -114,7 +114,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         IOperationGateway? operationGateway = null,
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -124,10 +125,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 approvalEvaluator,
                 scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
                 // Always composed (never null): the submit-time layer read gate must not be
-                // skippable by construction path, so a caller that omits the accessor gets one
-                // that reports no ambient request — which the gate treats as unevaluable and
-                // therefore denies for layer-sourced plans.
-                new GeoprocessingLayerAccessGuard(httpContextAccessor ?? new HttpContextAccessor(), logger),
+                // skippable by construction path. A caller that omits BOTH the accessor and
+                // the scope factory gets a gate with no evaluable authorization context,
+                // which denies layer-sourced plans rather than waving them through.
+                new GeoprocessingLayerAccessGuard(
+                    httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
                 logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
@@ -168,6 +170,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorOperation.ExecuteMutatingProcess,
                 cancellationToken).ConfigureAwait(false);
         }
+
+        // Per-layer read authorization, evaluated against the REQUESTING principal at
+        // workflow-authoring time (honua-server#3043 review). The reconcile tick later
+        // submits each step under the synthesized orchestrator identity, so this is the
+        // only point where the human who scheduled the workflow faces the layer gate —
+        // the same reason the mutating-process tier is pre-checked here (#2798). The
+        // returned (binding-carrying) plan is intentionally discarded: this is a check,
+        // not the submission; the reconcile tick's own SubmitJobAsync re-runs the gate and
+        // stamps the binding onto the plan it actually queues. Steps whose layerId/datasetId
+        // are still unresolved workflow bindings simply do not resolve to a layer here and
+        // are gated at submission instead.
+        await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
@@ -372,10 +387,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // and a caller that cannot read a layer is refused at submission instead of being
         // handed a queued job that would read it. Skipped on the approval-resume path for
         // the same reason as the gates above: it already ran, against the live submitter,
-        // when the proposal was created.
+        // when the proposal was created — and the persisted proposal plan already carries
+        // the authorized-layer bindings the gate stamped before EnsureApprovedAsync parked it.
+        //
+        // The gate returns the plan with the authorized dataset layer bound to each gated
+        // step; reassigning `plan` here is what carries that binding into the approval
+        // proposal, the request fingerprint, and the durable job spec the executor reads,
+        // so a dataset re-pointed while the job is queued cannot be read unauthorized.
         if (!resumingApproved)
         {
-            await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+            plan = await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
                 .ConfigureAwait(false);
         }
 

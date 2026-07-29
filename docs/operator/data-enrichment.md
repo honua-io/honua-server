@@ -82,6 +82,30 @@ enrichment-local job lifecycle:
   (default 20000000, likewise lower-only) additionally bounds the join itself,
   which is a Cartesian product the per-layer caps cannot see.
 
+### Authorization on the async path
+
+- **Layer read access is enforced at submission**, against the submitting
+  principal, for BOTH the caller-selected source layer and the dataset's backing
+  layer — the same pair the synchronous endpoint validates. `Process.Execute`
+  authorizes running a process; it never authorizes the specific layers the
+  process reads. A caller that cannot read either layer is refused with `401`/
+  `403` and no job is queued. Denials are indistinguishable from "layer does not
+  exist", so the submit surface cannot be used to probe layer ids.
+- **The authorized dataset layer is bound to the job.** Re-pointing a managed
+  enrichment dataset at a different layer while a job is queued causes that job
+  to fail at execution rather than read a layer that was never authorized;
+  resubmit so the new layer is authorized.
+- **Known limitation — row-level security and field masking are NOT applied to
+  the job's layer reads.** Both are request-scoped concerns and a job executes on
+  a background worker with no request context, so a caller who may read a layer
+  but is restricted to particular rows or fields receives unrestricted rows and
+  unmasked attributes in the job artifact. This affects every layer-sourced
+  geoprocessing process, not only enrichment, and is tracked as
+  [#3068](https://github.com/honua-io/honua-server/issues/3068). Until it lands,
+  do not rely on RLS or field-mask policies to constrain what a
+  `Process.Execute` holder can obtain through a job artifact — restrict the layer
+  itself.
+
 ## Registering enrichment datasets
 
 The catalog is **operator-curated** and configuration-driven. Publish the

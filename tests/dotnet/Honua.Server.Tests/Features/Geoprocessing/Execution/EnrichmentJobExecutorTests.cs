@@ -291,6 +291,86 @@ public sealed class EnrichmentJobExecutorTests
         error.Should().Contain("no-such-dataset");
     }
 
+    /// <summary>
+    /// TOCTOU guard (#3043 review). The submit-time gate authorizes the dataset's backing
+    /// layer as it stood at submission and stamps that identity onto the job. If an admin
+    /// re-points the managed dataset at a DIFFERENT layer while the job is queued, execution
+    /// must refuse rather than read a layer nobody authorized — here the job was authorized
+    /// for layer 8 but the dataset now resolves to layer 99, whose features the fake
+    /// connector would happily stream.
+    /// </summary>
+    [UnitTest]
+    public async Task Enrich_DatasetRepointedAfterSubmission_FailsWithoutReadingTheReboundLayer()
+    {
+        const int ReboundLayerId = 99;
+
+        var services = DefaultServices(
+            dataset: Dataset() with { LayerId = ReboundLayerId },
+            extraLayers: new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+            {
+                [ReboundLayerId] = [PointFeature(5, 5, ("secret", "restricted"))],
+            });
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("re-pointed");
+        error.Should().Contain(ReboundLayerId.ToString(CultureInfo.InvariantCulture));
+        error.Should().Contain(DatasetLayerId.ToString(CultureInfo.InvariantCulture));
+
+        var reboundSource = (FakeLayeredDagFeatureSource)services
+            .GetServices<IDagFeatureSource>()
+            .Single(candidate => candidate.SourceId == HonuaLayerSourceId);
+        reboundSource.RequestedLayerIds.Should().NotContain(
+            ReboundLayerId,
+            "the re-pointed layer must never be read");
+    }
+
+    /// <summary>
+    /// A job carrying no authorized dataset-layer binding never cleared the submit-time
+    /// gate, so execution fails closed instead of reading the current dataset layer.
+    /// </summary>
+    [UnitTest]
+    public async Task Enrich_NoAuthorizedDatasetLayerBinding_FailsClosed()
+    {
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunUnboundExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("authorized dataset-layer binding");
+
+        var source = (FakeLayeredDagFeatureSource)services
+            .GetServices<IDagFeatureSource>()
+            .Single(candidate => candidate.SourceId == HonuaLayerSourceId);
+        source.RequestedLayerIds.Should().BeEmpty("an unbound job must not read any layer");
+    }
+
+    /// <summary>
+    /// A caller-supplied binding cannot widen access: the gate is the only writer, so a
+    /// forged value that disagrees with the resolved dataset simply fails the job.
+    /// </summary>
+    [UnitTest]
+    public async Task Enrich_CallerSuppliedDatasetLayerBinding_DoesNotAuthorizeADifferentLayer()
+    {
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            (EnrichmentJobExecutor.AuthorizedDatasetLayerInput, "4242"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("4242");
+    }
+
     [UnitTest]
     public async Task Enrich_DatasetAboveCurrentEdition_FailsWithEditionMessage()
     {
@@ -428,17 +508,25 @@ public sealed class EnrichmentJobExecutorTests
         EnrichmentDatasetDefinition? dataset,
         IReadOnlyList<DagSourceFeature>? datasetFeatures = null,
         IReadOnlyList<DagSourceFeature>? sourceFeatures = null,
-        HonuaEdition edition = HonuaEdition.Pro)
+        HonuaEdition edition = HonuaEdition.Pro,
+        IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>>? extraLayers = null)
     {
         var services = new ServiceCollection();
 
-        services.AddSingleton<IDagFeatureSource>(new FakeLayeredDagFeatureSource(
-            HonuaLayerSourceId,
-            new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        var byLayer = new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [SourceLayerId] = sourceFeatures ?? DefaultSourceFeatures(),
+            [DatasetLayerId] = datasetFeatures ?? DefaultDatasetFeatures(),
+        };
+        if (extraLayers is not null)
+        {
+            foreach (var (layerId, features) in extraLayers)
             {
-                [SourceLayerId] = sourceFeatures ?? DefaultSourceFeatures(),
-                [DatasetLayerId] = datasetFeatures ?? DefaultDatasetFeatures(),
-            }));
+                byLayer[layerId] = features;
+            }
+        }
+
+        services.AddSingleton<IDagFeatureSource>(new FakeLayeredDagFeatureSource(HonuaLayerSourceId, byLayer));
 
         var resolver = Substitute.For<IEnrichmentDatasetResolver>();
         resolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -471,9 +559,27 @@ public sealed class EnrichmentJobExecutorTests
         return (status, error);
     }
 
-    private static async Task<(ExecutionJobStatus Status, string? Uri, string? Error)> ExecuteAsync(
+    /// <summary>
+    /// Runs a job that carries NO authorized dataset-layer binding — i.e. a job that never
+    /// cleared the submit-time gate.
+    /// </summary>
+    private static async Task<(ExecutionJobStatus Status, string? Error)> RunUnboundExpectingFailureAsync(
+        ServiceProvider services,
+        params (string Name, string Value)[] inputs)
+    {
+        var (status, _, error) = await ExecuteAsync(services, inputs, stampAuthorizedDatasetLayer: false);
+        return (status, error);
+    }
+
+    private static Task<(ExecutionJobStatus Status, string? Uri, string? Error)> ExecuteAsync(
         ServiceProvider services,
         (string Name, string Value)[] inputs)
+        => ExecuteAsync(services, inputs, stampAuthorizedDatasetLayer: true);
+
+    private static async Task<(ExecutionJobStatus Status, string? Uri, string? Error)> ExecuteAsync(
+        ServiceProvider services,
+        (string Name, string Value)[] inputs,
+        bool stampAuthorizedDatasetLayer)
     {
         var executor = new EnrichmentJobExecutor(
             services.GetRequiredService<IServiceScopeFactory>(),
@@ -494,6 +600,19 @@ public sealed class EnrichmentJobExecutorTests
         };
 
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
+
+        // Every real submission is stamped with the dataset layer the submit-time gate
+        // authorized (GeoprocessingLayerAccessGuard, #3043 review), so the default here
+        // mirrors a gate-approved job. Tests that exercise the binding itself override it
+        // explicitly or opt out of the stamp entirely.
+        if (stampAuthorizedDatasetLayer
+            && !inputs.Any(input => string.Equals(
+                input.Name, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal)))
+        {
+            parameters[prefix + EnrichmentJobExecutor.AuthorizedDatasetLayerInput] =
+                DatasetLayerId.ToString(CultureInfo.InvariantCulture);
+        }
+
         foreach (var (name, value) in inputs)
         {
             parameters[prefix + name] = value;
@@ -639,6 +758,7 @@ public sealed class EnrichmentJobExecutorTests
     private sealed class FakeLayeredDagFeatureSource : IDagFeatureSource
     {
         private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
+        private readonly List<int> _requestedLayerIds = [];
 
         public FakeLayeredDagFeatureSource(
             string sourceId,
@@ -650,10 +770,18 @@ public sealed class EnrichmentJobExecutorTests
 
         public string SourceId { get; }
 
+        /// <summary>Every layer id this connector was asked to stream, in call order.</summary>
+        public IReadOnlyList<int> RequestedLayerIds => _requestedLayerIds;
+
         public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
             DagSourceRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            if (request.LayerId is { } requested)
+            {
+                _requestedLayerIds.Add(requested);
+            }
+
             if (request.LayerId is { } layerId && _byLayer.TryGetValue(layerId, out var features))
             {
                 foreach (var feature in features)

@@ -46,14 +46,16 @@ internal sealed class GeoprocessingJobAuthorizer
 
     /// <summary>
     /// Enforces read access, for the submitting principal, on every catalog layer the plan's
-    /// gated steps will read. Delegates to <see cref="GeoprocessingLayerAccessGuard"/>, which is
-    /// composed here rather than injected alongside this type so that all of the submit-time
+    /// gated steps will read, and returns the plan with the authorized dataset-layer identity
+    /// bound to each gated step. Delegates to <see cref="GeoprocessingLayerAccessGuard"/>, which
+    /// is composed here rather than injected alongside this type so that all of the submit-time
     /// authorization concerns reach the job service through a single collaborator.
     /// </summary>
     /// <param name="plan">The submitted analysis plan.</param>
     /// <param name="principal">The submitting principal.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public Task EnsureLayerReadAccessAsync(
+    /// <returns>The plan to submit, carrying the authorized dataset-layer bindings.</returns>
+    public Task<AnalysisPlan> EnsureLayerReadAccessAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)

@@ -58,6 +58,18 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// <summary>Attribute holding the planar distance to the nearest dataset feature.</summary>
     internal const string NearDistanceAttribute = "NEAR_DIST";
 
+    /// <summary>
+    /// Step input carrying the enrichment dataset's backing layer id AS AUTHORIZED AT
+    /// SUBMISSION (honua-server#3043 review). Written exclusively by
+    /// <see cref="GeoprocessingLayerAccessGuard"/>, which strips any caller-supplied value
+    /// before stamping the layer it actually authorized; the executor refuses to read a
+    /// dataset that no longer resolves to that layer, closing the window where an admin
+    /// re-points a managed dataset at a restricted layer while the job is queued. Not a
+    /// declared catalog parameter — it is an internal binding, never part of the public
+    /// process description.
+    /// </summary>
+    internal const string AuthorizedDatasetLayerInput = "authorizedDatasetLayerId";
+
     // Enrichment compute is a curated facade over spatial join, so it shares the
     // spatial-join entitlement rather than introducing a separate SKU line
     // (mirrors DataEnrichmentRequestHandlers).
@@ -171,6 +183,17 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         {
             return JobExecutionResult.Failed(
                 $"Unknown enrichment dataset '{datasetId}': no managed or configured dataset matches this id.");
+        }
+
+        // Bound-layer verification (honua-server#3043 review). The submit-time gate
+        // authorized the dataset's backing layer as it stood at submission and stamped that
+        // identity onto the step; a managed dataset can be re-pointed at a DIFFERENT layer
+        // while this job sits in the queue, and reading whatever is current would read a
+        // layer nobody authorized. Both a mismatch and a missing binding fail the job before
+        // any layer read — an unstamped job never cleared the gate.
+        if (CheckAuthorizedDatasetLayer(inputs, dataset, job.OperationId) is { } bindingError)
+        {
+            return JobExecutionResult.Failed(bindingError);
         }
 
         if (CheckLicenseGate(services, dataset) is { } licenseError)
@@ -288,6 +311,35 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         Log.EnrichmentCompleted(_logger, job.OperationId, dataset.Id, plan.MethodName, targets.Count, output.Count);
         return JobExecutionResult.Succeeded();
+    }
+
+    /// <summary>
+    /// Verifies that the dataset resolved at EXECUTION still points at the layer the
+    /// submit-time gate authorized. Returns a failure message, or null when the binding
+    /// matches.
+    /// </summary>
+    private string? CheckAuthorizedDatasetLayer(
+        StepInputReader inputs,
+        EnrichmentDatasetDefinition dataset,
+        string operationId)
+    {
+        if (!inputs.TryGet(AuthorizedDatasetLayerInput, out var raw)
+            || !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var authorizedLayerId))
+        {
+            Log.DatasetLayerBindingMissing(_logger, operationId, dataset.Id);
+            return $"{HandledProcessId} cannot verify which enrichment dataset layer this job was "
+                + "authorized to read: the job carries no authorized dataset-layer binding. Resubmit the job.";
+        }
+
+        if (authorizedLayerId == dataset.LayerId)
+        {
+            return null;
+        }
+
+        Log.DatasetLayerRebound(_logger, operationId, dataset.Id, authorizedLayerId, dataset.LayerId);
+        return $"Enrichment dataset '{dataset.Id}' was re-pointed after this job was submitted: it now "
+            + $"resolves to layer {dataset.LayerId}, but the job was authorized to read layer "
+            + $"{authorizedLayerId}. Resubmit so the current layer is authorized.";
     }
 
     /// <summary>
@@ -642,6 +694,15 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         [LoggerMessage(9324, LogLevel.Error,
             "enrichment.enrich failed job {OperationId} during computation for dataset {DatasetId}")]
         public static partial void ComputationFailed(ILogger logger, string operationId, string datasetId, Exception exception);
+
+        [LoggerMessage(9326, LogLevel.Warning,
+            "enrichment.enrich refused job {OperationId} for dataset {DatasetId}: no authorized dataset-layer binding is present")]
+        public static partial void DatasetLayerBindingMissing(ILogger logger, string operationId, string datasetId);
+
+        [LoggerMessage(9327, LogLevel.Warning,
+            "enrichment.enrich refused job {OperationId}: dataset {DatasetId} was re-pointed from authorized layer {AuthorizedLayerId} to layer {CurrentLayerId} after submission")]
+        public static partial void DatasetLayerRebound(
+            ILogger logger, string operationId, string datasetId, int authorizedLayerId, int currentLayerId);
 
         [LoggerMessage(9325, LogLevel.Information,
             "enrichment.enrich job {OperationId} completed for dataset {DatasetId} method {Method}: {InputCount} inputs, {ResultCount} results")]
