@@ -16877,6 +16877,8 @@
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_Dismiss_UsesExistingJobLifecycleEndpoints",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitPollFetchResults_ReturnsEnrichedFeatureCollectionWithProvenance",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnDatasetLayer_RefusesSubmissionWithoutQueueingJob",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnSourceLayer_RefusesSubmissionWithoutQueueingJob",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.GeometryBufferJobExecutorIntegrationTests.BufferProcess_CompletesAndReturnsBufferedGeometry",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.AreaProcess_CompletesAndReturnsPlanarMeasure",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.CentroidProcess_CompletesAndReturnsCenterPoint",

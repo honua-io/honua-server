@@ -50,7 +50,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IProcessCatalog _processCatalog;
     private readonly AnalyticsLimits _analyticsLimits;
     private readonly GeoprocessingJobAuthorizer _authorizer;
-    private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
     private readonly GeoprocessingJobDispatcher _dispatcher;
     private readonly CustomCodeJobSubmissionGate _customCodeGate;
     private readonly GeoprocessingJobArtifactService _artifacts;
@@ -67,7 +66,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IProcessCatalog processCatalog,
         GeoprocessingJobAuthorizer authorizer,
-        GeoprocessingLayerAccessGuard layerAccessGuard,
         GeoprocessingJobDispatcher dispatcher,
         CustomCodeJobSubmissionGate customCodeGate,
         GeoprocessingJobArtifactService artifacts,
@@ -80,7 +78,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
         _authorizer = authorizer;
-        _layerAccessGuard = layerAccessGuard;
         _dispatcher = dispatcher;
         _customCodeGate = customCodeGate;
         _artifacts = artifacts;
@@ -126,12 +123,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 authEvaluator,
                 approvalEvaluator,
                 scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
+                // Always composed (never null): the submit-time layer read gate must not be
+                // skippable by construction path, so a caller that omits the accessor gets one
+                // that reports no ambient request — which the gate treats as unevaluable and
+                // therefore denies for layer-sourced plans.
+                new GeoprocessingLayerAccessGuard(httpContextAccessor ?? new HttpContextAccessor(), logger),
                 logger),
-            // Always composed (never null): the submit-time layer read gate must not be
-            // skippable by construction path, so a caller that omits the accessor gets one
-            // that reports no ambient request — which the gate treats as unevaluable and
-            // therefore denies for layer-sourced plans.
-            new GeoprocessingLayerAccessGuard(httpContextAccessor ?? new HttpContextAccessor(), logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
             new CustomCodeJobSubmissionGate(
@@ -378,7 +375,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // when the proposal was created.
         if (!resumingApproved)
         {
-            await _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+            await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
                 .ConfigureAwait(false);
         }
 
