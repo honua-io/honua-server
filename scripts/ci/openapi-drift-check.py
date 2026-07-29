@@ -10,17 +10,29 @@ not detect:
   registered in ``src/Honua.Server/EndpointRegistry.cs``.
 * Every endpoint in ``EndpointRegistry`` whose path belongs to an OGC API
   protocol (``/ogc/features``, ``/ogc/tiles``, ``/ogc/maps``,
-  ``/ogc/processes``, ``/ogc/coverages``) or to STAC (``/stac/...``) must
-  appear in the corresponding spec.
+  ``/ogc/processes``, ``/ogc/coverages``), to STAC (``/stac/...``), or to the
+  Server Management API (``/api/v1/admin/...``) must appear in the
+  corresponding spec.
 * Every ``$ref`` in each spec must resolve internally (no dangling refs).
 * Every schema referenced from ``responses``/``requestBody``/``parameters``
   must be defined in ``components.schemas``.
 
+``admin-api.json`` is an explicitly *curated* bundle rather than a full mirror
+of the admin surface, so its exemptions are too numerous to inline here. They
+live in a committed sidecar declaration
+(``docs/developer/api-specs/admin-api.undocumented.json``) that names every
+registered admin route the bundle deliberately omits, with a reason code. The
+sidecar is enforced in both directions: an undeclared omission fails, and a
+declaration that no longer matches reality (route gone, or since documented)
+fails too. Absence from the bundle is therefore always a reviewable decision,
+never an oversight.
+
 Output is actionable: each drift is reported as
-``path: METHOD [operationId]`` with one of four categories:
+``path: METHOD [operationId]`` with one of five categories:
 
     missing-in-spec     -- endpoint exists in code, but not in the spec
     missing-in-code     -- operation in spec has no matching endpoint
+    stale-exemption     -- undocumented-route declaration no longer applies
     dangling-ref        -- ``$ref`` does not resolve in the spec
     undefined-schema    -- schema name used but not defined
 
@@ -79,6 +91,11 @@ class SpecConfig:
     #     no need to list itself as an operation).
     #   * XSD download endpoints.
     registry_exemptions: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Optional sidecar file (relative to repo root) declaring registered routes
+    # that this spec intentionally does not document. Used instead of
+    # ``registry_exemptions`` when the exemption set is large enough that
+    # inlining it here would be unreviewable. See ``load_undocumented_routes``.
+    undocumented_routes_path: Path | None = None
 
 
 SPECS: tuple[SpecConfig, ...] = (
@@ -125,6 +142,15 @@ SPECS: tuple[SpecConfig, ...] = (
         registry_exemptions=(
             # /stac/openapi.json serves the spec itself.
             ("GET", "/stac/openapi.json"),
+        ),
+    ),
+    SpecConfig(
+        name="admin-api",
+        path=Path("docs/developer/api-specs/admin-api.json"),
+        prefix=None,  # inferred from servers[0].url -> /api/v1/admin
+        protocol_paths=("/api/v1/admin",),
+        undocumented_routes_path=Path(
+            "docs/developer/api-specs/admin-api.undocumented.json"
         ),
     ),
 )
@@ -195,6 +221,59 @@ def extract_inline_stac_spec() -> dict[str, Any]:
     common = min(indents) if indents else 0
     stripped = "\n".join(line[common:] if len(line) >= common else line for line in lines)
     return json.loads(stripped)
+
+
+def load_undocumented_routes(spec: SpecConfig) -> set[tuple[str, str]]:
+    """Load the sidecar declaration of routes this spec deliberately omits.
+
+    The document shape is::
+
+        {
+          "reasons": {"<code>": "<why this omission is legitimate>"},
+          "routes": [{"method": "GET", "path": "/api/v1/admin/x", "reason": "<code>"}]
+        }
+
+    Every entry must carry a ``reason`` drawn from the declared ``reasons``
+    map, so a bare route list cannot be padded without also stating why.
+    """
+
+    if spec.undocumented_routes_path is None:
+        return set()
+
+    document = json.loads(
+        (REPO_ROOT / spec.undocumented_routes_path).read_text(encoding="utf-8")
+    )
+    reasons = document.get("reasons")
+    if not isinstance(reasons, dict) or not reasons:
+        raise RuntimeError(
+            f"{spec.undocumented_routes_path}: 'reasons' must be a non-empty object"
+        )
+    entries = document.get("routes")
+    if not isinstance(entries, list):
+        raise RuntimeError(f"{spec.undocumented_routes_path}: 'routes' must be a list")
+
+    declared: set[tuple[str, str]] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise RuntimeError(
+                f"{spec.undocumented_routes_path}: routes[{index}] must be an object"
+            )
+        method = entry.get("method")
+        path = entry.get("path")
+        reason = entry.get("reason")
+        if not isinstance(method, str) or not isinstance(path, str):
+            raise RuntimeError(
+                f"{spec.undocumented_routes_path}: routes[{index}] needs string "
+                "'method' and 'path'"
+            )
+        if reason not in reasons:
+            raise RuntimeError(
+                f"{spec.undocumented_routes_path}: routes[{index}] "
+                f"({method} {path}) has undeclared reason {reason!r}; declared "
+                f"reasons are {sorted(reasons)}"
+            )
+        declared.add((method.lower(), normalize_route(path)))
+    return declared
 
 
 def load_spec(spec: SpecConfig) -> dict[str, Any]:
@@ -367,7 +446,9 @@ def check_endpoint_cross_reference(
     spec: SpecConfig,
     document: dict[str, Any],
     registry: set[tuple[str, str]],
+    declared_undocumented: set[tuple[str, str]] | None = None,
 ) -> list[Drift]:
+    declared_undocumented = declared_undocumented or set()
     drifts: list[Drift] = []
     prefix = resolve_prefix(spec, document)
     normalized_registry = normalize_registry(registry)
@@ -392,17 +473,22 @@ def check_endpoint_cross_reference(
                 )
             )
 
+    def owned_by_spec(path: str) -> bool:
+        return any(
+            path == owner or path.startswith(owner + "/")
+            for owner in spec.protocol_paths
+        )
+
     # Code -> spec: every owned registry endpoint must appear in the spec.
     exempt = {
         (m.lower(), normalize_route(p)) for m, p in spec.registry_exemptions
     }
     for method, path in sorted(normalized_registry):
-        owned = any(
-            path == owner or path.startswith(owner + "/") for owner in spec.protocol_paths
-        )
-        if not owned:
+        if not owned_by_spec(path):
             continue
         if (method, path) in exempt:
+            continue
+        if (method, path) in declared_undocumented:
             continue
         if (method, path) not in spec_ops:
             drifts.append(
@@ -411,7 +497,50 @@ def check_endpoint_cross_reference(
                     spec=spec.name,
                     path=path,
                     method=method,
-                    detail="endpoint in EndpointRegistry but not documented in spec",
+                    detail=(
+                        "endpoint in EndpointRegistry but not documented in spec; "
+                        "document it, or declare the omission with a reason in "
+                        f"{spec.undocumented_routes_path}"
+                        if spec.undocumented_routes_path is not None
+                        else "endpoint in EndpointRegistry but not documented in spec"
+                    ),
+                )
+            )
+
+    # Declared omissions must stay true. A declaration for a route that is no
+    # longer registered, or that has since been documented, is stale: leaving it
+    # would silently re-open the hole the declaration was meant to close.
+    owned_registry = {
+        (method, path)
+        for method, path in normalized_registry
+        if owned_by_spec(path)
+    }
+    for method, path in sorted(declared_undocumented):
+        if (method, path) not in owned_registry:
+            drifts.append(
+                Drift(
+                    category="stale-exemption",
+                    spec=spec.name,
+                    path=path,
+                    method=method,
+                    detail=(
+                        "declared as intentionally undocumented but no longer "
+                        "registered in EndpointRegistry; remove it from "
+                        f"{spec.undocumented_routes_path}"
+                    ),
+                )
+            )
+        elif (method, path) in spec_ops:
+            drifts.append(
+                Drift(
+                    category="stale-exemption",
+                    spec=spec.name,
+                    path=path,
+                    method=method,
+                    detail=(
+                        "declared as intentionally undocumented but the spec now "
+                        f"documents it; remove it from {spec.undocumented_routes_path}"
+                    ),
                 )
             )
 
@@ -456,14 +585,34 @@ def main() -> int:
             )
             return 2
 
+        try:
+            declared_undocumented = load_undocumented_routes(spec)
+        except (FileNotFoundError, json.JSONDecodeError, RuntimeError) as exc:
+            print(
+                f"ERROR: failed to load undocumented-route declaration for "
+                f"'{spec.name}': {exc}",
+                file=sys.stderr,
+            )
+            return 2
+
         spec_drifts: list[Drift] = []
         spec_drifts.extend(check_refs(document, spec.name))
         spec_drifts.extend(check_schema_definitions(document, spec.name))
-        spec_drifts.extend(check_endpoint_cross_reference(spec, document, registry))
+        spec_drifts.extend(
+            check_endpoint_cross_reference(
+                spec, document, registry, declared_undocumented
+            )
+        )
 
         op_count = sum(1 for _ in iter_spec_operations(document, resolve_prefix(spec, document)))
+        declared_note = (
+            f", {len(declared_undocumented)} declared-undocumented"
+            if declared_undocumented
+            else ""
+        )
         summary.append(
-            f"  {spec.name}: {op_count} operations, {len(spec_drifts)} drift(s)"
+            f"  {spec.name}: {op_count} operations{declared_note}, "
+            f"{len(spec_drifts)} drift(s)"
         )
         all_drifts.extend(spec_drifts)
 
@@ -485,6 +634,7 @@ def main() -> int:
     for category in (
         "missing-in-spec",
         "missing-in-code",
+        "stale-exemption",
         "dangling-ref",
         "undefined-schema",
     ):
