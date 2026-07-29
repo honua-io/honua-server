@@ -76,6 +76,19 @@ scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts --markdown
 Collect several runs into the same directory for a usable p90. Add
 `--fail-on-warn` to turn the audit into a gate.
 
+Two things the audit deliberately does not do:
+
+* **It ignores `hang_suspected` runs.** A shard that went silent and was killed
+  at its cap has not shown that its normal workload needs more time, so counting
+  it as capacity evidence would recommend a bigger budget for a stall and delay
+  detection of the hang.
+* **It bounds each censored (timed-out) sample by the budget recorded in that
+  artifact**, not by the cap configured today. A timeout recorded under a
+  20-minute cap proves only that the run exceeded 20 minutes; auditing it
+  against a since-raised 29-minute cap would manufacture a ~42-minute
+  recommendation from evidence that never existed. The audit also never
+  recommends shrinking a budget.
+
 ## Measured margins (2026-07-29)
 
 Test-step durations from the `Run server test shard` step of the 20 most recent

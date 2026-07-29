@@ -324,6 +324,44 @@ else
   [[ "${status}" == "low_headroom" ]] \
     || fail "p90 over 6 runs dropped the slowest observation (status=${status})"
   pass "p90 uses nearest rank and keeps the slowest observation"
+
+  # A suspected hang is not evidence that the normal workload needs more time.
+  # Counting it as censored capacity data would recommend a bigger budget for a
+  # stall, delaying detection of the hang.
+  rm -f "${audit_dir}"/*.timing.json
+  write_timing "${comfortable_seconds}" false a
+  jq -nc --arg shard "${audit_shard}" \
+    --argjson d "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 }')" \
+    --argjson cap "${audit_cap}" \
+    '{shard: $shard, duration_seconds: $d, timed_out: true, timeout_minutes: $cap, capacity_status: "hang_suspected"}' \
+    > "${audit_dir}/hang.timing.json"
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  runs="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .runs' <<<"${audit_json}")"
+  [[ "${runs}" == "1" ]] || fail "hang_suspected run was counted as a capacity sample (runs=${runs})"
+  status="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")"
+  [[ "${status}" == "ok" ]] || fail "a suspected hang drove the shard to '${status}'"
+  recommended="$(jq -r --arg s "${audit_shard}" \
+    '.[] | select(.shard == $s) | .recommended_test_timeout_minutes' <<<"${audit_json}")"
+  [[ "${recommended}" == "${audit_cap}" ]] \
+    || fail "a suspected hang recommended a budget raise to ${recommended}"
+  pass "fleet audit excludes suspected hangs from capacity samples"
+
+  # A timeout is censored at the cap THAT RECORD ran under. Auditing an old
+  # artifact against a since-raised cap would invent evidence: a timeout at a
+  # 10-minute cap must not be read as proof that 29 minutes were needed.
+  rm -f "${audit_dir}"/*.timing.json
+  jq -nc --arg shard "${audit_shard}" \
+    '{shard: $shard, duration_seconds: 600, timed_out: true, timeout_minutes: 10, capacity_status: "capacity_exhausted"}' \
+    > "${audit_dir}/old-cap-timeout.timing.json"
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  recommended="$(jq -r --arg s "${audit_shard}" \
+    '.[] | select(.shard == $s) | .recommended_test_timeout_minutes' <<<"${audit_json}")"
+  inflated="$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", int((c / 0.7) + 0.999999) }')"
+  [[ "${recommended}" != "${inflated}" ]] \
+    || fail "old-cap timeout was audited against the current cap (recommended ${recommended})"
+  [[ "${recommended}" == "${audit_cap}" ]] \
+    || fail "old-cap timeout should leave the current cap alone, got ${recommended}"
+  pass "fleet audit bounds a censored sample by its own recorded budget"
 fi
 
 echo "✅ shard headroom instrumentation fixture passed"
