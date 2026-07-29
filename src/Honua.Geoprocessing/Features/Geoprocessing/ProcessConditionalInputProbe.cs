@@ -16,6 +16,9 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 {
     private const string MissingRequiredParameterCode = "MISSING_REQUIRED_PARAMETER";
 
+    /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
+    private const int MaxProbeCombinations = 32;
+
     private readonly IProcessCatalog _catalog;
 
     /// <summary>
@@ -69,7 +72,13 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                     : "1";
         }
 
-        var violations = Validate(definition.ProcessId, inputs);
+        // A mapped parameter's value is caller-supplied, so assuming the catalog default
+        // would reject mappings that are executable under a different value: transform.dedup
+        // accepts 'keys' OR 'geometry=true', and probing the Flag's "false" default alone
+        // would report a missing input the caller can simply avoid. Where a mapped parameter
+        // has a finite domain, every assignment is probed and only violations that survive
+        // all of them are real - no admissible value avoids those.
+        var violations = FindUniversalViolations(definition, inputs, suppliedParameterNames);
 
         var results = new List<string>();
         foreach (var violation in violations)
@@ -94,6 +103,102 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Validates every admissible assignment of the mapped parameters that have a finite
+    /// value domain and returns only the violations common to all of them.
+    /// </summary>
+    private List<GeoprocessingValidationFailure> FindUniversalViolations(
+        ProcessDefinition definition,
+        Dictionary<string, string> baseInputs,
+        IReadOnlyCollection<string> suppliedParameterNames)
+    {
+        var supplied = new HashSet<string>(suppliedParameterNames, StringComparer.OrdinalIgnoreCase);
+
+        // Keep the cross-product bounded; parameters beyond the cap keep their base value.
+        var variable = new List<(string Name, IReadOnlyList<string> Values)>();
+        var combinationCount = 1;
+        foreach (var parameter in definition.Parameters)
+        {
+            if (!supplied.Contains(parameter.Name))
+            {
+                continue;
+            }
+
+            var domain = DomainOf(parameter);
+            if (domain is null || combinationCount * domain.Count > MaxProbeCombinations)
+            {
+                continue;
+            }
+
+            variable.Add((parameter.Name, domain));
+            combinationCount *= domain.Count;
+        }
+
+        List<GeoprocessingValidationFailure>? universal = null;
+        foreach (var assignment in Assignments(variable))
+        {
+            var candidate = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
+            foreach (var (name, value) in assignment)
+            {
+                candidate[name] = value;
+            }
+
+            var found = Validate(definition.ProcessId, candidate);
+            if (universal is null)
+            {
+                universal = found;
+            }
+            else
+            {
+                universal = [.. universal.Where(known => found.Any(other =>
+                    string.Equals(other.Code, known.Code, StringComparison.Ordinal)
+                    && string.Equals(other.FieldPath, known.FieldPath, StringComparison.Ordinal)))];
+            }
+
+            if (universal.Count == 0)
+            {
+                break;
+            }
+        }
+
+        return universal ?? [];
+    }
+
+    /// <summary>
+    /// Enumerates the cartesian product of the variable parameters' domains, yielding a
+    /// single empty assignment when nothing varies.
+    /// </summary>
+    private static IEnumerable<IReadOnlyList<(string Name, string Value)>> Assignments(
+        List<(string Name, IReadOnlyList<string> Values)> variable)
+    {
+        IEnumerable<IReadOnlyList<(string, string)>> product = [Array.Empty<(string, string)>()];
+
+        foreach (var (name, values) in variable)
+        {
+            product = product.SelectMany(
+                _ => values,
+                (prefix, value) => (IReadOnlyList<(string, string)>)[.. prefix, (name, value)]);
+        }
+
+        return product;
+    }
+
+    /// <summary>
+    /// Returns the finite set of values a parameter can take, or <c>null</c> when its domain
+    /// is open (so no enumeration is possible).
+    /// </summary>
+    private static IReadOnlyList<string>? DomainOf(ProcessParameterSpec parameter)
+    {
+        if (parameter.AllowedValues is { Count: > 0 } allowed)
+        {
+            return allowed;
+        }
+
+        return parameter.ValueType == ProcessParameterValueType.Flag
+            ? ["true", "false"]
+            : null;
     }
 
     private bool IsPresenceConflict(

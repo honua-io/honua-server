@@ -426,6 +426,77 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_MappedFlagSatisfiesRequirement_IsNotReportedUnsupported()
+    {
+        // transform.dedup needs 'keys' OR 'geometry=true'. 'geometry' is a mapped Flag, so
+        // the caller can supply true; probing only its "false" default would wrongly report a
+        // missing input. It stays uncertified (keys is undetermined) but must not be
+        // classified unsupported.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "DedupToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "DedupByGeometry",
+                  "targetProcessId": "transform.dedup",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "use_geometry", "targetParameter": "geometry" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().NotBe("unsupported");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().NotContain("unsatisfied-conditional-inputs");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_UnmappedFlagCannotSatisfyRequirement_IsUnsupported()
+    {
+        // Without 'geometry' mapped, its "false" default is the only possible value, so no
+        // admissible assignment satisfies the keys-or-geometry requirement.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "DedupToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "DedupNoKeys",
+                  "targetProcessId": "transform.dedup",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Contain("unsatisfied-conditional-inputs");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_MutuallyExclusiveInputsMapped_IsNotCertifiedExecutable()
     {
         // sink.external-postgis accepts a registered connectionName XOR connectionId.
