@@ -345,4 +345,12 @@ public static class ToolboxTranslationIssueCodes
     /// branch, so the tool is reported as reviewable rather than certified executable.
     /// </summary>
     public const string UnverifiableConditionalBranches = "unverifiable-conditional-branches";
+
+    /// <summary>
+    /// The target process cannot be dispatched as a job at all, whatever the parameters:
+    /// it runs only through a synchronous protocol surface, so OGC Processes and GPServer
+    /// submission reject it. Translated tools execute through the canonical job runtime,
+    /// so such a target is never executable from a toolbox.
+    /// </summary>
+    public const string ProcessNotJobExecutable = "process-not-job-executable";
 }

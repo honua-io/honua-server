@@ -16,6 +16,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 {
     private const string MissingRequiredParameterCode = "MISSING_REQUIRED_PARAMETER";
 
+    private const string SyncOnlyProcessCode = "SYNC_ONLY_PROCESS";
+
     /// <summary>Upper bound on probed value assignments, keeping the cross-product cheap.</summary>
     private const int MaxProbeCombinations = 32;
 
@@ -31,7 +33,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<string> FindAdmissibilityViolations(
+    public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames)
     {
@@ -80,13 +82,23 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // all of them are real - no admissible value avoids those.
         var violations = FindUniversalViolations(definition, inputs, suppliedParameterNames);
 
-        var results = new List<string>();
+        var results = new List<ProcessAdmissibilityViolation>();
         foreach (var violation in violations)
         {
+            // A sync-only process is undispatchable whatever the parameters are, so it is
+            // reported verbatim rather than run through the presence analysis below.
+            if (string.Equals(violation.Code, SyncOnlyProcessCode, StringComparison.Ordinal))
+            {
+                results.Add(new ProcessAdmissibilityViolation(
+                    ProcessAdmissibilityViolationKind.NotJobExecutable, violation.Message));
+                continue;
+            }
+
             // Missing-input failures are presence-based by construction.
             if (string.Equals(violation.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
             {
-                results.Add(violation.Message);
+                results.Add(new ProcessAdmissibilityViolation(
+                    ProcessAdmissibilityViolationKind.Inputs, violation.Message));
                 continue;
             }
 
@@ -98,7 +110,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             // substituted value and must not be reported.
             if (IsPresenceConflict(definition.ProcessId, inputs, violation))
             {
-                results.Add(violation.Message);
+                results.Add(new ProcessAdmissibilityViolation(
+                    ProcessAdmissibilityViolationKind.Inputs, violation.Message));
             }
         }
 
@@ -146,16 +159,11 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             }
 
             var found = Validate(definition.ProcessId, candidate);
-            if (universal is null)
-            {
-                universal = found;
-            }
-            else
-            {
-                universal = [.. universal.Where(known => found.Any(other =>
+            universal = universal is null
+                ? found
+                : [.. universal.Where(known => found.Any(other =>
                     string.Equals(other.Code, known.Code, StringComparison.Ordinal)
                     && string.Equals(other.FieldPath, known.FieldPath, StringComparison.Ordinal)))];
-            }
 
             if (universal.Count == 0)
             {
@@ -260,6 +268,16 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         };
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        // The submit path runs the direct-submit guards too, so a translation that only
+        // satisfies ProcessPlanValidator could still be rejected - notably the sync-only
+        // process ids that are not job-dispatchable at all.
+        var (directSubmitViolations, _) = DirectSubmitPlanValidator.Evaluate(plan);
+        violations.AddRange(directSubmitViolations.Where(candidate =>
+            !violations.Any(existing =>
+                string.Equals(existing.Code, candidate.Code, StringComparison.Ordinal)
+                && string.Equals(existing.FieldPath, candidate.FieldPath, StringComparison.Ordinal))));
+
         return violations;
     }
 

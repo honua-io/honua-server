@@ -426,6 +426,41 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_SyncOnlyProcess_IsUnsupportedRegardlessOfMapping()
+    {
+        // analytics.cluster runs only through the synchronous layer-scoped analytics surface;
+        // the job runtime rejects it with SYNC_ONLY_PROCESS. A complete parameter mapping
+        // must therefore still be unsupported, pointing at the -managed counterpart.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ClusterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ClusterSyncOnly",
+                  "targetProcessId": "analytics.cluster",
+                  "parameterMappings": [
+                    { "sourceName": "in_layer", "targetParameter": "layerId" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        var issue = tool.GetProperty("issues").EnumerateArray()
+            .Single(entry => entry.GetProperty("code").GetString() == "process-not-job-executable");
+        issue.GetProperty("message").GetString().Should().Contain("job-dispatchable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_MappedFlagSatisfiesRequirement_IsNotReportedUnsupported()
     {
         // transform.dedup needs 'keys' OR 'geometry=true'. 'geometry' is a mapped Flag, so

@@ -196,8 +196,10 @@ public static class ToolboxTranslationValidator
                 missingRequired = true;
                 issues.Add(new ToolboxTranslationIssue
                 {
-                    Code = ToolboxTranslationIssueCodes.UnsatisfiedConditionalInputs,
-                    Message = $"Canonical plan validation would reject this mapping: {violation}"
+                    Code = violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable
+                        ? ToolboxTranslationIssueCodes.ProcessNotJobExecutable
+                        : ToolboxTranslationIssueCodes.UnsatisfiedConditionalInputs,
+                    Message = $"Canonical submit validation would reject this mapping: {violation.Message}"
                 });
             }
         }

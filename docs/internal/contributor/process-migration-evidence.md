@@ -92,7 +92,7 @@ repos by design:
   (`no-native-executor`, `unknown-process`, `unknown-target-parameter`,
   `duplicate-target-parameter`, `missing-required-parameter`,
   `unsupported-construct`, `unsatisfied-conditional-inputs`,
-  `unverifiable-conditional-branches`). Tools that cannot
+  `unverifiable-conditional-branches`, `process-not-job-executable`). Tools that cannot
   supply a required parameter are `unsupported`, never stubbed as executable.
   Inbound manifests must carry a supported `artifactKind`/`artifactVersion`;
   an incompatible identity is rejected rather than reinterpreted.
@@ -109,7 +109,13 @@ lane asks the canonical validator itself through
 never certifies a tool that submit-time validation will refuse. The probe
 answers strictly from parameter presence and filters to
 `MISSING_REQUIRED_PARAMETER` failures, because callers supply parameter names
-rather than real values.
+rather than real values. The probe runs the direct-submit guards alongside
+`ProcessPlanValidator`, so a target that is not job-dispatchable at all (the
+sync-only `analytics.cluster`/`analytics.density` ids, which run only through
+the synchronous layer-scoped analytics surface) is reported
+`process-not-job-executable` and classified `unsupported` whatever its
+parameter mapping looks like — translated tools execute through the canonical
+job runtime, so callers are pointed at the `-managed` counterparts.
 
 The probe can only exercise the branch its substituted values select, and the
 catalog does not enumerate legal values for most discriminator parameters

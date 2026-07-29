@@ -38,10 +38,37 @@ public interface IProcessConditionalInputProbe
     /// <param name="processId">Canonical process identifier.</param>
     /// <param name="suppliedParameterNames">Parameter names the caller would supply.</param>
     /// <returns>
-    /// Human-readable violation messages, or an empty list when the supplied set satisfies
-    /// every presence-based requirement.
+    /// The violations the submit path would raise, or an empty list when the supplied set is
+    /// admissible.
     /// </returns>
-    IReadOnlyList<string> FindAdmissibilityViolations(
+    IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames);
+}
+
+/// <summary>
+/// A single reason the canonical submit path would reject a proposed parameter set.
+/// </summary>
+/// <param name="Kind">Classifies why the submission is inadmissible.</param>
+/// <param name="Message">Human-readable explanation taken from the canonical validator.</param>
+public readonly record struct ProcessAdmissibilityViolation(
+    ProcessAdmissibilityViolationKind Kind,
+    string Message);
+
+/// <summary>
+/// Categories of submit-path rejection surfaced by <see cref="IProcessConditionalInputProbe"/>.
+/// </summary>
+public enum ProcessAdmissibilityViolationKind
+{
+    /// <summary>
+    /// The supplied parameter set does not satisfy the process's input requirements
+    /// (including conditional and mutually-exclusive rules).
+    /// </summary>
+    Inputs,
+
+    /// <summary>
+    /// The process cannot be dispatched as a job at all, regardless of parameters — it runs
+    /// only through a synchronous protocol surface, so the job runtime rejects it.
+    /// </summary>
+    NotJobExecutable
 }

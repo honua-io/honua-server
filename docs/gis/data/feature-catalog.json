@@ -14304,6 +14304,7 @@
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_PartiallyTranslatableToolbox_ReportsUnsupportedConstructs",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SatisfiedConditionalInput_HasNoUnsatisfiedInputIssue",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SingleConnectionMapped_ReportsNoValueArtifact",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SyncOnlyProcess_IsUnsupportedRegardlessOfMapping",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_TranslatableToolbox_RoundTripsAllParameterSignatures",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_UnknownSourceFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_UnmappedFlagCannotSatisfyRequirement_IsUnsupported",

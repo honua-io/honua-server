@@ -290,12 +290,14 @@ public sealed class ToolboxTranslationValidatorTests
     /// </summary>
     private sealed class FakeProbe(string[] requiredAnyOf) : IProcessConditionalInputProbe
     {
-        public IReadOnlyList<string> FindAdmissibilityViolations(
+        public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
             string processId,
             IReadOnlyCollection<string> suppliedParameterNames)
             => requiredAnyOf.Any(name => suppliedParameterNames.Contains(name, StringComparer.OrdinalIgnoreCase))
                 ? []
-                : [$"Step requires one of {string.Join('/', requiredAnyOf)} for process '{processId}'."];
+                : [new ProcessAdmissibilityViolation(
+                    ProcessAdmissibilityViolationKind.Inputs,
+                    $"Step requires one of {string.Join('/', requiredAnyOf)} for process '{processId}'.")];
     }
 
     private sealed class FakeCatalog : IProcessCatalog
