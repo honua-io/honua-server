@@ -849,6 +849,47 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_NonFiniteSourcePixelScale_IsRejectedBeforeDelegation()
+    {
+        // PositiveInfinity satisfies a bare "> 0" positivity test, and an infinite
+        // extent then makes the mismatch comparison evaluate Infinity - Infinity
+        // = NaN, which compares false against every tolerance and so reports a
+        // MATCH. A crafted source must therefore be refused outright.
+        var infiniteScale = BuildGeoTiff(
+            width: 64, height: 64, originX: 500000, originY: 4600000,
+            pixelSize: double.PositiveInfinity, epsg: 32610);
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-infinite-scale");
+
+        var record = CreateJobRecord(source: Convert.ToBase64String(infiniteScale));
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("non-finite");
+        handler.LastRequestBody.Should().BeNull("a crafted source must not be delegated");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_NonFiniteOutputPixelScale_IsRejectedNotMatched()
+    {
+        // Same hazard on the output side: an infinite extent must not be able to
+        // slip through the comparison as "georeferencing preserved".
+        var infiniteOutput = BuildGeoTiff(
+            width: 32, height: 32, originX: 500000, originY: 4600000,
+            pixelSize: double.PositiveInfinity, epsg: 32610);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => RasterResponse(infiniteOutput)), provider: "http");
+        var context = CreateContext("op-infinite-output");
+
+        var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_OversizedRasterOutput_FailsWithGuardrail()
     {
         var executor = CreateExecutor(

@@ -116,9 +116,17 @@ internal readonly record struct GeoTiffGeoreferencing
     public bool IsGeoreferenced =>
         HasRasterData
         && UnsupportedTransformReason is null
-        && Width > 0 && Height > 0
-        && PixelSizeX > 0 && PixelSizeY > 0
+        && double.IsFinite(Width) && Width > 0
+        && double.IsFinite(Height) && Height > 0
+        // Finiteness is checked EXPLICITLY rather than relying on "> 0": positive
+        // infinity satisfies a bare positivity test, and an infinite extent then
+        // makes the mismatch comparison evaluate Infinity - Infinity = NaN, which
+        // compares false against every tolerance and so reports a MATCH.
+        && double.IsFinite(PixelSizeX) && PixelSizeX > 0
+        && double.IsFinite(PixelSizeY) && PixelSizeY > 0
         && double.IsFinite(OriginX) && double.IsFinite(OriginY)
+        // Guards the product overflowing to infinity even when both factors are finite.
+        && double.IsFinite(ExtentWidth) && double.IsFinite(ExtentHeight)
         && CrsCode != 0;
 
     /// <summary>
@@ -602,6 +610,14 @@ internal readonly record struct GeoTiffGeoreferencing
             {
                 originX -= pixelX / 2d;
                 originY += pixelY / 2d;
+            }
+
+            if (unsupported is null
+                && (!double.IsFinite(pixelX) || !double.IsFinite(pixelY)
+                    || !double.IsFinite(originX) || !double.IsFinite(originY)
+                    || !double.IsFinite(_width * pixelX) || !double.IsFinite(_height * pixelY)))
+            {
+                unsupported = "the model transform declares a non-finite pixel size, origin, or extent";
             }
 
             georeferencing = new GeoTiffGeoreferencing
