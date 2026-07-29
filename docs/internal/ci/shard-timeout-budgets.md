@@ -38,8 +38,24 @@ Each `Honua.Server.Tests` shard carries two timeouts:
 | `low_headroom` | `::warning::HONUA_SHARD_LOW_HEADROOM` | **Passed**, but consumed >= 80% of its budget. Re-base the budget or split the shard before the next test lands in it. |
 | `capacity_exhausted` | `::error::HONUA_SHARD_CAPACITY_EXHAUSTED` | Hit the cap while still producing output. The shard is over capacity; this is not attributable to any single PR. |
 | `hang_suspected` | `::error::HONUA_SHARD_HANG_SUSPECTED` | Hit the cap after producing no output for `HONUA_SERVER_TEST_STALL_SECONDS` (default 300s). Treat as a genuine hang. |
-| `not_assessed` | none | Ran under a budget but neither passed nor hit the cap. A failing run can abort early or run long on retries, so its duration is not a capacity sample and the fleet audit excludes it. |
+| `not_assessed` | `::error::HONUA_SHARD_KILLED` when the run was SIGKILLed | Ran under a budget but neither passed nor hit the cap. A failing run can abort early or run long on retries, so its duration is not a capacity sample and the fleet audit excludes it. |
 | `unbounded` | none | No inner timeout configured. |
+
+### Timeout exit codes
+
+`timeout` sends SIGTERM at the cap and reports **124**. A shard wedged hard
+enough to *ignore* that SIGTERM is escalated to SIGKILL after
+`HONUA_SERVER_TEST_KILL_AFTER_SECONDS` (default 30s), and `timeout` then reports
+**137** instead. Both are timeouts; `kill_escalated: true` in the timing artifact
+distinguishes the second.
+
+137 on its own is ambiguous — an OOM kill or any other external SIGKILL produces
+it too — so it is not blanket-mapped to a timeout. The clock is the
+discriminator: `timeout` cannot escalate to SIGKILL before the cap has elapsed,
+so a 137 at or beyond the budget is a kill-escalated timeout, while a 137 well
+inside the budget is reported as `status: killed` with
+`::error::HONUA_SHARD_KILLED` (suspect an out-of-memory kill) rather than being
+laundered into a capacity signal.
 
 The merge train consumes those markers in
 `scripts/ci/merge-train/classify-timeout.sh`. A `hang_suspected`/generic timeout

@@ -27,9 +27,13 @@ stub_dir="${workdir}/bin"
 mkdir -p "${stub_dir}"
 
 # Stub `dotnet`. HONUA_FIXTURE_MODE selects the shape of the run:
-#   chatty  - emit output continuously for HONUA_FIXTURE_SECONDS, then exit 0.
-#   failing - same, but exit 1 as a normal test failure would.
-#   silent  - emit one line, then go quiet forever (until the cap kills it).
+#   chatty       - emit output continuously for HONUA_FIXTURE_SECONDS, then exit 0.
+#   failing      - same, but exit 1 as a normal test failure would.
+#   silent       - emit one line, then go quiet forever (until the cap kills it).
+#   sigterm-proof- emit continuously AND ignore SIGTERM, so `timeout` has to
+#                  escalate to SIGKILL and reports 137 instead of 124.
+#   selfkill     - emit one line, then SIGKILL itself almost immediately. Stands
+#                  in for an OOM kill: also 137, but nowhere near the budget.
 cat > "${stub_dir}/dotnet" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -50,6 +54,18 @@ case "${mode}" in
     echo "Passed!  - Failed: 0, Passed: 1"
     ;;
   silent)
+    sleep 600
+    ;;
+  sigterm-proof)
+    trap '' TERM
+    while :; do
+      echo "stub progress $(date -u +'%H:%M:%S')"
+      sleep 0.2
+    done
+    ;;
+  selfkill)
+    sleep 0.3
+    kill -9 $$
     sleep 600
     ;;
 esac
@@ -75,6 +91,7 @@ run_case() {
   HONUA_SERVER_TEST_TIMEOUT_MINUTES="${tmo}" \
   HONUA_SERVER_TEST_HEADROOM_WARN_RATIO="${warn}" \
   HONUA_SERVER_TEST_STALL_SECONDS="${stall}" \
+  HONUA_SERVER_TEST_KILL_AFTER_SECONDS="${HONUA_FIXTURE_KILL_AFTER:-2}" \
   HONUA_SERVER_TEST_HEARTBEAT_SECONDS=1 \
   HONUA_SERVER_TEST_POLL_SECONDS=1 \
   GITHUB_STEP_SUMMARY="${workdir}/${name}.summary" \
@@ -148,6 +165,47 @@ run_case unbounded chatty 2 "" 0.80 60
 [[ "$(timing_field .headroom_ratio)" == "null" ]] \
   || fail "headroom_ratio must be null with no configured budget"
 pass "unconfigured budget reports unbounded instead of inventing a ratio"
+
+# --- 4b. Kill-escalated timeout: SIGTERM ignored, so `timeout` reports 137. ---
+# This is the worst case the instrumentation exists for — a shard wedged hard
+# enough to ignore SIGTERM. `timeout --kill-after` escalates to SIGKILL and
+# exits 128+9 = 137, NOT 124, so recognising only 124 would attribute the most
+# stuck shard in the fleet as an ordinary real failure.
+run_case killescalated sigterm-proof 0 0.05 0.80 60
+[[ "${rc}" == "137" ]] || fail "kill-escalated case did not exit 137 (rc=${rc}); fixture premise is wrong"
+[[ "$(timing_field .status)" == "timed_out" ]] \
+  || fail "exit 137 at the cap was not classified as a timeout (status=$(timing_field .status))"
+[[ "$(timing_field .timed_out)" == "true" ]] || fail "timed_out flag not set for a kill-escalated timeout"
+[[ "$(timing_field .kill_escalated)" == "true" ]] || fail "kill_escalated flag not recorded"
+[[ "$(timing_field .capacity_status)" == "capacity_exhausted" ]] \
+  || fail "kill-escalated capacity_status was $(timing_field .capacity_status)"
+grep -q '^::error::HONUA_SHARD_CAPACITY_EXHAUSTED' "${out_file}" \
+  || fail "kill-escalated timeout did not emit the capacity annotation"
+# The merge train matches on this phrase, so it must survive the 137 path.
+grep -q 'timed out after' "${out_file}" || fail "generic timeout annotation was lost on the 137 path"
+grep -q 'SIGKILLed' "${out_file}" || fail "kill escalation was not called out in the annotation"
+if grep -q 'HONUA_SHARD_KILLED' "${out_file}"; then
+  fail "a kill-escalated timeout must not be reported as an external kill"
+fi
+pass "SIGTERM-ignoring shard exits 137 and is still classified as a timeout"
+
+# --- 4c. Negative control: 137 well INSIDE the budget is not a timeout. -------
+# An OOM kill produces the same 137. Blanket-mapping 137 to "timed out" would
+# launder a genuine external kill into a capacity signal and hide the real
+# cause, so the clock is the discriminator.
+run_case externalkill selfkill 0 1 0.80 60
+[[ "${rc}" == "137" ]] || fail "external-kill case did not exit 137 (rc=${rc}); fixture premise is wrong"
+[[ "$(timing_field .status)" == "killed" ]] \
+  || fail "early SIGKILL was classified as $(timing_field .status), expected killed"
+[[ "$(timing_field .timed_out)" == "false" ]] || fail "an external SIGKILL must not set timed_out"
+[[ "$(timing_field .kill_escalated)" == "false" ]] || fail "an external SIGKILL is not a kill escalation"
+[[ "$(timing_field .capacity_status)" == "not_assessed" ]] \
+  || fail "external kill capacity_status was $(timing_field .capacity_status)"
+grep -q '^::error::HONUA_SHARD_KILLED' "${out_file}" || fail "external kill did not emit its own annotation"
+if grep -q 'timed out after\|HONUA_SHARD_CAPACITY_EXHAUSTED\|HONUA_SHARD_HANG_SUSPECTED' "${out_file}"; then
+  fail "an external SIGKILL must not be reported as a timeout or capacity problem"
+fi
+pass "SIGKILL well inside the budget is reported as a kill, not a timeout"
 
 # --- 5b. A FAILING shard never claims anything about its headroom. -----------
 # A test/infrastructure failure can abort early or run long on retries, so its

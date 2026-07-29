@@ -47,6 +47,10 @@ headroom_warn_ratio="${HONUA_SERVER_TEST_HEADROOM_WARN_RATIO:-0.80}"
 # fired is reported as capacity exhaustion. Honua integration shards stream host
 # logs continuously, so a multi-minute silence is a genuine stall signal.
 stall_seconds="${HONUA_SERVER_TEST_STALL_SECONDS:-300}"
+# Grace `timeout` allows between the SIGTERM it sends at the cap and the SIGKILL
+# it escalates to. A shard that ignores the TERM exits 137 rather than 124 (see
+# the exit-code classification below).
+kill_after_seconds="${HONUA_SERVER_TEST_KILL_AFTER_SECONDS:-30}"
 
 mkdir -p "${results_dir}"
 
@@ -98,7 +102,7 @@ if [[ -n "${timeout_minutes}" ]]; then
   fi
 
   if [[ -n "${timeout_command}" ]]; then
-    run_command=("${timeout_command}" --kill-after=30s "${timeout_minutes}m" "${test_command[@]}")
+    run_command=("${timeout_command}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
   fi
 fi
 
@@ -168,13 +172,45 @@ completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 completed_epoch="$(date +%s)"
 duration_seconds=$((completed_epoch - start_epoch))
 timed_out="false"
+kill_escalated="false"
 status="failed"
 
+# The configured budget in seconds. Needed by the exit-code classification
+# immediately below as well as by the headroom ratio further down.
+timeout_seconds=""
+if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
+  timeout_seconds="$(awk -v m="${timeout_minutes}" 'BEGIN { printf "%.0f", m * 60 }')"
+fi
+
+# ---------------------------------------------------------------------------
+# Exit-code classification.
+#
+# `timeout` exits 124 when the command dies from the SIGTERM it sends at the
+# cap. But a shard wedged hard enough to IGNORE that SIGTERM is escalated to
+# SIGKILL after --kill-after, and `timeout` then reports 128+9 = 137. Recognising
+# only 124 therefore missed exactly the worst case this instrumentation exists
+# for: the most stuck shard would be attributed as an ordinary real failure.
+#
+# 137 is ambiguous on its own — an OOM kill or any other external SIGKILL
+# produces it too — so it is NOT blanket-mapped to a timeout. The discriminator
+# is the clock: `timeout` cannot escalate to SIGKILL before the cap has already
+# elapsed, so a 137 at or beyond the budget is a kill-escalated timeout, while a
+# 137 well inside the budget is a genuine external kill and is reported as such
+# rather than being laundered into a timeout signal.
+# ---------------------------------------------------------------------------
 if [[ "${test_exit_code}" -eq 0 ]]; then
   status="passed"
 elif [[ -n "${timeout_command}" && "${test_exit_code}" -eq 124 ]]; then
   status="timed_out"
   timed_out="true"
+elif [[ -n "${timeout_command}" && -n "${timeout_seconds}" && "${test_exit_code}" -eq 137 ]]; then
+  if (( duration_seconds >= timeout_seconds )); then
+    status="timed_out"
+    timed_out="true"
+    kill_escalated="true"
+  else
+    status="killed"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -198,13 +234,11 @@ fi
 #   hang_suspected     - hit the cap after going silent for >= stall_seconds.
 # ---------------------------------------------------------------------------
 idle_seconds_at_exit=$((completed_epoch - last_progress_epoch))
-timeout_seconds=""
 headroom_ratio=""
 headroom_percent=""
 capacity_status="unbounded"
 
-if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
-  timeout_seconds="$(awk -v m="${timeout_minutes}" 'BEGIN { printf "%.0f", m * 60 }')"
+if [[ -n "${timeout_seconds}" ]]; then
   if [[ "${timeout_seconds}" -gt 0 ]]; then
     headroom_ratio="$(awk -v d="${duration_seconds}" -v t="${timeout_seconds}" 'BEGIN { printf "%.4f", d / t }')"
     headroom_percent="$(awk -v r="${headroom_ratio}" 'BEGIN { printf "%.1f", r * 100 }')"
@@ -238,6 +272,7 @@ if command -v jq >/dev/null 2>&1; then
     --arg duration_seconds "${duration_seconds}" \
     --arg timeout_minutes "${timeout_minutes}" \
     --arg timed_out "${timed_out}" \
+    --arg kill_escalated "${kill_escalated}" \
     --arg filter "${filter}" \
     --arg timeout_seconds "${timeout_seconds}" \
     --arg headroom_ratio "${headroom_ratio}" \
@@ -256,6 +291,7 @@ if command -v jq >/dev/null 2>&1; then
       timeout_minutes: (if $timeout_minutes == "" then null else ($timeout_minutes | tonumber) end),
       timeout_seconds: (if $timeout_seconds == "" then null else ($timeout_seconds | tonumber) end),
       timed_out: ($timed_out == "true"),
+      kill_escalated: ($kill_escalated == "true"),
       headroom_ratio: (if $headroom_ratio == "" then null else ($headroom_ratio | tonumber) end),
       headroom_warn_ratio: ($headroom_warn_ratio | tonumber),
       capacity_status: $capacity_status,
@@ -298,8 +334,19 @@ case "${capacity_status}" in
     ;;
 esac
 
+if [[ "${status}" == "killed" ]]; then
+  # exit 137 well inside the budget: something outside this script SIGKILLed the
+  # test host (an OOM kill is the usual cause). Say so plainly rather than
+  # laundering it into a timeout signal it is not.
+  echo "::error::HONUA_SHARD_KILLED shard='${shard_name}' was SIGKILLed after ${duration_seconds}s, well inside its ${timeout_minutes}m budget, so this is not a timeout. Suspect an out-of-memory kill or an external cancellation of the test host."
+fi
+
 if [[ "${timed_out}" == "true" ]]; then
-  echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s). Filter: ${filter}"
+  if [[ "${kill_escalated}" == "true" ]]; then
+    echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s) and had to be SIGKILLed (exit 137): it ignored SIGTERM for the full ${kill_after_seconds}s grace. Filter: ${filter}"
+  else
+    echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s). Filter: ${filter}"
+  fi
 fi
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -309,6 +356,9 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "- Status: \`${status}\` (exit ${test_exit_code})"
     echo "- Duration: \`${duration_seconds}s\` of \`${timeout_minutes:-none}m\` budget"
     echo "- Headroom: \`${capacity_status}\` (\`${headroom_percent:-n/a}%\` used)"
+    if [[ "${kill_escalated}" == "true" ]]; then
+      echo "- Kill escalation: SIGTERM ignored; SIGKILLed after \`${kill_after_seconds}s\`"
+    fi
   } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
