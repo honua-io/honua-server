@@ -24,6 +24,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":[]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":"night"}""")]
+    // An explicit null clears the style; that is the ONLY non-string form the applier can express.
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":null}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[]}""")]
     public void TryValidate_ApplicablePayload_Accepts(SavedMapOperationKind kind, string payload)
     {
@@ -41,8 +43,15 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":[1]}""")]
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":[""]}""")]
     [InlineData(SavedMapOperationKind.ReorderLayers, """{}""")]
+    [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":["a","a"]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"styleRef":"night"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":42}""")]
+    // A present non-string styleRef used to be admitted and then silently CLEARED the layer's
+    // style at checkpoint time, turning malformed input into a destructive edit.
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":42}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":{"id":"x"}}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":["night"]}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":true}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """[]""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator

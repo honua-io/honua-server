@@ -154,13 +154,31 @@ internal static class SavedMapOperationDraftApplier
         }
 
         var byId = body.Layers.ToDictionary(static layer => layer.Id, StringComparer.Ordinal);
+        var known = new HashSet<string>(byId.Keys, StringComparer.Ordinal);
         var reordered = new List<StudioCompositionLayer>(body.Layers.Count);
-        // Remove-as-we-go both dedupes repeated ids in the requested order and leaves byId
-        // holding exactly the layers the order omitted (consumed by the tail append below).
-        reordered.AddRange(order
-            .Select(id => (Found: byId.Remove(id, out var layer), Layer: layer))
-            .Where(static entry => entry.Found)
-            .Select(static entry => entry.Layer!));
+        // Remove-as-we-go leaves byId holding exactly the layers the order omitted (consumed by
+        // the tail append below). A requested id that is NOT removable is never skipped: an id
+        // absent from the composition is a genuine state conflict (the layer was removed by
+        // another pending or direct draft update) and an id requested twice has no single
+        // ordering. Silently dropping either would mark the operation's cursor persisted while
+        // the edit was not applied (honua-server#2999 review).
+        foreach (var id in order)
+        {
+            if (byId.Remove(id, out var layer))
+            {
+                reordered.Add(layer);
+                continue;
+            }
+
+            if (known.Contains(id))
+            {
+                throw new SavedMapCheckpointPayloadException(
+                    operation, $"The reorder payload lists layer '{id}' more than once.");
+            }
+
+            throw new StudioCompositionNotFoundException(
+                $"No layer with id '{id}' exists in the composition.");
+        }
 
         // Layers omitted from the requested order keep their relative position at the end so a
         // reorder authored against a stale layer set never drops layers.
@@ -175,8 +193,17 @@ internal static class SavedMapOperationDraftApplier
         var layerId = ReadRequiredString(operation, "layerId");
         string? styleRef = null;
         if (operation.Payload.TryGetProperty("styleRef", out var styleElement) &&
-            styleElement.ValueKind == JsonValueKind.String)
+            styleElement.ValueKind != JsonValueKind.Null)
         {
+            // Lockstep with SavedMapOperationPayloadValidator: a present, non-null styleRef must
+            // be a string. Treating any other JSON kind as null (the previous behavior) turned
+            // malformed input into a silent style CLEAR (honua-server#2999 review).
+            if (styleElement.ValueKind != JsonValueKind.String)
+            {
+                throw new SavedMapCheckpointPayloadException(
+                    operation, "The style payload requires 'styleRef' to be a string, or null to clear it.");
+            }
+
             styleRef = styleElement.GetString();
         }
 

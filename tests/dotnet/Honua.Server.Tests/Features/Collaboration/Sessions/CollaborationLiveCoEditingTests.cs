@@ -47,7 +47,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -183,7 +183,9 @@ public sealed class CollaborationLiveCoEditingTests
         await lateJoiner.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
 
         // Reconnect with a cursor beyond the head: typed resync-required error, then a fresh
-        // snapshot with no tail (NFR-001 — presence is re-snapshotted, ops need a full resync).
+        // snapshot carrying the whole RETAINED window (NFR-001 — presence is re-snapshotted and
+        // the client reloads the durable document, so the snapshot must still hand back every
+        // retained operation rather than advertising the head with an empty tail).
         using var staleResume = await wsClient.ConnectAsync(
             new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Stale&resumeFrom=999"),
             cts.Token);
@@ -194,8 +196,11 @@ public sealed class CollaborationLiveCoEditingTests
         error.GetProperty("event").GetProperty("resyncRequired").GetBoolean().Should().BeTrue();
         var staleSnapshot = await ReceiveJsonAsync(staleResume, cts.Token);
         staleSnapshot.GetProperty("event").GetProperty("type").GetString().Should().Be("snapshot");
-        staleSnapshot.GetProperty("event").GetProperty("snapshot").GetProperty("operations").GetArrayLength()
-            .Should().Be(0);
+        var staleBody = staleSnapshot.GetProperty("event").GetProperty("snapshot");
+        staleBody.GetProperty("operations").EnumerateArray()
+            .Select(op => op.GetProperty("cursor").GetString())
+            .Should().ContainInOrder("1", "2");
+        staleBody.GetProperty("cursor").GetString().Should().Be("2");
         await staleResume.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
     }
 
@@ -277,7 +282,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
 
@@ -366,12 +371,17 @@ public sealed class CollaborationLiveCoEditingTests
     {
         // Redis presence alone must NEVER imply multi-replica: a single instance commonly uses
         // Redis for cache/jobs and must keep full live co-editing (honua-server#2999 review).
-        using var factory = CreateFactory(configuration: new Dictionary<string, string?>
-        {
-            ["Redis:ConnectionString"] = "localhost:6379",
-            ["ConnectionStrings:Redis"] = "localhost:6379",
-            ["Cache:Redis:ConnectionString"] = "localhost:6379"
-        });
+        using var factory = CreateFactory(
+            configuration: new Dictionary<string, string?>
+            {
+                ["Redis:ConnectionString"] = "localhost:6379",
+                ["ConnectionStrings:Redis"] = "localhost:6379",
+                ["Cache:Redis:ConnectionString"] = "localhost:6379"
+            },
+            // Checkpointing is gated on op-log restart durability, never on topology, so the
+            // durable log here isolates the claim under test: Redis presence must not disable
+            // any part of live co-editing.
+            restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -397,7 +407,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -468,7 +478,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -498,7 +508,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -530,7 +540,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
-        using var factory = CreateFactory();
+        using var factory = CreateFactory(restartDurableOperationLog: true);
         using var client = CreateAdminClient(factory);
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
@@ -542,9 +552,282 @@ public sealed class CollaborationLiveCoEditingTests
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, "checkpoint response body: {0}", responseText);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Append_ConcurrentOperations_FanOutFollowsAssignedCursorOrder()
+    {
+        // The log assigns cursor 1 to the first request, but that request's continuation is held
+        // open while a second request is assigned cursor 2 and completes. Without a
+        // serialization point between cursor assignment and live fan-out the stream broadcasts
+        // cursor 2 first, so live clients apply same-aspect edits in the reverse of the order
+        // replay and checkpointing use (honua-server#2999 review).
+        DelayedFirstAppendOperationLog? delayedLog = null;
+        using var factory = CreateFactory(decorateOperationLog: inner =>
+            delayedLog = new DelayedFirstAppendOperationLog(inner, TimeSpan.FromSeconds(2)));
+        using var client = CreateAdminClient(factory);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        var wsClient = factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
+        using var observer = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Obs"),
+            cts.Token);
+        _ = await ReceiveJsonAsync(observer, cts.Token);
+        _ = await ReceiveJsonAsync(observer, cts.Token);
+
+        // Both appends are viewport edits from the same base cursor: the MVP conflict policy
+        // merges them, so both are accepted and the ONLY thing under test is ordering.
+        var first = AppendOperationAsync(
+            client, mapId, "op-slow", "SetViewport", baseCursor: 0, payload: """{"zoom":5}""");
+        delayedLog.Should().NotBeNull();
+        await delayedLog!.FirstAppendAssigned.WaitAsync(cts.Token);
+        var second = AppendOperationAsync(
+            client, mapId, "op-fast", "SetViewport", baseCursor: 0, payload: """{"zoom":9}""");
+
+        var results = await Task.WhenAll(first, second);
+        results.Select(r => r.GetProperty("status").GetString()).Should().AllBe("accepted");
+
+        var broadcast = new[]
+        {
+            await ReceiveJsonAsync(observer, cts.Token),
+            await ReceiveJsonAsync(observer, cts.Token)
+        };
+        broadcast.Select(e => e.GetProperty("event").GetProperty("operation").GetProperty("cursor").GetString())
+            .Should().ContainInOrder("1", "2");
+        broadcast.Select(e => e.GetProperty("event").GetProperty("operation").GetProperty("id").GetString())
+            .Should().ContainInOrder("op-slow", "op-fast");
+        broadcast.Select(e => e.GetProperty("sequence").GetInt64()).Should().BeInAscendingOrder();
+
+        await observer.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised()
+    {
+        // The shipped log loses acknowledged operations when the process restarts...
+        new InMemorySavedMapOperationLogRepository().SupportsRestartDurableReplay.Should().BeFalse();
+
+        // ...so a checkpoint cannot prove the immutable version it would mint contains every
+        // accepted edit: after a restart an empty replay is indistinguishable from a session
+        // that never appended anything, and the version would silently omit those edits.
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // Live co-editing itself stays available: the op log and the stream are explicitly
+        // resumable and tell a reconnecting client to resync.
+        var append = await AppendOperationAsync(
+            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":6}""");
+        append.GetProperty("status").GetString().Should().Be("accepted");
+
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
+        text.Should().Contain("restart-durable");
+
+        // The advertised capability must agree with what the endpoint actually accepts, so a
+        // client learns from the handshake instead of a failed checkpoint.
+        using var joinContent = new StringContent("""{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
+        using var joinResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var join = (await ReadJsonAsync(joinResponse)).GetProperty("data");
+        join.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
+        join.GetProperty("capabilities").GetProperty("checkpoints").GetBoolean().Should().BeFalse();
+
+        // A restart-durable log satisfies the contract and the same checkpoint succeeds.
+        using var durableFactory = CreateFactory(restartDurableOperationLog: true);
+        using var durableClient = CreateAdminClient(durableFactory);
+        var durableDraft = await CreateMapDraftAsync(durableClient);
+        var durableMapId = durableDraft.DraftId.ToString("D");
+        _ = await AppendOperationAsync(
+            durableClient, durableMapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":6}""");
+        var checkpoint = await CheckpointAsync(durableClient, durableMapId, "durable log");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Stream_ResumeCursorOutsideWindow_SnapshotKeepsRetainedOperations()
+    {
+        // Retain only the last two operations so cursors 1-2 are pruned while 3-4 are retained
+        // and not yet checkpointed.
+        using var factory = CreateFactory(retainedOperationCount: 2);
+        using var client = CreateAdminClient(factory);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+        for (var i = 1; i <= 4; i++)
+        {
+            _ = await AppendOperationAsync(
+                client, mapId, $"op-{i}", "SetViewport", baseCursor: i - 1, payload: $$"""{"zoom":{{i}}}""");
+        }
+
+        var wsClient = factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
+
+        // Resuming from a pruned cursor: the client must be told to resync AND still receive the
+        // retained-but-not-yet-checkpointed suffix. Advertising the head cursor with an empty
+        // tail would advance it past operations 3 and 4, which the durable draft (checkpointed
+        // behind that head) does not contain either (honua-server#2999 review).
+        using var stale = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
+            cts.Token);
+        _ = await ReceiveJsonAsync(stale, cts.Token);
+        var error = await ReceiveJsonAsync(stale, cts.Token);
+        error.GetProperty("event").GetProperty("code").GetString().Should().Be("resync-required");
+        var staleSnapshot = await ReceiveJsonAsync(stale, cts.Token);
+        var staleBody = staleSnapshot.GetProperty("event").GetProperty("snapshot");
+        staleBody.GetProperty("operations").EnumerateArray()
+            .Select(op => op.GetProperty("cursor").GetString())
+            .Should().ContainInOrder("3", "4");
+        staleBody.GetProperty("cursor").GetString().Should().Be("4");
+        await stale.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+
+        // The other direction: an in-window resume must NOT re-send operations the client
+        // already has, and must not claim a position it did not deliver.
+        using var current = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=4"),
+            cts.Token);
+        _ = await ReceiveJsonAsync(current, cts.Token);
+        var currentSnapshot = await ReceiveJsonAsync(current, cts.Token);
+        currentSnapshot.GetProperty("event").GetProperty("type").GetString().Should().Be("snapshot");
+        var currentBody = currentSnapshot.GetProperty("event").GetProperty("snapshot");
+        currentBody.GetProperty("operations").GetArrayLength().Should().Be(0);
+        currentBody.GetProperty("cursor").GetString().Should().Be("4");
+        await current.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+
+        // A partial in-window resume gets exactly the operations it is missing — no duplicates.
+        using var partial = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=3"),
+            cts.Token);
+        _ = await ReceiveJsonAsync(partial, cts.Token);
+        var partialSnapshot = await ReceiveJsonAsync(partial, cts.Token);
+        var partialBody = partialSnapshot.GetProperty("event").GetProperty("snapshot");
+        partialBody.GetProperty("operations").EnumerateArray()
+            .Select(op => op.GetProperty("cursor").GetString())
+            .Should().Equal("4");
+        partialBody.GetProperty("cursor").GetString().Should().Be("4");
+        await partial.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Append_PatchStyleWithNonStringStyleRef_IsRejectedAndStyleSurvives()
+    {
+        using var factory = CreateFactory(restartDurableOperationLog: true);
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        _ = await AppendOperationAsync(
+            client, mapId, "op-style", "PatchStyle", baseCursor: 0,
+            payload: """{"layerId":"parcels","styleRef":"style-night"}""");
+
+        // A non-string styleRef used to be admitted, take a permanent cursor, and then CLEAR the
+        // layer's style at checkpoint time — malformed input turned into a destructive edit.
+        foreach (var malformed in new[]
+        {
+            """{"operationId":"bad-number","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":42}}""",
+            """{"operationId":"bad-object","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":{"id":"x"}}}""",
+            """{"operationId":"bad-array","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":["x"]}}""",
+            """{"operationId":"bad-bool","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":true}}""",
+        })
+        {
+            using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
+            using var badResponse = await client.PostAsync(
+                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+            var badText = await badResponse.Content.ReadAsStringAsync();
+            badResponse.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
+            badText.Should().Contain("styleRef");
+            badText.Should().NotContain("Exception");
+        }
+
+        // Explicitly clearing the style stays legal, and so does setting one.
+        var cleared = await AppendOperationAsync(
+            client, mapId, "op-clear", "PatchStyle", baseCursor: 1,
+            payload: """{"layerId":"parcels","styleRef":null}""");
+        cleared.GetProperty("status").GetString().Should().Be("accepted");
+
+        // No rejected payload consumed a cursor: the style op and the clear are cursors 1 and 2.
+        var checkpoint = await CheckpointAsync(client, mapId, "style admission");
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_ReorderReferencingUnknownLayer_SurfacesStateConflict()
+    {
+        using var factory = CreateFactory(restartDurableOperationLog: true);
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // A duplicate id has no single ordering and is rejected on admission.
+        using var duplicateContent = new StringContent(
+            """{"operationId":"dup","kind":"ReorderLayers","baseCursor":0,"payload":{"layerIds":["parcels","parcels"]}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var duplicateResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/operations", duplicateContent);
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // An id absent from the composition is a genuine STATE conflict, not a shape error: it
+        // cannot be judged at admission time (an earlier pending operation may still introduce
+        // the layer), so it must surface at checkpoint time instead of silently no-opping while
+        // the operation's cursor is marked persisted (honua-server#2999 review).
+        _ = await AppendOperationAsync(
+            client, mapId, "op-reorder", "ReorderLayers", baseCursor: 0,
+            payload: """{"layerIds":["parcels","ghost-layer"]}""");
+
+        using var content = new StringContent("""{"changeNote":"reorder"}""", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, "checkpoint response body: {0}", text);
+        text.Should().Contain("ghost-layer");
+        text.Should().NotContain("Exception");
+
+        // A reorder whose ids all exist still applies.
+        using var freshFactory = CreateFactory(restartDurableOperationLog: true);
+        using var freshClient = CreateAdminClient(freshFactory);
+        var freshDraft = await CreateTwoLayerMapDraftAsync(freshClient);
+        var freshMapId = freshDraft.DraftId.ToString("D");
+        _ = await AppendOperationAsync(
+            freshClient, freshMapId, "op-reorder", "ReorderLayers", baseCursor: 0,
+            payload: """{"layerIds":["roads","parcels"]}""");
+        var checkpoint = await CheckpointAsync(freshClient, freshMapId, "valid reorder");
+
+        using var versionResponse = await freshClient.GetAsync(
+            $"/api/v1/studio/content-items/{checkpoint.GetProperty("itemId").GetGuid():D}" +
+            $"/versions/{checkpoint.GetProperty("versionId").GetGuid():D}");
+        var version = (await ReadJsonAsync(versionResponse)).GetProperty("data");
+        version.GetProperty("envelope").GetProperty("body").GetProperty("layers").EnumerateArray()
+            .Select(layer => layer.GetProperty("id").GetString())
+            .Should().Equal("roads", "parcels");
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         bool endUserAuthorization = false,
-        IDictionary<string, string?>? configuration = null)
+        IDictionary<string, string?>? configuration = null,
+        bool restartDurableOperationLog = false,
+        int? retainedOperationCount = null,
+        Func<ISavedMapOperationLogRepository, ISavedMapOperationLogRepository>? decorateOperationLog = null)
     {
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
@@ -588,6 +871,27 @@ public sealed class CollaborationLiveCoEditingTests
                     services.RemoveAll<Honua.Core.Features.Forms.Packages.IFormPackageStore>();
                     services.RemoveAll<Honua.Core.Features.Forms.Packages.FormPackageValidator>();
                     services.RemoveAll<Honua.Core.Features.AnalysisContent.Abstractions.IAnalysisContentStore>();
+
+                    // Checkpointing requires a restart-durable op log: the shipped in-memory log
+                    // loses acknowledged operations on restart and the endpoint fails closed
+                    // rather than mint a version it cannot prove is complete (#2999 review).
+                    if (restartDurableOperationLog || retainedOperationCount is not null || decorateOperationLog is not null)
+                    {
+                        services.RemoveAll<ISavedMapOperationLogRepository>();
+                        services.AddSingleton<ISavedMapOperationLogRepository>(sp =>
+                        {
+                            ISavedMapOperationLogRepository log = new InMemorySavedMapOperationLogRepository(
+                                sp.GetService<ISavedMapOperationConflictPolicy>(),
+                                sp.GetService<TimeProvider>(),
+                                retainedOperationCount ?? 512);
+                            if (restartDurableOperationLog)
+                            {
+                                log = new RestartDurableSavedMapOperationLog(log);
+                            }
+
+                            return decorateOperationLog is null ? log : decorateOperationLog(log);
+                        });
+                    }
                 });
             });
     }
@@ -602,13 +906,23 @@ public sealed class CollaborationLiveCoEditingTests
     private static Task<StudioPackageDraft> CreateMapDraftAsync(HttpClient client) =>
         CreateDraftAsync(client, StudioPackageFamily.Map, "honua_map_package.v1");
 
+    private static Task<StudioPackageDraft> CreateTwoLayerMapDraftAsync(HttpClient client) =>
+        CreateDraftAsync(
+            client,
+            StudioPackageFamily.Map,
+            "honua_map_package.v1",
+            """
+            {"layers":[{"id":"parcels","title":"Parcels","visible":true},
+                       {"id":"roads","title":"Roads","visible":true}]}
+            """);
+
     private static async Task<StudioPackageDraft> CreateDraftAsync(
         HttpClient client,
         StudioPackageFamily family,
-        string format)
+        string format,
+        string bodyJson = """{"layers":[{"id":"parcels","title":"Parcels","visible":true}]}""")
     {
-        using var body = JsonDocument.Parse(
-            """{"layers":[{"id":"parcels","title":"Parcels","visible":true}]}""");
+        using var body = JsonDocument.Parse(bodyJson);
         var request = new CreateStudioPackageDraftRequest
         {
             PackageKey = $"coedit-map-{Guid.NewGuid():N}",

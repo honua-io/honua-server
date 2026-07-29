@@ -79,6 +79,23 @@ internal static class CollaborationCheckpointEndpoints
                 "process-local log cannot prove it observed every accepted edit.");
         }
 
+        // Same rule one axis over: a checkpoint mints an IMMUTABLE version, so it must be able to
+        // prove it observed every accepted edit. A process-local log loses acknowledged
+        // operations on restart and a post-restart replay is indistinguishable from a session
+        // that never appended anything — the checkpoint would return 201 for a version that
+        // silently drops those edits. Refuse honestly instead of faking durability
+        // (honua-server#2999 review). Live co-editing itself stays available: appends and the
+        // stream are explicitly resumable and tell a reconnecting client to resync.
+        if (!operationLog.CanProveRestartContinuity)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map checkpoints are unavailable until the collaboration operation log is " +
+                "backed by a restart-durable store; a process-local log loses accepted " +
+                "operations when the server restarts, so a checkpoint cannot prove the version " +
+                "it would create contains every accepted edit.");
+        }
+
         var draft = await lifecycle.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
         if (draft is null)
         {

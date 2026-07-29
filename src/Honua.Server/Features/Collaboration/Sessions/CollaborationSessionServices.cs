@@ -48,9 +48,13 @@ internal static class CollaborationSessionServices
             var topology = sp.GetRequiredService<SavedMapCollaborationTopology>();
             var log = sp.GetRequiredService<Core.Features.Collaboration.Operations.ISavedMapOperationLogRepository>();
             var operationsAvailable = !topology.IsMultiReplica || log.SupportsReplicaSharedReplay;
+            // Checkpointing additionally needs a restart-durable log: it mints an immutable
+            // version and must not claim completeness it cannot prove (honua-server#2999 review).
+            var checkpointsAvailable = operationsAvailable && log.SupportsRestartDurableReplay;
+            var capabilities = CollaborationCapabilities.Default with { Checkpoints = checkpointsAvailable };
             return operationsAvailable
-                ? CollaborationCapabilities.Default
-                : CollaborationCapabilities.Default with { Operations = false, Replay = false };
+                ? capabilities
+                : capabilities with { Operations = false, Replay = false };
         });
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
         // The background sweep keeps the singleton presence/outbox state bounded when

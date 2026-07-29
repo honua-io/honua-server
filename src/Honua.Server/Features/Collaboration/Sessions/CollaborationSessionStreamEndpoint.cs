@@ -127,13 +127,18 @@ internal static partial class CollaborationSessionStreamEndpoint
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
-            var operations = Array.Empty<CollaborationOperationWire>();
-            if (replay.Status == SavedMapOperationReplayStatus.Ok)
+            // Where the snapshot tail starts. On the healthy path that is the client's own resume
+            // cursor, so it only receives operations it has not seen. When the resume cursor has
+            // fallen outside the retained window the client must reload the durable document,
+            // which only reflects CHECKPOINTED operations — so the snapshot must carry the whole
+            // retained window instead of nothing, otherwise every retained-but-not-yet-
+            // checkpointed operation is dropped while the snapshot advertises the head cursor
+            // (honua-server#2999 review). Re-sending an already-checkpointed prefix is safe:
+            // every operation family is absolute-state and the reducer rebuilds from the snapshot.
+            var tailSince = resumeFrom;
+            if (replay.Status != SavedMapOperationReplayStatus.Ok)
             {
-                operations = replay.Operations.Select(CollaborationOperationWire.FromEnvelope).ToArray();
-            }
-            else
-            {
+                tailSince = replay.MinimumReplayCursor.Value;
                 await SendEnvelopeAsync(
                     webSocket,
                     writeLock,
@@ -161,19 +166,11 @@ internal static partial class CollaborationSessionStreamEndpoint
                 Type = CollaborationSessionEventTypes.Snapshot
             });
 
-            if (replay.Status == SavedMapOperationReplayStatus.Ok)
-            {
-                var freshReplay = await operationLog.ReplayAsync(
-                        new SavedMapId(mapId),
-                        new SavedMapOperationCursor(resumeFrom),
-                        context.RequestAborted)
-                    .ConfigureAwait(false);
-                if (freshReplay.Status == SavedMapOperationReplayStatus.Ok)
-                {
-                    replay = freshReplay;
-                    operations = freshReplay.Operations.Select(CollaborationOperationWire.FromEnvelope).ToArray();
-                }
-            }
+            var (operations, deliveredThrough) = await ReadSnapshotTailAsync(
+                operationLog,
+                mapId,
+                tailSince,
+                context.RequestAborted).ConfigureAwait(false);
 
             // The snapshot's own Sequence is the boundary the client reducer compares later
             // envelopes against, so it MUST be the sequence stamped before the tail was read —
@@ -185,7 +182,11 @@ internal static partial class CollaborationSessionStreamEndpoint
             {
                 Sequence = snapshotEnvelope.Sequence,
                 Operations = operations,
-                Cursor = replay.HeadCursor.Value.ToString(CultureInfo.InvariantCulture)
+                // Never advertise a cursor the snapshot did not actually deliver up to. Claiming
+                // the current head while withholding operations would advance the client past
+                // committed edits it never received, and its reducer would then discard those
+                // operations' later envelopes as already-seen (honua-server#2999 review).
+                Cursor = deliveredThrough.ToString(CultureInfo.InvariantCulture)
             };
             await SendEnvelopeAsync(
                 webSocket,
@@ -231,6 +232,43 @@ internal static partial class CollaborationSessionStreamEndpoint
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Reads the snapshot's operation tail starting after <paramref name="sinceCursor"/> and
+    /// reports the cursor the tail actually reaches, so the snapshot can never advertise a
+    /// position it did not deliver. When the retained window moves past the requested start
+    /// between reads the tail restarts from the window's current base rather than silently
+    /// returning nothing.
+    /// </summary>
+    private static async Task<(CollaborationOperationWire[] Operations, long DeliveredThrough)> ReadSnapshotTailAsync(
+        ISavedMapOperationLogRepository operationLog,
+        string mapId,
+        long sinceCursor,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var replay = await operationLog.ReplayAsync(
+                    new SavedMapId(mapId),
+                    new SavedMapOperationCursor(sinceCursor),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (replay.Status == SavedMapOperationReplayStatus.Ok)
+            {
+                var operations = replay.Operations.Select(CollaborationOperationWire.FromEnvelope).ToArray();
+                var deliveredThrough = replay.Operations.Count > 0
+                    ? replay.Operations[replay.Operations.Count - 1].ServerCursor.Value
+                    : sinceCursor;
+                return (operations, deliveredThrough);
+            }
+
+            sinceCursor = replay.MinimumReplayCursor.Value;
+        }
+
+        // The window kept moving; deliver nothing and stay honest about the position reached.
+        return ([], sinceCursor);
     }
 
     private static async Task WriteLoopAsync(

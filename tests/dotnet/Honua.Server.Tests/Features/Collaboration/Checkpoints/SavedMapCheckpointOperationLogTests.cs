@@ -63,6 +63,22 @@ public sealed class SavedMapCheckpointOperationLogTests
             .CanProveReplayContinuity.Should().BeFalse();
     }
 
+    [UnitTest]
+    public void CanProveRestartContinuity_FollowsTheLogsOwnRestartDurabilitySignal()
+    {
+        // Restart continuity is a property of the LOG, not of the topology: a single-replica
+        // deployment is authoritative over its own log yet still loses acknowledged operations
+        // when the process restarts, so the checkpoint gate must not read this off topology
+        // (honua-server#2999 review).
+        var repository = new InMemorySavedMapOperationLogRepository();
+        repository.SupportsRestartDurableReplay.Should().BeFalse();
+
+        new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(false))
+            .CanProveRestartContinuity.Should().BeFalse();
+        new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(true))
+            .CanProveRestartContinuity.Should().BeFalse();
+    }
+
     private static async Task AppendAsync(InMemorySavedMapOperationLogRepository repository, int n)
     {
         var result = await repository.AppendAsync(new SavedMapOperationAppendRequest

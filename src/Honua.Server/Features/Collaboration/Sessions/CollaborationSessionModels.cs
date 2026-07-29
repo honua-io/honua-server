@@ -193,6 +193,14 @@ internal sealed record CollaborationCapabilities
     public bool Operations { get; init; } = true;
 
     public bool Replay { get; init; } = true;
+
+    /// <summary>
+    /// Whether the session can be checkpointed into an immutable Studio content version. False
+    /// when the operation log cannot prove it observed every accepted edit (a process-local log
+    /// loses acknowledged operations on restart), so clients learn from the handshake instead of
+    /// discovering it through a failed checkpoint (honua-server#2999 review).
+    /// </summary>
+    public bool Checkpoints { get; init; } = true;
 }
 
 /// <summary>

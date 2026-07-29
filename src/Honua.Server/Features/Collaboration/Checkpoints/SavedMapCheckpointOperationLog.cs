@@ -15,11 +15,12 @@ namespace Honua.Server.Features.Collaboration.Checkpoints;
 /// operations (already persisted by earlier checkpoints) age out of the retained window.
 /// </summary>
 /// <remarks>
-/// The cursor record is process-local by design: it shares the lifetime and scope of the
-/// in-memory op log it indexes into, so the pair stays consistent across restarts (both reset
-/// together) and the distributed-deployment case is fail-closed by
-/// <see cref="CanProveReplayContinuity"/> before either is consulted. A replica-shared log
-/// implementation must persist this cursor alongside the log itself.
+/// The cursor record is process-local by design: it shares the lifetime and scope of the op log
+/// it indexes into, so the pair stays consistent (both reset together). Because both reset, a
+/// process-local log cannot prove continuity across a restart — checkpointing is gated on
+/// <see cref="CanProveRestartContinuity"/> (and, in a declared multi-replica deployment, on
+/// <see cref="CanProveReplayContinuity"/>) before either is consulted. A restart-durable or
+/// replica-shared log implementation must persist this cursor alongside the log itself.
 /// </remarks>
 internal sealed class SavedMapCheckpointOperationLog
 {
@@ -44,6 +45,20 @@ internal sealed class SavedMapCheckpointOperationLog
     /// </summary>
     public bool CanProveReplayContinuity =>
         !_topology.IsMultiReplica || _repository.SupportsReplicaSharedReplay;
+
+    /// <summary>
+    /// Whether a replay from this node provably observes every accepted edit ACROSS a process
+    /// restart. False whenever the op log is not restart-durable: an operation acknowledged
+    /// before a restart is then gone, and a post-restart replay is indistinguishable from a
+    /// session that never appended anything — so a checkpoint would mint an immutable version
+    /// that silently omits an accepted edit (honua-server#2999 review).
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT satisfiable by configuration: no operator declaration can make a
+    /// process-local log survive a restart. It is unlocked by registering a restart-durable
+    /// <see cref="ISavedMapOperationLogRepository"/> implementation.
+    /// </remarks>
+    public bool CanProveRestartContinuity => _repository.SupportsRestartDurableReplay;
 
     /// <summary>
     /// Replays every operation accepted after the last successfully checkpointed cursor for

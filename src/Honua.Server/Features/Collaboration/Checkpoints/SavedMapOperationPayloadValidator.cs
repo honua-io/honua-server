@@ -69,7 +69,7 @@ internal static class SavedMapOperationPayloadValidator
                 return TryValidateReorder(payload, out error);
 
             case SavedMapOperationKind.PatchStyle:
-                return TryValidateRequiredString(payload, "layerId", out error);
+                return TryValidatePatchStyle(payload, out error);
 
             case SavedMapOperationKind.ReplaceWebMapDocument:
                 if (payload.ValueKind != JsonValueKind.Object)
@@ -118,6 +118,34 @@ internal static class SavedMapOperationPayloadValidator
         return true;
     }
 
+    /// <summary>
+    /// Validates a style patch: a non-empty <c>layerId</c>, plus a <c>styleRef</c> that is either
+    /// omitted/null (an intentional clear) or a string.
+    /// </summary>
+    /// <remarks>
+    /// The kind check matters because the applier can only express a string or null style
+    /// reference. Admitting <c>{"layerId":"parcels","styleRef":42}</c> would consume a permanent
+    /// cursor and then CLEAR the layer's existing style at checkpoint time, turning malformed
+    /// input into a destructive edit instead of a 400 (honua-server#2999 review).
+    /// </remarks>
+    private static bool TryValidatePatchStyle(JsonElement payload, out string error)
+    {
+        if (!TryValidateRequiredString(payload, "layerId", out error))
+        {
+            return false;
+        }
+
+        if (payload.TryGetProperty("styleRef", out var styleRef) &&
+            styleRef.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+        {
+            error = "The style payload requires 'styleRef' to be a string, or null to clear it.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private static bool TryValidateReorder(JsonElement payload, out string error)
     {
         if (payload.ValueKind != JsonValueKind.Object ||
@@ -128,11 +156,20 @@ internal static class SavedMapOperationPayloadValidator
             return false;
         }
 
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in ids.EnumerateArray())
         {
-            if (id.ValueKind != JsonValueKind.String || id.GetString() is not { Length: > 0 })
+            if (id.ValueKind != JsonValueKind.String || id.GetString() is not { Length: > 0 } value)
             {
                 error = "Every entry in 'layerIds' must be a non-empty string.";
+                return false;
+            }
+
+            // A repeated id has no single meaning as an ordering, and the applier would have to
+            // silently drop one occurrence — the same class of silent no-op as an unknown id.
+            if (!seen.Add(value))
+            {
+                error = "Every entry in 'layerIds' must be unique.";
                 return false;
             }
         }

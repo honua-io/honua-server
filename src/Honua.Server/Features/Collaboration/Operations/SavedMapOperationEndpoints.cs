@@ -55,10 +55,8 @@ internal static class SavedMapOperationEndpoints
     private static async Task<IResult> HandleAppend(
         string mapId,
         [FromBody] SavedMapOperationAppendApiRequest request,
-        [FromServices] ISavedMapOperationLogRepository repository,
+        [FromServices] SavedMapOperationAppendCoordinator coordinator,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
-        [FromServices] InMemoryCollaborationSessionService sessions,
-        [FromServices] SavedMapCollaborationTopology topology,
         HttpContext context)
     {
         // One canonical log key per draft regardless of the GUID textual form in the route
@@ -77,7 +75,7 @@ internal static class SavedMapOperationEndpoints
         // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
         // make authoritative. A single instance (even one using Redis for cache/jobs) is
         // authoritative over its own log and is unaffected.
-        if (topology.IsMultiReplica && !repository.SupportsReplicaSharedReplay)
+        if (!coordinator.CanAcceptEdits)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
@@ -141,16 +139,13 @@ internal static class SavedMapOperationEndpoints
             IdempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim()
         };
 
-        var result = await repository.AppendAsync(appendRequest, context.RequestAborted).ConfigureAwait(false);
-
-        if (result.Status == SavedMapOperationAppendStatus.Accepted && !result.IsDuplicate && result.Operation is not null)
-        {
-            // Bridge the committed op into the live session fan-out (#2999, REQ-002/REQ-004):
-            // clients submit edits over this REST append (typed conflict semantics stay here) and
-            // the WebSocket stream echoes the committed, server-ordered operation to every
-            // participant of the map — the op-log server cursor is the authoritative order.
-            sessions.PublishOperation(mapId, CollaborationOperationWire.FromEnvelope(result.Operation));
-        }
+        // Cursor assignment and live fan-out happen inside ONE per-map serialization point: two
+        // concurrent appends must reach subscribers in the same order the log assigned their
+        // cursors, otherwise live clients would apply same-aspect edits in the reverse of the
+        // order replay and checkpointing use (honua-server#2999 review).
+        var result = await coordinator
+            .AppendAndPublishAsync(mapId, appendRequest, context.RequestAborted)
+            .ConfigureAwait(false);
 
         var response = new SavedMapOperationAppendApiResponse
         {
