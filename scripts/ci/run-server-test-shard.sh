@@ -189,7 +189,10 @@ fi
 #
 # capacity_status is the distinct, actionable signal:
 #   unbounded          - no inner timeout configured; nothing to measure.
-#   ok                 - finished under the warn ratio.
+#   not_assessed       - ran under a budget but neither passed nor timed out; a
+#                        failing run may abort early or run long on retries, so
+#                        its duration is not a valid capacity sample.
+#   ok                 - PASSED under the warn ratio.
 #   low_headroom       - PASSED, but consumed >= warn ratio of its budget.
 #   capacity_exhausted - hit the cap while still producing output.
 #   hang_suspected     - hit the cap after going silent for >= stall_seconds.
@@ -211,6 +214,11 @@ if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
       else
         capacity_status="capacity_exhausted"
       fi
+    elif [[ "${status}" != "passed" ]]; then
+      # A shard that failed on a test/infrastructure error did not necessarily
+      # run its full workload, so claiming anything about its headroom (in
+      # either direction) would be false. Record the ratio, assert nothing.
+      capacity_status="not_assessed"
     elif awk -v r="${headroom_ratio}" -v w="${headroom_warn_ratio}" 'BEGIN { exit !(r >= w) }'; then
       capacity_status="low_headroom"
     else

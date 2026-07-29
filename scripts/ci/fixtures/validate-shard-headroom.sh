@@ -28,6 +28,7 @@ mkdir -p "${stub_dir}"
 
 # Stub `dotnet`. HONUA_FIXTURE_MODE selects the shape of the run:
 #   chatty  - emit output continuously for HONUA_FIXTURE_SECONDS, then exit 0.
+#   failing - same, but exit 1 as a normal test failure would.
 #   silent  - emit one line, then go quiet forever (until the cap kills it).
 cat > "${stub_dir}/dotnet" <<'STUB'
 #!/usr/bin/env bash
@@ -36,12 +37,16 @@ mode="${HONUA_FIXTURE_MODE:-chatty}"
 seconds="${HONUA_FIXTURE_SECONDS:-2}"
 echo "stub dotnet test starting (mode=${mode})"
 case "${mode}" in
-  chatty)
+  chatty|failing)
     end=$(( $(date +%s) + seconds ))
     while [[ "$(date +%s)" -lt "${end}" ]]; do
       echo "stub progress $(date -u +'%H:%M:%S')"
       sleep 0.2
     done
+    if [[ "${mode}" == "failing" ]]; then
+      echo "Failed!  - Failed: 1, Passed: 0"
+      exit 1
+    fi
     echo "Passed!  - Failed: 0, Passed: 1"
     ;;
   silent)
@@ -144,6 +149,20 @@ run_case unbounded chatty 2 "" 0.80 60
   || fail "headroom_ratio must be null with no configured budget"
 pass "unconfigured budget reports unbounded instead of inventing a ratio"
 
+# --- 5b. A FAILING shard never claims anything about its headroom. -----------
+# A test/infrastructure failure can abort early or run long on retries, so its
+# duration is not a capacity sample. Claiming "this shard passed but has no
+# headroom" for a run that did not pass would be a false signal.
+run_case failed failing 2 1 0.01 60
+[[ "${rc}" == "1" ]] || fail "failing shard did not propagate its exit code (rc=${rc})"
+[[ "$(timing_field .status)" == "failed" ]] || fail "status was $(timing_field .status)"
+[[ "$(timing_field .capacity_status)" == "not_assessed" ]] \
+  || fail "failing shard capacity_status was $(timing_field .capacity_status), expected not_assessed"
+if grep -q 'HONUA_SHARD_' "${out_file}"; then
+  fail "a failing shard must not emit a capacity annotation"
+fi
+pass "failing shard is not assessed for headroom"
+
 # --- 6. Fleet audit over collected timing artifacts. -------------------------
 # scripts/ci/audit-shard-headroom.py is the tool used to re-base budgets, so its
 # classification has to agree with the per-run classification above.
@@ -167,7 +186,8 @@ else
 
   write_timing() {
     jq -nc --arg shard "${audit_shard}" --argjson duration "$1" --argjson timed_out "$2" \
-      '{shard: $shard, duration_seconds: $duration, timed_out: $timed_out}' \
+      --arg capacity_status "${4:-ok}" \
+      '{shard: $shard, duration_seconds: $duration, timed_out: $timed_out, capacity_status: $capacity_status}' \
       > "${audit_dir}/$3.timing.json"
   }
 
@@ -200,11 +220,23 @@ else
 
   # A recorded timeout is censored data: the recommendation must be based on at
   # least the cap, never on the (necessarily smaller) truncated duration.
-  write_timing "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 }')" true a
+  write_timing "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 }')" true a capacity_exhausted
   audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
   [[ "$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")" == "over_capacity" ]] \
     || fail "a recorded timeout was not classified over_capacity"
   pass "fleet audit treats a recorded timeout as over capacity"
+
+  # not_assessed runs are excluded from the sample entirely, so a failing run
+  # that happened to be slow cannot inflate a shard's measured p90.
+  rm -f "${audit_dir}"/*.timing.json
+  write_timing "${comfortable_seconds}" false a
+  write_timing "$(awk -v c="${audit_cap}" 'BEGIN { printf "%d", c * 60 * 0.99 }')" false b not_assessed
+  audit_json="$("${python_bin}" "${REPO_ROOT}/scripts/ci/audit-shard-headroom.py" --timings-dir "${audit_dir}")"
+  runs="$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .runs' <<<"${audit_json}")"
+  [[ "${runs}" == "1" ]] || fail "not_assessed run was counted as a capacity sample (runs=${runs})"
+  [[ "$(jq -r --arg s "${audit_shard}" '.[] | select(.shard == $s) | .status' <<<"${audit_json}")" == "ok" ]] \
+    || fail "not_assessed run skewed the shard's classification"
+  pass "fleet audit excludes not_assessed runs from the sample"
 fi
 
 echo "✅ shard headroom instrumentation fixture passed"

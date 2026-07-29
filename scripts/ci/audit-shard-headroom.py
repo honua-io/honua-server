@@ -51,6 +51,12 @@ def load_timings(directory: Path) -> dict[str, list[dict]]:
         shard = record.get("shard")
         if not shard:
             continue
+        # A run that neither passed nor hit its cap may have aborted early or
+        # run long on retries, so its duration is not a capacity sample. The
+        # shard runner marks those `not_assessed`; older artifacts without the
+        # field are kept for backwards compatibility.
+        if record.get("capacity_status") in {"not_assessed", "unbounded"}:
+            continue
         observations.setdefault(shard, []).append(record)
     return observations
 

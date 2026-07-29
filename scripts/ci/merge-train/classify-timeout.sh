@@ -208,10 +208,14 @@ train_run_logs_match_timeout() {
     return $?
   fi
 
-  local rows jid name saw_job=0
+  local rows jid name saw_job=0 saw_timeout=0
   rows="$(gh run view "${run_id}" --json jobs \
     --jq '.jobs[] | select(.conclusion=="failure") | [.databaseId, .name] | @tsv' \
     2>/dev/null || echo "")"
+  # Scan EVERY selected failing job before deciding the kind. A generic timeout
+  # in one job must not shortcut past a capacity-exhausted shard in another, or
+  # the caller reruns the very job this change promises never to retry. Capacity
+  # has precedence and is terminal, so it is the only early exit.
   while IFS="${TRAIN_TIMEOUT_TAB}" read -r jid name; do
     [[ -n "${jid}" ]] || continue
     if [[ -n "${failing_names}" ]] && ! grep -Fqx -- "${name}" <<<"${failing_names}"; then
@@ -219,32 +223,43 @@ train_run_logs_match_timeout() {
     fi
     saw_job=1
     if train_match_timeout_text "$(gh run view --job "${jid}" --log 2>/dev/null || echo "")"; then
-      return 0
+      saw_timeout=1
+      if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
+        return 0
+      fi
     fi
   done <<<"${rows}"
+
+  if [[ "${saw_timeout}" == "1" ]]; then
+    TRAIN_TIMEOUT_KIND=hang
+    return 0
+  fi
 
   if [[ "${saw_job}" == "0" ]]; then
     train_match_timeout_text "$(gh run view "${run_id}" --log-failed 2>/dev/null || echo "")"
     return $?
   fi
+  TRAIN_TIMEOUT_KIND=""
   return 1
 }
 
 # train_classify_timeout <run-id> <retry-count> [failing-job-names]
-# Returns 0 after issuing a retry, 1 when this is not a timeout, and 2 when a
-# timeout persisted past the cap and must be handled as a real failure.
+# Returns 0 after issuing a retry, 1 when this is not a timeout, 2 when a
+# timeout persisted past the cap and must be handled as a real failure, and
+# 7 (#3054) when a shard exhausted its configured budget while still running
+# tests, which is a CI-capacity failure rather than anything a batch member did.
 train_classify_timeout() {
   local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}" callback="${4:-}"
   train_run_logs_match_timeout "${run_id}" "${failing_names}" || return 1
   if [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]]; then
     # #3054: the shard was still executing tests when its configured budget
     # expired. A rerun burns another full shard's worth of runner time and
-    # reproduces the same exhaustion, and the resulting attribution blames
-    # whichever PRs happened to be in the batch. Fail straight through so the
-    # capacity problem is fixed in .github/ci-shards.json instead of being
-    # retried indefinitely.
+    # reproduces the same exhaustion, so this never consumes a retry. It is
+    # also NOT attributable to one PR, so it must bypass autofix/attribution
+    # (which would drop or escalate an arbitrary batch member) and escalate the
+    # batch as a whole instead.
     train_warn "shard capacity exhausted (HONUA_SHARD_CAPACITY_EXHAUSTED): the test step used its whole configured budget while still running tests; this is not a hang and not attributable to one PR. Raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json instead of rerunning."
-    return 2
+    return 7
   fi
   if [[ "${retry_count}" -ge "${TRAIN_TIMEOUT_RERUN_CAP}" ]]; then
     train_warn "timeout/exit-124 failure persisted after ${TRAIN_TIMEOUT_RERUN_CAP} failed-job retry; treating as real"
@@ -261,7 +276,9 @@ train_classify_timeout() {
 # Returns 0=rerun accepted, 1=real, 2=known-flake merge-through,
 # 3=pre-request failure, 4=ambiguous requesting state preserved, 5=definitive
 # API rejection persisted for terminal recovery, 6=rejection known but terminal
-# state persistence failed (cleanup is unauthorized and must not run).
+# state persistence failed (cleanup is unauthorized and must not run),
+# 7=shard capacity exhausted (#3054): a CI-configuration failure that must skip
+# autofix and per-PR attribution entirely.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -271,7 +288,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3|4|5|6) return "${rc}" ;;
+    3|4|5|6|7) return "${rc}" ;;
   esac
 
   rc=0

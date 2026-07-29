@@ -73,23 +73,53 @@ grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "retry did not target 
 pass "failed-job-only timeout retry"
 
 # #3054: a shard that consumed its whole CONFIGURED budget while still running
-# tests is a capacity failure. It must be treated as real immediately — never
-# rerun — because a rerun reproduces it at full runner cost and the resulting
-# attribution blames an arbitrary member of the batch.
+# tests is a CI-capacity failure. It must never consume a rerun (a rerun
+# reproduces it at full runner cost) AND must never reach per-PR attribution
+# (which would drop or escalate an arbitrary batch member for a defect none of
+# them introduced), so it gets its own terminal result code.
 TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \
   "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget while still producing output 2s ago." \
   "::error::Server test shard 'Migration' timed out after 29 minute(s).")"
 : >"${record}"
 rc=0
 train_classify_timeout 123 0 || rc=$?
-[[ "${rc}" == "2" ]] || fail "capacity exhaustion was not classified as a real failure (rc=${rc})"
+[[ "${rc}" == "7" ]] || fail "capacity exhaustion was not given its own result code (rc=${rc})"
 [[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
 if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun"; fi
 rc=0
 train_classify_retry_candidate 123 0 0 || rc=$?
-[[ "${rc}" == "1" ]] || fail "capacity exhaustion did not reach attribution as a real failure (rc=${rc})"
+[[ "${rc}" == "7" ]] || fail "capacity exhaustion was folded into the generic real-failure path (rc=${rc})"
 if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun through the orchestration policy"; fi
-pass "shard capacity exhaustion is real, not retried"
+pass "shard capacity exhaustion is terminal, not retried and not attributed"
+
+# The train's ci-gate loop must have an explicit branch for that code, or the
+# batch would fall through to autofix/attribution anyway.
+grep -q 'rc_retry.*==.*"7"' "${TRAIN_DIR}/train.sh" \
+  || fail "train.sh has no branch for the capacity-exhausted result code"
+pass "train.sh routes capacity exhaustion away from attribution"
+
+# A generic timeout in an EARLIER failing job must not shortcut past a
+# capacity-exhausted shard in a later one; capacity has precedence.
+: >"${record}"
+saved_gh_before_scan="$(declare -f gh)"
+saved_run_log_text="${TRAIN_RUN_LOG_TEXT}"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\n12\tServer Tests (Migration)\n' ;;
+    *"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
+    *"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
+    *) printf '1\n' ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+rc=0
+train_classify_timeout 123 0 || rc=$?
+[[ "${rc}" == "7" ]] || fail "capacity marker in a later failing job was missed (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
+if [[ -s "${record}" ]]; then fail "a later-job capacity exhaustion still consumed a rerun"; fi
+pass "capacity marker takes precedence over an earlier generic timeout"
+eval "${saved_gh_before_scan}"
+TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
 
 # A timeout that stalled (suspected hang) keeps the existing one-rerun budget.
 TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \

@@ -34,18 +34,21 @@ Each `Honua.Server.Tests` shard carries two timeouts:
 
 | `capacity_status` | Annotation | Meaning |
 |---|---|---|
-| `ok` | none | Finished below the warn ratio. |
+| `ok` | none | Passed below the warn ratio. |
 | `low_headroom` | `::warning::HONUA_SHARD_LOW_HEADROOM` | **Passed**, but consumed >= 80% of its budget. Re-base the budget or split the shard before the next test lands in it. |
 | `capacity_exhausted` | `::error::HONUA_SHARD_CAPACITY_EXHAUSTED` | Hit the cap while still producing output. The shard is over capacity; this is not attributable to any single PR. |
 | `hang_suspected` | `::error::HONUA_SHARD_HANG_SUSPECTED` | Hit the cap after producing no output for `HONUA_SERVER_TEST_STALL_SECONDS` (default 300s). Treat as a genuine hang. |
+| `not_assessed` | none | Ran under a budget but neither passed nor hit the cap. A failing run can abort early or run long on retries, so its duration is not a capacity sample and the fleet audit excludes it. |
 | `unbounded` | none | No inner timeout configured. |
 
 The merge train consumes those markers in
 `scripts/ci/merge-train/classify-timeout.sh`. A `hang_suspected`/generic timeout
 keeps the historical one-rerun budget; `capacity_exhausted` is treated as a real
 failure **immediately and is never rerun**, because rerunning an over-capacity
-shard reproduces the exhaustion at full runner cost and then attributes it to an
-arbitrary member of the batch.
+shard reproduces the exhaustion at full runner cost. It also gets its own
+terminal result code so the train escalates the whole batch instead of running
+autofix and per-PR attribution, which would drop or escalate an arbitrary member
+for a defect none of them introduced.
 
 ## Re-basing the budgets
 
