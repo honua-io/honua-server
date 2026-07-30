@@ -12994,9 +12994,10 @@
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_InlineGeoJsonSource_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_Intersects_ReturnsSourceFeaturesWithMatchCount",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_NearestNeighborMethod_ReturnsNotImplemented",
-        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_PointInPolygonMethod_ReturnsFeatureCollection",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_PointInPolygonMethod_MatchesOnlySourcePointsInsideTheDatasetPolygon",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_UnknownDataset_ReturnsNotFound",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithAggregates_ReturnsAggregateProperty",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentSyncLimitTests.Enrich_OverLimit_ReturnsPayloadTooLarge"
       ],
       "proof_ledger_surface": "data-enrichment",
