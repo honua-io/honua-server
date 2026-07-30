@@ -4,6 +4,8 @@
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
+# These ARG defaults are the single source of truth for the GHCR mirror of these
+# bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:d8ee39817ca03a3757288e83c37ed73cc969a286c603b827c7cbe33add1c2d1c
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:ad7cd1ed2e913fbd806f8ecc0e8bb8e9e8fb7cfd4d3fa43be9aa0b4cd8008bf5
 

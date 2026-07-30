@@ -37,6 +37,20 @@ explicit PR per published image. Auxiliary developer/simple Dockerfiles
 (`docker/Dockerfile.dev`, `docker/Dockerfile.lambda.aot.simple`) are outside
 this platform publish matrix and retain their existing image references.
 
+### Nightly mirror derives from these pins
+
+`nightly-container-build.yml` does not pull the bases from MCR directly (MCR is
+anonymous-only and rate-limits the nightly fleet); its `mirror-base-images` job
+copies them into GHCR and the build jobs pass the mirrored tags as
+`DOTNET_SDK_IMAGE` / `DOTNET_ASPNET_IMAGE` / `DOTNET_RUNTIME_DEPS_IMAGE`, which
+override the Dockerfile ARG defaults. That workflow previously carried its own
+hand-maintained digest list, so a Dockerfile-only refresh left the published
+`nightly*`/`trunk*` images on the *old* bases. The digests now live only in the
+Dockerfile ARG defaults: `scripts/ci/base-image-mirrors.sh` reads them and the
+mirror job mirrors exactly what it prints, and `--verify` fails the run if a
+build job consumes a mirror tag the map does not produce. Refreshing a pin in a
+Dockerfile is therefore sufficient for the published images to pick it up.
+
 ## Logging redactions (CodeQL)
 
 A new helper, `Honua.Core.Features.Infrastructure.Logging.LogValueRedactor`,

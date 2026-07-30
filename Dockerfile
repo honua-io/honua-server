@@ -7,6 +7,9 @@
 # Refresh both digests together by resolving the current manifests behind
 # `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`.
 # Overrideable via build args so CI can swap in pre-warmed mirrors if MCR throttles.
+# These ARG defaults are the single source of truth for the mirrored bases:
+# scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
+# job mirrors exactly what it prints, so no second digest list needs updating.
 # digest pinned 2026-07-24
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664
 # digest pinned 2026-07-24
