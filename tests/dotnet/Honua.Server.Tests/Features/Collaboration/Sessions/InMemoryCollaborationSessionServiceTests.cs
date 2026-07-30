@@ -443,6 +443,55 @@ public sealed class InMemoryCollaborationSessionServiceTests
         service.GetSnapshot("map-a").Participants.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task Leave_TwoDistinctAdminApiKeys_CannotEvictEachOther()
+    {
+        // ApiKeyAuthenticationHandler gives EVERY full-admin API key the literal name "admin"
+        // and no NameIdentifier/sub, distinguishing keys only by api_key_id. Resolving identity
+        // from the name therefore collapsed all admin collaborators onto one id, and the leave
+        // ownership check then let any admin eject any other (honua-server#2999 review).
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var victimKey = Guid.NewGuid().ToString("D");
+        var attackerKey = Guid.NewGuid().ToString("D");
+
+        var victim = (await service.JoinAsync(
+            "map-a",
+            new CollaborationJoinRequest { DisplayName = "Victim" },
+            AdminApiKeyPrincipal(victimKey))).Response!;
+
+        service.Leave(
+                victim.SessionId,
+                reason: "left",
+                requiredMapId: "map-a",
+                requiredOwner: AdminApiKeyPrincipal(attackerKey))
+            .Should().BeFalse("a different admin API key is a different collaborator");
+        service.GetSnapshot("map-a").Participants.Should().ContainSingle();
+
+        service.Leave(
+                victim.SessionId,
+                reason: "left",
+                requiredMapId: "map-a",
+                requiredOwner: AdminApiKeyPrincipal(victimKey))
+            .Should().BeTrue("the owning key still leaves normally");
+        service.GetSnapshot("map-a").Participants.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Reproduces the claim shape <c>ApiKeyAuthenticationHandler</c> emits for a full-admin key:
+    /// a shared <see cref="ClaimTypes.Name"/> of "admin", no
+    /// <see cref="ClaimTypes.NameIdentifier"/> and no <c>sub</c>, and a per-key
+    /// <c>api_key_id</c>.
+    /// </summary>
+    private static ClaimsPrincipal AdminApiKeyPrincipal(string apiKeyId) =>
+        new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("api_key_id", apiKeyId),
+            ],
+            authenticationType: "Test"));
+
     private static CollaborationOperationWire CreateWireOperation(string mapId, long cursor) => new()
     {
         Id = $"op-{cursor}",

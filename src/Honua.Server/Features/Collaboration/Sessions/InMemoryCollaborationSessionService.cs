@@ -861,10 +861,24 @@ internal sealed class InMemoryCollaborationSessionService
         return $"participant-{sessionId:N}"[..44];
     }
 
+    /// <summary>
+    /// Resolves the stable identity used to decide who owns a presence record, most-specific
+    /// first.
+    /// </summary>
+    /// <remarks>
+    /// <c>api_key_id</c> must be preferred over <see cref="ClaimTypes.Name"/>:
+    /// <c>ApiKeyAuthenticationHandler</c> gives EVERY full-admin API key the literal name
+    /// <c>"admin"</c> and no <see cref="ClaimTypes.NameIdentifier"/>/<c>sub</c>, so falling
+    /// through to the name collapses distinct admin collaborators onto one identity — and the
+    /// ownership check on leave would then let one of them act on another's presence record.
+    /// <c>api_key_id</c> is unique per key, so it separates them (honua-server#2999 review).
+    /// The name stays as a last resort for principals that carry nothing more specific.
+    /// </remarks>
     private static string? ResolveUserId(ClaimsPrincipal principal)
     {
         return NormalizeOptional(principal.FindFirstValue(ClaimTypes.NameIdentifier)) ??
             NormalizeOptional(principal.FindFirstValue("sub")) ??
+            NormalizeOptional(principal.FindFirstValue("api_key_id")) ??
             NormalizeOptional(principal.FindFirstValue(ClaimTypes.Name));
     }
 
