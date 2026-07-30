@@ -39,6 +39,12 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,0,10,10],"center":[5,5]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0,0,10,10],"center":[5,5],"zoom":8}""")]
+    // The shared zoom/pitch bounds are INCLUSIVE, so the extremes must stay usable.
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":0,"pitch":0}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":24,"pitch":85}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zoom":24,"pitch":85}}""")]
+    // Bearing is deliberately unbounded by the shared contract; it must not be over-rejected.
+    [InlineData(SavedMapOperationKind.SetViewport, """{"bearing":540}""")]
     public void TryValidate_ApplicablePayload_Accepts(SavedMapOperationKind kind, string payload)
     {
         SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
@@ -94,6 +100,16 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,1,2]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
+    // Same class of gap on the scalars: double? accepts any magnitude, so {"zoom":25} used to
+    // reach the unconditional success path and consume a cursor even though the shared Studio view
+    // contract (StudioCompositionViewBounds, which the MCP tool schemas also advertise) caps zoom
+    // at 24 and pitch at 85 (honua-server#2999 review).
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":25}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":-1}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"pitch":90}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"pitch":-0.5}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zoom":25}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"pitch":90}}""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.
     [InlineData(SavedMapOperationKind.SetMetadataField, """{"title":"x"}""")]

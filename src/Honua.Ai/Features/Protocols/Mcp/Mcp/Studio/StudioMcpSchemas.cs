@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
@@ -53,15 +55,19 @@ internal static class StudioMcpSchemas
         }
         """;
 
-    private const string ViewInputSchemaJson = """
+    // Arity and zoom/pitch ranges come from the shared Studio view contract
+    // (StudioCompositionViewBounds) rather than being restated here: the live-collaboration op-log
+    // validator enforces the SAME constants, so the advertised schema and the enforced admission
+    // rules cannot drift apart (honua-server#2999 review).
+    private static readonly string ViewInputSchemaJson = $$"""
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "bbox": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" }, "description": "Viewport bounding box [minX, minY, maxX, maxY]." },
-            "center": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" }, "description": "Viewport center [x, y]." },
-            "zoom": { "type": "number", "minimum": 0, "maximum": 24, "description": "Map zoom." },
-            "pitch": { "type": "number", "minimum": 0, "maximum": 85, "description": "Map pitch." },
+            "bbox": { "type": "array", "minItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "maxItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "items": { "type": "number" }, "description": "Viewport bounding box [minX, minY, maxX, maxY]." },
+            "center": { "type": "array", "minItems": {{StudioCompositionViewBounds.CenterOrdinateCount}}, "maxItems": {{StudioCompositionViewBounds.CenterOrdinateCount}}, "items": { "type": "number" }, "description": "Viewport center [x, y]." },
+            "zoom": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinZoom)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxZoom)}}, "description": "Map zoom." },
+            "pitch": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinPitch)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxPitch)}}, "description": "Map pitch." },
             "bearing": { "type": "number", "description": "Map bearing." },
             "crs": { "type": "string", "maxLength": 100, "description": "Coordinate reference system (e.g. EPSG:4326)." }
           }
@@ -268,4 +274,10 @@ internal static class StudioMcpSchemas
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
     }
+
+    /// <summary>
+    /// Renders a shared numeric bound as a culture-invariant JSON number literal, so the emitted
+    /// schema is identical on every host locale.
+    /// </summary>
+    private static string Number(double value) => value.ToString(CultureInfo.InvariantCulture);
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit.Attributes;
@@ -96,6 +97,33 @@ public sealed class StudioCompositionBodyEditorTests
 
         // ...and the modelled part still applied.
         Assert.Equal(2, reread.GetProperty("layers").GetArrayLength());
+    }
+
+    [UnitTest]
+    public void WriteBody_MergingIntoAnExistingObjectBody_NeedsNoSerializerMetadata()
+    {
+        // The published Honua.Server image builds with
+        // JsonSerializerIsReflectionEnabledByDefault=false, so a JsonSerializer call can only use
+        // registered source-generated metadata. StudioJsonContext registers none for the merge's
+        // Dictionary<string, JsonElement>...
+        Assert.Null(StudioJsonContext.Default.GetTypeInfo(typeof(Dictionary<string, JsonElement>)));
+
+        // ...so serializing the merged map threw at runtime for EVERY MCP or checkpoint mutation of
+        // an existing object body — the only path this merge exists to serve (honua-server#2999
+        // review). Writing the merged object through the JSON writer/DOM needs no metadata, and the
+        // returned element must stay readable after the writer's own document is disposed.
+        JsonElement written;
+        {
+            using var document = JsonDocument.Parse(
+                """{"mapPackageId":"pkg-1","layers":[{"id":"parcels"}]}""");
+            var envelope = BuildEnvelope(StudioPackageFamily.Map, document.RootElement.Clone());
+            var mutated = StudioCompositionBodyEditor.SetLayerStyleRef(
+                StudioCompositionBodyEditor.ReadBody(envelope), "parcels", "night");
+            written = StudioCompositionBodyEditor.WriteBody(envelope, mutated).Body!.Value;
+        }
+
+        Assert.Equal("pkg-1", written.GetProperty("mapPackageId").GetString());
+        Assert.Equal("night", written.GetProperty("layers")[0].GetProperty("styleRef").GetString());
     }
 
     [UnitTest]

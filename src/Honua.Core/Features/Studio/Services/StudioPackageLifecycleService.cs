@@ -234,6 +234,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         Guid draftId,
         string? changeNote,
         string? actorId,
+        long? expectedGeneration = null,
         CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.version.create");
@@ -243,6 +244,18 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         if (draft is null)
         {
             return null;
+        }
+
+        // Close the read-then-version window for callers that just applied an edit: this method
+        // loads whatever generation is current, so without the check a concurrent update landing
+        // between the caller's UpdateDraftAsync and this read would be versioned in place of the
+        // caller's edit. The store's own generation predicate then covers the remaining window
+        // between this check and the write (honua-server#2999 review).
+        if (expectedGeneration is { } expected && draft.Generation != expected)
+        {
+            activity?.SetTag("studio.draft.generation.expected", expected);
+            activity?.SetTag("studio.draft.generation.actual", draft.Generation);
+            throw new InvalidOperationException("Stale draft generation; refresh and retry.");
         }
 
         var validation = _validator.Validate(draft.Envelope);

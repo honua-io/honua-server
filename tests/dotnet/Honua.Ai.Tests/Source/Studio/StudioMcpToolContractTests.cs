@@ -89,7 +89,7 @@ public sealed class StudioMcpToolContractTests
         await _lifecycleService.DidNotReceive().CreatePublicationRequestAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _lifecycleService.DidNotReceive().SaveDraftAsVersionAsync(
-            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>());
         await _lifecycleService.DidNotReceive().RollbackAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<StudioRollbackPointer>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _lifecycleService.DidNotReceive().DeleteDraftAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());

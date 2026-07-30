@@ -884,7 +884,7 @@ internal static class StudioPackageEndpoints
                 draftId,
                 request.ChangeNote,
                 ConsolePrincipal.ResolveActorId(context.User),
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken: context.RequestAborted).ConfigureAwait(false);
             if (version is null)
             {
                 return NotFound(context, "Studio package draft was not found.");

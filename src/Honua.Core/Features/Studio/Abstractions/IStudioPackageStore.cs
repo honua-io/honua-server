@@ -113,7 +113,25 @@ public interface IStudioPackageLifecycleService
     Task<StudioPreviewPlan?> PreviewPlanAsync(Guid draftId, string? actorId, CancellationToken cancellationToken = default);
 
     /// <summary>Saves a mutable package draft as an immutable content version.</summary>
-    Task<StudioContentVersion?> SaveDraftAsVersionAsync(Guid draftId, string? changeNote, string? actorId, CancellationToken cancellationToken = default);
+    /// <param name="draftId">Draft to version.</param>
+    /// <param name="changeNote">Optional note recorded on the immutable version.</param>
+    /// <param name="actorId">Identifier of the actor creating the version.</param>
+    /// <param name="expectedGeneration">
+    /// When supplied, the draft must still be at this generation or the save is refused with an
+    /// <see cref="InvalidOperationException"/>. Callers that first apply their own edit through
+    /// <see cref="UpdateDraftAsync(Guid, UpdateStudioPackageDraftCommand, CancellationToken)"/>
+    /// MUST pass the generation that update returned: without it the version is minted from
+    /// whatever generation happens to be current, so a concurrent write landing in between is
+    /// versioned instead — silently dropping the caller's just-applied edit
+    /// (honua-server#2999 review). Omit it to version the current generation, whatever it is.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<StudioContentVersion?> SaveDraftAsVersionAsync(
+        Guid draftId,
+        string? changeNote,
+        string? actorId,
+        long? expectedGeneration = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Lists immutable content versions for an item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);

@@ -169,38 +169,20 @@ internal static class SavedMapOperationPayloadValidator
     }
 
     /// <summary>
-    /// Enforces the coordinate arity the wire model implies but cannot express: <c>bbox</c> is four
-    /// ordinates and <c>center</c> is two.
+    /// Enforces the shared <see cref="StudioCompositionViewBounds"/> contract the wire model
+    /// implies but cannot express: <c>bbox</c> is four ordinates, <c>center</c> is two, and
+    /// <c>zoom</c>/<c>pitch</c> stay inside the ranges the Studio view contract declares.
     /// </summary>
     /// <remarks>
-    /// <c>IReadOnlyList&lt;double&gt;</c> deserializes any-length arrays happily, so
-    /// <c>{"bbox":[0]}</c> or <c>{"center":[1,2,3]}</c> reached the success path, consumed a
-    /// permanent cursor, and then failed at checkpoint time — the same wedge class as the
-    /// whitespace-id and non-string-styleRef fixes (honua-server#2999 review).
+    /// <c>IReadOnlyList&lt;double&gt;</c> deserializes any-length arrays happily and <c>double?</c>
+    /// accepts any magnitude, so <c>{"bbox":[0]}</c>, <c>{"zoom":25}</c> and <c>{"pitch":90}</c>
+    /// all reached the success path, consumed a permanent cursor, and then persisted a view no
+    /// client can render — the same wedge class as the whitespace-id and non-string-styleRef fixes
+    /// (honua-server#2999 review). The bounds themselves live in Core beside the view model so this
+    /// admission path and the MCP composition tool schemas cannot drift apart.
     /// </remarks>
     private static bool TryValidateViewShape(StudioCompositionView? view, out string error)
-    {
-        if (view is null)
-        {
-            error = string.Empty;
-            return true;
-        }
-
-        if (view.Bbox is { Count: not 4 } bbox)
-        {
-            error = $"The viewport 'bbox' requires exactly 4 coordinates; got {bbox.Count}.";
-            return false;
-        }
-
-        if (view.Center is { Count: not 2 } center)
-        {
-            error = $"The viewport 'center' requires exactly 2 coordinates; got {center.Count}.";
-            return false;
-        }
-
-        error = string.Empty;
-        return true;
-    }
+        => StudioCompositionViewBounds.TryValidate(view, out error);
 
     private static bool TryValidateViewport(JsonElement payload, out string error)
     {

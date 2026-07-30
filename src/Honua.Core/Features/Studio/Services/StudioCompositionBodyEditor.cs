@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Abstractions;
@@ -84,6 +85,7 @@ public static class StudioCompositionBodyEditor
     /// preserving any members of the stored document this projection does not model.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
     /// <c>layers</c>, <c>view</c> and <c>widgets</c> and nothing else — but a canonical map package
     /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
@@ -93,6 +95,16 @@ public static class StudioCompositionBodyEditor
     /// collaboration checkpoint applier and the MCP Studio composition tools. Overlaying only the
     /// projected keys onto the original object keeps the round trip lossless
     /// (honua-server#2999 review).
+    /// </para>
+    /// <para>
+    /// The merged object is emitted with <see cref="Utf8JsonWriter"/> rather than by serializing a
+    /// <c>Dictionary&lt;string, JsonElement&gt;</c>. The published Honua.Server image builds with
+    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c> and
+    /// <see cref="StudioJsonContext"/> registers no dictionary metadata, so the reflection-based
+    /// overload threw at runtime for EVERY MCP or checkpoint mutation of an existing object body —
+    /// the exact path this merge exists to serve (honua-server#2999 review). Writing the DOM
+    /// directly needs no serializer metadata at all.
+    /// </para>
     /// </remarks>
     public static StudioPackageEnvelope WriteBody(StudioPackageEnvelope envelope, StudioCompositionBody body)
     {
@@ -117,7 +129,24 @@ public static class StudioCompositionBodyEditor
             merged[member.Name] = member.Value;
         }
 
-        return envelope with { Body = JsonSerializer.SerializeToElement(merged) };
+        // Reflection-free by construction: no JsonSerializer metadata exists (or is needed) for
+        // Dictionary<string, JsonElement>, so the merged object is written straight to the DOM.
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var (name, value) in merged)
+            {
+                writer.WritePropertyName(name);
+                value.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        // Clone so the returned envelope stays valid after this JsonDocument is disposed.
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return envelope with { Body = document.RootElement.Clone() };
     }
 
     /// <summary>

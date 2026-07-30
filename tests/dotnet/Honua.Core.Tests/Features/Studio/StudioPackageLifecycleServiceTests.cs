@@ -16,6 +16,58 @@ namespace Honua.Core.Tests.Features.Studio;
 public sealed class StudioPackageLifecycleServiceTests
 {
     [UnitTest]
+    public async Task SaveDraftAsVersion_WithExpectedGeneration_VersionsOnlyThatGeneration()
+    {
+        // Callers that apply an edit and then version it (the live-collaboration checkpoint) must
+        // be able to bind the version to the generation their edit produced: this method re-reads
+        // the draft, so a concurrent update landing in between would otherwise be versioned in
+        // place of the caller's edit — silently dropping it (honua-server#2999 review).
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "generation-checked-save",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        var applied = await service.UpdateDraftAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = draft.PackageKey,
+            WorkspaceId = draft.WorkspaceId,
+            OwnerId = draft.OwnerId,
+            Envelope = BuildEnvelope("POPULATION > 1000", "content.parcels"),
+            Generation = draft.Generation,
+            ActorId = "tester",
+        });
+        Assert.NotNull(applied);
+
+        // A competing writer advances the draft past the generation the caller just produced.
+        var competing = await service.UpdateDraftAsync(applied!.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = applied.PackageKey,
+            WorkspaceId = applied.WorkspaceId,
+            OwnerId = applied.OwnerId,
+            Envelope = BuildEnvelope("POPULATION > 2000", "content.parcels"),
+            Generation = applied.Generation,
+            ActorId = "other",
+        });
+        Assert.NotNull(competing);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.SaveDraftAsVersionAsync(
+                applied.DraftId, "raced save", "tester", expectedGeneration: applied.Generation));
+
+        // No version was minted, and the current generation still versions normally.
+        Assert.Empty(await service.ListVersionsAsync(applied.ItemId));
+
+        var version = await service.SaveDraftAsVersionAsync(
+            applied.DraftId, "current save", "tester", expectedGeneration: competing!.Generation);
+        Assert.NotNull(version);
+        Assert.Equal(1, version!.VersionNumber);
+    }
+
+    [UnitTest]
     public async Task SaveDraftAsVersion_ReopenAndRollback_PreservesImmutableVersions()
     {
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();

@@ -181,6 +181,10 @@ internal static class CollaborationCheckpointEndpoints
         var actorId = ConsolePrincipal.ResolveActorId(context.User);
         try
         {
+            // Generation that actually received the replayed operations. Null when nothing was
+            // replayed: there is then no applied edit a concurrent write could displace, so a
+            // no-op checkpoint of the current draft state stays valid.
+            long? appliedGeneration = null;
             if (replay.Operations.Count > 0)
             {
                 StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
@@ -202,12 +206,21 @@ internal static class CollaborationCheckpointEndpoints
                 {
                     return StandardErrorHelpers.CreateNotFound(context, "Studio package draft was not found.");
                 }
+
+                appliedGeneration = updated.Generation;
             }
 
+            // Version EXACTLY the generation that received the replay. SaveDraftAsVersionAsync
+            // re-reads the draft, so another Studio draft update landing in between would
+            // otherwise be versioned instead — and because MarkCheckpointed still advanced the
+            // cursor below, the replayed operations would be permanently skipped by every later
+            // checkpoint. Failing closed here leaves the cursor unadvanced, so a retry replays the
+            // same operations onto the current draft (honua-server#2999 review).
             var version = await lifecycle.SaveDraftAsVersionAsync(
                     draftId,
                     string.IsNullOrWhiteSpace(request.ChangeNote) ? "Live collaboration checkpoint" : request.ChangeNote.Trim(),
                     actorId,
+                    appliedGeneration,
                     context.RequestAborted)
                 .ConfigureAwait(false);
             if (version is null)

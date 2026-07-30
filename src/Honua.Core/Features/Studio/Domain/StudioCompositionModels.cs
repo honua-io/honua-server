@@ -103,6 +103,84 @@ public sealed record StudioCompositionView
 }
 
 /// <summary>
+/// The single source of truth for <see cref="StudioCompositionView"/>'s numeric contract:
+/// coordinate arity plus the zoom/pitch ranges the MCP composition tool schemas advertise.
+/// </summary>
+/// <remarks>
+/// The wire model cannot express any of this — <c>IReadOnlyList&lt;double&gt;</c> deserializes
+/// any-length arrays and <c>double?</c> accepts any magnitude — so every admission surface that
+/// accepts a view has to enforce it. Keeping the bounds (and the check itself) here stops the MCP
+/// tool schema and the live-collaboration op-log validator from drifting apart: the MCP schema
+/// advertised <c>zoom &lt;= 24</c> / <c>pitch &lt;= 85</c> while the collaboration append path
+/// admitted <c>{"zoom":25}</c> and consumed a permanent op-log cursor for it
+/// (honua-server#2999 review).
+/// </remarks>
+public static class StudioCompositionViewBounds
+{
+    /// <summary>Ordinate count required by <see cref="StudioCompositionView.Bbox"/>.</summary>
+    public const int BboxOrdinateCount = 4;
+
+    /// <summary>Ordinate count required by <see cref="StudioCompositionView.Center"/>.</summary>
+    public const int CenterOrdinateCount = 2;
+
+    /// <summary>Smallest accepted <see cref="StudioCompositionView.Zoom"/>.</summary>
+    public const double MinZoom = 0;
+
+    /// <summary>Largest accepted <see cref="StudioCompositionView.Zoom"/>.</summary>
+    public const double MaxZoom = 24;
+
+    /// <summary>Smallest accepted <see cref="StudioCompositionView.Pitch"/> in degrees.</summary>
+    public const double MinPitch = 0;
+
+    /// <summary>Largest accepted <see cref="StudioCompositionView.Pitch"/> in degrees.</summary>
+    public const double MaxPitch = 85;
+
+    /// <summary>
+    /// Validates <paramref name="view"/> against the shared coordinate-arity and zoom/pitch
+    /// bounds. A <see langword="null"/> view is valid (the member is optional).
+    /// </summary>
+    /// <param name="view">View to check, or <see langword="null"/>.</param>
+    /// <param name="error">Human-readable reason when the view is out of contract.</param>
+    /// <returns><see langword="true"/> when the view satisfies the shared contract.</returns>
+    public static bool TryValidate(StudioCompositionView? view, out string error)
+    {
+        if (view is null)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (view.Bbox is { Count: not BboxOrdinateCount } bbox)
+        {
+            error = $"The viewport 'bbox' requires exactly {BboxOrdinateCount} coordinates; got {bbox.Count}.";
+            return false;
+        }
+
+        if (view.Center is { Count: not CenterOrdinateCount } center)
+        {
+            error = $"The viewport 'center' requires exactly {CenterOrdinateCount} coordinates; got {center.Count}.";
+            return false;
+        }
+
+        // NaN/Infinity fail both comparisons, which is intended: neither is a renderable view.
+        if (view.Zoom is { } zoom && !(zoom >= MinZoom && zoom <= MaxZoom))
+        {
+            error = $"The viewport 'zoom' must be between {MinZoom} and {MaxZoom}.";
+            return false;
+        }
+
+        if (view.Pitch is { } pitch && !(pitch >= MinPitch && pitch <= MaxPitch))
+        {
+            error = $"The viewport 'pitch' must be between {MinPitch} and {MaxPitch}.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+}
+
+/// <summary>
 /// One app-family widget bound to the composition (App package family only;
 /// <c>honua_studio_add_widget</c> / <c>honua_studio_remove_widget</c>).
 /// </summary>

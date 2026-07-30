@@ -981,12 +981,115 @@ public sealed class CollaborationLiveCoEditingTests
         checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_ConcurrentDraftUpdateAfterApply_FailsClosedAndKeepsOperationsReplayable()
+    {
+        // A competing Studio draft update lands between the checkpoint's apply and its version
+        // save. The version save re-reads the draft, so without a generation check it versions the
+        // COMPETING body — a version that omits the operations just replayed — while still marking
+        // their head cursor checkpointed, permanently hiding them from every later checkpoint
+        // (honua-server#2999 review). The checkpoint must instead fail closed and leave the cursor
+        // where it was.
+        using var competing = JsonDocument.Parse(
+            """{"layers":[{"id":"parcels","title":"Parcels"}],"title":"concurrent draft edit"}""");
+        var store = new ConcurrentUpdateAfterDraftWriteStore(
+            new InMemoryStudioPackageStore(), competing.RootElement.Clone());
+
+        using var factory = CreateFactory(restartDurableOperationLog: true, studioStore: store);
+        using var client = CreateAdminClient(factory);
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        await AppendOperationAsync(
+            client, mapId, "op-view", "SetViewport", baseCursor: 0,
+            payload: """{"center":[-157.8583,21.3069],"zoom":12,"crs":"EPSG:4326"}""");
+        await AppendOperationAsync(
+            client, mapId, "op-style", "PatchStyle", baseCursor: 1,
+            payload: """{"layerId":"parcels","styleRef":"style-night"}""");
+
+        store.ArmOnce();
+        using var racedContent = new StringContent(
+            """{"changeNote":"raced checkpoint"}""", Encoding.UTF8, "application/json");
+        using var racedResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", racedContent);
+        var racedText = await racedResponse.Content.ReadAsStringAsync();
+        racedResponse.StatusCode.Should().Be(
+            HttpStatusCode.Conflict, "raced checkpoint response body: {0}", racedText);
+        racedText.Should().NotContain("Exception");
+
+        // The cursor was never advanced, so a retry replays the very same operations onto the
+        // draft the competing writer left behind — nothing is skipped and nothing is lost.
+        var checkpoint = await CheckpointAsync(client, mapId, "after raced checkpoint");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(2);
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(2);
+
+        using var versionResponse = await client.GetAsync(
+            $"/api/v1/studio/content-items/{checkpoint.GetProperty("itemId").GetGuid():D}" +
+            $"/versions/{checkpoint.GetProperty("versionId").GetGuid():D}");
+        versionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = (await ReadJsonAsync(versionResponse))
+            .GetProperty("data").GetProperty("envelope").GetProperty("body");
+
+        body.GetProperty("view").GetProperty("zoom").GetDouble().Should().Be(12);
+        body.GetProperty("layers").EnumerateArray().Single()
+            .GetProperty("styleRef").GetString().Should().Be("style-night");
+        // The concurrent writer's unmodelled member survived the replay merge as well.
+        body.GetProperty("title").GetString().Should().Be("concurrent draft edit");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable()
+    {
+        using var factory = CreateFactory(restartDurableOperationLog: true);
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // The shared Studio view contract caps zoom at 24 and pitch at 85 — the same bounds the MCP
+        // composition tool schemas advertise. Payloads outside them used to reach an unconditional
+        // success path, consume a permanent cursor, and persist a view no client can render
+        // (honua-server#2999 review).
+        foreach (var malformed in new[]
+        {
+            """{"operationId":"zoom-high","kind":"SetViewport","baseCursor":0,"payload":{"zoom":25}}""",
+            """{"operationId":"zoom-low","kind":"SetViewport","baseCursor":0,"payload":{"zoom":-1}}""",
+            """{"operationId":"pitch-high","kind":"SetViewport","baseCursor":0,"payload":{"pitch":90}}""",
+            """{"operationId":"doc-zoom","kind":"ReplaceWebMapDocument","baseCursor":0,"payload":{"view":{"zoom":25}}}""",
+        })
+        {
+            using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
+            using var badResponse = await client.PostAsync(
+                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+            var badText = await badResponse.Content.ReadAsStringAsync();
+            badResponse.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
+            badText.Should().NotContain("Exception");
+        }
+
+        // The bounds are inclusive, so the extremes remain usable and no cursor was burned by the
+        // rejected appends.
+        var accepted = await AppendOperationAsync(
+            client, mapId, "op-view", "SetViewport", baseCursor: 0,
+            payload: """{"zoom":24,"pitch":85}""");
+        accepted.GetProperty("operation").GetProperty("serverCursor").GetInt64().Should().Be(1);
+
+        var checkpoint = await CheckpointAsync(client, mapId, "viewport bounds");
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(1);
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         bool endUserAuthorization = false,
         IDictionary<string, string?>? configuration = null,
         bool restartDurableOperationLog = false,
         int? retainedOperationCount = null,
-        Func<ISavedMapOperationLogRepository, ISavedMapOperationLogRepository>? decorateOperationLog = null)
+        Func<ISavedMapOperationLogRepository, ISavedMapOperationLogRepository>? decorateOperationLog = null,
+        IStudioPackageStore? studioStore = null)
     {
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
@@ -1018,7 +1121,14 @@ public sealed class CollaborationLiveCoEditingTests
                     // in-memory implementation so the lifecycle runs without a migrated Postgres
                     // schema (mirrors StudioPackageEndpointsTests).
                     services.RemoveAll<IStudioPackageStore>();
-                    services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                    if (studioStore is null)
+                    {
+                        services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                    }
+                    else
+                    {
+                        services.AddSingleton(studioStore);
+                    }
 
                     // This DB-less host cannot construct the form/analysis native stores that
                     // back the ADR-0069 family persistence bridges (FormPackageValidator's

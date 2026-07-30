@@ -100,6 +100,12 @@ Only kinds the checkpoint applier can express are admitted; the append endpoint 
 share one source of truth (`SavedMapOperationDraftApplier.IsCheckpointable`), and payloads are
 shape-validated on admission for the same reason.
 
+Viewport payloads (`SetViewport`, and the `view` member of a `ReplaceWebMapDocument`) are held to
+the shared Studio view contract (`StudioCompositionViewBounds`): `bbox` is exactly four ordinates,
+`center` exactly two, `zoom` is `0..24` and `pitch` is `0..85` (both inclusive). These are the same
+bounds the Studio composition MCP tool schemas advertise, so an out-of-range viewport is rejected
+with `400` here instead of consuming a permanent cursor for a view no client can render.
+
 ## Conflict semantics
 
 The MVP conflict policy is **last-writer-wins (LWW) for safe scalar fields** and **fail-with-conflict for whole-document replacement**:
