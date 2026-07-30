@@ -211,6 +211,104 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         }
     }
 
+    // Parameter honesty at submission (#3043 review). Two ways an enrichment submission
+    // could previously be accepted and then behave differently than the caller asked:
+    //   * 'where'/'bbox' supplied with a staged 'input' source — documented in the catalog
+    //     as layer-source-only, never applied to the inline collection, so the job
+    //     "succeeded" over EVERY staged feature;
+    //   * a malformed 'bbox' on the layer-backed source — cleared the generic text-type
+    //     check, queued a job, and only failed deep inside the provider read.
+    // Both must now be refused at the submit surface with an actionable parameter error and
+    // without queueing a job.
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task EnrichJob_InlineSourceWithLayerOnlyFilters_RefusesSubmissionWithoutQueueingJob()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+
+            // Positive control: the same staged collection with no layer-only filter is
+            // accepted, so the refusals below are attributable to the filters alone.
+            using (var allowed = await PostExecutionAsync(client, InlineExecuteRequestBody()))
+            {
+                allowed.StatusCode.Should().Be(HttpStatusCode.Created);
+            }
+
+            using var withWhere = await PostExecutionAsync(
+                client, InlineExecuteRequestBody(("where", "name = 'a'")));
+            withWhere.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest,
+                "'where' windows the registered source layer read and cannot be applied to a staged collection");
+            var whereBody = await withWhere.Content.ReadAsStringAsync();
+            whereBody.Should().Contain("where");
+            whereBody.Should().NotContain("jobID", "a refused submission must not queue a job");
+
+            using var withBbox = await PostExecutionAsync(
+                client, InlineExecuteRequestBody(("bbox", "-10,-10,10,10")));
+            withBbox.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var bboxBody = await withBbox.Content.ReadAsStringAsync();
+            bboxBody.Should().Contain("bbox");
+            bboxBody.Should().NotContain("jobID");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task EnrichJob_MalformedBbox_RefusesSubmissionWithParameterError()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+
+            // Positive control: a well-formed four-ordinate bbox still submits.
+            using (var allowed = await PostExecutionAsync(
+                client, ExecuteRequestBody(extraInputs: [("bbox", "-180,-90,180,90")])))
+            {
+                allowed.StatusCode.Should().Be(HttpStatusCode.Created);
+            }
+
+            // Three ordinates.
+            using var truncated = await PostExecutionAsync(
+                client, ExecuteRequestBody(extraInputs: [("bbox", "-10,-10,10")]));
+            truncated.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest,
+                "a malformed bbox must fail as a parameter error, not as a later source-read failure");
+            var truncatedBody = await truncated.Content.ReadAsStringAsync();
+            truncatedBody.Should().Contain("minX,minY,maxX,maxY");
+            truncatedBody.Should().NotContain("jobID", "a refused submission must not queue a job");
+
+            // Nonnumeric ordinate.
+            using var nonNumeric = await PostExecutionAsync(
+                client, ExecuteRequestBody(extraInputs: [("bbox", "-10,-10,east,10")]));
+            nonNumeric.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await nonNumeric.Content.ReadAsStringAsync()).Should().Contain("minX,minY,maxX,maxY");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
     // Layer read authorization (#2283 review). Process.Execute authorizes RUNNING a
     // process; it does not authorize the specific catalog layers that process reads. The
     // synchronous POST /api/enrich handler calls ValidateLayerWithAccessV2Async at
@@ -464,16 +562,52 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
 
     // OGC execution request carrying the enrichment vocabulary: dataset id, the
     // registered source layer, and the enrichment method.
-    private static string ExecuteRequestBody(int? sourceLayerId = null) => JsonSerializer.Serialize(new
+    private static string ExecuteRequestBody(
+        int? sourceLayerId = null,
+        (string Name, string Value)[]? extraInputs = null)
     {
-        response = "document",
-        inputs = new Dictionary<string, object>
+        var inputs = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["datasetId"] = DatasetKey,
             ["layerId"] = sourceLayerId ?? WebAppFixture.TestLayerId,
             ["method"] = "intersects",
-        },
-    });
+        };
+
+        foreach (var (name, value) in extraInputs ?? [])
+        {
+            inputs[name] = value;
+        }
+
+        return JsonSerializer.Serialize(new { response = "document", inputs });
+    }
+
+    /// <summary>
+    /// The same enrichment request sourced from a staged inline FeatureCollection rather
+    /// than a registered layer, so the layer-only windowing filters have nothing to act on.
+    /// </summary>
+    private static string InlineExecuteRequestBody(params (string Name, string Value)[] extraInputs)
+    {
+        const string StagedCollection = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[0.5,0.5]},"properties":{"name":"a"}},
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[1.5,1.5]},"properties":{"name":"b"}}
+            ]}
+            """;
+
+        var inputs = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["datasetId"] = DatasetKey,
+            ["input"] = DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(StagedCollection)),
+            ["method"] = "intersects",
+        };
+
+        foreach (var (name, value) in extraInputs)
+        {
+            inputs[name] = value;
+        }
+
+        return JsonSerializer.Serialize(new { response = "document", inputs });
+    }
 
     /// <summary>
     /// Posts an execution request and hands the raw response back so authorization

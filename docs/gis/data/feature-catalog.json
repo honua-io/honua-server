@@ -16875,7 +16875,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_Dismiss_UsesExistingJobLifecycleEndpoints",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_InlineSourceWithLayerOnlyFilters_RefusesSubmissionWithoutQueueingJob",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_MalformedBbox_RefusesSubmissionWithParameterError",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitPollFetchResults_ReturnsEnrichedFeatureCollectionWithProvenance",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnDatasetLayer_RefusesSubmissionWithoutQueueingJob",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnSourceLayer_RefusesSubmissionWithoutQueueingJob",

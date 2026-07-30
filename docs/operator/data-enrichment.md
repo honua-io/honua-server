@@ -59,6 +59,13 @@ enrichment-local job lifecycle:
   source as EITHER a registered `layerId` (with optional `where`/`bbox`
   windowing) OR a staged inline FeatureCollection via `input`
   (`data:application/geo+json;base64` data URI). Returns `201` with a job id.
+- **`where`/`bbox` are layer-source-only.** They window the registered source
+  layer read; a staged `input` collection is enriched verbatim. Submitting
+  either alongside `input` is **rejected at submission** (`400`) rather than
+  silently ignored, so a job never succeeds with a broader result than was
+  asked for. `bbox` must be exactly four numeric ordinates
+  (`minX,minY,maxX,maxY`); a malformed value is refused at submission too,
+  instead of queueing a job that fails later inside the provider read.
 - **Poll / results / dismiss**: the standard job endpoints —
   `GET /ogc/processes/jobs/{jobId}`, `GET /ogc/processes/jobs/{jobId}/results`,
   `DELETE /ogc/processes/jobs/{jobId}`.

@@ -176,6 +176,72 @@ public sealed class GpPlanTests
     }
 
     [UnitTest]
+    public void Build_EnrichmentInlineSourceWithLayerOnlyFilter_IsRejected()
+    {
+        // 'where'/'bbox' window the source.honua-layer read; EnrichmentJobExecutor's inline
+        // branch parses the staged collection verbatim and applies neither. Accepting the
+        // combination succeeded the job over EVERY staged feature, contradicting the
+        // catalog's layer-source-only contract (#3043 review).
+        foreach (var filter in new[] { "where", "bbox" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["input"] = "data:application/geo+json;base64,e30=",
+                [filter] = filter == "where" ? "status = 'active'" : "-10,-10,10,10",
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.IsValid.Should().BeFalse($"'{filter}' cannot be applied to a staged inline source");
+            plan.Errors.Should().Contain(e => e.Contains(filter));
+        }
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentLayerSourceWithMalformedBbox_IsRejected()
+    {
+        // Three ordinates and a nonnumeric ordinate both used to clear the generic
+        // text-type check and only fail later in HonuaLayerDagSource.BuildSpatialFilter as a
+        // generic source-read error rather than an actionable parameter error (#3043 review).
+        foreach (var bbox in new[] { "-10,-10,10", "-10,-10,east,10" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["layerId"] = "7",
+                ["bbox"] = bbox,
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.IsValid.Should().BeFalse($"'{bbox}' is not a four-ordinate bbox");
+            plan.Errors.Should().Contain(e => e.Contains("minX,minY,maxX,maxY"));
+        }
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentLayerSourceWithValidBbox_IsAccepted()
+    {
+        // The syntax check must not widen into the raster-side extent rules: an inverted or
+        // degenerate envelope is normalized by the feature-source path, so only the
+        // four-numeric-ordinate form is enforced here.
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["datasetId"] = "demographics",
+            ["layerId"] = "7",
+            ["bbox"] = "10, 10, -10, -10",
+        };
+
+        var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+        plan.Should().NotBeNull();
+        plan!.Errors.Should().NotContain(e => e.Contains("bbox"));
+    }
+
+    [UnitTest]
     public void GraphValidator_PlanWithCycle_IsRejected()
     {
         // The CLI plan path delegates structural validation to the SAME shared

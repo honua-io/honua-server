@@ -239,6 +239,61 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_InlineSourceWithWhereFilter_FailsInsteadOfIgnoringTheFilter()
+    {
+        // Codex P2 (#3043 review): 'where' windows the source.honua-layer read; the inline
+        // branch parses the staged FeatureCollection verbatim and never applies it. Silently
+        // accepting it enriched EVERY staged feature while the caller believed a filter was
+        // in force. The catalog documents 'where' as layer-source-only, so the executor
+        // refuses the combination rather than returning an over-broad result.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("input", InlineFeatureCollection(PointNtsFeature(5, 5), PointNtsFeature(6, 6))),
+            ("where", "name = 'p1'"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("where");
+        error.Should().Contain("layerId", "the failure must name the source form the filter belongs to");
+    }
+
+    [UnitTest]
+    public async Task Enrich_InlineSourceWithBboxFilter_FailsInsteadOfIgnoringTheFilter()
+    {
+        // Same contract for the other layer-only window: an inline collection is enriched
+        // verbatim, so a bbox that cannot be applied must not be quietly dropped.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("input", InlineFeatureCollection(PointNtsFeature(5, 5), PointNtsFeature(6, 6))),
+            ("bbox", "0,0,1,1"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("bbox");
+    }
+
+    [UnitTest]
+    public async Task Enrich_LayerSourceWithWhereFilter_StillRuns()
+    {
+        // The rejection above is scoped to the INLINE source: the layer-backed branch does
+        // apply 'where'/'bbox' through the connector, so it must keep working unchanged.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, _) = await RunAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("where", "1=1"),
+            ("bbox", "-180,-90,180,90"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
     {
         // Codex P2: the budget's remedies must reach the caller verbatim rather than

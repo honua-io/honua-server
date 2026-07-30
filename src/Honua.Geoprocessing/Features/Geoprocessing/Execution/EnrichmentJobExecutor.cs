@@ -158,6 +158,20 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 + "or 'input' (staged FeatureCollection data URI).");
         }
 
+        // Layer-only windowing filters (honua-server#3043 review). 'where' and 'bbox' are
+        // translated into the source.honua-layer read; the inline branch below parses the
+        // staged FeatureCollection verbatim and applies NEITHER. Accepting them alongside
+        // 'input' silently enriched every staged feature, so the job "succeeded" with a
+        // result broader than the caller asked for. The catalog documents both parameters
+        // as layer-source-only, so the combination is refused rather than quietly ignored.
+        if (hasInline && FindLayerOnlySourceFilter(inputs) is { } layerOnlyFilter)
+        {
+            return JobExecutionResult.Failed(
+                $"Invalid {HandledProcessId} inputs: '{layerOnlyFilter}' windows the registered source layer read "
+                + "and is only valid with 'layerId'; a staged 'input' FeatureCollection is enriched verbatim. "
+                + $"Remove '{layerOnlyFilter}', or filter the staged collection before submitting it.");
+        }
+
         if (!inputs.TryGetRequired("datasetId", out var datasetId, out var missingDataset))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {missingDataset}.");
@@ -371,6 +385,20 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns the name of the first supplied source-layer windowing filter, or null when
+    /// none is present. Only meaningful on the inline branch, where these have no effect.
+    /// </summary>
+    private static string? FindLayerOnlySourceFilter(StepInputReader inputs)
+    {
+        if (inputs.TryGet("where", out _))
+        {
+            return "where";
+        }
+
+        return inputs.TryGet("bbox", out _) ? "bbox" : null;
     }
 
     private static IDagFeatureSource? ResolveHonuaLayerSource(IServiceProvider services) =>

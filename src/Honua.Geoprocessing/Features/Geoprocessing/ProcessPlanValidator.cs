@@ -753,6 +753,24 @@ internal static partial class ProcessPlanValidator
             });
         }
 
+        // 'where'/'bbox' window the source.honua-layer read and are documented in the
+        // catalog as layer-source-only. EnrichmentJobExecutor's inline branch parses the
+        // staged FeatureCollection verbatim and applies neither, so accepting the
+        // combination silently enriched every staged feature — an over-broad result the
+        // caller never asked for. Refuse it at submission instead (#3043 review).
+        if (hasInline)
+        {
+            RejectLayerOnlySourceFilter(step, "where", violations);
+            RejectLayerOnlySourceFilter(step, "bbox", violations);
+        }
+        else if (step.Inputs.TryGetValue("bbox", out var bboxRaw) && !string.IsNullOrWhiteSpace(bboxRaw))
+        {
+            // Without this, a malformed bbox cleared the generic text-type check, queued a
+            // job, and only failed deep inside the provider read as a generic source-read
+            // error instead of an actionable parameter violation (#3043 review).
+            ValidateBboxSyntax(step, bboxRaw, violations);
+        }
+
         var hasMethod = step.Inputs.TryGetValue("method", out var methodRaw)
             && !string.IsNullOrWhiteSpace(methodRaw);
         if (hasMethod && !EnrichmentMethodValues.Contains(methodRaw!.Trim()))
@@ -836,6 +854,54 @@ internal static partial class ProcessPlanValidator
                     $"statistic '{statName}' requires a dataset field, e.g. 'fieldName:{statName}'", violations);
                 return;
             }
+        }
+    }
+
+    /// <summary>
+    /// Adds a violation for a source-layer windowing filter supplied alongside a staged
+    /// inline source, where the executor cannot apply it.
+    /// </summary>
+    private static void RejectLayerOnlySourceFilter(
+        AnalysisPlanStep step,
+        string parameterName,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameterName, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        violations.Add(new GeoprocessingValidationFailure
+        {
+            Code = "INVALID_PARAMETER_VALUE",
+            Message = $"Step '{step.StepId}' supplies '{parameterName}' with a staged 'input' source for process "
+                + $"'{step.ProcessId}': '{parameterName}' windows the registered source layer read and is only "
+                + $"valid with 'layerId'. A staged FeatureCollection is enriched verbatim — remove "
+                + $"'{parameterName}', or filter the staged collection before submitting it.",
+            FieldPath = $"steps[{step.StepId}].inputs.{parameterName}"
+        });
+    }
+
+    // Shared four-ordinate bbox syntax check for every process that takes a
+    // 'minX,minY,maxX,maxY' region or window. Deliberately mirrors the executor-side
+    // contract (the region readers and source.honua-layer's BuildSpatialFilter): four
+    // comma-separated numeric ordinates, nothing more. The raster-side
+    // RasterParsingHelpers.TryParseBoundingBox additionally rejects inverted, degenerate,
+    // and out-of-range extents, which the feature-source path normalizes through
+    // NetTopologySuite's Envelope rather than refusing — validating with it here would
+    // fail submissions the executor runs happily.
+    private static void ValidateBboxSyntax(
+        AnalysisPlanStep step,
+        string bbox,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var parts = bbox.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var ok = parts.Length == 4
+            && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+        if (!ok)
+        {
+            AddRangeViolationIfNew(step, "bbox",
+                $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
         }
     }
 
@@ -972,14 +1038,7 @@ internal static partial class ProcessPlanValidator
         }
         else if (hasBbox)
         {
-            var parts = bbox!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            var ok = parts.Length == 4
-                && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
-            if (!ok)
-            {
-                AddRangeViolationIfNew(step, "bbox",
-                    $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
-            }
+            ValidateBboxSyntax(step, bbox!, violations);
         }
     }
 
