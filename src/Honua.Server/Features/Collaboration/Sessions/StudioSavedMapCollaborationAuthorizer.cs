@@ -94,7 +94,45 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
                 draft.OwnerId,
                 resourceType: "studio-package-draft",
                 resourceId: draft.DraftId.ToString("D")).ConfigureAwait(false);
-            return ToResult(decision);
+            if (!decision.IsAllowed)
+            {
+                return ToResult(decision);
+            }
+
+            // Same reasoning as the composition-family guard above, one axis over: admitting a
+            // caller who can never checkpoint hands out accepted cursors and live broadcasts for
+            // edits that can never reach an immutable version. Checkpointing advances the parent
+            // content item's current pointer, so it authorizes CreateVersion against the ITEM
+            // owner as well as the draft owner — and for a mixed-owner draft (draft owner is not
+            // the item owner) the draft owner is intentionally denied at that boundary. UpdateDraft
+            // on the draft alone therefore over-admits: the caller edits and broadcasts, then
+            // every checkpoint 403s and the operations accumulate until they age out of the
+            // retained window and the continuity guard refuses too (honua-server#2999 review).
+            //
+            // Enforced with the SAME operation, resource type, and owner the checkpoint endpoint
+            // uses, so the two boundaries cannot drift apart.
+            var pointers = await lifecycle.GetPointersAsync(draft.ItemId, cancellationToken).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return SavedMapCollaborationAuthorizationResult.Forbid(
+                    "The saved map's parent Studio content item was not found.");
+            }
+
+            var itemDecision = await authorization.AuthorizeAsync(
+                context,
+                StudioAuthorizationOperation.CreateVersion,
+                pointers.OwnerId,
+                resourceType: "studio-content-item",
+                resourceId: draft.ItemId.ToString("D")).ConfigureAwait(false);
+            if (!itemDecision.IsAllowed)
+            {
+                return SavedMapCollaborationAuthorizationResult.Forbid(
+                    itemDecision.Reason
+                    ?? "You are not allowed to collaborate on this saved map: its edits could "
+                    + "never be checkpointed onto the parent content item.");
+            }
+
+            return SavedMapCollaborationAuthorizationResult.Allow();
         }
 
         return SavedMapCollaborationAuthorizationResult.Forbid(

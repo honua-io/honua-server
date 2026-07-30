@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Studio.Abstractions;
@@ -24,6 +25,14 @@ namespace Honua.Server.Features.Collaboration.Checkpoints;
 /// </summary>
 internal static class CollaborationCheckpointEndpoints
 {
+    /// <summary>
+    /// Maximum length of a checkpoint change note, matching the
+    /// <c>[StringLength(1000)]</c> the canonical <c>SaveStudioContentVersionRequest.ChangeNote</c>
+    /// declares. Both write the field into the same immutable version storage, so the two
+    /// admission paths must agree.
+    /// </summary>
+    internal const int MaxChangeNoteLength = 1000;
+
     public static void MapCollaborationCheckpointEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/checkpoints")
@@ -58,6 +67,19 @@ internal static class CollaborationCheckpointEndpoints
         {
             return StandardErrorHelpers.CreateNotFound(
                 context, "The map id does not resolve to a Studio package draft.");
+        }
+
+        // A checkpoint writes the note into the SAME immutable version storage the canonical
+        // save path writes to, and that path caps the field at
+        // SaveStudioContentVersionRequest.ChangeNote's [StringLength(1000)]. Enforcing the
+        // identical bound here keeps this from being an alternate admission route that places
+        // request-sized notes in immutable storage (honua-server#2999 review). Checked before
+        // any draft read or mutation so an oversized note costs nothing.
+        if (request.ChangeNote is { Length: > MaxChangeNoteLength })
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"changeNote must be {MaxChangeNoteLength} characters or fewer.");
         }
 
         // Sessions, appends, replay, and checkpoints must share ONE log key per draft, so the
@@ -271,7 +293,15 @@ internal static partial class CollaborationCheckpointLog
 /// </summary>
 internal sealed record CollaborationCheckpointRequest
 {
-    /// <summary>Optional change note recorded on the immutable version.</summary>
+    /// <summary>
+    /// Optional change note recorded on the immutable version. Bounded by the same
+    /// 1000-character limit the canonical
+    /// <see cref="Honua.Server.Features.Studio.Models.SaveStudioContentVersionRequest.ChangeNote"/>
+    /// declares, since both end up in the same immutable version storage. The attribute
+    /// documents the contract for the generated OpenAPI; the handler enforces it, because
+    /// minimal APIs do not run data annotations on a bound body by themselves.
+    /// </summary>
+    [StringLength(CollaborationCheckpointEndpoints.MaxChangeNoteLength)]
     public string? ChangeNote { get; init; }
 }
 
