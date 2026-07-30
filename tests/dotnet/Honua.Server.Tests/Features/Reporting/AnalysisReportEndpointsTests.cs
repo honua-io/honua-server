@@ -181,7 +181,7 @@ public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)

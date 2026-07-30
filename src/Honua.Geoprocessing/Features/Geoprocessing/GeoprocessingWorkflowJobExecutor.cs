@@ -24,6 +24,14 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         _jobService = jobService;
     }
 
+    /// <summary>
+    /// Evaluates the plan's execution-tier and per-layer authorization for
+    /// <paramref name="principal"/>. The bound plan the job service returns is deliberately
+    /// not surfaced on the orchestration substrate: run creation is a check, and the
+    /// requester's dataset-layer binding is persisted upstream with the workflow definition
+    /// (<c>WorkflowPackageService.PublishVersionAsync</c>) so it reaches the reconcile tick's
+    /// dispatch through the stored plan rather than through run state (#3043 review).
+    /// </summary>
     public Task EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,

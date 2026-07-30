@@ -155,7 +155,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
-    public async Task EnsurePlanExecutionTierAuthorizedAsync(
+    public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -175,13 +175,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // workflow-authoring time (honua-server#3043 review). The reconcile tick later
         // submits each step under the synthesized orchestrator identity, so this is the
         // only point where the human who scheduled the workflow faces the layer gate —
-        // the same reason the mutating-process tier is pre-checked here (#2798). The
-        // returned (binding-carrying) plan is intentionally discarded: this is a check,
-        // not the submission; the reconcile tick's own SubmitJobAsync re-runs the gate and
-        // stamps the binding onto the plan it actually queues. Steps whose layerId/datasetId
-        // are still unresolved workflow bindings simply do not resolve to a layer here and
-        // are gated at submission instead.
-        await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+        // the same reason the mutating-process tier is pre-checked here (#2798).
+        //
+        // The bound plan is RETURNED, not discarded: it carries the dataset-layer binding
+        // this principal was authorized for, and the authoring surface has to persist that
+        // with the durable workflow definition. The reconcile tick's SubmitJobAsync re-runs
+        // this gate under the orchestrator identity, which carries the wildcard-granted
+        // `admin` role — so if the binding did not travel with the plan, the tick would
+        // simply re-authorize and re-stamp whatever layer the dataset points at then and the
+        // requester's authorization would be moot. With the binding present, the gate
+        // enforces it and a re-pointed dataset fails the step. Steps whose layerId/datasetId
+        // are still unresolved workflow bindings do not resolve to a layer here and are
+        // gated at submission instead.
+        return await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
             .ConfigureAwait(false);
     }
 

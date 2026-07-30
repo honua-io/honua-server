@@ -57,22 +57,53 @@ namespace Honua.Geoprocessing;
 /// scope resolves no <c>ITenantContext</c>, so a TENANT-SCOPED layer is invisible and
 /// therefore denied on this path (fail closed — the background read would not be
 /// tenant-correct either), and when no scope factory is available at all the gate has no
-/// way to evaluate anything and denies. Workflow authoring is additionally gated against
-/// the human requester by <c>GeoprocessingJobService.EnsurePlanExecutionTierAuthorizedAsync</c>,
-/// which <c>WorkflowOrchestrationEngine.CreateRunAsync</c> calls per step with the live
-/// request principal (the honua-server#2798 pattern).
+/// way to evaluate anything and denies.
 /// </para>
 ///
 /// <para>
-/// <b>Binding the authorized layer to the job.</b> The gate authorizes the dataset's
-/// backing layer AS RESOLVED AT SUBMISSION. An admin can re-point a managed enrichment
-/// dataset at a different layer while the job is queued, so the executor must not simply
-/// re-resolve and read whatever is current. The gate therefore stamps the authorized
-/// layer identity onto the step as
-/// <see cref="EnrichmentJobExecutor.AuthorizedDatasetLayerInput"/> (always overwriting
-/// any caller-supplied value — the gate is the only writer), and
-/// <see cref="EnrichmentJobExecutor"/> fails the job when the re-resolved dataset no
-/// longer matches that binding.
+/// <b>The dataset-layer binding, and why a background submission must carry one.</b>
+/// The gate authorizes the dataset's backing layer AS RESOLVED AT AUTHORIZATION TIME and
+/// stamps that layer identity onto the step as
+/// <see cref="EnrichmentJobExecutor.AuthorizedDatasetLayerInput"/>;
+/// <see cref="EnrichmentJobExecutor"/> then fails the job when the dataset it re-resolves
+/// at execution no longer matches. That closes the queueing window for a direct job, but
+/// a workflow re-enters the same TOCTOU class through a different door: the reconcile tick
+/// submits under <c>OrchestrationSystemPrincipal</c>, which carries the <c>admin</c> role,
+/// and <c>admin</c> holds a wildcard grant — so re-deriving the binding on that path would
+/// re-authorize and re-stamp whatever layer the dataset points at NOW, under an
+/// effectively omnipotent principal, and the executor would accept it. An admin who
+/// re-points a managed dataset between publication and dispatch could therefore have a
+/// workflow read a layer its human requester was never allowed to read
+/// (honua-server#3043 review).
+/// </para>
+///
+/// <para>
+/// The binding is therefore treated as a PIN set by a live requester and enforced, never
+/// re-derived, afterwards:
+/// <list type="bullet">
+/// <item><description>
+/// When the step already carries a binding, the gate requires the dataset it resolves to
+/// match it, and denies otherwise. A pre-existing value can only ever CONSTRAIN the
+/// submission — the resolved layer must still pass the read gate for the submitting
+/// principal — so a forged value cannot pre-authorize anything, it can only get its own
+/// submission refused.
+/// </description></item>
+/// <item><description>
+/// A contextless (background/orchestration) submission MUST carry one. There is no live
+/// requester to authorize against on that path, so a missing pin is unevaluable and fails
+/// closed rather than falling back to the system principal's authority.
+/// </description></item>
+/// <item><description>
+/// The stamped value always comes from this gate (the step's own inputs are rebuilt from
+/// the layer the gate resolved and authorized), so the gate remains the only writer.
+/// </description></item>
+/// </list>
+/// The pin is produced where a human IS present:
+/// <c>GeoprocessingJobService.EnsurePlanExecutionTierAuthorizedAsync</c> returns the bound
+/// plan, and <c>WorkflowPackageService.PublishVersionAsync</c> persists those bound step
+/// plans into the stored <c>WorkflowDefinition</c>. Every later run of that definition —
+/// cron, event, or manual — dispatches from the stored plan, so the reconcile tick can
+/// only ever submit the layer the publishing human was authorized to read.
 /// </para>
 ///
 /// <para>
@@ -164,9 +195,11 @@ internal sealed class GeoprocessingLayerAccessGuard
     /// Gates the two layers an <c>enrichment.enrich</c> job reads: the caller-selected
     /// source layer (absent when the job stages an inline FeatureCollection instead) and
     /// the resolved dataset's backing layer — exactly the pair
-    /// <c>DataEnrichmentRequestHandlers.HandleEnrichPost</c> validates. Returns the
-    /// authorized dataset layer id, or <see langword="null"/> when no dataset resolves
-    /// (the executor fails such a job before any layer read).
+    /// <c>DataEnrichmentRequestHandlers.HandleEnrichPost</c> validates. Enforces any
+    /// requester-authorized dataset-layer pin the step already carries, and requires one on
+    /// contextless submissions. Returns the authorized dataset layer id, or
+    /// <see langword="null"/> when no dataset resolves and no pin has to be matched (the
+    /// executor fails such a job before any layer read).
     /// </summary>
     private async Task<int?> EnsureEnrichmentLayersReadableAsync(
         AnalysisPlanStep step,
@@ -176,70 +209,88 @@ internal sealed class GeoprocessingLayerAccessGuard
         // A staged inline source carries no layerId; the dataset layer is always read.
         var hasSourceLayer = TryReadLayerId(step, "layerId", out var sourceLayerId);
 
+        // The dataset-layer pin a live requester's authorization already produced, when the
+        // step carries one. It is only ever a CONSTRAINT: the layer it names must be the one
+        // the dataset still resolves to, and that layer must independently pass the read gate
+        // below for the submitting principal. See the type remarks.
+        var hasRequesterBinding = TryReadLayerId(
+            step, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, out var requesterAuthorizedLayerId);
+
         var ambient = _httpContextAccessor.HttpContext;
-        if (ambient is null && _serviceScopeFactory is null)
+        if (ambient is null)
         {
-            // Neither a live request nor a way to build a scope: the submitter's grants,
-            // tenant scope, and permission resolver are all unreachable, so the layer
-            // reads this job would perform cannot be authorized against anyone. Fail
-            // closed rather than queue an unauthorized read.
-            throw Deny(principal, "submission has no evaluable authorization context");
+            if (!hasRequesterBinding)
+            {
+                // No live requester, and no pin a live requester left behind. Re-deriving the
+                // binding here would authorize the CURRENT dataset layer under the submitting
+                // background identity — for the workflow reconcile tick that identity carries
+                // the wildcard-granted `admin` role, so the derivation would always succeed
+                // and would defeat the human requester's authorization outright. Fail closed.
+                throw Deny(principal, "background submission carries no requester-authorized dataset-layer binding");
+            }
+
+            if (_serviceScopeFactory is null)
+            {
+                // Neither a live request nor a way to build a scope: the submitter's grants,
+                // tenant scope, and permission resolver are all unreachable, so the layer
+                // reads this job would perform cannot be authorized against anyone. Fail
+                // closed rather than queue an unauthorized read.
+                throw Deny(principal, "submission has no evaluable authorization context");
+            }
         }
 
         // Contextless submissions (workflow reconcile tick, other background dispatchers)
         // are evaluated against the SUBMITTING principal over a fresh scope rather than
         // waved through; see the type remarks.
-        IServiceScope? ownedScope = null;
-        HttpContext context;
-        if (ambient is not null)
+        using IServiceScope? ownedScope = ambient is null ? _serviceScopeFactory!.CreateScope() : null;
+        var context = ambient ?? new DefaultHttpContext
         {
-            context = ambient;
-        }
-        else
+            RequestServices = ownedScope!.ServiceProvider,
+            User = principal
+        };
+
+        if (hasSourceLayer)
         {
-            ownedScope = _serviceScopeFactory!.CreateScope();
-            context = new DefaultHttpContext
-            {
-                RequestServices = ownedScope.ServiceProvider,
-                User = principal
-            };
-        }
-
-        try
-        {
-            if (hasSourceLayer)
-            {
-                await EnsureLayerReadableAsync(context, principal, sourceLayerId, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            // The dataset's backing layer is resolved through the SAME neutral catalog seam
-            // the executor uses, so the gate authorizes the layer the job will actually read
-            // rather than a re-derived guess. When no dataset resolves (or no catalog is
-            // registered at all) the executor fails the job before any layer read, so there
-            // is nothing to authorize here.
-            var resolver = context.RequestServices.GetService<IEnrichmentDatasetResolver>();
-            if (resolver is null
-                || !step.Inputs.TryGetValue("datasetId", out var datasetId)
-                || string.IsNullOrWhiteSpace(datasetId))
-            {
-                return null;
-            }
-
-            var dataset = await resolver.ResolveAsync(datasetId, cancellationToken).ConfigureAwait(false);
-            if (dataset is null)
-            {
-                return null;
-            }
-
-            await EnsureLayerReadableAsync(context, principal, dataset.LayerId, cancellationToken)
+            await EnsureLayerReadableAsync(context, principal, sourceLayerId, cancellationToken)
                 .ConfigureAwait(false);
-            return dataset.LayerId;
         }
-        finally
+
+        // The dataset's backing layer is resolved through the SAME neutral catalog seam
+        // the executor uses, so the gate authorizes the layer the job will actually read
+        // rather than a re-derived guess. When no dataset resolves (or no catalog is
+        // registered at all) the executor fails the job before any layer read, so there
+        // is nothing to authorize here.
+        var resolver = context.RequestServices.GetService<IEnrichmentDatasetResolver>();
+        var dataset = resolver is null
+                || !step.Inputs.TryGetValue("datasetId", out var datasetId)
+                || string.IsNullOrWhiteSpace(datasetId)
+            ? null
+            : await resolver.ResolveAsync(datasetId, cancellationToken).ConfigureAwait(false);
+
+        if (dataset is null)
         {
-            ownedScope?.Dispose();
+            // A step carrying a pin whose dataset no longer resolves cannot be matched
+            // against anything — the dataset was removed or renamed after the requester
+            // authorized it — so fail closed instead of queueing an unverifiable read.
+            if (hasRequesterBinding)
+            {
+                throw Deny(principal, "requester-authorized enrichment dataset no longer resolves");
+            }
+
+            return null;
         }
+
+        // The pin is enforced, never refreshed: a dataset re-pointed after the requester
+        // authorized it fails the submission (and therefore the workflow step) exactly as a
+        // dataset re-pointed after a direct job was queued fails that job in the executor.
+        if (hasRequesterBinding && dataset.LayerId != requesterAuthorizedLayerId)
+        {
+            throw Deny(principal, "enrichment dataset layer changed since the requester authorized it");
+        }
+
+        await EnsureLayerReadableAsync(context, principal, dataset.LayerId, cancellationToken)
+            .ConfigureAwait(false);
+        return dataset.LayerId;
     }
 
     /// <summary>
@@ -269,9 +320,13 @@ internal sealed class GeoprocessingLayerAccessGuard
     }
 
     /// <summary>
-    /// Stamps the authorized dataset layer identity onto a gated step, always REPLACING
-    /// any caller-supplied value so the binding can only ever come from this gate. A step
-    /// whose dataset did not resolve carries no binding, and the executor fails it.
+    /// Stamps the authorized dataset layer identity onto a gated step, always REPLACING the
+    /// incoming value so the binding can only ever come from this gate. When the step
+    /// arrived with a pin, the caller has already proven it matches the layer the gate
+    /// resolved and authorized, so the rewrite is value-preserving; when it did not, this is
+    /// the point at which a live requester's authorization becomes the pin every later
+    /// (re-)authorization of that plan must match. A step whose dataset did not resolve
+    /// carries no binding, and the executor fails it.
     /// </summary>
     private static AnalysisPlanStep BindAuthorizedDatasetLayer(AnalysisPlanStep step, int? authorizedDatasetLayerId)
     {

@@ -78,6 +78,16 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // event-driven runs pass a system principal here (admin) and are gated at authoring
         // time, so the admin bypass on that path is intentional. The check runs before the run
         // is persisted so a denial leaves no orphaned run state.
+        //
+        // #3043: this call also evaluates per-layer READ access and returns the plan with the
+        // authorized dataset layer bound. The bound plan is not captured here on purpose — the
+        // binding a HUMAN produced is persisted with the workflow definition at publication
+        // time, so it is already present on the stored step plans this run reconciles from, and
+        // capturing a fresh one under a system principal would be exactly the re-derivation the
+        // pin exists to prevent. What this loop adds for a human-created run is enforcement:
+        // the gate refuses run creation when the definition's pinned dataset layer no longer
+        // matches (or when the requester cannot read it), and a step whose stored plan carries
+        // no pin at all fails closed at dispatch instead of being authorized as the orchestrator.
         foreach (var step in expanded.Steps)
         {
             await _jobService
@@ -645,6 +655,11 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.InputBindingResolved(_logger, run.RunId, state.StepId, pair.Key, pair.Value);
         }
 
+        // The plan comes from the STORED definition, so any per-layer binding the publishing
+        // human's authorization produced travels with it into this submission (#3043). The
+        // submit-time gate matches that binding against the layer the dataset resolves to now
+        // and refuses on a mismatch, so a dataset re-pointed between publication and dispatch
+        // fails this step rather than being re-authorized under the orchestrator identity below.
         var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
