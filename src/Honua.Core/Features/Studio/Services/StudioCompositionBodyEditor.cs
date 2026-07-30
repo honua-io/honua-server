@@ -53,8 +53,24 @@ public static class StudioCompositionBodyEditor
 
         try
         {
-            return body.Deserialize(StudioJsonContext.Default.StudioCompositionBody)
-                ?? StudioCompositionBody.Empty;
+            var composition = body.Deserialize(StudioJsonContext.Default.StudioCompositionBody);
+            if (composition is null)
+            {
+                return StudioCompositionBody.Empty;
+            }
+
+            // Normalize the collections before handing the body to any caller. The
+            // source-generated converter assigns only members PRESENT in the payload, so a body
+            // that simply omits "layers" or "widgets" -- the legal `{}`, or a view-only document --
+            // comes back with those properties NULL rather than with their Array.Empty
+            // initializers. Every consumer here and in the collaboration appliers dereferences
+            // them directly (Any, ToList, ToDictionary, .Count), so without this a `{}` body turns
+            // the next composition edit into an unmapped NullReferenceException.
+            return composition with
+            {
+                Layers = composition.Layers ?? [],
+                Widgets = composition.Widgets ?? [],
+            };
         }
         catch (JsonException ex)
         {

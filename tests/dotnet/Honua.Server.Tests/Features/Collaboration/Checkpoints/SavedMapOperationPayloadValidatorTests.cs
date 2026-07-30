@@ -27,6 +27,13 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // An explicit null clears the style; that is the ONLY non-string form the applier can express.
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":null}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[]}""")]
+    // A genuine composition body must still be accepted: the replacement check deserializes it,
+    // so over-rejecting here would break the primary document-replace path.
+    [InlineData(
+        SavedMapOperationKind.ReplaceWebMapDocument,
+        """{"layers":[{"id":"parcels","type":"fill","visible":true},{"id":"roads","type":"line"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"}],"view":{"zoom":8}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{}""")]
     public void TryValidate_ApplicablePayload_Accepts(SavedMapOperationKind kind, string payload)
     {
         SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
@@ -61,6 +68,14 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":["night"]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":true}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """[]""")]
+    // A whole-document replacement used to pass on shape alone. These three all took a permanent
+    // cursor and then wedged every later checkpoint: a layer missing the required 'id' stops
+    // deserialization dead in ReadBody, and duplicate ids throw an unmapped ArgumentException out
+    // of the reorder applier's ToDictionary (honua-server#2999 review).
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"},{"id":"parcels"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":" "}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels","visible":"yes"}]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.

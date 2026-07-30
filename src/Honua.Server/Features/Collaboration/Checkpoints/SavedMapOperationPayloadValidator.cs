@@ -72,14 +72,7 @@ internal static class SavedMapOperationPayloadValidator
                 return TryValidatePatchStyle(payload, out error);
 
             case SavedMapOperationKind.ReplaceWebMapDocument:
-                if (payload.ValueKind != JsonValueKind.Object)
-                {
-                    error = "The document-replace payload must be an object body.";
-                    return false;
-                }
-
-                error = string.Empty;
-                return true;
+                return TryValidateReplacementDocument(payload, out error);
 
             default:
                 // Unreachable in practice: the endpoint gates on IsCheckpointable first. Fail
@@ -87,6 +80,72 @@ internal static class SavedMapOperationPayloadValidator
                 error = $"Operation kind '{kind}' cannot be applied to a saved-map checkpoint.";
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Validates a whole-document replacement as an actual composition body, not merely as "some
+    /// object".
+    /// </summary>
+    /// <remarks>
+    /// A shape check alone admitted documents that no later operation can survive, and admission
+    /// permanently consumes a cursor. <c>{"layers":[{}]}</c> deserializes no further than the
+    /// <c>required</c> <see cref="StudioCompositionLayer.Id"/>, so the next scalar operation makes
+    /// <c>StudioCompositionBodyEditor.ReadBody</c> throw; duplicate layer ids deserialize fine but
+    /// make the reorder applier's <c>ToDictionary</c> throw an unmapped
+    /// <see cref="ArgumentException"/>. Either way every subsequent checkpoint fails against a
+    /// replacement cursor that was already persisted, and the map can never save again — the same
+    /// wedge class as the whitespace-id and non-string-styleRef fixes (honua-server#2999 review).
+    /// </remarks>
+    private static bool TryValidateReplacementDocument(JsonElement payload, out string error)
+    {
+        if (payload.ValueKind != JsonValueKind.Object)
+        {
+            error = "The document-replace payload must be an object body.";
+            return false;
+        }
+
+        StudioCompositionBody? body;
+        try
+        {
+            body = payload.Deserialize(StudioJsonContext.Default.StudioCompositionBody);
+        }
+        catch (JsonException ex)
+        {
+            error = $"The document-replace payload is not a valid Studio composition body: {ex.Message}";
+            return false;
+        }
+
+        if (body is null)
+        {
+            error = "The document-replace payload is required.";
+            return false;
+        }
+
+        // Enforced here because the reorder applier indexes layers by id and a duplicate throws
+        // out of ToDictionary rather than surfacing as a typed rejection.
+        //
+        // `?? []` is load-bearing, not defensive habit: deserializing a body that omits "layers"
+        // (for example the legal `{}`) leaves the property NULL rather than applying its
+        // Array.Empty initializer, because the source-generated converter assigns only members
+        // present in the payload. Iterating it directly throws NullReferenceException.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var layer in body.Layers ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(layer.Id))
+            {
+                error = "Every layer in the document-replace payload requires a non-empty 'id'.";
+                return false;
+            }
+
+            if (!seen.Add(layer.Id))
+            {
+                error = $"The document-replace payload repeats layer id '{layer.Id}'; layer ids must be unique.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     private static bool TryValidateViewport(JsonElement payload, out string error)

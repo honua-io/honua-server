@@ -27,6 +27,38 @@ public sealed class StudioCompositionBodyEditorTests
     }
 
     [UnitTest]
+    public void ReadBody_WithBodyOmittingCollections_NormalizesThemToEmpty()
+    {
+        // A present-but-sparse body is NOT the same path as a null body: the source-generated
+        // converter assigns only members present in the payload, so `{}` and a view-only document
+        // come back with Layers/Widgets NULL rather than with their Array.Empty initializers.
+        // Every consumer -- AddLayer's Any, RemoveLayer's Where, the reorder applier's
+        // ToDictionary and .Count -- dereferences them directly, so leaving them null turns the
+        // next composition edit into an unmapped NullReferenceException.
+        using var empty = System.Text.Json.JsonDocument.Parse("{}");
+        var body = StudioCompositionBodyEditor.ReadBody(
+            BuildEnvelope(StudioPackageFamily.Map, empty.RootElement.Clone()));
+
+        Assert.Empty(body.Layers);
+        Assert.Empty(body.Widgets);
+
+        using var viewOnly = System.Text.Json.JsonDocument.Parse("""{"view":{"zoom":8}}""");
+        var viewOnlyBody = StudioCompositionBodyEditor.ReadBody(
+            BuildEnvelope(StudioPackageFamily.Map, viewOnly.RootElement.Clone()));
+
+        Assert.Empty(viewOnlyBody.Layers);
+        Assert.Empty(viewOnlyBody.Widgets);
+        Assert.NotNull(viewOnlyBody.View);
+
+        // The point of normalizing: an edit against such a body must work rather than throw.
+        var withLayer = StudioCompositionBodyEditor.AddLayer(
+            viewOnlyBody,
+            new StudioCompositionLayer { Id = "parcels" });
+
+        Assert.Single(withLayer.Layers);
+    }
+
+    [UnitTest]
     public void WriteBody_ThenReadBody_RoundTrips()
     {
         var envelope = BuildEnvelope(StudioPackageFamily.Map, body: null);
