@@ -230,7 +230,7 @@ ignored.
 
 Issue [#3036](https://github.com/honua-io/honua-server/issues/3036) proposes
 bumping the platform-scan image "off EOL Debian 11 (bullseye) to a supported
-base". That is not achievable for this lane today: on 2026-07-29 every published
+base". That is not achievable for this lane today: on 2026-07-30 every published
 flavour of the Azure Functions host base — `azure-functions/base:4`,
 `:4-slim`, and `:4-appservice` — resolves to an image whose first layer is
 `debian.sh --arch 'amd64' out/ 'bullseye'` (host version 4.636.2). Microsoft
@@ -251,7 +251,7 @@ when the fix finally lands.
 ## Before / after alert counts
 
 - Before (2026-04-14): 2,959 open (2,942 Trivy + 13 CodeQL + 4 Hadolint).
-- Measured on `trunk` on 2026-07-29, immediately before this change lands:
+- Measured on `trunk` on 2026-07-30, immediately before this change lands:
   **588 open** — 587 Trivy + 1 CodeQL + 0 Hadolint. Every one of the 588 comes
   from exactly three sources:
 
