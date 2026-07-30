@@ -853,6 +853,21 @@ main() {
       _emit_metrics "ci-rerun-rejection-persist-failed" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
+    if [[ "${rc_retry}" == "7" ]]; then
+      # #3054: a server-test shard used its whole configured budget while still
+      # executing tests. That is a CI-capacity defect owned by
+      # .github/ci-shards.json, not something any batch member did, so it must
+      # skip autofix and per-PR attribution (which would drop or escalate an
+      # arbitrary PR). Escalate the batch as a whole and clear it so the queue
+      # can progress once the budget is re-based.
+      train_annotate_warn "a server-test shard exhausted its configured test budget while still running tests (HONUA_SHARD_CAPACITY_EXHAUSTED); escalating this batch without per-PR attribution"
+      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+      train_escalate_batch "${included}" "A server-test shard exhausted its configured test budget while still executing tests. This is shard capacity exhaustion, not a failure introduced by any PR in this batch: raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json (see docs/internal/ci/shard-timeout-budgets.md), then re-dispatch."
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-shard-capacity-exhausted" "${trunk_sha}" "" "${shard_descriptor}"
+      return 0
+    fi
     if [[ "${rc_retry}" == "5" ]]; then
       train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
