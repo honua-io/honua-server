@@ -10,6 +10,19 @@ namespace Honua.Protocols.Ogc.Classic.Wps20;
 /// Provides the trusted schema used to constrain WPS XML request envelopes.
 /// Nested operation content remains subject to the adapter's bounded semantic validation.
 /// </summary>
+/// <remarks>
+/// The schema is compiled in-process from the constant below: no network access, no
+/// <c>schemaLocation</c> resolution, and no inline-schema processing, so a request cannot
+/// steer the validator at attacker-chosen schema content.
+/// <para>
+/// Deliberate protocol divergence: because only the five dispatched request roots are
+/// declared, an XML POST whose root is an undeclared element in the WPS namespace is
+/// rejected as <c>InvalidParameterValue</c> (400) instead of reaching the operation switch
+/// and returning <c>OperationNotSupported</c> (501). The KVP/GET path is unchanged and still
+/// answers 501 for an unknown <c>request=</c> value. Rationale and the pinning test are
+/// recorded in docs/internal/security/code-scanning-2026-Q2-remediation.md.
+/// </para>
+/// </remarks>
 internal static class Wps20RequestSchema
 {
     internal static XmlSchemaSet SchemaSet { get; } = CreateSchemaSet();
@@ -47,7 +60,8 @@ internal static class Wps20RequestSchema
             DtdProcessing = DtdProcessing.Prohibit,
             XmlResolver = null
         };
-        using var schemaReader = XmlReader.Create(new StringReader(SchemaDocument), settings);
+        using var input = new StringReader(SchemaDocument);
+        using var schemaReader = XmlReader.Create(input, settings);
         schemas.Add(Wps20Endpoint.WpsNamespace, schemaReader);
         schemas.Compile();
         return schemas;

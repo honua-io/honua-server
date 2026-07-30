@@ -110,6 +110,54 @@ text after this PR lands so a future audit can trace each closure back to a
 written justification (in-source comment for the three annotated sites,
 remediation-table row + wrapper for the two Postgres sites).
 
+## WPS 2.0 XML request validation (CodeQL `cs/xml/missing-validation`)
+
+Alert [#3069](https://github.com/honua-io/honua-server/security/code-scanning/3069)
+flagged `src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs` — the WPS XML
+POST reader already prohibited DTDs, nulled the `XmlResolver`, capped entity
+expansion, and bounded document size, but it never set `ValidationType`, so any
+well-formed document reached the adapter's element walk unconstrained.
+
+This one is **fixed at the root, not dismissed**. `Wps20RequestSchema` compiles a
+small in-source schema (no network, no `schemaLocation` processing) that declares
+exactly the five WPS 2.0 request roots the adapter dispatches — `GetCapabilities`,
+`DescribeProcess`, `Execute`, `GetStatus`, `GetResult` — as envelopes whose
+children and attributes are `processContents="skip"`. Nested operation content
+stays under the adapter's existing bounded semantic validation
+(`ValidateBindingValue`, `MaxInputs`, identifier/job-id extraction), so the schema
+narrows the attack surface without duplicating protocol semantics or requiring the
+full OGC schema tree to be vendored.
+
+Supporting details:
+
+- `XmlSchemaValidationFlags.None` keeps `ProcessSchemaLocation` and
+  `ProcessInlineSchema` off, so a request cannot steer the validator at any
+  remote or inline schema; the `XmlSchemaSet` and its reader both set
+  `XmlResolver = null` and `DtdProcessing.Prohibit`.
+- Schema failures surface as `XmlSchemaException` (which derives from
+  `SystemException`, not `XmlException`, hence the separate catch clause) and are
+  mapped through the same `Exception(...)` helper as every other malformed
+  request. The validator's message is logged server-side only; the client sees the
+  fixed `InvalidParameterValue` / "The XML request is not valid or contains
+  prohibited constructs." text, so no schema, path, or parser internals leak.
+- Completeness note: XSD validation alone does not reject a root element in a
+  *foreign* namespace — with warnings unreported, the validator simply has no
+  declaration to apply. That case is still covered, one line later, by the
+  adapter's existing explicit `root.Name.NamespaceName != WpsNamespace` guard, so
+  the two checks together leave no accepted root outside the five dispatched
+  operations. Behaviour confirmed against the compiled schema: the five declared
+  roots (including `Execute` with nested `ows:Identifier` / `wps:Input` /
+  `wps:Output`) validate, an undeclared WPS-namespace root raises
+  "element is not declared", a DTD is still refused before validation runs, and an
+  `xsi:schemaLocation` pointing at an external host is ignored rather than fetched.
+- Deliberate protocol divergence: an XML POST whose root is an *undeclared*
+  element in the WPS namespace now returns `400 InvalidParameterValue` rather than
+  the `501 OperationNotSupported` the KVP/GET dispatch returns for an unknown
+  `request=` value. Rejecting an unparseable request document before dispatch is
+  the point of the change; the KVP path is unaffected.
+  `Wps20EndpointsTests.ReadRequest_XmlWithUndeclaredWpsOperation_ReturnsValidationError`
+  pins that behavior and asserts the rejected element name is not echoed back.
+
 ## CodeQL user-controlled-bypass triage
 
 | File:line | Rule | Disposition | Rationale |
@@ -178,19 +226,71 @@ runtime layer now invokes `dnf upgrade` so those advisories retire as soon as
 Amazon publishes the packages; until then they remain visible rather than being
 ignored.
 
+### Why the Functions base is not moved off Debian 11
+
+Issue [#3036](https://github.com/honua-io/honua-server/issues/3036) proposes
+bumping the platform-scan image "off EOL Debian 11 (bullseye) to a supported
+base". That is not achievable for this lane today: on 2026-07-29 every published
+flavour of the Azure Functions host base — `azure-functions/base:4`,
+`:4-slim`, and `:4-appservice` — resolves to an image whose first layer is
+`debian.sh --arch 'amd64' out/ 'bullseye'` (host version 4.636.2). Microsoft
+publishes no bookworm/trixie variant, so there is no newer base to pin to; the
+`.NET runtime-deps` image suggested in that issue is not a substitute because
+the custom-handler lane needs the Functions host itself.
+
+The achievable subset — which is what this pass ships — is to slim the runtime
+layer and apply the Debian security updates the base has not picked up, taking
+the measured HIGH/CRITICAL record count from 784 to 51. The base bump stays
+blocked upstream and should be re-checked whenever Microsoft republishes the
+Functions host image; #3036's remaining acceptance criteria are tracked there,
+not here. That issue also proposes enabling Trivy's `ignore-unfixed` for OS
+packages; this pass deliberately does not, for the same reason the rest of the
+note gives — an advisory with no upstream fix is still the signal that tells us
+when the fix finally lands.
+
 ## Before / after alert counts
 
-Recorded in the PR description after the Security tab refresh:
+- Before (2026-04-14): 2,959 open (2,942 Trivy + 13 CodeQL + 4 Hadolint).
+- Measured on `trunk` on 2026-07-29, immediately before this change lands:
+  **588 open** — 587 Trivy + 1 CodeQL + 0 Hadolint. Every one of the 588 comes
+  from exactly three sources:
 
-- Before (2026-04-14): 2,959 (2,942 Trivy + 13 CodeQL + 4 Hadolint)
-- After: to be filled in once the Trivy nightly + SARIF filter run on `trunk`
-  has settled. The expected drop is at least the `trivy-functions-aot-amd64`
-  category, which is the dominant single contributor.
+| Source (SARIF category) | Open | Severity | Disposition |
+| --- | ---: | --- | --- |
+| `trivy-functions-aot-amd64` | 581 | 578 HIGH / 3 CRITICAL | **Stale signal.** Every instance was last observed between 2026-03-13 and 2026-04-13 and none has been re-observed since, because `deploy-platform-images.yml` only ran on `v*` tag pushes — a category with no new SARIF upload keeps its findings open indefinitely. The weekly schedule and `scan_only` dispatch added here re-upload the same category from `refs/heads/trunk` using the same local `honua-platform-scan:*` image name, so GitHub retires every finding the rebuilt image no longer carries. The controlled 2026-07-24 scan of the rebuilt image measured 51 remaining HIGH/CRITICAL records, down from 784 on the untouched base. |
+| `.github/workflows/security-nightly.yml:container-security-scan` | 6 | 5 HIGH / 1 MEDIUM | **Fixed at the root.** All six are `Microsoft.NETCore.App.Runtime.linux-musl-x64` **10.0.8** advisories (CVE-2026-47302, CVE-2026-50524, CVE-2026-50528, CVE-2026-50651, CVE-2026-50659, CVE-2026-57108), each with fixed version 10.0.10. See "Runtime patch level" below. |
+| CodeQL `cs/xml/missing-validation` (alert #3069) | 1 | MEDIUM | **Fixed at the root** — see "WPS 2.0 XML request validation" above. |
+
+None of those 588 is cleared by an ignore-file entry, a suppression, or a UI
+dismissal: the container findings clear by shipping patched bases, the CodeQL
+finding by adding real validation, and the stale category by giving the scanner
+a way to run again. (The dismissals recorded earlier in this note belong to the
+#757 triage pass and cover different, already-closed alerts.)
+
+### Runtime patch level
+
+The nightly container gate scans the image built from the top-level `Dockerfile`,
+which is framework-dependent and therefore inherits the .NET shared framework
+from its runtime base. The previously pinned `aspnet:10.0-alpine` digest carried
+`DOTNET_VERSION=10.0.8`; the digest pinned above carries
+`DOTNET_VERSION=10.0.10` / `ASPNET_VERSION=10.0.10`, which is the fixed version
+named by all six advisories, so the next nightly scan retires them.
+
+The AOT and Lambda images publish self-contained, so their embedded runtime comes
+from the SDK base rather than a runtime image. Both refreshed
+`mcr.microsoft.com/dotnet/sdk:10.0{,-alpine}` digests ship
+`DOTNET_VERSION=10.0.10` (`DOTNET_SDK_VERSION=10.0.302`), keeping every published
+lane on the same patch level.
 
 ## Audit follow-up
 
-- Each CodeQL finding must be **dismissed in the GitHub UI** with a link back
-  to this note as the rationale source.
+- Each CodeQL finding **triaged as a false positive** (the SQL/XML and
+  user-controlled-bypass tables above) must be **dismissed in the GitHub UI**
+  with a link back to this note as the rationale source. Findings listed as
+  *fixed at the root* — `cs/xml/missing-validation` #3069 and the container
+  advisories — must **not** be dismissed; they close on their own once the next
+  analysis or scan observes the fix, and dismissing them would hide a
+  regression if the fix were later reverted.
 - A future audit can re-validate any dismissal by reading the referenced
   in-source `// codeql[...]` comment plus the matching row in this table.
 - The Functions image refresh cadence should ride alongside the existing
