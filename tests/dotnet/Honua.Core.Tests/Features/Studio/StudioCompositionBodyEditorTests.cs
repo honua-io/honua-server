@@ -59,6 +59,46 @@ public sealed class StudioCompositionBodyEditorTests
     }
 
     [UnitTest]
+    public void ReadBody_ThenWriteBody_PreservesFieldsOutsideTheProjection()
+    {
+        // StudioCompositionBody is a PROJECTION, not the whole document: a canonical map package
+        // also carries mapPackageId/format/status/createdAt/sourceBindings/initialView, which
+        // MapGenerationSchema requires. Both round trips that serialize this record back over the
+        // stored body -- the collaboration checkpoint applier and the MCP Studio composition tools
+        // -- would otherwise DELETE every unmodelled field on the first edit. Silent data loss, not
+        // a wedge, so nothing would surface at the time.
+        using var document = System.Text.Json.JsonDocument.Parse(
+            """
+            {
+              "mapPackageId": "pkg-1",
+              "format": "honua.map/1.0",
+              "status": "published",
+              "sourceBindings": [{"sourceId": "parcels", "layerId": 7}],
+              "initialView": {"zoom": 3},
+              "layers": [{"id": "parcels"}]
+            }
+            """);
+        var envelope = BuildEnvelope(StudioPackageFamily.Map, document.RootElement.Clone());
+
+        var body = StudioCompositionBodyEditor.ReadBody(envelope);
+        var mutated = StudioCompositionBodyEditor.AddLayer(
+            body, new StudioCompositionLayer { Id = "roads" });
+        var written = StudioCompositionBodyEditor.WriteBody(envelope, mutated);
+
+        var reread = written.Body!.Value;
+        Assert.Equal("pkg-1", reread.GetProperty("mapPackageId").GetString());
+        Assert.Equal("honua.map/1.0", reread.GetProperty("format").GetString());
+        Assert.Equal("published", reread.GetProperty("status").GetString());
+        Assert.Equal(3, reread.GetProperty("initialView").GetProperty("zoom").GetInt32());
+        Assert.Equal(
+            "parcels",
+            reread.GetProperty("sourceBindings")[0].GetProperty("sourceId").GetString());
+
+        // ...and the modelled part still applied.
+        Assert.Equal(2, reread.GetProperty("layers").GetArrayLength());
+    }
+
+    [UnitTest]
     public void WriteBody_ThenReadBody_RoundTrips()
     {
         var envelope = BuildEnvelope(StudioPackageFamily.Map, body: null);

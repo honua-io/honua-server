@@ -144,6 +144,60 @@ internal static class SavedMapOperationPayloadValidator
             }
         }
 
+        // Widgets carry the same invariants as layers and the same consequence: an App
+        // composition is indexed by widget id, so a duplicate or blank one is a wedge waiting for
+        // the next widget operation, not a cosmetic issue (honua-server#2999 review).
+        var seenWidgets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var widget in body.Widgets ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(widget.Id))
+            {
+                error = "Every widget in the document-replace payload requires a non-empty 'id'.";
+                return false;
+            }
+
+            if (!seenWidgets.Add(widget.Id))
+            {
+                error = $"The document-replace payload repeats widget id '{widget.Id}'; widget ids must be unique.";
+                return false;
+            }
+        }
+
+        // A replacement carries a view too, so it must satisfy the same coordinate-shape rules an
+        // explicit SetViewport operation does.
+        return TryValidateViewShape(body.View, out error);
+    }
+
+    /// <summary>
+    /// Enforces the coordinate arity the wire model implies but cannot express: <c>bbox</c> is four
+    /// ordinates and <c>center</c> is two.
+    /// </summary>
+    /// <remarks>
+    /// <c>IReadOnlyList&lt;double&gt;</c> deserializes any-length arrays happily, so
+    /// <c>{"bbox":[0]}</c> or <c>{"center":[1,2,3]}</c> reached the success path, consumed a
+    /// permanent cursor, and then failed at checkpoint time — the same wedge class as the
+    /// whitespace-id and non-string-styleRef fixes (honua-server#2999 review).
+    /// </remarks>
+    private static bool TryValidateViewShape(StudioCompositionView? view, out string error)
+    {
+        if (view is null)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (view.Bbox is { Count: not 4 } bbox)
+        {
+            error = $"The viewport 'bbox' requires exactly 4 coordinates; got {bbox.Count}.";
+            return false;
+        }
+
+        if (view.Center is { Count: not 2 } center)
+        {
+            error = $"The viewport 'center' requires exactly 2 coordinates; got {center.Count}.";
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }
@@ -173,8 +227,7 @@ internal static class SavedMapOperationPayloadValidator
             return false;
         }
 
-        error = string.Empty;
-        return true;
+        return TryValidateViewShape(view, out error);
     }
 
     /// <summary>

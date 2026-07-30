@@ -34,6 +34,11 @@ public sealed class SavedMapOperationPayloadValidatorTests
         """{"layers":[{"id":"parcels","type":"fill","visible":true},{"id":"roads","type":"line"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"}],"view":{"zoom":8}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{}""")]
+    // Correctly-shaped coordinate arrays and unique widget ids must still pass, so the arity and
+    // widget checks cannot become blanket rejections of valid App/view documents.
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,0,10,10],"center":[5,5]}}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0,0,10,10],"center":[5,5],"zoom":8}""")]
     public void TryValidate_ApplicablePayload_Accepts(SavedMapOperationKind kind, string payload)
     {
         SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
@@ -76,6 +81,18 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"},{"id":"parcels"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":" "}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels","visible":"yes"}]}""")]
+    // Widgets carry the same invariants as layers: an App composition is indexed by widget id, so a
+    // duplicate or blank one wedges the next widget operation.
+    [InlineData(
+        SavedMapOperationKind.ReplaceWebMapDocument,
+        """{"widgets":[{"id":"legend","kind":"a"},{"id":"legend","kind":"b"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":" ","kind":"a"}]}""")]
+    // IReadOnlyList<double> deserializes any-length arrays, so the wire model cannot express that
+    // bbox is 4 ordinates and center is 2. Both used to take a permanent cursor and fail later.
+    [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0]}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1,2,3]}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,1,2]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.

@@ -80,15 +80,44 @@ public static class StudioCompositionBodyEditor
     }
 
     /// <summary>
-    /// Writes a composition body back onto an envelope's <see cref="StudioPackageEnvelope.Body"/>.
+    /// Writes a composition body back onto an envelope's <see cref="StudioPackageEnvelope.Body"/>,
+    /// preserving any members of the stored document this projection does not model.
     /// </summary>
+    /// <remarks>
+    /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
+    /// <c>layers</c>, <c>view</c> and <c>widgets</c> and nothing else — but a canonical map package
+    /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
+    /// <c>sourceBindings</c> and <c>initialView</c> (all required by <c>MapGenerationSchema</c>).
+    /// Serializing the projection straight over the body therefore DELETED every unmodelled field
+    /// on the first edit, silently, through both round trips that use this editor: the
+    /// collaboration checkpoint applier and the MCP Studio composition tools. Overlaying only the
+    /// projected keys onto the original object keeps the round trip lossless
+    /// (honua-server#2999 review).
+    /// </remarks>
     public static StudioPackageEnvelope WriteBody(StudioPackageEnvelope envelope, StudioCompositionBody body)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(body);
 
         var json = JsonSerializer.SerializeToElement(body, StudioJsonContext.Default.StudioCompositionBody);
-        return envelope with { Body = json };
+        if (envelope.Body is not { ValueKind: JsonValueKind.Object } original)
+        {
+            return envelope with { Body = json };
+        }
+
+        var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var member in original.EnumerateObject())
+        {
+            merged[member.Name] = member.Value;
+        }
+
+        // The projection wins for the keys it owns; everything else survives untouched.
+        foreach (var member in json.EnumerateObject())
+        {
+            merged[member.Name] = member.Value;
+        }
+
+        return envelope with { Body = JsonSerializer.SerializeToElement(merged) };
     }
 
     /// <summary>
