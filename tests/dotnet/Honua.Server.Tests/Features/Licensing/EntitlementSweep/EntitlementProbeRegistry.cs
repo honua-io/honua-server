@@ -331,12 +331,11 @@ internal static class EntitlementProbeRegistry
             new("dr.cache-backup", "Same dormant-scaffolding state as dr.backup-automation above."),
             new("dr.rto-rpo-reporting", "Same dormant-scaffolding state as dr.backup-automation above."),
             new(FeatureCatalog.OutputCacheKey,
-                "Gated at process boot (#2998): StartupConfigurationHelpers.IsOutputCacheEntitledAsync " +
-                "decides whether app.UseOutputCache() is wired before the host starts accepting " +
-                "requests, mirroring caching.redis above — there is no single HTTP call whose " +
-                "response reflects this gate (an unentitled host serves identical, just uncached, " +
-                "responses). Verified enforced in code (Program.cs + " +
-                "OutputCacheEntitlementGateTests); not a gap."),
+                "Enforced as a pipeline branch (#2998): Program wires UseOutputCache() inside an " +
+                "app.UseWhen(...) branch whose predicate reads the live license snapshot, so the " +
+                "gate follows runtime license changes. There is no single HTTP call whose response " +
+                "reflects it — an unentitled host serves identical, just uncached, responses. " +
+                "Verified enforced in code (Program.cs + OutputCacheEntitlementGateTests); not a gap."),
             new(FeatureCatalog.OidcClaimsMappingKey,
                 "Enforced as a config-driven soft-degrade (#2997): the OIDC provider admin DTOs " +
                 "carry no claims-mapping fields, so the surface that exists is the " +

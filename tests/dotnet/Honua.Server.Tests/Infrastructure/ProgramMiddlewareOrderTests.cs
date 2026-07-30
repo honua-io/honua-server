@@ -16,7 +16,11 @@ public sealed class ProgramMiddlewareOrderTests
         var serilogIndex = source.IndexOf("app.UseSerilogRequestLogging(", StringComparison.Ordinal);
         var exceptionIndex = source.IndexOf("app.UseGlobalExceptionHandling();", StringComparison.Ordinal);
         var authIndex = source.IndexOf("app.UseApiKeyAuthentication();", StringComparison.Ordinal);
-        var outputCacheIndex = source.IndexOf("app.UseOutputCache();", StringComparison.Ordinal);
+        // Output caching is wired as an entitlement-gated `app.UseWhen` branch (#2998), so the
+        // call sits on the branch builder as `entitled.UseOutputCache())` — an expression-bodied
+        // lambda argument with no trailing semicolon. Match without one, or this assertion silently
+        // stops finding the call it exists to order.
+        var outputCacheIndex = source.IndexOf("UseOutputCache()", StringComparison.Ordinal);
 
         serilogIndex.Should().BeGreaterThan(-1);
         exceptionIndex.Should().BeGreaterThan(-1);

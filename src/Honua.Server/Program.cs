@@ -194,13 +194,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-
-// #2998: caching.output-cache (Pro) is gated at process boot, mirroring caching.redis above.
-// When not entitled, app.UseOutputCache() is skipped further down; AddOutputCache service
-// registration stays in place so endpoint CacheOutput metadata remains inert-but-valid.
-var outputCacheEntitled = await StartupConfigurationHelpers.IsOutputCacheEntitledAsync(
-    builder.Configuration,
-    builder.Environment);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -1333,13 +1326,18 @@ app.UseLimitsEnforcement();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
-// Enable output caching middleware only when the boot-time caching.output-cache entitlement
-// is present (#2998). Without the middleware, endpoint CacheOutput metadata is inert, so
-// Community deployments serve identical responses — just uncached.
-if (outputCacheEntitled)
-{
-    app.UseOutputCache();
-}
+// Enable output caching only for requests the live caching.output-cache entitlement covers
+// (#2998). The decision is taken per request against the current license snapshot rather than
+// frozen at boot: a Community process upgraded through ILicenseManager.ApplyLicenseAsync starts
+// caching without a restart, and — the direction that matters — a Pro license that expires at
+// runtime stops serving cached responses immediately instead of keeping the entitlement until the
+// next restart. Without the branch, endpoint CacheOutput metadata is inert, so Community
+// deployments serve identical responses — just uncached.
+app.UseWhen(
+    static context => Honua.Infrastructure.Licensing.LicenseGate.HasLiveEntitlement(
+        context.RequestServices,
+        Honua.Core.Features.Licensing.Domain.FeatureCatalog.OutputCacheKey),
+    static entitled => entitled.UseOutputCache());
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";

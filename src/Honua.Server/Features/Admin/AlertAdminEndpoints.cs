@@ -638,11 +638,19 @@ internal static class AlertAdminEndpoints
     {
         var deniedKeys = new List<string>();
 
-        // Probe the trigger entitlement with the minimum self-declared tier so a rule that is
-        // blocked purely by its own EditionRequired declaration (trigger key entitled, tier
-        // declaration above the effective edition) falls through to the draft validation's
-        // 400 instead of a 402 naming a key the license actually includes.
-        if (!editionPolicy.IsRuleAllowed(rule with { EditionRequired = AlertEdition.Pro }))
+        // alerts.evaluation (Pro) licenses the evaluation engine every rule ultimately runs on, so
+        // IsRuleAllowed requires it. Name it here rather than letting its absence be misattributed
+        // to the trigger key below.
+        if (!LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.AlertsEvaluationKey))
+        {
+            deniedKeys.Add(FeatureCatalog.AlertsEvaluationKey);
+        }
+
+        // Probe the trigger entitlement on its own so a rule that is blocked purely by its own
+        // EditionRequired declaration (trigger key entitled, tier declaration above the effective
+        // edition) falls through to the draft validation's 400 instead of a 402 naming a key the
+        // license actually includes.
+        if (!editionPolicy.IsTriggerAllowed(rule.TriggerType))
         {
             deniedKeys.Add(AlertEntitlementMap.GetTriggerEntitlementKey(rule.TriggerType));
         }
@@ -688,7 +696,9 @@ internal static class AlertAdminEndpoints
 
         if (!editionPolicy.IsRuleAllowed(rule))
         {
-            errors.Add("The configured edition does not allow this rule trigger or tier requirement.");
+            errors.Add(
+                "The configured edition does not allow this rule trigger, its tier requirement, " +
+                "or the alert evaluation engine it needs.");
         }
 
         var channelValidation = BuildChannelValidation(rule, editionPolicy);

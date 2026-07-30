@@ -22,11 +22,13 @@ public sealed class AlertEditionPolicyTests
         HonuaEdition licenseEdition,
         AlertEdition? editionCap = null,
         AlertOptions? options = null,
-        AlertDeliveryOptions? deliveryOptions = null)
+        AlertDeliveryOptions? deliveryOptions = null,
+        string[]? entitlements = null,
+        LicenseValidationState validationState = LicenseValidationState.Valid)
         => new(
             Options.Create(options ?? new AlertOptions { Edition = editionCap }),
             Options.Create(deliveryOptions ?? new AlertDeliveryOptions()),
-            new TestLicenseEntitlementService(licenseEdition));
+            new TestLicenseEntitlementService(licenseEdition, validationState, entitlements));
 
     private static AlertRuleDefinition CreateRule(
         AlertTriggerType triggerType,
@@ -102,6 +104,72 @@ public sealed class AlertEditionPolicyTests
 
         Assert.True(enterprise.IsRuleAllowed(CreateRule(AlertTriggerType.Dwell, AlertEdition.Enterprise)));
         Assert.True(enterprise.IsRuleAllowed(CreateRule(AlertTriggerType.Threshold, AlertEdition.Enterprise)));
+    }
+
+    [UnitTest]
+    public void IsRuleAllowed_EnterpriseTierGrantingThresholdButNotDwell_AllowsThresholdRule()
+    {
+        // Signed payloads enumerate entitlement keys independently, so an Enterprise-tier grant
+        // can include alerts.threshold and omit alerts.dwell. Inferring the tier from key presence
+        // (dwell => Enterprise) resolved this to Pro/null and rejected the entitled rule.
+        var policy = CreatePolicy(
+            HonuaEdition.Enterprise,
+            entitlements:
+            [
+                FeatureCatalog.AlertsEvaluationKey,
+                FeatureCatalog.AlertsThresholdKey,
+                FeatureCatalog.ChannelsWebhookKey,
+            ]);
+
+        Assert.True(
+            policy.IsRuleAllowed(CreateRule(AlertTriggerType.Threshold, AlertEdition.Enterprise)),
+            "the tier must come from the edition the license declares, not from unrelated keys");
+        Assert.True(policy.IsTriggerAllowed(AlertTriggerType.Threshold));
+
+        // The keys the license genuinely omits are still enforced per key.
+        Assert.False(policy.IsRuleAllowed(CreateRule(AlertTriggerType.Dwell, AlertEdition.Enterprise)));
+        Assert.False(policy.IsTriggerAllowed(AlertTriggerType.Dwell));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Email));
+    }
+
+    [UnitTest]
+    public void IsRuleAllowed_WithoutEvaluationEntitlement_BlocksOtherwiseEntitledRule()
+    {
+        // alerts.evaluation licenses the background evaluation engine. Every evaluation path
+        // funnels through IsRuleAllowed, so a grant carrying only the trigger key must not run it.
+        var policy = CreatePolicy(
+            HonuaEdition.Pro,
+            entitlements: [FeatureCatalog.AlertsEnterExitKey, FeatureCatalog.ChannelsWebhookKey]);
+
+        Assert.True(
+            policy.IsTriggerAllowed(AlertTriggerType.Enter),
+            "the trigger key itself is granted, so the denial must be attributable to the engine key");
+        Assert.False(policy.IsRuleAllowed(CreateRule(AlertTriggerType.Enter)));
+
+        // Adding the engine key is the only difference that unblocks the same rule.
+        var withEngine = CreatePolicy(
+            HonuaEdition.Pro,
+            entitlements:
+            [
+                FeatureCatalog.AlertsEnterExitKey,
+                FeatureCatalog.AlertsEvaluationKey,
+                FeatureCatalog.ChannelsWebhookKey,
+            ]);
+        Assert.True(withEngine.IsRuleAllowed(CreateRule(AlertTriggerType.Enter)));
+    }
+
+    [UnitTest]
+    public void IsChannelAllowed_ExpiredEnterpriseTier_AllowsNothing()
+    {
+        // The keyless WebSocket channel resolves through the effective edition, so an expired
+        // snapshot must degrade to "no tier" rather than keeping its declared Enterprise label.
+        var policy = CreatePolicy(
+            HonuaEdition.Enterprise,
+            validationState: LicenseValidationState.Expired,
+            entitlements: []);
+
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.WebSocket));
+        Assert.False(policy.IsRuleAllowed(CreateRule(AlertTriggerType.Enter)));
     }
 
     [UnitTest]

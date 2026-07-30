@@ -14971,8 +14971,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.CreateProvider_ValidRequest_ReturnsCreated",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_ConcurrentFirstCreatesAtPro_StillAdmitOnlyOneProvider",
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithEnterpriseEntitlement_AllowsMultipleProviders",
-        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond"
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.TestProvider_WithTrailingSlash_IsNotBlockedByMultiProviderGate"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -14986,7 +14988,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.TestProvider_ExistingId_ReturnsTestResult"
+        "Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests.TestProvider_ExistingId_ReturnsTestResult",
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.TestProvider_WithTrailingSlash_IsNotBlockedByMultiProviderGate"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

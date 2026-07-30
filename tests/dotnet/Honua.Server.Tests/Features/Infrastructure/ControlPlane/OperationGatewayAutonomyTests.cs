@@ -634,6 +634,8 @@ public sealed class OperationGatewayAutonomyTests
     {
         public bool IsRuleAllowed(AlertRuleDefinition rule) => true;
 
+        public bool IsTriggerAllowed(AlertTriggerType triggerType) => true;
+
         public bool IsChannelAllowed(AlertChannelType channelType) => true;
 
         public bool IsChannelConfigured(AlertChannelType channelType) => true;

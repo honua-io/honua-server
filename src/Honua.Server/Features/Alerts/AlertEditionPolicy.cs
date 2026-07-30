@@ -34,20 +34,34 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
     }
 
     /// <summary>
-    /// The effective alert edition: the license-derived tier (Enterprise when the Enterprise
-    /// alerts entitlements are active, Pro when only the Pro ones are, null when none are)
-    /// capped by <see cref="AlertOptions.Edition"/> when configured.
+    /// The effective alert edition: the edition the active license itself declares (Enterprise,
+    /// Pro, or null when the snapshot is not a valid paid license), capped by
+    /// <see cref="AlertOptions.Edition"/> when configured.
     /// </summary>
+    /// <remarks>
+    /// The tier comes from the license's declared edition, not from probing individual
+    /// entitlement keys. Using unrelated keys as tier proxies (previously
+    /// <c>alerts.dwell</c> ⇒ Enterprise, <c>alerts.enter-exit</c> ⇒ Pro) misreads a signed
+    /// license, because signed payloads enumerate entitlement keys independently: an Enterprise
+    /// license granting <c>alerts.threshold</c> but not <c>alerts.dwell</c> resolved to Pro, so
+    /// <see cref="IsRuleAllowed"/> rejected its fully entitled threshold rule. Per-key
+    /// entitlement is still enforced by <see cref="IsEntitled"/>; this property only supplies the
+    /// tier that the <c>Alerts:Edition</c> cap, a rule's self-declared
+    /// <see cref="AlertRuleDefinition.EditionRequired"/>, and the keyless WebSocket channel
+    /// compare against. An expired or otherwise invalid snapshot reports Community/not-valid and
+    /// so degrades to null here.
+    /// </remarks>
     private AlertEdition? EffectiveEdition
     {
         get
         {
-            AlertEdition? licenseDerived =
-                _entitlements.CheckEntitlement(FeatureCatalog.AlertsDwellKey).IsActive
-                    ? AlertEdition.Enterprise
-                    : _entitlements.CheckEntitlement(FeatureCatalog.AlertsEnterExitKey).IsActive
-                        ? AlertEdition.Pro
-                        : null;
+            var snapshot = _entitlements.GetSnapshot();
+            AlertEdition? licenseDerived = snapshot switch
+            {
+                { IsValid: true, Edition: HonuaEdition.Enterprise } => AlertEdition.Enterprise,
+                { IsValid: true, Edition: HonuaEdition.Pro } => AlertEdition.Pro,
+                _ => null,
+            };
 
             if (licenseDerived is null)
             {
@@ -73,9 +87,21 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
             || AlertEntitlementMap.GetRequiredAlertEdition(entitlementKey) <= cap;
     }
 
+    public bool IsTriggerAllowed(AlertTriggerType triggerType)
+        => IsEntitled(AlertEntitlementMap.GetTriggerEntitlementKey(triggerType));
+
     public bool IsRuleAllowed(AlertRuleDefinition rule)
     {
-        if (!IsEntitled(AlertEntitlementMap.GetTriggerEntitlementKey(rule.TriggerType)))
+        // The evaluation engine is separately entitled (alerts.evaluation, Pro — the catalog
+        // describes it as the background worker that evaluates rules). Every background
+        // evaluation path funnels through this predicate, so a license that carries a trigger key
+        // but not the engine key must not get the evaluator run for it.
+        if (!IsEntitled(FeatureCatalog.AlertsEvaluationKey))
+        {
+            return false;
+        }
+
+        if (!IsTriggerAllowed(rule.TriggerType))
         {
             return false;
         }

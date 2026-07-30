@@ -188,23 +188,12 @@ internal static class StartupConfigurationHelpers
         return snapshot.HasEntitlement("caching.redis");
     }
 
-    /// <summary>
-    /// Inspect a bootstrap license snapshot to determine whether the running host is entitled
-    /// to enable the ASP.NET Core output-cache middleware (<c>caching.output-cache</c>, Pro;
-    /// #2998). Mirrors <see cref="IsRedisCacheEntitledAsync"/>: <c>Licensing:DevGrantEdition</c>
-    /// is honored outside Production (honua-server#1787) and the same license-content secret
-    /// resolvers are used (honua-server#1755). When not entitled, <c>Program</c> skips
-    /// <c>app.UseOutputCache()</c> while <c>AddOutputCache</c> service registration stays in
-    /// place, so endpoints carrying <c>CacheOutput</c> metadata keep serving identical
-    /// (uncached) responses in Community deployments.
-    /// </summary>
-    public static async Task<bool> IsOutputCacheEntitledAsync(
-        IConfiguration configuration,
-        IHostEnvironment environment)
-    {
-        var snapshot = await LoadBootstrapLicenseSnapshotAsync(configuration, environment).ConfigureAwait(false);
-        return snapshot.HasEntitlement(FeatureCatalog.OutputCacheKey);
-    }
+    // caching.output-cache (Pro) is deliberately NOT gated here. The Redis-cache gate has to run
+    // at boot because it decides service registration (IConnectionMultiplexer, the durable job
+    // store), but the output-cache middleware is a pipeline branch, so it is gated per request
+    // against the live license snapshot in Program.cs instead — a boot-time capture would keep
+    // serving cached responses after a Pro license expired at runtime and would ignore a license
+    // applied through ILicenseManager.ApplyLicenseAsync.
 
     /// <summary>
     /// Resolves the bootstrap license snapshot the boot-time entitlement gates share. Uses the

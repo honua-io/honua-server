@@ -38,11 +38,23 @@ public interface IAlertEvaluator
 public interface IAlertEditionPolicy
 {
     /// <summary>
-    /// Returns true when the active edition permits rule creation/execution.
+    /// Returns true when the active edition permits rule creation/execution. This requires the
+    /// trigger's entitlement, the alert-evaluation engine entitlement, and a rule tier that fits
+    /// within the effective edition.
     /// </summary>
     /// <param name="rule">Rule to validate</param>
     /// <returns>True when the active edition can use the rule</returns>
     bool IsRuleAllowed(AlertRuleDefinition rule);
+
+    /// <summary>
+    /// Returns true when the active edition permits the specified trigger type on its own,
+    /// independent of the evaluation-engine entitlement and of any rule's self-declared tier.
+    /// Admin surfaces use this to attribute an entitlement denial to the exact key that is
+    /// missing instead of blaming the trigger for an unrelated gap.
+    /// </summary>
+    /// <param name="triggerType">Trigger type to check</param>
+    /// <returns>True when the trigger's entitlement key is active and within the edition cap</returns>
+    bool IsTriggerAllowed(AlertTriggerType triggerType);
 
     /// <summary>
     /// Returns true when the active edition permits the specified channel.

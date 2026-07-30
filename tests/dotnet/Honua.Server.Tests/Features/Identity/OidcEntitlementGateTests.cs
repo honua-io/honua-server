@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -97,6 +98,94 @@ public sealed class OidcEntitlementGateTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    [Endpoint("POST /api/v1/admin/oidc/providers/{id}/test")]
+    public async Task TestProvider_WithTrailingSlash_IsNotBlockedByMultiProviderGate()
+    {
+        // The connectivity-test route creates nothing, so the Enterprise multi-provider gate must
+        // never fire for it — including for the equally valid trailing-slash form, which routing
+        // still matches. Identifying the create route by a "/test" path suffix classified
+        // `…/providers/{id}/test/` as a create and 402'd a valid test request.
+        var fixture = CreateFixture(devGrantEdition: "Pro");
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+
+            using var create = await client.PostAsJsonAsync(ProvidersRoute, CreateProviderPayload("only"));
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var providerId = await ReadProviderIdAsync(create);
+
+            // Sanity check: a create now WOULD be blocked, so a 402 below could only come from the
+            // create/test misclassification and not from an already-open gate.
+            using var secondCreate = await client.PostAsJsonAsync(ProvidersRoute, CreateProviderPayload("second"));
+            Assert.Equal(HttpStatusCode.PaymentRequired, secondCreate.StatusCode);
+
+            foreach (var testRoute in new[]
+                     {
+                         $"{ProvidersRoute}/{providerId}/test",
+                         $"{ProvidersRoute}/{providerId}/test/",
+                     })
+            {
+                using var response = await client.PostAsync(testRoute, content: null);
+                var body = await response.Content.ReadAsStringAsync();
+                Assert.True(
+                    response.StatusCode == HttpStatusCode.OK,
+                    $"POST {testRoute} should reach the connectivity test, got {(int)response.StatusCode}: {body}");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task Providers_ConcurrentFirstCreatesAtPro_StillAdmitOnlyOneProvider()
+    {
+        // The provider-count check has to be atomic with the create: concurrent Pro requests could
+        // otherwise all observe an empty store, all pass the preflight, and all be accepted with
+        // distinct generated IDs — bypassing the Enterprise multi-provider entitlement entirely.
+        var fixture = CreateFixture(devGrantEdition: "Pro");
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+
+            var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+                client.PostAsJsonAsync(ProvidersRoute, CreateProviderPayload($"racer-{index}"))));
+
+            var created = responses.Count(response => response.StatusCode == HttpStatusCode.Created);
+            var blocked = responses.Count(response => response.StatusCode == HttpStatusCode.PaymentRequired);
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+
+            Assert.Equal(1, created);
+            Assert.Equal(responses.Length - 1, blocked);
+
+            using var listResponse = await client.GetAsync(ProvidersRoute);
+            var listBody = await listResponse.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(listBody);
+            Assert.Equal(
+                1,
+                document.RootElement.GetProperty("data").GetArrayLength());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<Guid> ReadProviderIdAsync(HttpResponseMessage response)
+    {
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("data").GetProperty("providerId").GetGuid();
     }
 
     [IntegrationTest]

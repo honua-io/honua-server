@@ -967,7 +967,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 17,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 6
       },

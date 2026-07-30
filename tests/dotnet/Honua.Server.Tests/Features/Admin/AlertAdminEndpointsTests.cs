@@ -935,6 +935,8 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
 
         public bool IsRuleAllowed(AlertRuleDefinition rule) => true;
 
+        public bool IsTriggerAllowed(AlertTriggerType triggerType) => true;
+
         public bool IsChannelAllowed(AlertChannelType channelType) => _allowedChannels.Contains(channelType);
 
         public bool IsChannelConfigured(AlertChannelType channelType) => _configuredChannels.Contains(channelType);

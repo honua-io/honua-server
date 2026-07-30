@@ -281,11 +281,12 @@ public static class FeatureCatalog
     public const string ChannelsDigestKey = "channels.digest";
 
     /// <summary>
-    /// Entitlement key for the ASP.NET Core output-cache middleware (#2998). Pro-tier: gated at
-    /// process boot (<c>StartupConfigurationHelpers.IsOutputCacheEntitledAsync</c>) mirroring
-    /// <c>caching.redis</c>; when unentitled the middleware is skipped and endpoint
-    /// <c>CacheOutput</c> metadata is inert, so Community deployments serve identical responses,
-    /// just uncached.
+    /// Entitlement key for the ASP.NET Core output-cache middleware (#2998). Pro-tier: enforced
+    /// per request in <c>Program</c>, which wires <c>UseOutputCache()</c> inside an
+    /// <c>app.UseWhen(...)</c> branch guarded by the live license snapshot, so a license applied
+    /// or expired at runtime takes effect without a restart. When unentitled the branch is not
+    /// taken and endpoint <c>CacheOutput</c> metadata is inert, so Community deployments serve
+    /// identical responses, just uncached.
     /// </summary>
     public const string OutputCacheKey = "caching.output-cache";
 

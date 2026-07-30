@@ -61,34 +61,7 @@ internal static partial class OidcProviderEndpoints
             // is actually being exceeded. The JWT bearer / token-validation pipeline
             // (OidcAuthenticationExtensions) is deliberately NOT gated: token validation for
             // already-configured providers keeps working regardless of edition.
-            .AddEndpointFilter(async (invocationContext, next) =>
-            {
-                var httpContext = invocationContext.HttpContext;
-
-                if (IsCreateProviderRequest(httpContext))
-                {
-                    var store = httpContext.RequestServices.GetRequiredService<IOidcProviderStore>();
-                    var existing = await store.ListProvidersAsync(httpContext.RequestAborted);
-                    if (existing.Count >= 1)
-                    {
-                        var multiProviderGate = LicenseGate.RequireEntitlement(
-                            httpContext,
-                            FeatureCatalog.OidcMultiProviderKey,
-                            "OIDC multi-provider SSO");
-                        if (multiProviderGate is not null)
-                        {
-                            return multiProviderGate;
-                        }
-                    }
-                }
-
-                var gate = LicenseGate.RequireEntitlement(
-                    httpContext,
-                    FeatureCatalog.OidcAuthenticationKey,
-                    "OIDC authentication");
-
-                return gate is null ? await next(invocationContext) : gate;
-            });
+            .AddEndpointFilter(ApplyProviderEntitlementGatesAsync);
 
         group.MapGet("/", HandleListProviders)
             .WithDisplayName("List OIDC Providers")
@@ -96,7 +69,8 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPost("/", HandleCreateProvider)
             .WithDisplayName("Create OIDC Provider")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(CreateProviderRoute.Instance);
 
         group.MapGet("/{id:guid}", HandleGetProvider)
             .WithDisplayName("Get OIDC Provider")
@@ -116,19 +90,79 @@ internal static partial class OidcProviderEndpoints
     }
 
     /// <summary>
-    /// True when the request is the provider-create endpoint (<c>POST …/providers</c>) as
-    /// opposed to the connectivity-test endpoint (<c>POST …/providers/{id}/test</c>).
+    /// Marker metadata identifying the provider-create route (<c>POST …/providers</c>). The
+    /// entitlement filter tells the create route apart from the connectivity-test route
+    /// (<c>POST …/providers/{id}/test</c>) from the matched endpoint's metadata instead of the
+    /// request path: the previous "path does not end in <c>/test</c>" check classified the equally
+    /// valid <c>…/providers/{id}/test/</c> form (trailing slash, which routing still matches) as a
+    /// create and rejected a connectivity test with the multi-provider 402.
     /// </summary>
-    private static bool IsCreateProviderRequest(HttpContext context)
+    internal sealed class CreateProviderRoute
     {
-        if (!HttpMethods.IsPost(context.Request.Method))
+        internal static readonly CreateProviderRoute Instance = new();
+    }
+
+    /// <summary>
+    /// Serializes provider creation so the provider-count check and the store mutation form one
+    /// critical section. Two concurrent Pro creates could otherwise both observe an empty store,
+    /// both pass the preflight, and both be accepted with distinct generated IDs — silently
+    /// bypassing the Enterprise identity.oidc-multi-provider entitlement. The lock is
+    /// process-wide, which matches the scope of the current in-memory store; when the persistent
+    /// store lands (#496) the invariant must move into the store's own transaction so it holds
+    /// across replicas too.
+    /// </summary>
+    private static readonly SemaphoreSlim ProviderCreationGate = new(1, 1);
+
+    /// <summary>
+    /// #2997: applies the OIDC provider admin entitlement gates. Reads and non-create mutations
+    /// only need the Pro <c>identity.oidc</c> entitlement; a create that would grow the store past
+    /// a single provider needs the Enterprise <c>identity.oidc-multi-provider</c> entitlement,
+    /// checked first so the 402 names the entitlement actually being exceeded and evaluated inside
+    /// <see cref="ProviderCreationGate"/> so it cannot be raced by a concurrent create.
+    /// </summary>
+    internal static async ValueTask<object?> ApplyProviderEntitlementGatesAsync(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next)
+    {
+        var httpContext = invocationContext.HttpContext;
+        var isCreate = httpContext.GetEndpoint()?.Metadata.GetMetadata<CreateProviderRoute>() is not null;
+        if (!isCreate)
         {
-            return false;
+            var readGate = RequireOidcAuthenticationEntitlement(httpContext);
+            return readGate is null ? await next(invocationContext).ConfigureAwait(false) : readGate;
         }
 
-        var path = context.Request.Path.Value ?? string.Empty;
-        return !path.EndsWith("/test", StringComparison.OrdinalIgnoreCase);
+        await ProviderCreationGate.WaitAsync(httpContext.RequestAborted).ConfigureAwait(false);
+        try
+        {
+            var store = httpContext.RequestServices.GetRequiredService<IOidcProviderStore>();
+            var existing = await store.ListProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false);
+            if (existing.Count >= 1)
+            {
+                var multiProviderGate = LicenseGate.RequireEntitlement(
+                    httpContext,
+                    FeatureCatalog.OidcMultiProviderKey,
+                    "OIDC multi-provider SSO");
+                if (multiProviderGate is not null)
+                {
+                    return multiProviderGate;
+                }
+            }
+
+            var gate = RequireOidcAuthenticationEntitlement(httpContext);
+            return gate is null ? await next(invocationContext).ConfigureAwait(false) : gate;
+        }
+        finally
+        {
+            ProviderCreationGate.Release();
+        }
     }
+
+    private static IResult? RequireOidcAuthenticationEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.OidcAuthenticationKey,
+            "OIDC authentication");
 
     private static OidcProviderResponse ToResponse(OidcProviderConfiguration p) => new()
     {
