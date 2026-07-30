@@ -132,6 +132,27 @@ public sealed class OutboundHttpUrlValidatorTests
     }
 
     [UnitTest]
+    public void OutboundHttpUrlValidationResult_LegacyThreeArgumentApi_StaysCompatibleAndNonRetryable()
+    {
+        // Honua.Core ships as a NuGet package: the three-argument constructor, the matching
+        // Deconstruct, and the single-argument Failure factory must survive the classification
+        // change so consumers do not break on an assembly-only upgrade.
+        var result = new OutboundHttpUrlValidationResult(false, null, "must be a valid HTTPS URL.");
+        var (isValid, uri, errorMessage) = result;
+
+        isValid.Should().BeFalse();
+        uri.Should().BeNull();
+        errorMessage.Should().Be("must be a valid HTTPS URL.");
+
+        var legacyFailure = OutboundHttpUrlValidationResult.Failure("must be a valid HTTPS URL.");
+
+        legacyFailure.Should().Be(result, "the legacy factory still produces the unclassified shape");
+        legacyFailure.FailureReason.Should().Be(OutboundHttpUrlFailureReason.None);
+        legacyFailure.IsHostResolutionUnavailable.Should().BeFalse(
+            "an unclassified failure must stay permanent rather than becoming retryable");
+    }
+
+    [UnitTest]
     public void ValidateConfiguration_WithHostnameResolvingToPublicAddress_ReturnsSuccess()
     {
         OutboundHttpUrlValidationResult result = OutboundHttpUrlValidator.ValidateConfiguration(

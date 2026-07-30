@@ -14,7 +14,12 @@ namespace Honua.Core.Features.Infrastructure.Validation;
 /// </summary>
 public enum OutboundHttpUrlFailureReason
 {
-    /// <summary>No failure; the URL passed validation.</summary>
+    /// <summary>
+    /// No classification. Set on a successful result, and on a failure produced through the
+    /// legacy single-argument <see cref="OutboundHttpUrlValidationResult.Failure(string)"/>
+    /// overload or the three-argument constructor. An unclassified failure is treated as
+    /// permanent — it is never reported as retryable.
+    /// </summary>
     None = 0,
 
     /// <summary>The value is not a well-formed absolute URL with an allowed scheme.</summary>
@@ -44,13 +49,18 @@ public enum OutboundHttpUrlFailureReason
 /// <param name="IsValid">Whether the URL passed all validation rules.</param>
 /// <param name="Uri">The parsed URI when <paramref name="IsValid"/> is <see langword="true"/>; otherwise <see langword="null"/>.</param>
 /// <param name="ErrorMessage">A short, sentence-fragment error suffix (e.g., "must be a valid HTTPS URL.") suitable for appending to a property name.</param>
-/// <param name="FailureReason">Classification of the failure; <see cref="OutboundHttpUrlFailureReason.None"/> on success.</param>
-public readonly record struct OutboundHttpUrlValidationResult(
-    bool IsValid,
-    Uri? Uri,
-    string? ErrorMessage,
-    OutboundHttpUrlFailureReason FailureReason = OutboundHttpUrlFailureReason.None)
+public readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
 {
+    /// <summary>
+    /// Classification of the failure; <see cref="OutboundHttpUrlFailureReason.None"/> on success.
+    /// Deliberately kept out of the positional parameter list: <c>Honua.Core</c> ships as a NuGet
+    /// package, so promoting it to a positional member would replace the published three-argument
+    /// constructor and <c>Deconstruct</c> and break consumers on an assembly-only upgrade. It
+    /// defaults to <see cref="OutboundHttpUrlFailureReason.None"/>, which is never retryable, so a
+    /// result built through the original constructor keeps the previous fail-closed behaviour.
+    /// </summary>
+    public OutboundHttpUrlFailureReason FailureReason { get; init; }
+
     /// <summary>
     /// Indicates that the destination could not be vetted because host name resolution failed.
     /// The destination is still blocked; the condition is indeterminate rather than permanent.
@@ -64,10 +74,18 @@ public readonly record struct OutboundHttpUrlValidationResult(
     public static OutboundHttpUrlValidationResult Success(Uri uri) => new(true, uri, null);
 
     /// <summary>
+    /// Creates a failed validation result with the supplied error message and no classification.
+    /// Retained for source and binary compatibility with consumers compiled against earlier
+    /// <c>Honua.Core</c> packages; the failure is unclassified and therefore never retryable.
+    /// New call sites should use <see cref="Failure(string, OutboundHttpUrlFailureReason)"/>.
+    /// </summary>
+    public static OutboundHttpUrlValidationResult Failure(string message) => new(false, null, message);
+
+    /// <summary>
     /// Creates a failed validation result with the supplied error message and classification.
     /// </summary>
     public static OutboundHttpUrlValidationResult Failure(string message, OutboundHttpUrlFailureReason reason)
-        => new(false, null, message, reason);
+        => new(false, null, message) { FailureReason = reason };
 }
 
 /// <summary>
