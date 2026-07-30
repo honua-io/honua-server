@@ -48,8 +48,10 @@ internal static class SavedMapOperationEndpoints
             .WithDisplayName("Replay Saved Map Collaboration Operations")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<ApiResponse<SavedMapOperationReplayApiResponse>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleAppend(
@@ -179,6 +181,7 @@ internal static class SavedMapOperationEndpoints
         string mapId,
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
+        [FromServices] CollaborationCapabilities capabilities,
         HttpContext context,
         [FromQuery] long? since = null)
     {
@@ -187,6 +190,22 @@ internal static class SavedMapOperationEndpoints
         if (authorizationError is not null)
         {
             return authorizationError;
+        }
+
+        // Read paths must fail closed on exactly the capability they advertise (honua-server#2999
+        // review). In a declared multi-replica deployment backed by a process-local log the join
+        // handshake reports Replay=false, yet this handler would still answer 200 from node-local
+        // state — during a scale-out or a rolling topology change two replicas could hand the same
+        // client contradictory histories, each looking authoritative. Refusing is the honest
+        // answer: the client falls back to the durable saved state instead of a partial log.
+        if (!capabilities.Replay)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map collaboration operation replay is unavailable in multi-replica " +
+                "deployments until the collaboration operation log is backed by a replica-shared " +
+                "store; this node's process-local log cannot prove it observed every accepted " +
+                "edit, so its history could contradict another replica's.");
         }
 
         var sinceCursor = since.GetValueOrDefault(0);

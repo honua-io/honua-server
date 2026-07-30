@@ -15,12 +15,24 @@ namespace Honua.Server.Features.Collaboration.Checkpoints;
 /// operations (already persisted by earlier checkpoints) age out of the retained window.
 /// </summary>
 /// <remarks>
-/// The cursor record is process-local by design: it shares the lifetime and scope of the op log
-/// it indexes into, so the pair stays consistent (both reset together). Because both reset, a
-/// process-local log cannot prove continuity across a restart — checkpointing is gated on
-/// <see cref="CanProveRestartContinuity"/> (and, in a declared multi-replica deployment, on
-/// <see cref="CanProveReplayContinuity"/>) before either is consulted. A restart-durable or
-/// replica-shared log implementation must persist this cursor alongside the log itself.
+/// <para>
+/// <b>The cursor record is NOT durable.</b> It is a process-local dictionary that shares the
+/// lifetime and scope of the in-memory op log it indexes into, so today the pair stays consistent:
+/// both are lost together on restart, and checkpointing is gated off entirely because the shipped
+/// <see cref="ISavedMapOperationLogRepository"/> reports
+/// <c>SupportsRestartDurableReplay = false</c> (see <see cref="CanProveRestartContinuity"/>, plus
+/// <see cref="CanProveReplayContinuity"/> in a declared multi-replica deployment).
+/// </para>
+/// <para>
+/// <b>Requirement for a durable op-log implementation (honua-server#3067).</b> Reporting
+/// <c>SupportsRestartDurableReplay = true</c> without also persisting these cursors is a defect,
+/// not a partial improvement: the log would survive a restart while the cursor record did not, so
+/// the first checkpoint after a restart would replay from cursor 0 — re-applying old absolute-state
+/// operations over newer direct draft edits, or returning 409 forever once that prefix has been
+/// pruned. A durable-log implementation MUST persist the checkpointed cursor in the same store (and
+/// ideally the same transaction) that assigns operation cursors, and must replace this dictionary
+/// rather than layer on top of it.
+/// </para>
 /// </remarks>
 internal sealed class SavedMapCheckpointOperationLog
 {
@@ -83,6 +95,10 @@ internal sealed class SavedMapCheckpointOperationLog
     /// Records that a checkpoint successfully persisted every operation up to and including
     /// <paramref name="headCursor"/>. Monotonic: concurrent checkpoints keep the highest cursor.
     /// </summary>
+    /// <remarks>
+    /// Process-local and therefore lost on restart — see the type remarks: a durable op-log
+    /// implementation must persist this cursor alongside the log (honua-server#3067).
+    /// </remarks>
     public void MarkCheckpointed(string canonicalMapId, long headCursor) =>
         _checkpointedCursors.AddOrUpdate(
             canonicalMapId,

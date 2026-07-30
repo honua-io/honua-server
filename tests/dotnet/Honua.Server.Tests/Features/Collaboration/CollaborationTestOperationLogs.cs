@@ -37,6 +37,62 @@ internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLog
 }
 
 /// <summary>
+/// Op-log repository that reproduces the replay-window race in the stream handshake: the resume
+/// cursor is inside the retained window for the FIRST replay (so the preliminary check reports Ok
+/// and no <c>resync-required</c> is announced), then concurrent appends prune it before the
+/// snapshot tail is read, so the next replay reports
+/// <see cref="SavedMapOperationReplayStatus.ResyncRequired"/> (honua-server#2999 review).
+/// </summary>
+/// <remarks>
+/// Only the replay path is simulated; appends pass through, so the retained operations the handshake
+/// finally delivers are real log entries. The prune is expressed as "every replay after the first
+/// can only start at <see cref="PrunedMinimumCursor"/>", which is exactly what the in-memory log
+/// reports once the requested cursor ages out of the retained window.
+/// </remarks>
+internal sealed class WindowAdvancesAfterFirstReplayOperationLog : ISavedMapOperationLogRepository
+{
+    /// <summary>Window base the log falls back to once the resume cursor has been pruned.</summary>
+    public const long PrunedMinimumCursor = 2;
+
+    private readonly ISavedMapOperationLogRepository _inner;
+    private int _replayCount;
+
+    public WindowAdvancesAfterFirstReplayOperationLog(ISavedMapOperationLogRepository inner) => _inner = inner;
+
+    public bool SupportsReplicaSharedReplay => _inner.SupportsReplicaSharedReplay;
+
+    public bool SupportsRestartDurableReplay => _inner.SupportsRestartDurableReplay;
+
+    public Task<SavedMapOperationAppendResult> AppendAsync(
+        SavedMapOperationAppendRequest request,
+        CancellationToken cancellationToken = default) => _inner.AppendAsync(request, cancellationToken);
+
+    public async Task<SavedMapOperationReplayResult> ReplayAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor sinceCursor,
+        CancellationToken cancellationToken = default)
+    {
+        var ordinal = Interlocked.Increment(ref _replayCount);
+        var result = await _inner.ReplayAsync(mapId, sinceCursor, cancellationToken).ConfigureAwait(false);
+
+        // First replay: the client's cursor is still resumable, so the handshake sees a healthy
+        // window and announces nothing.
+        if (ordinal == 1 || sinceCursor.Value >= PrunedMinimumCursor)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            Status = SavedMapOperationReplayStatus.ResyncRequired,
+            MinimumReplayCursor = new SavedMapOperationCursor(PrunedMinimumCursor),
+            Operations = [],
+            Message = "The requested cursor is outside the retained replay window.",
+        };
+    }
+}
+
+/// <summary>
 /// Op-log repository that holds the FIRST append's continuation open after its cursor has been
 /// assigned, so a second concurrent append completes first. This reproduces the interleaving
 /// where cursors are assigned in one order and the requests resume in the other; without a

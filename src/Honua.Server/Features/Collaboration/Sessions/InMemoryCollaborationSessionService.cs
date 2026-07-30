@@ -47,6 +47,14 @@ internal sealed class InMemoryCollaborationSessionService
         _capabilities = capabilities ?? CollaborationCapabilities.Default;
     }
 
+    /// <summary>
+    /// Capabilities advertised to every joining participant. Read paths must gate on the same
+    /// flags they advertise: a surface that answers a request it declared unavailable is worse
+    /// than one that refuses it, because the client cannot tell the answer is untrustworthy
+    /// (honua-server#2999 review).
+    /// </summary>
+    public CollaborationCapabilities Capabilities => _capabilities;
+
     public async ValueTask<CollaborationJoinResult> JoinAsync(
         string mapId,
         CollaborationJoinRequest request,

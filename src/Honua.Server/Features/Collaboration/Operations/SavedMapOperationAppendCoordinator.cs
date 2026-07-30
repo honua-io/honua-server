@@ -29,8 +29,13 @@ namespace Honua.Server.Features.Collaboration.Operations;
 /// example by publishing from the same transaction/stream that assigns the cursor) — a
 /// process-local gate cannot order appends accepted on different nodes.
 /// </para>
+/// <para>
+/// The stripe gates are owned for the coordinator's lifetime, so the type is
+/// <see cref="IDisposable"/> and is registered as a singleton — the DI container disposes it with
+/// the host, releasing every <see cref="SemaphoreSlim"/> exactly once.
+/// </para>
 /// </remarks>
-internal sealed class SavedMapOperationAppendCoordinator
+internal sealed class SavedMapOperationAppendCoordinator : IDisposable
 {
     private const int StripeCount = 64;
 
@@ -38,6 +43,7 @@ internal sealed class SavedMapOperationAppendCoordinator
     private readonly InMemoryCollaborationSessionService _sessions;
     private readonly SavedMapCollaborationTopology _topology;
     private readonly SemaphoreSlim[] _stripes;
+    private bool _disposed;
 
     public SavedMapOperationAppendCoordinator(
         ISavedMapOperationLogRepository repository,
@@ -72,6 +78,7 @@ internal sealed class SavedMapOperationAppendCoordinator
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalMapId);
         ArgumentNullException.ThrowIfNull(request);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         var stripe = (int)((uint)StringComparer.Ordinal.GetHashCode(canonicalMapId) % StripeCount);
         var gate = _stripes[stripe];
@@ -97,6 +104,24 @@ internal sealed class SavedMapOperationAppendCoordinator
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Releases the per-map stripe gates. Idempotent, so a double dispose by the container (or a
+    /// test that disposes explicitly and then disposes its provider) is safe.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        foreach (var stripe in _stripes)
+        {
+            stripe.Dispose();
         }
     }
 }

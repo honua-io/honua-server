@@ -622,7 +622,7 @@
       "category": "Collaboration",
       "edition": "Community",
       "entryCount": 9,
-      "provingTestCount": 50,
+      "provingTestCount": 56,
       "maturity": {
         "implemented": 9
       },

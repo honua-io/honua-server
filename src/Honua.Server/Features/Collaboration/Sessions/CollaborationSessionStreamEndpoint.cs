@@ -28,6 +28,13 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 /// to reload the document. Presence is always re-snapshotted on reconnect — the bounded
 /// per-participant outbox intentionally cannot replay presence history, matching the SDK reducer,
 /// which rebuilds presence from every snapshot.
+/// <para>
+/// The same <c>resync-required</c> signal covers the two ways a client can end up without a
+/// complete history: the retained window advancing past its cursor mid-handshake (announced before
+/// the snapshot is sent, so the error keeps a lower sequence), and a deployment whose advertised
+/// <see cref="CollaborationCapabilities.Replay"/> capability is false — there the handshake serves
+/// presence only and never hands back node-local operations another replica could contradict.
+/// </para>
 /// </remarks>
 internal static partial class CollaborationSessionStreamEndpoint
 {
@@ -121,11 +128,13 @@ internal static partial class CollaborationSessionStreamEndpoint
                 }),
                 context.RequestAborted).ConfigureAwait(false);
 
-            var replay = await operationLog.ReplayAsync(
-                    new SavedMapId(mapId),
-                    new SavedMapOperationCursor(resumeFrom),
-                    context.RequestAborted)
-                .ConfigureAwait(false);
+            // Whether this node may answer replay at all. When the deployment is declared
+            // multi-replica and the op log is process-local, the advertised capability already
+            // says Replay=false — so this handshake must not hand back node-local history that
+            // another replica's history contradicts. Presence still streams; the client is told
+            // to load the durable document instead (honua-server#2999 review).
+            var replayAvailable = sessions.Capabilities.Replay;
+            var resyncAnnounced = false;
 
             // Where the snapshot tail starts. On the healthy path that is the client's own resume
             // cursor, so it only receives operations it has not seen. When the resume cursor has
@@ -136,21 +145,43 @@ internal static partial class CollaborationSessionStreamEndpoint
             // (honua-server#2999 review). Re-sending an already-checkpointed prefix is safe:
             // every operation family is absolute-state and the reducer rebuilds from the snapshot.
             var tailSince = resumeFrom;
-            if (replay.Status != SavedMapOperationReplayStatus.Ok)
+            if (!replayAvailable)
             {
-                tailSince = replay.MinimumReplayCursor.Value;
-                await SendEnvelopeAsync(
+                await AnnounceResyncAsync(
                     webSocket,
                     writeLock,
-                    sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
-                    {
-                        Type = CollaborationSessionEventTypes.Error,
-                        Code = CollaborationErrorCodes.ResyncRequired,
-                        Message = replay.Message ?? "The resume cursor is outside the retained operation replay window.",
-                        Terminal = false,
-                        ResyncRequired = true
-                    }),
+                    sessions,
+                    mapId,
+                    sessionId,
+                    actorId,
+                    "Operation replay is unavailable in this deployment: the collaboration " +
+                    "operation log is not shared across replicas, so this node cannot prove its " +
+                    "history is complete. Reload the saved map from its durable state.",
                     context.RequestAborted).ConfigureAwait(false);
+                resyncAnnounced = true;
+            }
+            else
+            {
+                var replay = await operationLog.ReplayAsync(
+                        new SavedMapId(mapId),
+                        new SavedMapOperationCursor(resumeFrom),
+                        context.RequestAborted)
+                    .ConfigureAwait(false);
+
+                if (replay.Status != SavedMapOperationReplayStatus.Ok)
+                {
+                    tailSince = replay.MinimumReplayCursor.Value;
+                    await AnnounceResyncAsync(
+                        webSocket,
+                        writeLock,
+                        sessions,
+                        mapId,
+                        sessionId,
+                        actorId,
+                        replay.Message ?? "The resume cursor is outside the retained operation replay window.",
+                        context.RequestAborted).ConfigureAwait(false);
+                    resyncAnnounced = true;
+                }
             }
 
             // Stamp the snapshot envelope BEFORE assembling its contents, then re-read the op
@@ -161,16 +192,49 @@ internal static partial class CollaborationSessionStreamEndpoint
             // snapshot — which is safe because presence is absolute-state and operations carry
             // op-log cursors. Events stamped before the snapshot envelope are covered by the
             // re-read contents.
-            var snapshotEnvelope = sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+            CollaborationEventEnvelope snapshotEnvelope;
+            SnapshotTail tail;
+            while (true)
             {
-                Type = CollaborationSessionEventTypes.Snapshot
-            });
+                snapshotEnvelope = sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+                {
+                    Type = CollaborationSessionEventTypes.Snapshot
+                });
 
-            var (operations, deliveredThrough) = await ReadSnapshotTailAsync(
-                operationLog,
-                mapId,
-                tailSince,
-                context.RequestAborted).ConfigureAwait(false);
+                tail = replayAvailable
+                    ? await ReadSnapshotTailAsync(operationLog, mapId, tailSince, context.RequestAborted)
+                        .ConfigureAwait(false)
+                    : SnapshotTail.Unavailable;
+
+                if (!tail.ResyncRequired || resyncAnnounced)
+                {
+                    break;
+                }
+
+                // The resume cursor was inside the window during the preliminary replay, but
+                // concurrent appends pruned it before the snapshot tail was read. The client is
+                // NOT holding a complete history any more, so the gap must be announced —
+                // silently restarting the tail from the new window base would leave it believing
+                // it had every operation between its cursor and that base (honua-server#2999
+                // review). The announcement is emitted before the snapshot is sent and the
+                // snapshot is re-stamped afterwards, so the error keeps a lower sequence than the
+                // snapshot the client rebuilds from.
+                await AnnounceResyncAsync(
+                    webSocket,
+                    writeLock,
+                    sessions,
+                    mapId,
+                    sessionId,
+                    actorId,
+                    tail.ResyncMessage ?? "The retained operation replay window advanced past the resume cursor.",
+                    context.RequestAborted).ConfigureAwait(false);
+                resyncAnnounced = true;
+                // Restart from the window's current base, not from what the pruned-then-retried
+                // read happened to deliver: a resyncing client reloads the durable document, which
+                // reflects only CHECKPOINTED operations, so the snapshot must carry the whole
+                // retained window rather than the suffix after it.
+                tailSince = tail.WindowBaseCursor;
+            }
 
             // The snapshot's own Sequence is the boundary the client reducer compares later
             // envelopes against, so it MUST be the sequence stamped before the tail was read —
@@ -181,12 +245,16 @@ internal static partial class CollaborationSessionStreamEndpoint
             var snapshot = sessions.GetSnapshot(mapId) with
             {
                 Sequence = snapshotEnvelope.Sequence,
-                Operations = operations,
+                Operations = tail.Operations,
                 // Never advertise a cursor the snapshot did not actually deliver up to. Claiming
                 // the current head while withholding operations would advance the client past
                 // committed edits it never received, and its reducer would then discard those
-                // operations' later envelopes as already-seen (honua-server#2999 review).
-                Cursor = deliveredThrough.ToString(CultureInfo.InvariantCulture)
+                // operations' later envelopes as already-seen (honua-server#2999 review). When
+                // replay is unavailable there is no defensible position at all, so no cursor is
+                // advertised.
+                Cursor = replayAvailable
+                    ? tail.DeliveredThrough.ToString(CultureInfo.InvariantCulture)
+                    : null
             };
             await SendEnvelopeAsync(
                 webSocket,
@@ -235,18 +303,41 @@ internal static partial class CollaborationSessionStreamEndpoint
     }
 
     /// <summary>
+    /// Operation tail for a handshake snapshot: the operations to deliver, the cursor the tail
+    /// actually reaches, and whether the retained replay window moved past the requested start
+    /// while the tail was being read (so the caller can emit the typed <c>resync-required</c>
+    /// event instead of silently handing back a suffix with a hole in front of it).
+    /// </summary>
+    private readonly record struct SnapshotTail(
+        CollaborationOperationWire[] Operations,
+        long DeliveredThrough,
+        bool ResyncRequired,
+        string? ResyncMessage,
+        long WindowBaseCursor)
+    {
+        /// <summary>No tail at all, because this node may not answer replay.</summary>
+        public static SnapshotTail Unavailable { get; } =
+            new([], 0, ResyncRequired: false, ResyncMessage: null, WindowBaseCursor: 0);
+    }
+
+    /// <summary>
     /// Reads the snapshot's operation tail starting after <paramref name="sinceCursor"/> and
     /// reports the cursor the tail actually reaches, so the snapshot can never advertise a
     /// position it did not deliver. When the retained window moves past the requested start
-    /// between reads the tail restarts from the window's current base rather than silently
-    /// returning nothing.
+    /// between reads the tail restarts from the window's current base and reports
+    /// <see cref="SnapshotTail.ResyncRequired"/>, because the client's history now has a gap the
+    /// tail cannot fill.
     /// </summary>
-    private static async Task<(CollaborationOperationWire[] Operations, long DeliveredThrough)> ReadSnapshotTailAsync(
+    private static async Task<SnapshotTail> ReadSnapshotTailAsync(
         ISavedMapOperationLogRepository operationLog,
         string mapId,
         long sinceCursor,
         CancellationToken cancellationToken)
     {
+        var resyncRequired = false;
+        string? resyncMessage = null;
+        var windowBase = sinceCursor;
+
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var replay = await operationLog.ReplayAsync(
@@ -261,15 +352,44 @@ internal static partial class CollaborationSessionStreamEndpoint
                 var deliveredThrough = replay.Operations.Count > 0
                     ? replay.Operations[replay.Operations.Count - 1].ServerCursor.Value
                     : sinceCursor;
-                return (operations, deliveredThrough);
+                return new SnapshotTail(operations, deliveredThrough, resyncRequired, resyncMessage, windowBase);
             }
 
+            resyncRequired = true;
+            resyncMessage ??= replay.Message;
             sinceCursor = replay.MinimumReplayCursor.Value;
+            windowBase = sinceCursor;
         }
 
         // The window kept moving; deliver nothing and stay honest about the position reached.
-        return ([], sinceCursor);
+        return new SnapshotTail([], sinceCursor, ResyncRequired: true, resyncMessage, windowBase);
     }
+
+    /// <summary>
+    /// Emits the typed, non-terminal <c>resync-required</c> error telling the client its cursor
+    /// cannot be resumed from the retained window and it must reload the durable document.
+    /// </summary>
+    private static Task AnnounceResyncAsync(
+        WebSocket webSocket,
+        SemaphoreSlim writeLock,
+        InMemoryCollaborationSessionService sessions,
+        string mapId,
+        Guid sessionId,
+        string actorId,
+        string message,
+        CancellationToken cancellationToken)
+        => SendEnvelopeAsync(
+            webSocket,
+            writeLock,
+            sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Error,
+                Code = CollaborationErrorCodes.ResyncRequired,
+                Message = message,
+                Terminal = false,
+                ResyncRequired = true
+            }),
+            cancellationToken);
 
     private static async Task WriteLoopAsync(
         WebSocket webSocket,

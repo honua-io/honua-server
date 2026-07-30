@@ -145,7 +145,9 @@ internal static class SavedMapOperationDraftApplier
         var order = new List<string>();
         foreach (var idElement in idsElement.EnumerateArray())
         {
-            if (idElement.ValueKind != JsonValueKind.String || idElement.GetString() is not { Length: > 0 } id)
+            if (idElement.ValueKind != JsonValueKind.String ||
+                idElement.GetString() is not { } id ||
+                string.IsNullOrWhiteSpace(id))
             {
                 throw new SavedMapCheckpointPayloadException(operation, "Every entry in 'layerIds' must be a non-empty string.");
             }
@@ -222,12 +224,23 @@ internal static class SavedMapOperationDraftApplier
         return envelope with { Body = operation.Payload.Clone() };
     }
 
+    /// <summary>
+    /// Reads a required identifier from the operation payload. Whitespace-only values are rejected
+    /// in lockstep with <see cref="SavedMapOperationPayloadValidator"/>: the shared Studio
+    /// composition editor guards its layer-id arguments with
+    /// <c>ArgumentException.ThrowIfNullOrWhiteSpace</c>, and that exception is not mapped by the
+    /// checkpoint surface — an operation carrying <c>{"layerId":" "}</c> would surface as a 500
+    /// instead of a typed 422 for every checkpoint while it is retained (honua-server#2999 review).
+    /// Admission validation rejects such payloads first; this keeps an operation that predates the
+    /// validator (or arrives from another writer) on the typed error path.
+    /// </summary>
     private static string ReadRequiredString(SavedMapOperationEnvelope operation, string property)
     {
         if (operation.Payload.ValueKind == JsonValueKind.Object &&
             operation.Payload.TryGetProperty(property, out var element) &&
             element.ValueKind == JsonValueKind.String &&
-            element.GetString() is { Length: > 0 } value)
+            element.GetString() is { } value &&
+            !string.IsNullOrWhiteSpace(value))
         {
             return value;
         }

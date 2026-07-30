@@ -822,6 +822,165 @@ public sealed class CollaborationLiveCoEditingTests
             .Should().Equal("roads", "parcels");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync()
+    {
+        // The resume cursor is resumable when the handshake first checks, and pruned by the time
+        // the snapshot tail is read. The client is no longer holding a complete history, so it
+        // MUST be told to resync: silently restarting the tail from the new window base leaves it
+        // believing it has every operation between its cursor and that base, and the durable
+        // document it never reloads only contains the checkpointed prefix (honua-server#2999
+        // review).
+        using var factory = CreateFactory(
+            decorateOperationLog: inner => new WindowAdvancesAfterFirstReplayOperationLog(inner));
+        using var client = CreateAdminClient(factory);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+        for (var i = 1; i <= 4; i++)
+        {
+            _ = await AppendOperationAsync(
+                client, mapId, $"op-{i}", "SetViewport", baseCursor: i - 1, payload: $$"""{"zoom":{{i}}}""");
+        }
+
+        var wsClient = factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
+        using var socket = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
+            cts.Token);
+
+        var status = await ReceiveJsonAsync(socket, cts.Token);
+        status.GetProperty("event").GetProperty("type").GetString().Should().Be("status");
+
+        var error = await ReceiveJsonAsync(socket, cts.Token);
+        error.GetProperty("event").GetProperty("type").GetString().Should().Be("error");
+        error.GetProperty("event").GetProperty("code").GetString().Should().Be("resync-required");
+        error.GetProperty("event").GetProperty("resyncRequired").GetBoolean().Should().BeTrue();
+        error.GetProperty("event").GetProperty("terminal").GetBoolean().Should().BeFalse();
+
+        // The snapshot still carries the whole retained window (not just the suffix after what the
+        // retried read happened to reach) and its sequence stays ABOVE the resync error's, so the
+        // SDK reducer rebuilds from the snapshot rather than discarding it as stale.
+        var snapshot = await ReceiveJsonAsync(socket, cts.Token);
+        snapshot.GetProperty("event").GetProperty("type").GetString().Should().Be("snapshot");
+        snapshot.GetProperty("sequence").GetInt64().Should()
+            .BeGreaterThan(error.GetProperty("sequence").GetInt64());
+        var body = snapshot.GetProperty("event").GetProperty("snapshot");
+        body.GetProperty("operations").EnumerateArray()
+            .Select(op => op.GetProperty("cursor").GetString())
+            .Should().ContainInOrder("3", "4");
+        body.GetProperty("cursor").GetString().Should().Be("4");
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    public async Task Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream()
+    {
+        // A declared multi-replica deployment on a process-local log advertises Replay=false. Both
+        // read paths must honour that: answering 200 from node-local state would let two replicas
+        // hand the same client contradictory histories, each looking authoritative, which is
+        // strictly worse than refusing (honua-server#2999 review).
+        using var factory = CreateFactory(configuration: new Dictionary<string, string?>
+        {
+            [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
+        });
+        using var client = CreateAdminClient(factory);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        using var joinContent = new StringContent(
+            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
+        using var joinResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadJsonAsync(joinResponse)).GetProperty("data")
+            .GetProperty("capabilities").GetProperty("replay").GetBoolean().Should().BeFalse();
+
+        using var replayResponse = await client.GetAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/operations?since=0");
+        var replayText = await replayResponse.Content.ReadAsStringAsync();
+        replayResponse.StatusCode.Should().Be(
+            HttpStatusCode.ServiceUnavailable, "replay response body: {0}", replayText);
+        replayText.Should().Contain("replica-shared");
+
+        // The stream keeps working for presence — that is its remaining value — but it must not
+        // hand back node-local operations, and it must say so with the typed resync signal.
+        var wsClient = factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
+        using var socket = await wsClient.ConnectAsync(
+            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream"),
+            cts.Token);
+
+        var status = await ReceiveJsonAsync(socket, cts.Token);
+        status.GetProperty("event").GetProperty("type").GetString().Should().Be("status");
+
+        var error = await ReceiveJsonAsync(socket, cts.Token);
+        error.GetProperty("event").GetProperty("code").GetString().Should().Be("resync-required");
+        error.GetProperty("event").GetProperty("terminal").GetBoolean().Should().BeFalse();
+
+        var snapshot = await ReceiveJsonAsync(socket, cts.Token);
+        var body = snapshot.GetProperty("event").GetProperty("snapshot");
+        body.GetProperty("operations").GetArrayLength().Should().Be(0);
+        body.GetProperty("capabilities").GetProperty("replay").GetBoolean().Should().BeFalse();
+        // No op-log position is defensible here, so none is advertised.
+        body.TryGetProperty("cursor", out _).Should().BeFalse();
+        // Presence is still served in full.
+        body.GetProperty("participants").GetArrayLength().Should().BeGreaterThan(0);
+
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Append_WhitespaceOnlyLayerId_IsRejectedAndMapStaysCheckpointable()
+    {
+        using var factory = CreateFactory(restartDurableOperationLog: true);
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // A whitespace-only identifier passed the old length-only admission check, permanently
+        // consumed a cursor, and then threw an UNMAPPED ArgumentException out of the shared Studio
+        // composition editor at checkpoint time: every later checkpoint 500s while the operation is
+        // retained, then fails the continuity guard once it is pruned — the map can never save
+        // another version (honua-server#2999 review).
+        foreach (var malformed in new[]
+        {
+            """{"operationId":"ws-style","kind":"PatchStyle","baseCursor":0,"payload":{"layerId":" ","styleRef":"roads"}}""",
+            """{"operationId":"ws-style-clear","kind":"PatchStyle","baseCursor":0,"payload":{"layerId":"\t","styleRef":null}}""",
+            """{"operationId":"ws-visible","kind":"SetLayerVisibility","baseCursor":0,"payload":{"layerId":"  ","visible":false}}""",
+            """{"operationId":"ws-reorder","kind":"ReorderLayers","baseCursor":0,"payload":{"layerIds":["parcels"," "]}}""",
+        })
+        {
+            using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
+            using var badResponse = await client.PostAsync(
+                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+            var badText = await badResponse.Content.ReadAsStringAsync();
+            badResponse.StatusCode.Should().Be(
+                HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
+            badText.Should().NotContain("Exception");
+        }
+
+        // No rejected payload consumed a cursor, so the map is still fully checkpointable.
+        var accepted = await AppendOperationAsync(
+            client, mapId, "op-style", "PatchStyle", baseCursor: 0,
+            payload: """{"layerId":"parcels","styleRef":"style-night"}""");
+        accepted.GetProperty("operation").GetProperty("serverCursor").GetInt64().Should().Be(1);
+
+        var checkpoint = await CheckpointAsync(client, mapId, "whitespace admission");
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(1);
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         bool endUserAuthorization = false,
         IDictionary<string, string?>? configuration = null,

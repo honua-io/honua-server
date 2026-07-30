@@ -46,6 +46,14 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":["a","a"]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"styleRef":"night"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":42}""")]
+    // Whitespace-only identifiers used to pass the length-only check, take a permanent cursor, and
+    // then throw an UNMAPPED ArgumentException out of StudioCompositionBodyEditor at checkpoint
+    // time — every later checkpoint 500s while the operation is retained, then fails the
+    // continuity guard once it is pruned (honua-server#2999 review).
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":" ","styleRef":"roads"}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"\t","styleRef":null}""")]
+    [InlineData(SavedMapOperationKind.SetLayerVisibility, """{"layerId":"  ","visible":true}""")]
+    [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":["a"," "]}""")]
     // A present non-string styleRef used to be admitted and then silently CLEARED the layer's
     // style at checkpoint time, turning malformed input into a destructive edit.
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":42}""")]

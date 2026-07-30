@@ -159,7 +159,12 @@ internal static class SavedMapOperationPayloadValidator
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in ids.EnumerateArray())
         {
-            if (id.ValueKind != JsonValueKind.String || id.GetString() is not { Length: > 0 } value)
+            // Whitespace-only entries are rejected for the same reason as a whitespace 'layerId':
+            // no composition layer can carry such an id, so the entry could only ever fail at
+            // checkpoint time after permanently consuming a cursor.
+            if (id.ValueKind != JsonValueKind.String ||
+                id.GetString() is not { } value ||
+                string.IsNullOrWhiteSpace(value))
             {
                 error = "Every entry in 'layerIds' must be a non-empty string.";
                 return false;
@@ -178,12 +183,21 @@ internal static class SavedMapOperationPayloadValidator
         return true;
     }
 
+    /// <summary>
+    /// Validates a required identifier string. Whitespace-only values are rejected, not just empty
+    /// ones: the shared Studio composition editor guards its layer-id arguments with
+    /// <c>ArgumentException.ThrowIfNullOrWhiteSpace</c>, so a payload such as
+    /// <c>{"layerId":" ","styleRef":"roads"}</c> would pass a length-only check, take a permanent
+    /// op-log cursor, and then throw an unmapped <see cref="ArgumentException"/> from every later
+    /// checkpoint — a 500 while the operation is retained and a continuity 409 once it is pruned,
+    /// i.e. a permanently unsaveable map (honua-server#2999 review).
+    /// </summary>
     private static bool TryValidateRequiredString(JsonElement payload, string property, out string error)
     {
         if (payload.ValueKind == JsonValueKind.Object &&
             payload.TryGetProperty(property, out var element) &&
             element.ValueKind == JsonValueKind.String &&
-            element.GetString() is { Length: > 0 })
+            !string.IsNullOrWhiteSpace(element.GetString()))
         {
             error = string.Empty;
             return true;
