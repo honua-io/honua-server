@@ -2121,9 +2121,16 @@ internal static partial class ProcessPlanValidator
         var invalidPart = parts.FirstOrDefault(part => !allowedValues.Contains(part));
         if (invalidPart is not null)
         {
-            AddRangeViolationIfNew(step, parameter, $"'{invalidPart}' is not in the allowed set ({allowedList})", violations);
+            AddRangeViolationIfNew(step, parameter, $"'{invalidPart}' {ClosedValueSetPhrase}{allowedList})", violations);
         }
     }
+
+    /// <summary>
+    /// Marker phrase every closed-token-set rejection carries. Shared by both emitters
+    /// (<see cref="AddEnumViolation"/> for scalar tokens and <see cref="ValidateEnumList"/>
+    /// for token lists) so <see cref="IsClosedValueSetRejection"/> cannot drift from either.
+    /// </summary>
+    private const string ClosedValueSetPhrase = "is not in the allowed set (";
 
     private static void AddEnumViolation(
         AnalysisPlanStep step,
@@ -2135,9 +2142,28 @@ internal static partial class ProcessPlanValidator
         violations.Add(new GeoprocessingValidationFailure
         {
             Code = "INVALID_PARAMETER_VALUE",
-            Message = $"Step '{step.StepId}' supplies invalid value for parameter '{parameter}' of process '{step.ProcessId}': '{actualValue}' is not in the allowed set ({allowedList}).",
+            Message = $"Step '{step.StepId}' supplies invalid value for parameter '{parameter}' of process '{step.ProcessId}': '{actualValue}' {ClosedValueSetPhrase}{allowedList}).",
             FieldPath = $"steps[{step.StepId}].inputs.{parameter}"
         });
+    }
+
+    /// <summary>
+    /// True when <paramref name="failure"/> rejects a value because it falls outside a finite
+    /// token set this validator enforces, as opposed to a format, range or structural-text
+    /// complaint. Only a token set makes a parameter's legal values unenumerable when the
+    /// catalog declares no <c>AllowedValues</c>, so migration/translation tooling uses this to
+    /// tell an undeclared discriminator (<c>algorithm</c>, <c>op</c>) from a constrained
+    /// free-form input (<c>raster.map-algebra</c>'s <c>expression</c>), which rejects arbitrary
+    /// probe values without branching on them.
+    /// </summary>
+    /// <param name="failure">Validation failure raised by this validator.</param>
+    /// <returns><c>true</c> when the failure is a closed-token-set rejection.</returns>
+    internal static bool IsClosedValueSetRejection(GeoprocessingValidationFailure failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+
+        return string.Equals(failure.Code, "INVALID_PARAMETER_VALUE", StringComparison.Ordinal)
+            && failure.Message.Contains(ClosedValueSetPhrase, StringComparison.Ordinal);
     }
 
     private static void RequireConditionalParameter(

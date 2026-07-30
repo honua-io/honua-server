@@ -25,8 +25,10 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
     /// Structurally different, individually legal-looking values used to tell a parameter the
     /// validator constrains to a finite token set it does not declare (an undeclared
     /// discriminator such as <c>algorithm</c> or <c>op</c>) from one it merely constrains by
-    /// format. A token domain rejects all three; a GUID rule accepts the second, an identifier
-    /// rule the first, and a numeric-list rule the third, so those are not reported.
+    /// format. An undeclared token domain rejects all three as outside its allowed set; a
+    /// format rule either accepts one of them (a GUID rule accepts the second, an identifier
+    /// rule the first, a numeric-list rule the third) or rejects them for a reason other than
+    /// set membership, and neither is reported — see <see cref="IsRejectedAsForeignToken"/>.
     /// </summary>
     private static readonly string[] DomainProbeValues =
     [
@@ -71,6 +73,18 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         var violations = FindUniversalViolations(definition, inputs, suppliedParameterNames);
 
         var results = new List<ProcessAdmissibilityViolation>();
+
+        // Some processes are advertised for discoverability but have no working executor in
+        // this build, so no parameter set makes them run. The submit path deliberately admits
+        // them (the limitation surfaces as an explicit job failure), but certifying one here
+        // would tell a migrating user a tool works when it can only fail.
+        if (BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.TryGetValue(
+                definition.ProcessId, out var notExecutableReason))
+        {
+            results.Add(new ProcessAdmissibilityViolation(
+                ProcessAdmissibilityViolationKind.NotJobExecutable, notExecutableReason));
+        }
+
         foreach (var violation in violations)
         {
             // A sync-only process is undispatchable whatever the parameters are, so it is
@@ -90,13 +104,9 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 continue;
             }
 
-            // Anything else is only meaningful if it stems from the combination of supplied
-            // parameters rather than from a value this probe fabricated. Withdraw each
-            // other supplied parameter in turn: if the violation disappears, the inputs
-            // conflict (for example the mutually-exclusive connectionName/connectionId
-            // pair). If it survives every withdrawal, it is a complaint about the
-            // substituted value and must not be reported.
-            if (IsPresenceConflict(definition.ProcessId, inputs, violation))
+            // Anything else is only meaningful if it stems from WHICH parameters are present
+            // rather than from a value this probe fabricated.
+            if (IsPresenceDependent(definition, inputs, violation))
             {
                 results.Add(new ProcessAdmissibilityViolation(
                     ProcessAdmissibilityViolationKind.Inputs, violation.Message));
@@ -190,44 +200,39 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         ProcessDefinition definition,
         HashSet<string> supplied,
         Dictionary<string, string> baseInputs)
+        => definition.Parameters.Any(parameter =>
+            supplied.Contains(parameter.Name)
+            && parameter.ValueType == ProcessParameterValueType.Text
+            && parameter.AllowedValues is not { Count: > 0 }
+            && DomainProbeValues.All(probeValue =>
+                IsRejectedAsForeignToken(definition.ProcessId, baseInputs, parameter.Name, probeValue)));
+
+    /// <summary>
+    /// Substitutes <paramref name="probeValue"/> for <paramref name="parameterName"/> and reports
+    /// whether the canonical validator rejects it as outside a closed token set.
+    /// <para>
+    /// Only a token-set rejection counts. A structured-text parameter whose FORMAT the validator
+    /// checks — <c>raster.map-algebra</c>'s <c>expression</c> rejects everything that is not an
+    /// allow-listed band expression — also refuses all three sentinels, but it is not a
+    /// discriminator: no per-process rule branches on its value, so treating it as one would
+    /// return every optional omission as unverifiable and downgrade a mapping the submit path
+    /// accepts.
+    /// </para>
+    /// </summary>
+    private bool IsRejectedAsForeignToken(
+        string processId,
+        Dictionary<string, string> baseInputs,
+        string parameterName,
+        string probeValue)
     {
-        foreach (var parameter in definition.Parameters)
+        var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal)
         {
-            if (!supplied.Contains(parameter.Name)
-                || parameter.ValueType != ProcessParameterValueType.Text
-                || parameter.AllowedValues is { Count: > 0 })
-            {
-                continue;
-            }
+            [parameterName] = probeValue
+        };
 
-            var rejectsEveryProbeValue = true;
-            foreach (var probeValue in DomainProbeValues)
-            {
-                var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal)
-                {
-                    [parameter.Name] = probeValue
-                };
-
-                var constrained = Validate(definition.ProcessId, inputs).Any(failure =>
-                    string.Equals(
-                        ParameterNameOf(failure.FieldPath),
-                        parameter.Name,
-                        StringComparison.OrdinalIgnoreCase));
-
-                if (!constrained)
-                {
-                    rejectsEveryProbeValue = false;
-                    break;
-                }
-            }
-
-            if (rejectsEveryProbeValue)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return Validate(processId, inputs).Any(failure =>
+            string.Equals(ParameterNameOf(failure.FieldPath), parameterName, StringComparison.OrdinalIgnoreCase)
+            && ProcessPlanValidator.IsClosedValueSetRejection(failure));
     }
 
     /// <summary>
@@ -368,7 +373,34 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             : null;
     }
 
-    private bool IsPresenceConflict(
+    /// <summary>
+    /// Returns true when a non-missing violation is caused by the set of parameters that are
+    /// present rather than by a value this probe fabricated. Presence shows up in two
+    /// directions and both are real submit-time rejections:
+    /// <list type="bullet">
+    /// <item>a conflict between supplied inputs — withdrawing one clears it (the
+    /// mutually-exclusive <c>connectionName</c>/<c>connectionId</c> pair);</item>
+    /// <item>an unsatisfied branch requirement — supplying one more clears it. The canonical
+    /// validator raises several of these as <c>INVALID_PARAMETER_VALUE</c> rather than
+    /// <c>MISSING_REQUIRED_PARAMETER</c>: <c>conversion.rasterize</c>'s "exactly one of
+    /// 'burnValue' or 'attribute'" and its cellSize-or-width+height grid rule, and
+    /// <c>raster.interpolate-idw</c>'s width/height pair. Considering only withdrawal would
+    /// discard those and certify a mapping the submit path rejects.</item>
+    /// </list>
+    /// A complaint about a substituted value survives both tests.
+    /// </summary>
+    private bool IsPresenceDependent(
+        ProcessDefinition definition,
+        Dictionary<string, string> inputs,
+        GeoprocessingValidationFailure violation)
+        => IsClearedByWithdrawal(definition.ProcessId, inputs, violation)
+            || IsClearedByAddition(definition, inputs, violation);
+
+    /// <summary>
+    /// Withdraws each other supplied parameter in turn: if the violation disappears, the
+    /// supplied inputs conflict. If it survives every withdrawal, this test proves nothing.
+    /// </summary>
+    private bool IsClearedByWithdrawal(
         string processId,
         Dictionary<string, string> inputs,
         GeoprocessingValidationFailure violation)
@@ -404,6 +436,75 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Supplies each unmapped parameter in turn: if that leaves the violation's field wholly
+    /// clean, the failure was caused by the parameter's ABSENCE — an unsatisfied branch
+    /// requirement the mapping can never satisfy, because an unmapped parameter is never
+    /// supplied at submit time.
+    /// </summary>
+    private bool IsClearedByAddition(
+        ProcessDefinition definition,
+        Dictionary<string, string> inputs,
+        GeoprocessingValidationFailure violation)
+    {
+        foreach (var parameter in definition.Parameters)
+        {
+            if (inputs.ContainsKey(parameter.Name))
+            {
+                continue;
+            }
+
+            var augmented = new Dictionary<string, string>(inputs, StringComparer.Ordinal)
+            {
+                [parameter.Name] = ProbeValueFor(parameter)
+            };
+
+            var remaining = Validate(definition.ProcessId, augmented);
+
+            // A probe value the validator itself rejects makes this run useless as evidence:
+            // a semantic rule that stops at the first bad value can suppress the very check
+            // under test, which would read as the violation clearing.
+            if (remaining.Any(failure => string.Equals(
+                    ParameterNameOf(failure.FieldPath), parameter.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            // The field must come out completely clean, not merely free of this exact message.
+            // Adding a parameter can only tighten the rules, so a *different* complaint left on
+            // the same field (adding connectionName turns a GUID-format complaint about
+            // connectionId into the mutually-exclusive one) means the field is still failing on
+            // the value this probe substituted, which is not reportable.
+            if (!remaining.Any(failure => string.Equals(
+                    failure.FieldPath, violation.FieldPath, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Value used when the probe supplies a parameter the mapping omits: the declared default,
+    /// else the first declared allowed value, else a non-blank placeholder that satisfies every
+    /// scalar type check.
+    /// </summary>
+    private static string ProbeValueFor(ProcessParameterSpec parameter)
+    {
+        if (!string.IsNullOrWhiteSpace(parameter.DefaultValue))
+        {
+            return parameter.DefaultValue;
+        }
+
+        if (parameter.AllowedValues is { Count: > 0 } allowed)
+        {
+            return allowed[0];
+        }
+
+        return parameter.ValueType == ProcessParameterValueType.Flag ? "true" : "1";
     }
 
     private List<GeoprocessingValidationFailure> Validate(

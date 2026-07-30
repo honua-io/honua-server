@@ -747,6 +747,229 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_StructurallyInvalidManifest_ReturnsProblemDetailsBody()
+    {
+        // The handler writes 400s through the shared admin problem-details helper, so the
+        // body is RFC 7807 application/problem+json, NOT the ErrorResponse envelope the
+        // reusable BadRequest component advertises. The admin OpenAPI bundle documents this
+        // operation's own 400 for that reason; assert the runtime shape the doc claims so a
+        // regression in either direction is caught (#3040 review).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "  ",
+              "sourceFormat": "pyt",
+              "tools": [{ "toolName": "Anything" }]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        using var problem = await ReadJsonAsync(response);
+        var root = problem.RootElement;
+        root.TryGetProperty("title", out _).Should().BeTrue();
+        root.GetProperty("status").GetInt32().Should().Be(400);
+        root.GetProperty("detail").GetString().Should().Contain("toolboxName");
+        root.TryGetProperty("type", out _).Should().BeTrue();
+        root.TryGetProperty("instance", out _).Should().BeTrue();
+
+        // The ErrorResponse envelope the shared BadRequest component describes is NOT what
+        // this endpoint returns; generated clients binding to it would fail to parse.
+        root.TryGetProperty("success", out _).Should().BeFalse();
+        root.TryGetProperty("message", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_UnsatisfiedExactlyOneOfGroup_IsNotCertifiedExecutable()
+    {
+        // conversion.rasterize requires exactly one of burnValue/attribute, and the canonical
+        // validator raises that as INVALID_PARAMETER_VALUE rather than
+        // MISSING_REQUIRED_PARAMETER. Mapping neither is rejected at submit time, so the
+        // report must not classify it 'translated' (#3040 review).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ConversionToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "RasterizeWithoutBurnSource",
+                  "targetProcessId": "conversion.rasterize",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "source" },
+                    { "sourceName": "cell_size", "targetParameter": "cellSize" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Contain("unsatisfied-conditional-inputs");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("message").GetString())
+            .Should().Contain(message => message!.Contains("exactly one of", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_SatisfiedExactlyOneOfGroup_IsCertifiedExecutable()
+    {
+        // The counterpart of the case above: mapping one burn source and the grid definition
+        // satisfies every rule, so the report must still certify it. Guards the fix against
+        // over-reporting every rasterize mapping.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ConversionToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "RasterizeWithBurnValue",
+                  "targetProcessId": "conversion.rasterize",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "source" },
+                    { "sourceName": "burn", "targetParameter": "burnValue" },
+                    { "sourceName": "cell_size", "targetParameter": "cellSize" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_ConstrainedFreeFormTextInput_IsCertifiedExecutable()
+    {
+        // raster.map-algebra's 'expression' is format-constrained (an allow-listed band
+        // expression), not an undeclared discriminator: no rule branches on its value and
+        // dataType/noData are optional on every branch. Treating the format rejection as a
+        // token domain downgraded this ordinary mapping to 'partially-translated' (#3040
+        // review).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "RasterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "MapAlgebra",
+                  "targetProcessId": "raster.map-algebra",
+                  "parameterMappings": [
+                    { "sourceName": "in_rasters", "targetParameter": "sources" },
+                    { "sourceName": "expr", "targetParameter": "expression" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_ProcessWhoseExecutorAlwaysFails_IsNotCertifiedExecutable()
+    {
+        // raster.interpolate-kriging validates cleanly ('points' is its only required input)
+        // and the submit path deliberately admits it, but no kriging backend is bundled so
+        // every job fails. A report that certifies it tells a migrating user a tool works
+        // when it can never execute (#3040 review).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "RasterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "Kriging",
+                  "targetProcessId": "raster.interpolate-kriging",
+                  "parameterMappings": [
+                    { "sourceName": "in_points", "targetParameter": "points" },
+                    { "sourceName": "z_field", "targetParameter": "zField" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Contain("process-not-job-executable");
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("message").GetString())
+            .Should().Contain(message => message!.Contains("raster.interpolate-idw", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_ExecutableSiblingOfUnsupportedProcess_IsCertifiedExecutable()
+    {
+        // raster.interpolate-idw is the supported sibling: the unavailability list must be
+        // keyed tightly enough that its neighbour is still certified.
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "RasterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "Idw",
+                  "targetProcessId": "raster.interpolate-idw",
+                  "parameterMappings": [
+                    { "sourceName": "in_points", "targetParameter": "points" },
+                    { "sourceName": "z_field", "targetParameter": "zField" },
+                    { "sourceName": "search_radius", "targetParameter": "radius" },
+                    { "sourceName": "out_width", "targetParameter": "width" },
+                    { "sourceName": "out_height", "targetParameter": "height" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
     private async Task<HttpResponseMessage> PostFixtureAsync(string route, string fixtureName)
         => await PostJsonAsync(route, await File.ReadAllTextAsync(
             ResolveRepoFile("tests", "fixtures", "toolbox-translation", fixtureName)));

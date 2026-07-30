@@ -25,13 +25,15 @@ public static class ToolboxTranslationValidator
     /// name); protocol adapters enforce structure before calling.</param>
     /// <param name="catalog">Canonical process catalog.</param>
     /// <param name="conditionalInputProbe">
-    /// Optional seam onto the canonical plan validator's presence-based input requirements.
-    /// When supplied, a mapping that would be rejected at submit time (for example because
-    /// it satisfies no member of a mutually-substitutable input group) is reported instead
-    /// of being certified, and it also decides which unmapped parameters are genuinely
-    /// branch-dependent rather than unconditionally optional. When <c>null</c>, only static
-    /// <c>Required</c> flags are checked and every unmapped, defaultless parameter is
-    /// reported, because the two cases cannot be told apart without the validator.
+    /// Optional seam onto the canonical plan validator's presence-based input requirements
+    /// and the runtime availability of the target process. When supplied, a mapping that
+    /// would be rejected at submit time (for example because it satisfies no member of a
+    /// mutually-substitutable input group) or that targets a process whose executor cannot
+    /// complete any job is reported instead of being certified, and it also decides which
+    /// unmapped parameters are genuinely branch-dependent rather than unconditionally
+    /// optional. When <c>null</c>, only static <c>Required</c> flags are checked and every
+    /// unmapped, defaultless parameter is reported, because the two cases cannot be told
+    /// apart without the validator.
     /// </param>
     /// <returns>Per-tool classification report with round-tripped signatures.</returns>
     public static ToolboxTranslationReport Validate(

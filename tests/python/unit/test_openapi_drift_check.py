@@ -109,6 +109,13 @@ class AdminDriftGateTests(unittest.TestCase):
     """The committed admin bundle plus its declaration must stay consistent,
     and every way of breaking that consistency must be reported."""
 
+    # Shape of the #3040 route that motivated honua-server#3051: registered,
+    # live, integration-tested, and invisible to the advertised contract. The
+    # fixture is deliberately synthetic rather than that real route, because a
+    # real route stops proving anything the moment someone documents it (which
+    # #3040 then did, turning both proofs below into false failures).
+    UNDOCUMENTED_ROUTE = "/api/v1/admin/probe/undocumented-drift-fixture"
+
     @classmethod
     def setUpClass(cls):
         cls.config = admin_config()
@@ -130,9 +137,7 @@ class AdminDriftGateTests(unittest.TestCase):
     def test_CheckEndpointCrossReference_NewRouteWithoutDocumentation_ReportsMissingInSpec(
         self,
     ):
-        # The #3040 route that motivated honua-server#3051: registered, live,
-        # integration-tested, and invisible to the advertised contract.
-        route = ("POST", "/api/v1/admin/import/toolbox/translation/validate")
+        route = ("POST", self.UNDOCUMENTED_ROUTE)
         drifts = self._check(registry=self.registry | {route})
         self.assertEqual(categories(drifts), ["missing-in-spec"])
         self.assertEqual(drifts[0].path, route[1])
@@ -141,12 +146,32 @@ class AdminDriftGateTests(unittest.TestCase):
     def test_CheckEndpointCrossReference_NewRouteDeclaredUndocumented_ReportsNoDrift(
         self,
     ):
-        route = ("POST", "/api/v1/admin/import/toolbox/translation/validate")
+        route = ("POST", self.UNDOCUMENTED_ROUTE)
         drifts = self._check(
             registry=self.registry | {route},
             declared=self.declared | {("post", route[1])},
         )
         self.assertEqual(drifts, [])
+
+    def test_CheckEndpointCrossReference_FixtureRoute_IsNeitherRegisteredNorDocumented(
+        self,
+    ):
+        # The two proofs above depend on the fixture route being absent from
+        # both the registry and the committed bundle. If a real route ever
+        # collides with it, fail here rather than silently voiding those gates.
+        self.assertNotIn(
+            ("POST", self.UNDOCUMENTED_ROUTE),
+            self.registry,
+            "the drift fixture route must stay synthetic",
+        )
+        prefix = MODULE.resolve_prefix(self.config, self.document)
+        documented = {
+            absolute
+            for absolute, _method, _op_id, _ in MODULE.iter_spec_operations(
+                self.document, prefix
+            )
+        }
+        self.assertNotIn(self.UNDOCUMENTED_ROUTE, documented)
 
     def test_CheckEndpointCrossReference_DeclarationForRemovedRoute_ReportsStaleExemption(
         self,

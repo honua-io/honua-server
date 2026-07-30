@@ -347,10 +347,12 @@ public static class ToolboxTranslationIssueCodes
     public const string UnverifiableConditionalBranches = "unverifiable-conditional-branches";
 
     /// <summary>
-    /// The target process cannot be dispatched as a job at all, whatever the parameters:
+    /// The target process cannot complete as a job at all, whatever the parameters: either
     /// it runs only through a synchronous protocol surface, so OGC Processes and GPServer
-    /// submission reject it. Translated tools execute through the canonical job runtime,
-    /// so such a target is never executable from a toolbox.
+    /// submission reject it, or the catalog advertises it for discoverability while its
+    /// executor fails every job in this build (<c>raster.interpolate-kriging</c>).
+    /// Translated tools execute through the canonical job runtime, so such a target is
+    /// never executable from a toolbox.
     /// </summary>
     public const string ProcessNotJobExecutable = "process-not-job-executable";
 }

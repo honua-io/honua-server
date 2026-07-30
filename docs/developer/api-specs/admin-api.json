@@ -2067,7 +2067,14 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "The body is malformed JSON, is not a toolbox translation manifest artifact, or is structurally invalid (blank toolbox name, unknown source format, no tools). Written by the shared admin problem-details helper, so the payload is RFC 7807 application/problem+json rather than the ErrorResponse envelope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"

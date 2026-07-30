@@ -20,9 +20,11 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 /// <para>
 /// Implementations answer strictly from parameter <em>presence</em>; they must not report
 /// value-format violations, because callers supply parameter names rather than real
-/// values. A violation counts as presence-based when it disappears once some <em>other</em>
-/// supplied parameter is withdrawn — that separates a genuine mutually-exclusive-input
-/// conflict from a complaint about a probe-substituted value. This is the seam consumed by
+/// values. A violation counts as presence-based when withdrawing some <em>other</em> supplied
+/// parameter clears it (a genuine mutually-exclusive-input conflict) or when supplying one
+/// more parameter clears it (an unsatisfied branch requirement, such as an
+/// exactly-one-of group that nothing in the supplied set satisfies). A complaint about a
+/// probe-substituted value survives both and is never reported. This is the seam consumed by
 /// the arcpy/toolbox translation lane (#2145).
 /// </para>
 /// </remarks>
@@ -100,8 +102,9 @@ public enum ProcessAdmissibilityViolationKind
     Inputs,
 
     /// <summary>
-    /// The process cannot be dispatched as a job at all, regardless of parameters — it runs
-    /// only through a synchronous protocol surface, so the job runtime rejects it.
+    /// The process cannot complete as a job at all, regardless of parameters — either it runs
+    /// only through a synchronous protocol surface, so the job runtime rejects it, or it is
+    /// advertised for discoverability while its executor fails every job in this build.
     /// </summary>
     NotJobExecutable
 }
