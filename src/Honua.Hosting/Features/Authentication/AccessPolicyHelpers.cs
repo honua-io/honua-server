@@ -140,33 +140,17 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        // Tenant scope gates before grant evaluation (#1580): a per-operation grant
-        // must never authorize access to another tenant's resource.
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
-        {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
-        }
+        var decision = await EvaluateResourceAccessCoreAsync(
+            context.RequestServices,
+            context.User,
+            TenantScopeHelpers.ResolveRequestTenantId(context),
+            applyTenantScope: true,
+            resource,
+            service,
+            operation,
+            cancellationToken).ConfigureAwait(false);
 
-        var serviceName = service?.Metadata.Name;
-        if (!string.IsNullOrWhiteSpace(serviceName))
-        {
-            var grantDecision = await EvaluateGrantAsync(
-                context,
-                serviceName,
-                resource.Metadata.Name,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-
-            // An explicit per-operation grant authorizes the request directly.
-            if (grantDecision == GrantOutcome.Allow)
-            {
-                return null;
-            }
-        }
-
-        // No matching grant (or no service context): preserve current behavior
-        // by falling back to the coarse AccessPolicy evaluation.
-        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, ScopeForOperation(operation));
+        return CreateAccessDeniedResult(context, decision);
     }
 
     /// <summary>
@@ -225,7 +209,7 @@ internal static class AccessPolicyHelpers
     /// <param name="operation">The canonical operation being authorized.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The access decision.</returns>
-    public static async Task<AccessDecision> EvaluateResourceAccessAsync(
+    public static Task<AccessDecision> EvaluateResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
@@ -234,8 +218,55 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        // Tenant scope gates before grant evaluation (#1580).
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        return EvaluateResourceAccessCoreAsync(
+            context.RequestServices,
+            context.User,
+            TenantScopeHelpers.ResolveRequestTenantId(context),
+            applyTenantScope: true,
+            resource,
+            service,
+            operation,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The single, request-context-free implementation of the resource access decision:
+    /// tenant scope, then the per-operation RBAC grant resolver, then the coarse
+    /// <see cref="AccessPolicy"/> fallback. Every HTTP helper above delegates here, and
+    /// so does the principal-based <see cref="LayerAccessAuthorizer"/> used by the
+    /// geoprocessing submit pipeline (honua-server#3046) — so the asynchronous job
+    /// surface and the synchronous query surfaces cannot drift apart.
+    /// </summary>
+    /// <param name="services">Service provider used to resolve the RBAC seams.</param>
+    /// <param name="principal">The principal the decision is evaluated against.</param>
+    /// <param name="tenantId">The tenant the request resolved to, when applicable.</param>
+    /// <param name="applyTenantScope">
+    /// Whether tenant visibility gates the decision. HTTP callers always pass
+    /// <see langword="true"/>. Server-internal callers with no request tenant rail pass
+    /// <see langword="false"/> so tenant-scoped resources are not universally denied.
+    /// </param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The access decision.</returns>
+    internal static async Task<AccessDecision> EvaluateResourceAccessCoreAsync(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        string? tenantId,
+        bool applyTenantScope,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        // Tenant scope gates before grant evaluation (#1580): a per-operation grant
+        // must never authorize access to another tenant's resource.
+        if (applyTenantScope &&
+            !(MetadataV2TenantVisibility.IsVisibleToTenant(resource, tenantId)
+                && MetadataV2TenantVisibility.IsVisibleToTenant(service, tenantId)))
         {
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
@@ -243,20 +274,29 @@ internal static class AccessPolicyHelpers
         var serviceName = service?.Metadata.Name;
         if (!string.IsNullOrWhiteSpace(serviceName))
         {
-            var grantDecision = await EvaluateGrantAsync(
-                context,
+            var grantDecision = await EvaluateGrantCoreAsync(
+                services,
+                principal,
                 serviceName,
                 resource.Metadata.Name,
                 operation,
                 cancellationToken).ConfigureAwait(false);
 
+            // An explicit per-operation grant authorizes the request directly.
             if (grantDecision == GrantOutcome.Allow)
             {
                 return AccessDecision.Allowed();
             }
         }
 
-        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, ScopeForOperation(operation));
+        // No matching grant (or no service context): preserve current behavior
+        // by falling back to the coarse AccessPolicy evaluation.
+        var evaluator = services.GetRequiredService<IAccessPolicyEvaluator>();
+        return evaluator.Evaluate(
+            principal,
+            resource.AccessPolicy,
+            service?.AccessPolicy,
+            ScopeForOperation(operation));
     }
 
     /// <summary>
@@ -293,21 +333,39 @@ internal static class AccessPolicyHelpers
     /// <c>(service, layer, operation)</c> tuple, mapping the request principal's
     /// claims to roles. Returns whether an explicit grant allows the request.
     /// </summary>
-    private static async Task<GrantOutcome> EvaluateGrantAsync(
+    private static Task<GrantOutcome> EvaluateGrantAsync(
         HttpContext context,
         string serviceName,
         string? layerName,
         AuthorizationOperation operation,
         CancellationToken cancellationToken)
+        => EvaluateGrantCoreAsync(
+            context.RequestServices,
+            context.User,
+            serviceName,
+            layerName,
+            operation,
+            cancellationToken);
+
+    /// <summary>
+    /// Request-context-free grant evaluation shared by the HTTP helpers and the
+    /// principal-based <see cref="LayerAccessAuthorizer"/> (honua-server#3046).
+    /// </summary>
+    private static async Task<GrantOutcome> EvaluateGrantCoreAsync(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        string serviceName,
+        string? layerName,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
     {
-        var resolver = context.RequestServices.GetService<IPermissionResolver>();
+        var resolver = services.GetService<IPermissionResolver>();
         if (resolver is null)
         {
             return GrantOutcome.NoGrant;
         }
 
-        var principal = context.User;
-        var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
+        var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
         var roles = EnumeratePrincipalRoles(principal, options);
         if (roles.Count == 0)
         {

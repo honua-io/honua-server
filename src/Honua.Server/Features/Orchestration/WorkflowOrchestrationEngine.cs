@@ -3,11 +3,14 @@
 
 using System.Diagnostics;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Orchestration;
 
@@ -31,6 +34,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private readonly IUniversalProgressStore _progressStore;
     private readonly TimeProvider _clock;
     private readonly ILogger<WorkflowOrchestrationEngine> _logger;
+    private readonly RbacOptions _rbacOptions;
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public WorkflowOrchestrationEngine(
@@ -39,8 +43,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         IWorkflowJobExecutor jobService,
         IUniversalProgressStore progressStore,
         TimeProvider clock,
-        ILogger<WorkflowOrchestrationEngine> logger)
+        ILogger<WorkflowOrchestrationEngine> logger,
+        IOptions<RbacOptions>? rbacOptions = null)
     {
+        _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _runStore = runStore;
         _definitionStore = definitionStore;
         _jobService = jobService;
@@ -111,7 +117,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 : new Dictionary<string, string>(metadata, StringComparer.Ordinal),
             Audit = new OperationAuditInfo
             {
-                RequestedBy = principal.Identity?.Name
+                RequestedBy = principal.Identity?.Name,
+                // Pin the RUN REQUESTER's row/field security identity (#3068). Each step job is
+                // later submitted under OrchestrationSystemPrincipal, which carries role=admin so
+                // the reconcile loop can dispatch; capturing the snapshot from THAT principal
+                // would give every step job admin row/field visibility and launder away the
+                // requester's RLS predicate and field mask. Captured here, where the real
+                // principal is still in hand, and replayed on every step submission.
+                SubmitterSecurityContext = JobSecurityContextCapture.Capture(principal, _rbacOptions)
             }
         };
 
@@ -658,6 +671,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 idempotencyKey,
                 principal,
                 protocolMetadata,
+                run.Audit.SubmitterSecurityContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

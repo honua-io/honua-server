@@ -205,4 +205,11 @@ internal static partial class GeoprocessingServiceLog
         string backend,
         int requiredVersion,
         int backendMaxVersion);
+
+    [LoggerMessage(8035, LogLevel.Warning, "Submit rejected by layer read authorization: LayerId={LayerId}, StepId={StepId}, ProcessId={ProcessId}")]
+    public static partial void LayerAccessDenied(
+        ILogger logger,
+        int layerId,
+        string stepId,
+        string processId);
 }

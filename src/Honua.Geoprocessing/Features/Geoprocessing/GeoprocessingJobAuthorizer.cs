@@ -4,6 +4,8 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
@@ -21,22 +23,26 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
+    private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
-    /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851).
+    /// the OAuth scope authorizer that narrows a bearer token's authority to its scopes
+    /// (honua-server#2851), and the shared per-layer access authorizer that gates the catalog
+    /// layers a submitted plan will read (honua-server#3046).
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
+        ILayerAccessAuthorizer layerAccessAuthorizer,
         ILogger<GeoprocessingJobService> logger)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _scopeAuthorizer = scopeAuthorizer;
+        _layerAccessAuthorizer = layerAccessAuthorizer;
         _logger = logger;
     }
 
@@ -92,6 +98,68 @@ internal sealed class GeoprocessingJobAuthorizer
                 resourceType,
                 operation,
                 AuthorizationDenialReason.InsufficientScope);
+        }
+    }
+
+    /// <summary>
+    /// Enforces per-layer READ authorization for every catalog layer the submitted plan will
+    /// touch, evaluated against the SUBMITTING principal before any job record is created
+    /// (honua-server#3046).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The layer set is derived generically from the process catalog
+    /// (<see cref="PlanLayerReferences.Derive"/>), so this covers the layer-sourced executor
+    /// family (<c>analytics.*</c>, <c>generalization.*</c>, <c>conversion.feature-project</c>,
+    /// the <c>source.honua-layer</c> DAG connector), the submit-time raster-source resolution
+    /// that materializes a catalog raster's bytes onto the job spec, and any future process
+    /// that declares a <see cref="ProcessParameterValueType.LayerId"/> parameter.
+    /// </para>
+    /// <para>
+    /// A denial produces one generic <see cref="GeoprocessingAuthorizationException"/> whether
+    /// the layer is forbidden, retired, hidden from the caller's tenant, or does not exist, so
+    /// the submit path is not an oracle for which layer ids exist. Adapters map it onto their
+    /// protocol's 401/403 exactly as they already do for the process-execute gates.
+    /// </para>
+    /// </remarks>
+    /// <param name="principal">The submitting principal.</param>
+    /// <param name="plan">The plan being submitted.</param>
+    /// <param name="catalog">The process catalog declaring each process's parameters.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task EnsurePlanLayerAccessAsync(
+        ClaimsPrincipal principal,
+        AnalysisPlan plan,
+        IProcessCatalog catalog,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var reference in PlanLayerReferences.Derive(plan, catalog))
+        {
+            var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
+                principal,
+                reference.LayerId,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+
+            if (decision.IsAllowed)
+            {
+                continue;
+            }
+
+            GeoprocessingServiceLog.LayerAccessDenied(
+                _logger,
+                reference.LayerId,
+                reference.StepId,
+                reference.ProcessId);
+
+            throw new GeoprocessingAuthorizationException(
+                decision.RequiresAuthentication,
+                decision.RequiresAuthentication
+                    ? "Authentication is required for this operation."
+                    : $"You do not have permission to read layer {reference.LayerId} "
+                      + $"referenced by step '{reference.StepId}'.",
+                OperatorResourceType.Catalog,
+                OperatorOperation.Read,
+                AuthorizationDenialReason.InsufficientGrant);
         }
     }
 

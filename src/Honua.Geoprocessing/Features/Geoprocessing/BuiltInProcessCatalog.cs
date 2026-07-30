@@ -1461,7 +1461,11 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "source",
             Parameters =
             [
-                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.WholeNumber, required: true),
+                // Declared as LayerId (not WholeNumber) because it IS a catalog layer
+                // reference: the submit-time per-layer read gate derives the layers a plan
+                // reads from the declared LayerId parameters, and this connector streams a
+                // catalog layer's features straight into a job artifact (honua-server#3046).
+                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.LayerId, required: true),
                 Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
                 Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
                 Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all fields.", ProcessParameterValueType.Text),

@@ -27,14 +27,48 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Evaluates the additional execution-tier authorization a plan requires (currently the
-    /// mutating-process tier) against <paramref name="principal"/>, throwing
-    /// <see cref="GeoprocessingAuthorizationException"/> when a mutating step is present and
-    /// the principal lacks <see cref="OperatorOperation.ExecuteMutatingProcess"/>. This is the
-    /// same tier gate <see cref="SubmitJobAsync"/> applies, exposed so the workflow
-    /// orchestration engine can evaluate the REQUESTING principal at run creation before step
-    /// jobs are dispatched under the admin-bypassing orchestrator identity (#2798). Baseline
-    /// <see cref="OperatorOperation.Execute"/> is assumed pre-checked by the caller.
+    /// Submits a plan on behalf of a principal whose row/field security identity is supplied
+    /// separately (honua-server#3068). Used by the workflow orchestration engine, which submits
+    /// each step under a synthesized orchestrator identity carrying <c>role=admin</c>: capturing
+    /// the snapshot from that principal would pin ADMIN row/field visibility onto a step job the
+    /// run's operator scheduled, laundering away their RLS predicate and field mask. Every other
+    /// adapter uses <see cref="SubmitJobAsync"/>, which captures from the live submitter.
+    /// </summary>
+    /// <param name="plan">The plan to submit.</param>
+    /// <param name="idempotencyKey">Optional idempotency key.</param>
+    /// <param name="principal">The principal the submission's authorization gates evaluate against.</param>
+    /// <param name="protocolMetadata">Protocol metadata for the submission.</param>
+    /// <param name="submitterSecurityContext">
+    /// The row/field security identity to pin on the job. When <see langword="null"/> the
+    /// snapshot is captured from <paramref name="principal"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// Defaulted so the many hand-written test doubles of this interface keep compiling without
+    /// each restating a method they never exercise. The default THROWS rather than silently
+    /// forwarding to <see cref="SubmitJobAsync"/>: forwarding would drop the supplied snapshot
+    /// and pin the caller's own (orchestrator) identity instead, which is precisely the
+    /// row/field-visibility laundering this parameter exists to prevent. The production
+    /// implementation overrides it.
+    /// </remarks>
+    Task<ExecutionJobRecord> SubmitJobWithSecurityContextAsync(
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        ClaimsPrincipal principal,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        JobSecurityContext? submitterSecurityContext,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "This IGeoprocessingJobService implementation does not support submitting with an explicit submitter security context.");
+
+    /// <summary>
+    /// Evaluates the additional plan-scoped authorization <see cref="SubmitJobAsync"/> applies —
+    /// the mutating-process execution tier (#2798) and per-layer READ access for every catalog
+    /// layer the plan names (#3046) — against <paramref name="principal"/>, throwing
+    /// <see cref="GeoprocessingAuthorizationException"/> when either is denied. Exposed so the
+    /// workflow orchestration engine can evaluate the REQUESTING principal at run creation
+    /// before step jobs are dispatched under the admin-bypassing orchestrator identity.
+    /// Baseline <see cref="OperatorOperation.Execute"/> is assumed pre-checked by the caller.
     /// </summary>
     Task EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,

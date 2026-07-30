@@ -63,6 +63,37 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task ReconcileWorkflowRun_ReplaysRunRequestersSecurityContextOnStepSubmission()
+    {
+        // #3068: each step job is submitted under OrchestrationSystemPrincipal, which carries
+        // role=admin so the reconcile loop can dispatch. If the step's row/field security
+        // snapshot were captured from THAT principal, every workflow step would read with admin
+        // row/field visibility — laundering away the requester's RLS predicate and field mask.
+        // The engine must therefore replay the snapshot captured from the RUN REQUESTER.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var requester = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "requesting-operator"),
+                new Claim(ClaimTypes.Role, "restricted-analyst"),
+                new Claim("category", "test"),
+            ],
+            "TestAuth"));
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, requester);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var context = Assert.Single(harness.JobService.SubmittedSecurityContexts);
+        Assert.NotNull(context);
+        Assert.Contains(context!.Claims, claim => claim.Value == "restricted-analyst");
+        Assert.Contains(context.Claims, claim => claim.Type == "category" && claim.Value == "test");
+        Assert.DoesNotContain(context.Claims, claim => claim.Value == "admin");
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_ChainsStepsWithArtifactBinding()
     {
         var harness = new OrchestrationTestHarness();
