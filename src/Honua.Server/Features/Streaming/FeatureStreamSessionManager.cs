@@ -776,6 +776,21 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Allocates the next subscription-local monotonic sequence for a subscription, or
+    /// returns -1 when the session or subscription is gone or the generation has been
+    /// replaced. Callers must allocate immediately before writing the frame to the wire so
+    /// the sequence stays contiguous for frames the subscription actually admits, even
+    /// where the global replay cursor skips values belonging to filtered-out events.
+    /// </summary>
+    public long NextSubscriptionSequence(Guid sessionId, string subscriptionId, long generation = 0)
+    {
+        return _sessions.TryGetValue(sessionId, out var entry)
+            && entry.TryNextSubscriptionSequence(subscriptionId, generation, out var sequence)
+            ? sequence
+            : -1;
+    }
+
+    /// <summary>
     /// Removes a subscription from an existing WebSocket session.
     /// </summary>
     public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
@@ -894,7 +909,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        private sealed record SubscriptionState(IStreamSubscriptionFilter? Filter, bool Paused, long Generation, long LastPolledCursor);
+        private sealed record SubscriptionState(
+            IStreamSubscriptionFilter? Filter,
+            bool Paused,
+            long Generation,
+            long LastPolledCursor,
+            long NextSequence = 0);
 
         /// <summary>
         /// Generation assigned to the default subscription at session creation. Stable for the
@@ -1090,6 +1110,31 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                         ? SubscriptionDeliveryClaim.Claimed
                         : SubscriptionDeliveryClaim.AlreadyDelivered;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Allocates the next subscription-local sequence number. Sequence assignment happens
+        /// at send time (after the delivery claim), never at queue time, so numbers are never
+        /// burned by frames that are filtered out, deduplicated, or fenced by generation —
+        /// which is what makes the sequence contiguous while the global cursor skips.
+        /// A <paramref name="generation"/> of 0 skips the generation check for call sites that
+        /// own the session's default subscription for its whole lifetime.
+        /// </summary>
+        public bool TryNextSubscriptionSequence(string subscriptionId, long generation, out long sequence)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current) ||
+                    (generation > 0 && current.Generation != generation))
+                {
+                    sequence = -1;
+                    return false;
+                }
+
+                sequence = current.NextSequence;
+                _subscriptions[subscriptionId] = current with { NextSequence = sequence + 1 };
+                return true;
             }
         }
 

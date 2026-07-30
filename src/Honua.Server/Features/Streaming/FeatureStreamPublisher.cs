@@ -119,7 +119,7 @@ internal sealed partial class FeatureStreamPublisher(
         };
     }
 
-    private static JsonElement? ParseJsonElement(string? json)
+    internal static JsonElement? ParseJsonElement(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -137,7 +137,7 @@ internal sealed partial class FeatureStreamPublisher(
         }
     }
 
-    private static Dictionary<string, JsonElement>? ParseAttributes(string? propertiesJson)
+    internal static Dictionary<string, JsonElement>? ParseAttributes(string? propertiesJson)
     {
         if (string.IsNullOrWhiteSpace(propertiesJson))
         {

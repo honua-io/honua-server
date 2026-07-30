@@ -231,6 +231,10 @@ jobs:
           push: true
           tags: ${{ steps.arch_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Immutable deployment identity (#3038): the running process reads HONUA_GIT_SHA to
+          # advertise deploymentRevision on the capability manifest and streaming capabilities.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}

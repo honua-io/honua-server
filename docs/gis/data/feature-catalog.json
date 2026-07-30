@@ -4284,7 +4284,9 @@
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt"
       ],
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented",
@@ -5184,7 +5186,16 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_SubscriptionLimit_RejectsExcessSubscribesWithError",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_TwoSubscriptionsMatchingSameEvent_DeliversBothFrames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnsubscribeReservedDefaultId_ReturnsErrorAndPreservesPolling",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable"
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_DeltaModeDefault_EmitsNoSnapshotFrames",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotModeWithoutLayerScope_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_CursorAheadOfStore_EmitsReplacementSnapshot",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_ExpiredCursor_EmitsReplacementSnapshot",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_ReplayableCursor_ReplaysDeltasWithoutSnapshot",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_SequenceIsContiguousWhenGlobalCursorSkipsFilteredEvents",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_UnknownMode_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation"
       ],
       "proof_ledger_surface": "feature-event-streaming",
       "maturity": "implemented",
@@ -5201,7 +5212,8 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_CommunityEdition_DisablesStreamingMetadata",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersTheCallerCannotAccess",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersWhoseServicePolicyDenies",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers"
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
       "proof_ledger_surface": "feature-event-streaming",
       "maturity": "implemented",

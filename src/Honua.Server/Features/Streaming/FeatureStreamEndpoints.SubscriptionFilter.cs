@@ -21,7 +21,21 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal static partial class FeatureStreamEndpoints
 {
-    private static async Task<(IStreamSubscriptionFilter? Filter, bool HasSubscription, IResult? Error)> ParseSubscriptionFilterAsync(
+    /// <summary>
+    /// Parsed subscription intent for a stream request: the admission filter, whether an
+    /// explicit subscription scope was supplied, and the requested delivery mode.
+    /// </summary>
+    private readonly record struct SubscriptionParseResult(
+        IStreamSubscriptionFilter? Filter,
+        bool HasSubscription,
+        FeatureStreamSubscriptionMode Mode,
+        IResult? Error)
+    {
+        public static SubscriptionParseResult Failed(IResult error)
+            => new(null, false, FeatureStreamSubscriptionMode.Delta, error);
+    }
+
+    private static async Task<SubscriptionParseResult> ParseSubscriptionFilterAsync(
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context)
@@ -52,7 +66,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = $"Service '{serviceId}' not found.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             serviceId = service.Metadata.Name;
@@ -62,7 +76,7 @@ internal static partial class FeatureStreamEndpoints
         {
             const string msg = "polygonIntersects stream filters are not supported by the active feature-change event source.";
             FeatureStreamLog.FilterValidationFailed(logger, msg);
-            return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
         }
 
         // `layers` is the canonical parameter; `layerIds` is a legacy alias. Both
@@ -78,7 +92,7 @@ internal static partial class FeatureStreamEndpoints
                 layerSource);
             if (layerError is not null)
             {
-                return (null, false, layerError);
+                return SubscriptionParseResult.Failed(layerError);
             }
 
             layerIds = parsedIds;
@@ -90,7 +104,7 @@ internal static partial class FeatureStreamEndpoints
             var accessError = RequireAllLayerAccess(context, snapshot, service);
             if (accessError is not null)
             {
-                return (null, false, accessError);
+                return SubscriptionParseResult.Failed(accessError);
             }
         }
 
@@ -101,7 +115,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = $"Unsupported bbox CRS '{bboxCrsParam}'. Feature streams currently accept bbox filters in EPSG:4326 only.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var parts = bboxParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -109,7 +123,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = "Invalid bbox: expected 4 comma-separated values (minX,minY,maxX,maxY).";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             bbox = new double[4];
@@ -119,7 +133,7 @@ internal static partial class FeatureStreamEndpoints
                 {
                     var msg = $"Invalid bbox value '{parts[i]}' at position {i}. Must be a finite number.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                    return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
             }
 
@@ -127,21 +141,21 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = "Invalid bbox: minX must be <= maxX and minY must be <= maxY.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (bbox[0] < -180 || bbox[2] > 180 || bbox[1] < -90 || bbox[3] > 90)
             {
                 const string msg = "Invalid bbox: EPSG:4326 longitude must be within [-180,180] and latitude within [-90,90].";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (layerIds is null || layerIds.Length != 1)
             {
                 const string msg = "bbox filters require exactly one layer specified via the layers or layerIds parameter.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var bboxLayer = ResolveStreamLayer(snapshot, service, layerIds[0]);
@@ -149,7 +163,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = $"Layer {layerIds[0]} not found.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var (projectedBbox, bboxError) = await TryProjectSubscriptionBboxAsync(
@@ -160,7 +174,7 @@ internal static partial class FeatureStreamEndpoints
             if (bboxError is not null)
             {
                 FeatureStreamLog.FilterValidationFailed(logger, bboxError);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, bboxError));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, bboxError));
             }
 
             bbox = projectedBbox;
@@ -174,14 +188,14 @@ internal static partial class FeatureStreamEndpoints
             {
                 const string msg = "attribute filters require exactly one layer for streaming subscriptions.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var filterLang = query["filter-lang"].ToString();
             if (!TryResolveFilterLanguage(filterLang, out var language, out var filterLangError))
             {
                 FeatureStreamLog.FilterValidationFailed(logger, filterLangError);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, filterLangError));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, filterLangError));
             }
 
             var parseResult = deps.FilterExpressionService.Parse(language, filterParam);
@@ -189,7 +203,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = $"Invalid filter expression: {parseResult.ErrorMessage}";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (parseResult.Expression is not null)
@@ -199,14 +213,14 @@ internal static partial class FeatureStreamEndpoints
                 {
                     var msg = $"Filter expression exceeds maximum depth ({InMemoryFilterEvaluator.MaxStreamingDepth}) for streaming subscriptions.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                    return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
 
                 if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(parseResult.Expression, out var validationError))
                 {
                     var msg = validationError ?? "Streaming subscriptions do not support the requested filter expression.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                    return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
 
                 var filterLayer = ResolveStreamLayer(snapshot, service, layerIds[0]);
@@ -214,13 +228,13 @@ internal static partial class FeatureStreamEndpoints
                 {
                     var msg = $"Layer {layerIds[0]} not found.";
                     FeatureStreamLog.FilterValidationFailed(logger, msg);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                    return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
                 }
 
                 if (!TryValidateAttributeFilterFields(parseResult.Expression, filterLayer, out var fieldError))
                 {
                     FeatureStreamLog.FilterValidationFailed(logger, fieldError);
-                    return (null, false, StandardErrorHelpers.CreateBadRequest(context, fieldError));
+                    return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, fieldError));
                 }
 
                 attributeFilter = parseResult.Expression;
@@ -234,7 +248,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 const string msg = "temporal filters require exactly one time-aware layer for streaming subscriptions.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             var temporalLayer = ResolveStreamLayer(snapshot, service, layerIds[0]);
@@ -242,14 +256,14 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = $"Layer {layerIds[0]} not found.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (!TemporalExtentHelpers.HasOptInTemporalFields(temporalLayer.Resource))
             {
                 var msg = $"Layer {layerIds[0]} is not time-aware; temporal stream filters require resource temporal metadata.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             if (!TryBuildStreamTemporalFilter(datetimeParam, temporalLayer.Resource, out var parsedTemporalFilter, out var temporalError) ||
@@ -257,16 +271,29 @@ internal static partial class FeatureStreamEndpoints
             {
                 var msg = temporalError ?? "Invalid datetime parameter.";
                 FeatureStreamLog.FilterValidationFailed(logger, msg);
-                return (null, false, StandardErrorHelpers.CreateBadRequest(context, msg));
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, msg));
             }
 
             temporalFilter = parsedTemporalFilter;
             hasAnyFilter = true;
         }
 
+        if (!TryParseSubscriptionMode(NullIfEmpty(query["mode"].ToString()), out var mode, out var modeError))
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, modeError!);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, modeError!));
+        }
+
         if (!hasAnyFilter)
         {
-            return (null, false, null);
+            var unscopedSnapshotError = ValidateSnapshotScope(mode, null);
+            if (unscopedSnapshotError is not null)
+            {
+                FeatureStreamLog.FilterValidationFailed(logger, unscopedSnapshotError);
+                return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, unscopedSnapshotError));
+            }
+
+            return new SubscriptionParseResult(null, false, mode, null);
         }
 
         var filter = new StreamSubscriptionFilter(
@@ -275,7 +302,15 @@ internal static partial class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter);
-        return (filter, true, null);
+
+        var snapshotScopeError = ValidateSnapshotScope(mode, filter);
+        if (snapshotScopeError is not null)
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, snapshotScopeError);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, snapshotScopeError));
+        }
+
+        return new SubscriptionParseResult(filter, true, mode, null);
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

@@ -9,6 +9,7 @@ using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming;
@@ -48,7 +49,8 @@ internal static partial class FeatureStreamEndpoints
             .WithDescription("Opens a WebSocket or SSE stream of real-time feature-change events. " +
                              "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream. " +
                              "Query params: cursor (resume from cursor), clientLabel, serviceId, " +
-                             "layerIds/layers (comma-separated layer filter), bbox (WGS84; requires exactly one layer), filter, filter-lang.")
+                             "layerIds/layers (comma-separated layer filter), bbox (WGS84; requires exactly one layer), filter, filter-lang, " +
+                             "mode (delta = change-only, default; snapshot = snapshot-then-delta, requires an explicit layer scope).")
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .AllowAnonymous();
@@ -126,16 +128,18 @@ internal static partial class FeatureStreamEndpoints
                 logger,
                 context,
                 filterResult.Filter,
-                addDefaultSubscription: filterResult.HasSubscription || isAdmin).ConfigureAwait(false);
+                addDefaultSubscription: filterResult.HasSubscription || isAdmin,
+                filterResult.Mode).ConfigureAwait(false);
             return Results.Empty;
         }
 
-        await HandleSseStream(deps.SessionManager, deps.EventStore, deps.Options.Value, logger, context, filterResult.Filter).ConfigureAwait(false);
+        await HandleSseStream(deps, logger, context, filterResult.Filter, filterResult.Mode).ConfigureAwait(false);
         return Results.Empty;
     }
 
     private static async Task<IResult> HandleCapabilities(
         [FromServices] FeatureStreamDependencies deps,
+        [FromServices] DeploymentIdentity deploymentIdentity,
         HttpContext context)
     {
         var options = deps.Options.Value;
@@ -190,6 +194,15 @@ internal static partial class FeatureStreamEndpoints
             HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
             MaxConcurrentSessions = options.MaxConcurrentSessions,
             DeleteBeforeImages = enabled,
+            Modes = enabled ? [DeltaModeValue, SnapshotModeValue] : [],
+            SubscriptionSequence = enabled,
+            MaxSnapshotFeatures = options.MaxSnapshotFeatures,
+            MaxSnapshotScanRows = options.MaxSnapshotScanRows,
+            // The mutable release version and the immutable deployment revision are separate
+            // fields: evidence bound to a deployment must reference the revision (#3038).
+            ServerVersion = deploymentIdentity.ReleaseVersion,
+            DeploymentRevision = deploymentIdentity.Revision,
+            DeploymentRevisionSource = deploymentIdentity.RevisionSource,
             Layers = layerCapabilities
         };
 

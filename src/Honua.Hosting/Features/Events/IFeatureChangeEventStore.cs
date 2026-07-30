@@ -14,6 +14,18 @@ internal interface IFeatureChangeEventStore
 
     Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the lowest cursor still present in the retained window, or 0 when the store
+    /// holds no events. Consumers compare a client-supplied resume cursor against this
+    /// value to tell "no events since your cursor" apart from "the events since your cursor
+    /// have been trimmed or expired" — the latter requires a replacement snapshot rather
+    /// than silently continuing with deltas.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The oldest retained cursor, or 0 when the store is empty.</returns>
+    Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(0L);
+
     Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
         long? cursor,
         DateTimeOffset? from,

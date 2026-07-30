@@ -314,6 +314,47 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
     }
 
+    public async Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_redisDb != null && await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
+        {
+            try
+            {
+                // Rank 0 ascending is the lowest retained score, i.e. the tail of the window
+                // after per-event TTL expiry and MaxRetainedEvents trimming.
+                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, 0, Order.Ascending).ConfigureAwait(false);
+                if (members.Length == 0)
+                {
+                    return 0;
+                }
+
+                return long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor)
+                    ? cursor
+                    : 0;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
+            {
+                // Intentional: same no-logger rationale as GetCurrentCursorAsync above.
+                _redisUnavailable = true;
+                if (!_allowInMemoryFallback)
+                {
+                    return 0;
+                }
+            }
+        }
+
+        lock (_sync)
+        {
+            return _events.Count == 0 ? 0 : _events[0].Cursor;
+        }
+    }
+
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(
         string eventId,
         string sourceId,

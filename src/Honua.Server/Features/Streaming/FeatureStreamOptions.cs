@@ -60,6 +60,25 @@ public sealed class FeatureStreamOptions
     /// logging from unbounded string allocations.
     /// </summary>
     public int MaxSubscriptionIdLength { get; set; } = 128;
+
+    /// <summary>
+    /// Maximum number of features emitted in one baseline snapshot for a snapshot-then-delta
+    /// subscription. Reaching the cap ends the snapshot with <c>complete: false</c> so the
+    /// client never treats a truncated baseline as authoritative state.
+    /// </summary>
+    public int MaxSnapshotFeatures { get; set; } = 5000;
+
+    /// <summary>
+    /// Maximum number of stored rows scanned while building one baseline snapshot. The
+    /// subscription predicate is evaluated in-process against the same admission rules the
+    /// delta path uses, so this bounds the work a low-selectivity filter can cause.
+    /// </summary>
+    public int MaxSnapshotScanRows { get; set; } = 20000;
+
+    /// <summary>
+    /// Number of features read per page while building a baseline snapshot.
+    /// </summary>
+    public int SnapshotPageSize { get; set; } = 500;
 }
 
 /// <summary>
@@ -111,6 +130,21 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.MaxSubscriptionIdLength <= 0)
         {
             failures.Add("FeatureStreaming:MaxSubscriptionIdLength must be a positive integer.");
+        }
+
+        if (options.MaxSnapshotFeatures <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxSnapshotFeatures must be a positive integer.");
+        }
+
+        if (options.MaxSnapshotScanRows < options.MaxSnapshotFeatures)
+        {
+            failures.Add("FeatureStreaming:MaxSnapshotScanRows must be greater than or equal to MaxSnapshotFeatures.");
+        }
+
+        if (options.SnapshotPageSize <= 0)
+        {
+            failures.Add("FeatureStreaming:SnapshotPageSize must be a positive integer.");
         }
 
         return failures.Count > 0

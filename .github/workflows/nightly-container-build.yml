@@ -334,6 +334,7 @@ jobs:
           build-args: |
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0
             DOTNET_ASPNET_IMAGE=${{ env.BASE_REPO }}:aspnet-10.0-alpine
+            HONUA_GIT_SHA=${{ github.sha }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -91,4 +91,15 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5021, Level = LogLevel.Debug,
         Message = "Feature stream Redis unsubscribe failed during session manager disposal")]
     public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5022, Level = LogLevel.Information,
+        Message = "Feature stream baseline snapshot emitted for session {SessionId} subscription {SubscriptionId}: reason={Reason}, features={FeatureCount}, baselineCursor={BaselineCursor}, complete={Complete}")]
+    public static partial void SnapshotEmitted(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        string reason,
+        long featureCount,
+        long baselineCursor,
+        bool complete);
 }

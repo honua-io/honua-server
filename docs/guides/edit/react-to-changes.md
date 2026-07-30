@@ -45,13 +45,32 @@ Connect a WebSocket to `GET /api/v1/streaming/features`, then send JSON control 
 
 One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
 
-### 5. Replay missed events (recovery)
+### 5. Start from a baseline (snapshot-then-delta)
+
+Add `mode=snapshot` to the SSE/WebSocket query string, or `"mode":"snapshot"` to a WebSocket `subscribe` frame, to receive a complete baseline before any live mutation. The subscription must carry an explicit layer scope (`layers=`, or `layerId`/`layers` on the control frame).
+
+The server emits `snapshot-begin`, one `snapshot-feature` per matching feature, then `snapshot-end`, and only then resumes deltas:
+
+```json
+{"type":"snapshot-begin","snapshotId":"9f2…","subscriptionId":"alpha","sequence":0,"cursor":4821,"reason":"initial","layerIds":[0]}
+{"type":"snapshot-feature","snapshotId":"9f2…","sequence":1,"cursor":4821,"layerId":0,"objectId":17,"geometry":{…},"geometryCrs":"EPSG:4326","attributes":{…}}
+{"type":"snapshot-end","snapshotId":"9f2…","sequence":2,"cursor":4821,"featureCount":1,"complete":true}
+```
+
+- **`sequence` is the subscription-local position.** It starts at 0 and advances by exactly one for every snapshot or delta frame this subscription admits, so it stays contiguous even though `cursor` skips values belonging to events your filter rejected. Use `sequence` for gap detection and `cursor` only for replay/resume.
+- **`cursor` on the snapshot frames is the delta boundary.** It is captured before the baseline read starts, so no mutation can slip between the two. A mutation that commits just before the boundary can appear in both the baseline and the delta stream — delta envelopes carry the full post-mutation attributes, so applying them in `sequence` order over the baseline is idempotent.
+- **`reason`** is `initial` for a fresh subscription, or `cursor-expired` / `cursor-invalid` when you reconnected with a `cursor` the server can no longer replay from. In those cases the server sends a **replacement snapshot** instead of silently continuing with deltas.
+- **`complete: false`** means the baseline hit `FeatureStreaming__MaxSnapshotFeatures` (default 5000) or `FeatureStreaming__MaxSnapshotScanRows` (default 20000). Do not treat a truncated baseline as authoritative state — narrow the subscription scope or raise the bounds.
+
+Reconnecting with a still-replayable `cursor` continues with deltas and no snapshot, so steady-state reconnects stay cheap.
+
+### 6. Replay missed events (recovery)
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
 Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Retention is in-memory and capped by `FeatureChangeEvents__MaxRetainedEvents` (default 20000); on PostgreSQL a transactional outbox makes publication atomic with the row mutation.
 
-### 6. Manage live sessions (admin)
+### 7. Manage live sessions (admin)
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/streaming/features/sessions`.
 
@@ -62,7 +81,9 @@ Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000):
 > Open `/api/v1/streaming/features/capabilities` in a browser.
 
 ```json
-{ "enabled": true, "transports": ["websocket", "sse"], "replay": { "supported": true }, "layers": [ { "layerId": 0, "canSubscribe": true } ] }
+{ "enabled": true, "transports": ["websocket", "sse"], "modes": ["delta", "snapshot"], "subscriptionSequence": true,
+  "serverVersion": "1.0.0", "deploymentRevision": "sha256:…", "deploymentRevisionSource": "image-digest",
+  "replaySupported": true, "layers": [ { "layerId": 0, "canSubscribe": true } ] }
 ```
 
 Then insert a feature in another terminal ([Edit features](edit-features.md)) and watch the `feature-change` event arrive on your open SSE stream.
@@ -76,6 +97,8 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 | `503` on connect | `FeatureStreaming__MaxConcurrentSessions` is exhausted; raise it or free sessions via the admin sessions endpoint. |
 | Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
+| `400` on `mode=snapshot` | Snapshot subscriptions need an explicit layer scope so the baseline read stays bounded. Add `layers=` (or `layerId` on the control frame). |
+| `deploymentRevision` is `null` | The deployment carries no verifiable revision. Set `Deployment__ImageDigest` (preferred) or `Deployment__Revision`/`HONUA_GIT_SHA`. Malformed values are rejected rather than echoed. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 

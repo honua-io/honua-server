@@ -20,9 +20,21 @@ internal sealed record FeatureStreamEnvelope
     public required string EventId { get; init; }
 
     /// <summary>
-    /// Monotonic cursor for ordering and replay.
+    /// Monotonic cursor for ordering and replay. This is the durable global event-store
+    /// position and is deliberately NOT a per-subscription sequence: a filtered
+    /// subscription legitimately skips cursor values that belong to events it does not
+    /// admit. Use <see cref="Sequence"/> for continuity checks.
     /// </summary>
     public required long Cursor { get; init; }
+
+    /// <summary>
+    /// Subscription-local monotonic sequence. Starts at 0 for the first frame admitted by
+    /// the subscription (the snapshot baseline when snapshot-then-delta mode is active) and
+    /// advances by exactly one for every subsequent admitted snapshot or delta frame, so it
+    /// is contiguous even where the global <see cref="Cursor"/> skips. Null on legacy
+    /// delta-only paths that predate sequence assignment.
+    /// </summary>
+    public long? Sequence { get; init; }
 
     /// <summary>
     /// When the event was recorded.
@@ -145,6 +157,158 @@ internal sealed record FeatureStreamControlMessage
 
     /// <summary>Optional replay cursor for this subscription.</summary>
     public long? Cursor { get; init; }
+
+    /// <summary>
+    /// Optional subscription mode: <c>delta</c> (default, change-only) or <c>snapshot</c>
+    /// (snapshot-then-delta — a complete baseline is emitted before live deltas).
+    /// </summary>
+    public string? Mode { get; init; }
+}
+
+/// <summary>
+/// Delivery mode requested for a subscription.
+/// </summary>
+internal enum FeatureStreamSubscriptionMode
+{
+    /// <summary>Change-only delivery. No baseline is emitted.</summary>
+    Delta,
+
+    /// <summary>
+    /// Snapshot-then-delta delivery: a complete baseline snapshot is emitted before any
+    /// live mutation, and a replacement snapshot is emitted instead of deltas when a
+    /// supplied replay cursor has fallen outside the retained window.
+    /// </summary>
+    Snapshot
+}
+
+/// <summary>
+/// Reason a baseline snapshot was emitted.
+/// </summary>
+internal static class FeatureStreamSnapshotReasons
+{
+    /// <summary>First baseline for a newly opened snapshot-then-delta subscription.</summary>
+    public const string Initial = "initial";
+
+    /// <summary>
+    /// Replacement baseline: the supplied replay cursor is older than the oldest retained
+    /// event, so the deltas needed to reach the current state no longer exist.
+    /// </summary>
+    public const string CursorExpired = "cursor-expired";
+
+    /// <summary>
+    /// Replacement baseline: the supplied replay cursor is ahead of the durable store's
+    /// current position (forked or fabricated cursor) and cannot be resumed from.
+    /// </summary>
+    public const string CursorInvalid = "cursor-invalid";
+}
+
+/// <summary>
+/// Opening frame of a baseline snapshot.
+/// </summary>
+internal sealed record FeatureStreamSnapshotBeginFrame
+{
+    /// <summary>Frame type identifier.</summary>
+    public string Type { get; init; } = "snapshot-begin";
+
+    /// <summary>Identifier correlating every frame of this snapshot.</summary>
+    public required string SnapshotId { get; init; }
+
+    /// <summary>Subscription this snapshot belongs to.</summary>
+    public required string SubscriptionId { get; init; }
+
+    /// <summary>Subscription-local monotonic sequence.</summary>
+    public required long Sequence { get; init; }
+
+    /// <summary>
+    /// Global event-store position captured before the baseline read began. Every delta
+    /// with a cursor greater than this value is delivered after <c>snapshot-end</c>.
+    /// </summary>
+    public required long Cursor { get; init; }
+
+    /// <summary>Why the snapshot was emitted. See <see cref="FeatureStreamSnapshotReasons"/>.</summary>
+    public required string Reason { get; init; }
+
+    /// <summary>Service scope of the snapshot, when the subscription is service-scoped.</summary>
+    public string? ServiceId { get; init; }
+
+    /// <summary>Layer scope of the snapshot.</summary>
+    public required int[] LayerIds { get; init; }
+
+    /// <summary>Server timestamp.</summary>
+    public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// One feature of a baseline snapshot.
+/// </summary>
+internal sealed record FeatureStreamSnapshotFeatureFrame
+{
+    /// <summary>Frame type identifier.</summary>
+    public string Type { get; init; } = "snapshot-feature";
+
+    /// <summary>Identifier correlating every frame of this snapshot.</summary>
+    public required string SnapshotId { get; init; }
+
+    /// <summary>Subscription this frame belongs to.</summary>
+    public required string SubscriptionId { get; init; }
+
+    /// <summary>Subscription-local monotonic sequence.</summary>
+    public required long Sequence { get; init; }
+
+    /// <summary>Baseline cursor boundary (identical for every frame of the snapshot).</summary>
+    public required long Cursor { get; init; }
+
+    /// <summary>Service the feature belongs to.</summary>
+    public required string ServiceId { get; init; }
+
+    /// <summary>Layer the feature belongs to.</summary>
+    public required int LayerId { get; init; }
+
+    /// <summary>Feature object identifier in string form.</summary>
+    public required string FeatureId { get; init; }
+
+    /// <summary>Feature object identifier.</summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>GeoJSON geometry, when the feature has one with resolvable CRS.</summary>
+    public System.Text.Json.JsonElement? Geometry { get; init; }
+
+    /// <summary>CRS identifier for <see cref="Geometry"/>.</summary>
+    public string? GeometryCrs { get; init; }
+
+    /// <summary>Full attribute snapshot.</summary>
+    public Dictionary<string, System.Text.Json.JsonElement>? Attributes { get; init; }
+}
+
+/// <summary>
+/// Closing frame of a baseline snapshot.
+/// </summary>
+internal sealed record FeatureStreamSnapshotEndFrame
+{
+    /// <summary>Frame type identifier.</summary>
+    public string Type { get; init; } = "snapshot-end";
+
+    /// <summary>Identifier correlating every frame of this snapshot.</summary>
+    public required string SnapshotId { get; init; }
+
+    /// <summary>Subscription this snapshot belongs to.</summary>
+    public required string SubscriptionId { get; init; }
+
+    /// <summary>Subscription-local monotonic sequence.</summary>
+    public required long Sequence { get; init; }
+
+    /// <summary>Baseline cursor boundary. Deltas resume strictly after this position.</summary>
+    public required long Cursor { get; init; }
+
+    /// <summary>Number of <c>snapshot-feature</c> frames emitted.</summary>
+    public required long FeatureCount { get; init; }
+
+    /// <summary>
+    /// Whether the baseline is complete. False when the configured snapshot feature or
+    /// scan bound was reached first — the client must not treat a truncated baseline as
+    /// authoritative state.
+    /// </summary>
+    public required bool Complete { get; init; }
 }
 
 /// <summary>
@@ -226,6 +390,39 @@ internal sealed record FeatureStreamCapabilitiesResponse
 
     /// <summary>Whether delete before-images can be emitted when providers supply them.</summary>
     public required bool DeleteBeforeImages { get; init; }
+
+    /// <summary>
+    /// Supported subscription modes. <c>delta</c> is always available; <c>snapshot</c>
+    /// indicates snapshot-then-delta subscriptions are supported.
+    /// </summary>
+    public required string[] Modes { get; init; }
+
+    /// <summary>
+    /// Whether every admitted snapshot/delta frame carries a subscription-local monotonic
+    /// sequence that is contiguous independently of the global replay cursor.
+    /// </summary>
+    public required bool SubscriptionSequence { get; init; }
+
+    /// <summary>Maximum number of features emitted in one baseline snapshot.</summary>
+    public required int MaxSnapshotFeatures { get; init; }
+
+    /// <summary>Maximum number of stored rows scanned while building one baseline snapshot.</summary>
+    public required int MaxSnapshotScanRows { get; init; }
+
+    /// <summary>
+    /// Mutable server release version. Changes on releases and is NOT a deployment identity.
+    /// </summary>
+    public required string ServerVersion { get; init; }
+
+    /// <summary>
+    /// Immutable deployment revision: a 40-character commit SHA or a
+    /// <c>sha256:&lt;64 hex&gt;</c> image digest. Null when the deployment carries no
+    /// verifiable revision.
+    /// </summary>
+    public string? DeploymentRevision { get; init; }
+
+    /// <summary>How <see cref="DeploymentRevision"/> was resolved.</summary>
+    public string? DeploymentRevisionSource { get; init; }
 
     /// <summary>Per-layer capability summaries.</summary>
     public required FeatureStreamLayerCapability[] Layers { get; init; }

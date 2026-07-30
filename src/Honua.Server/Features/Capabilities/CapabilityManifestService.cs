@@ -218,15 +218,21 @@ internal sealed class CapabilityManifestService(
     {
         var assembly = typeof(CapabilityManifestService).Assembly;
         var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var identity = options.DeploymentIdentity;
         return new CapabilityManifestServerInfo
         {
+            // serverVersion stays the mutable release version. The immutable deployment
+            // identity is a separate field so evidence consumers can bind a retained
+            // artifact to exact code/image content (#3038, REQ-004).
             ServerVersion = string.IsNullOrWhiteSpace(version)
                 ? assembly.GetName().Version?.ToString() ?? "0.0.0"
                 : version,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName
+            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentRevision = identity.Revision,
+            DeploymentRevisionSource = identity.RevisionSource
         };
     }
 

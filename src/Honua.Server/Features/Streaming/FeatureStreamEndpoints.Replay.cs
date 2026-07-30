@@ -76,6 +76,11 @@ internal static partial class FeatureStreamEndpoints
                     continue;
                 }
 
+                // Sequence is allocated only for frames that survive filtering and dedup, and
+                // only immediately before the write, so it stays contiguous per subscription
+                // even where the global cursor skips (#3038 REQ-002).
+                envelope = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
+
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
                 await SendWebSocketJsonAsync(webSocket, writeLock, payload, cancellationToken).ConfigureAwait(false);
                 delivered++;
@@ -101,7 +106,8 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamSessionManager sessionManager,
         CancellationToken cancellationToken,
         IStreamSubscriptionFilter? subscriptionFilter = null,
-        string? subscriptionId = null)
+        string? subscriptionId = null,
+        long subscriptionGeneration = 0)
     {
         var cursor = fromCursor;
         var delivered = 0L;
@@ -127,6 +133,8 @@ internal static partial class FeatureStreamEndpoints
                     continue;
                 }
 
+                envelope = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
+
                 await WriteSseEventAsync(
                     response,
                     "feature-change",
@@ -146,5 +154,27 @@ internal static partial class FeatureStreamEndpoints
 
         sessionManager.RecordReplayEventsDelivered(SseTransport, delivered);
         return cursor;
+    }
+
+    /// <summary>
+    /// Stamps the next subscription-local sequence onto an envelope that is about to be
+    /// written. Returns the envelope unchanged when no session manager or subscription is
+    /// available (generation-less legacy/test call sites), so the field stays absent rather
+    /// than advertising a sequence the caller cannot honor.
+    /// </summary>
+    private static FeatureStreamEnvelope StampSequence(
+        FeatureStreamEnvelope envelope,
+        FeatureStreamSessionManager? sessionManager,
+        Guid sessionId,
+        string? subscriptionId,
+        long subscriptionGeneration)
+    {
+        if (sessionManager is null || subscriptionId is null)
+        {
+            return envelope;
+        }
+
+        var sequence = sessionManager.NextSubscriptionSequence(sessionId, subscriptionId, subscriptionGeneration);
+        return sequence < 0 ? envelope : envelope with { Sequence = sequence };
     }
 }

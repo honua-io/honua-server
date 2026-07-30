@@ -27,7 +27,8 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         HttpContext context,
         IStreamSubscriptionFilter? subscriptionFilter,
-        bool addDefaultSubscription)
+        bool addDefaultSubscription,
+        FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
@@ -89,9 +90,54 @@ internal static partial class FeatureStreamEndpoints
         // so that large replay backlogs are not truncated by the buffer limit.
         // Live broadcasts flow into the channel concurrently; the drain deduplicates
         // using the replay cursor so events are delivered exactly once.
-        bool hasReplay = addDefaultSubscription && cursor.HasValue;
+        // Snapshot-then-delta on the query-string (default) subscription. A baseline
+        // replaces the delta stream when the subscription is fresh, or when the supplied
+        // resume cursor has fallen outside the retained window (#3038 REQ-001).
+        string? snapshotReason = null;
+        if (addDefaultSubscription &&
+            mode == FeatureStreamSubscriptionMode.Snapshot &&
+            subscriptionFilter is StreamSubscriptionFilter)
+        {
+            try
+            {
+                snapshotReason = cursor.HasValue
+                    ? await ResolveResnapshotReasonAsync(eventStore, cursor.Value, linkedCts.Token).ConfigureAwait(false)
+                    : FeatureStreamSnapshotReasons.Initial;
+            }
+            catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+
+        bool hasReplay = addDefaultSubscription && (cursor.HasValue || snapshotReason is not null);
         long replayCursor = 0;
-        if (hasReplay)
+        if (snapshotReason is not null)
+        {
+            try
+            {
+                var snapshotResult = await EmitSnapshotAsync(
+                    deps,
+                    logger,
+                    new WebSocketSnapshotSink(webSocket, session.WriteLock),
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    defaultSubscriptionGeneration,
+                    (StreamSubscriptionFilter)subscriptionFilter!,
+                    snapshotReason,
+                    linkedCts.Token).ConfigureAwait(false);
+                replayCursor = snapshotResult.BaselineCursor;
+            }
+            catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+            {
+                return; // Client disconnected during snapshot.
+            }
+            catch (WebSocketException)
+            {
+                return;
+            }
+        }
+        else if (hasReplay)
         {
             try
             {
@@ -522,8 +568,18 @@ internal static partial class FeatureStreamEndpoints
                         continue;
                     }
 
-                    var payload = JsonSerializer.SerializeToUtf8Bytes(
+                    // Sequence is allocated after the delivery claim and immediately before
+                    // the write, so numbers are never burned by filtered, deduplicated, or
+                    // stale-generation frames (#3038 REQ-002).
+                    var liveEnvelope = StampSequence(
                         message.Envelope,
+                        sessionManager,
+                        session.SessionId,
+                        subscriptionId,
+                        message.SubscriptionGeneration);
+
+                    var payload = JsonSerializer.SerializeToUtf8Bytes(
+                        liveEnvelope,
                         FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
 
                     await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
@@ -653,6 +709,19 @@ internal static partial class FeatureStreamEndpoints
             return;
         }
 
+        if (!TryParseSubscriptionMode(control.Mode, out var mode, out var modeError))
+        {
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-subscription-mode", modeError!, null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var snapshotScopeError = ValidateSnapshotScope(mode, filter);
+        if (snapshotScopeError is not null)
+        {
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-subscription", snapshotScopeError, null, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var options = deps.Options.Value;
         var subscriptionId = string.IsNullOrWhiteSpace(control.SubscriptionId)
             ? Guid.NewGuid().ToString("N")
@@ -697,8 +766,29 @@ internal static partial class FeatureStreamEndpoints
         // when the broadcast did see the sub. With-cursor subscribes do not need this:
         // their post-unpause-sweep advances the watermark to the last delivered cursor.
         var replayCursor = control.Cursor;
+
+        // Snapshot-then-delta decision runs before the subscription is registered so the
+        // add can be paused for the whole baseline-plus-catch-up window.
+        string? snapshotReason = null;
+        if (mode == FeatureStreamSubscriptionMode.Snapshot)
+        {
+            try
+            {
+                snapshotReason = replayCursor.HasValue
+                    ? await ResolveResnapshotReasonAsync(deps.EventStore, replayCursor.Value, cancellationToken).ConfigureAwait(false)
+                    : FeatureStreamSnapshotReasons.Initial;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+
+        var emitSnapshot = snapshotReason is not null;
+        var pauseForReplay = replayCursor.HasValue || emitSnapshot;
+
         long preAddCursor = 0;
-        if (!replayCursor.HasValue)
+        if (!pauseForReplay)
         {
             try
             {
@@ -713,7 +803,7 @@ internal static partial class FeatureStreamEndpoints
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
-        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: replayCursor.HasValue);
+        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: pauseForReplay);
         switch (addOutcome.Result)
         {
             case AddSubscriptionResult.Added:
@@ -742,7 +832,7 @@ internal static partial class FeatureStreamEndpoints
         // Seed the per-subscription poll watermark for the no-cursor path so the
         // writer's cross-node sweep starts from the pre-add snapshot. The
         // with-cursor path advances the watermark in the finally block below.
-        if (!replayCursor.HasValue && preAddCursor > 0)
+        if (!pauseForReplay && preAddCursor > 0)
         {
             deps.SessionManager.TryAdvanceSubscriptionPollCursor(
                 session.SessionId,
@@ -750,6 +840,37 @@ internal static partial class FeatureStreamEndpoints
                 subscriptionGeneration,
                 preAddCursor);
         }
+
+        // Emit the baseline while paused, then resume delta delivery from the baseline
+        // cursor through the existing paused-replay/unpause choreography.
+        if (emitSnapshot)
+        {
+            try
+            {
+                var snapshotResult = await EmitSnapshotAsync(
+                    deps,
+                    logger,
+                    new WebSocketSnapshotSink(webSocket, session.WriteLock),
+                    session.SessionId,
+                    subscriptionId,
+                    subscriptionGeneration,
+                    (StreamSubscriptionFilter)filter!,
+                    snapshotReason!,
+                    cancellationToken).ConfigureAwait(false);
+                replayCursor = snapshotResult.BaselineCursor;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
+                return;
+            }
+            catch (WebSocketException)
+            {
+                deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
+                return;
+            }
+        }
+
         long? currentCursor = null;
         try
         {

@@ -13,6 +13,7 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Features.Capabilities.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Capabilities;
@@ -38,7 +39,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<RbacOptions> rbacOptions,
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
-        DeploymentCapabilityProfile deploymentProfile)
+        DeploymentCapabilityProfile deploymentProfile,
+        DeploymentIdentity deploymentIdentity)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -53,6 +55,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
         ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
         ArgumentNullException.ThrowIfNull(deploymentProfile);
+        ArgumentNullException.ThrowIfNull(deploymentIdentity);
 
         Limits = limitsOptions.Value;
         Streaming = streamOptions.Value;
@@ -66,6 +69,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
+        DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
             Configured = deploymentProfile.IsConfigured,
@@ -111,4 +115,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
+
+    /// <summary>
+    /// Mutable release version plus immutable deployment revision, kept as separate fields so
+    /// evidence consumers can bind a retained artifact to exact code/image content (#3038).
+    /// </summary>
+    public DeploymentIdentity DeploymentIdentity { get; }
 }

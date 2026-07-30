@@ -173,6 +173,16 @@ LABEL security.non-root="true" \
       org.opencontainers.image.description="Production-ready geospatial feature server" \
       org.opencontainers.image.licenses="Elastic-2.0"
 
+# Immutable deployment identity (#3038). `.dockerignore` excludes `.git/`, so SourceLink
+# cannot stamp a commit into the published assemblies from inside the build context; the
+# commit SHA is therefore injected here as a runtime environment variable. Placing the ARG
+# in the runtime stage keeps a SHA change from invalidating the expensive build layers.
+# HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
+# so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
+ARG HONUA_GIT_SHA=
+LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
+ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
+
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS= \
     Kestrel__Endpoints__Http__Url=http://+:8080 \
