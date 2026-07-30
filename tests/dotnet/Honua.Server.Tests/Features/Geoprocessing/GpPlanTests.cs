@@ -176,6 +176,35 @@ public sealed class GpPlanTests
     }
 
     [UnitTest]
+    public void Build_EnrichmentAdvertisedRawPredicates_AreAccepted()
+    {
+        // The catalog advertises 'predicate' as intersects|contains|within|dwithin and
+        // EnrichmentJobExecutor.ParsePredicate maps exactly those four. Validating against a
+        // narrower set (e.g. the transform.spatial-filter intersects/within set, which is a
+        // one-word-different symbol in the same validator) would make the advertised
+        // contains/dwithin paths unreachable — rejected at submit for a value the executor
+        // runs (#3043 review). 'distance' is supplied throughout so the dwithin case fails
+        // only if the predicate itself is refused.
+        foreach (var predicate in new[] { "intersects", "contains", "within", "dwithin" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["layerId"] = "7",
+                ["datasetId"] = "demographics",
+                ["predicate"] = predicate,
+                ["distance"] = "100",
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.Errors.Should().NotContain(
+                e => e.Contains("predicate"),
+                $"'{predicate}' is an advertised raw predicate the executor supports");
+        }
+    }
+
+    [UnitTest]
     public void Build_EnrichmentInlineSourceWithLayerOnlyFilter_IsRejected()
     {
         // 'where'/'bbox' window the source.honua-layer read; EnrichmentJobExecutor's inline

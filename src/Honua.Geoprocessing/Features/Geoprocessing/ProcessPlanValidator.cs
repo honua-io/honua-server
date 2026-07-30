@@ -723,6 +723,20 @@ internal static partial class ProcessPlanValidator
         "within-distance", "within_distance", "dwithin"
     };
 
+    // Enrichment owns its raw-'predicate' allow-list rather than borrowing the
+    // PostGIS analytics.spatial-join set: the two happen to agree today, but they are
+    // different contracts, and a change on the spatial-join side must not silently
+    // widen or narrow what enrichment accepts. These four values are exactly what
+    // EnrichmentJobExecutor.ParsePredicate maps and what the catalog advertises for
+    // this parameter, so validation accepts precisely what execution runs. Note the
+    // deliberately similar SpatialFilterPredicateValues elsewhere in this file is the
+    // transform.spatial-filter set (intersects/within only) and is NOT applicable
+    // here (#3043 review).
+    private static readonly HashSet<string> EnrichmentPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "contains", "within", "dwithin"
+    };
+
     private static readonly HashSet<string> EnrichmentAggregateStatValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "count", "sum", "mean", "avg", "average", "min", "max", "stddev", "std"
@@ -788,7 +802,7 @@ internal static partial class ProcessPlanValidator
         if (!hasMethod
             && step.Inputs.TryGetValue("predicate", out var predicateRaw)
             && !string.IsNullOrWhiteSpace(predicateRaw)
-            && !SpatialJoinPredicateValues.Contains(predicateRaw.Trim()))
+            && !EnrichmentPredicateValues.Contains(predicateRaw.Trim()))
         {
             AddEnumViolation(step, "predicate", predicateRaw, "intersects, contains, within, dwithin", violations);
         }
