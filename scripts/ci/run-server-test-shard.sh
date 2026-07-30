@@ -29,6 +29,56 @@ heartbeat_tail_lines="${HONUA_SERVER_TEST_HEARTBEAT_TAIL_LINES:-40}"
 console_verbosity="${HONUA_SERVER_TEST_CONSOLE_VERBOSITY:-normal}"
 exclude_slow="${HONUA_SERVER_TEST_EXCLUDE_SLOW:-true}"
 exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
+# #3054 headroom monitoring. `poll_seconds` is how often the supervisor samples
+# the child and the log; it is deliberately much smaller than the heartbeat
+# interval so `duration_seconds` is the child's real runtime instead of being
+# rounded up to the next heartbeat (the old loop slept a full heartbeat before
+# noticing the child had exited, which inflated every measurement by up to
+# `heartbeat_seconds` and made the headroom ratio unusable). 5s keeps the
+# measurement error under half a percent of the smallest configured budget while
+# waking the supervisor 6x less often than a 1s poll would on a shared runner.
+poll_seconds="${HONUA_SERVER_TEST_POLL_SECONDS:-5}"
+# Warn when a completed shard consumed at least this fraction of its inner
+# timeout. A shard above the line still passed, but it has no room left for the
+# next test the capability gate forces into it.
+#
+# The threshold is policy, and `.github/ci-shards.json` is where that policy
+# lives: scripts/ci/audit-shard-headroom.py reads
+# `shard_budget_policy.warn_utilization` from it. The runner reads the same key so
+# a change to the policy moves both together -- hardcoding a second default here
+# meant a shard between the old and new thresholds got one status in CI and a
+# different one in the fleet audit, which makes the audit look wrong about the
+# runner it is auditing. Env var still wins (the fixture pins it explicitly), and
+# the literal only applies when the policy cannot be read at all.
+shard_policy_file="${HONUA_SERVER_TEST_SHARD_POLICY_FILE:-.github/ci-shards.json}"
+default_headroom_warn_ratio="0.80"
+if [[ -f "${shard_policy_file}" ]] && command -v jq >/dev/null 2>&1; then
+  policy_warn_ratio="$(jq -r '.shard_budget_policy.warn_utilization // empty' "${shard_policy_file}" 2>/dev/null || true)"
+  if [[ "${policy_warn_ratio}" =~ ^0*\.[0-9]+$|^1(\.0+)?$ ]]; then
+    default_headroom_warn_ratio="${policy_warn_ratio}"
+  elif [[ -n "${policy_warn_ratio}" ]]; then
+    echo "::warning::Ignoring unusable shard_budget_policy.warn_utilization='${policy_warn_ratio}' in ${shard_policy_file}; falling back to ${default_headroom_warn_ratio}." >&2
+  fi
+fi
+headroom_warn_ratio="${HONUA_SERVER_TEST_HEADROOM_WARN_RATIO:-${default_headroom_warn_ratio}}"
+# A timed-out shard whose log had not grown for at least this many seconds is
+# reported as a suspected hang; one that was still emitting output when the cap
+# fired is reported as capacity exhaustion. Honua integration shards stream host
+# logs continuously, so a multi-minute silence is a genuine stall signal.
+stall_seconds="${HONUA_SERVER_TEST_STALL_SECONDS:-300}"
+# Grace `timeout` allows between the SIGTERM it sends at the cap and the SIGKILL
+# it escalates to. A shard that ignores the TERM exits 137 rather than 124 (see
+# the exit-code classification below).
+kill_after_seconds="${HONUA_SERVER_TEST_KILL_AFTER_SECONDS:-30}"
+# Slack allowed when deciding whether an exit 137 could have come from `timeout`
+# itself. It covers measurement error ONLY: `start_epoch` is sampled before the
+# child is launched and the supervisor polls the child every `poll_seconds`, so
+# both can only make `duration_seconds` larger than the child's true runtime.
+# The single way the measurement can come out short is whole-second truncation
+# of the two `date +%s` samples, which costs at most a second. Keeping this
+# tight is the point: every second added back is a second of the SIGKILL grace
+# window in which an out-of-memory kill would be misfiled as a timeout.
+kill_escalation_tolerance_seconds="${HONUA_SERVER_TEST_KILL_ESCALATION_TOLERANCE_SECONDS:-2}"
 
 mkdir -p "${results_dir}"
 
@@ -80,12 +130,28 @@ if [[ -n "${timeout_minutes}" ]]; then
   fi
 
   if [[ -n "${timeout_command}" ]]; then
-    run_command=("${timeout_command}" --kill-after=30s "${timeout_minutes}m" "${test_command[@]}")
+    run_command=("${timeout_command}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
   fi
+fi
+
+# The configured budget in seconds. Needed before the supervision loop so progress
+# tracking can be frozen at the deadline, and again afterwards by the exit-code
+# classification and the headroom ratio.
+timeout_seconds=""
+if [[ -n "${timeout_minutes}" && -n "${timeout_command}" ]]; then
+  timeout_seconds="$(awk -v m="${timeout_minutes}" 'BEGIN { printf "%.0f", m * 60 }')"
 fi
 
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 start_epoch="$(date +%s)"
+
+# The instant `timeout` sends its SIGTERM. Output produced after this point is the
+# shard being torn down, not the shard making progress, so progress tracking stops
+# here (see the guard in the supervision loop below).
+progress_deadline_epoch=""
+if [[ -n "${timeout_seconds}" ]]; then
+  progress_deadline_epoch=$((start_epoch + timeout_seconds))
+fi
 
 {
   echo "Shard: ${shard_name}"
@@ -100,23 +166,52 @@ start_epoch="$(date +%s)"
   echo ""
 } > "${log_file}"
 
+log_size() {
+  local size=""
+  size="$(wc -c < "${log_file}" 2>/dev/null | tr -d '[:space:]')" || size=""
+  printf '%s' "${size:-0}"
+}
+
 "${run_command[@]}" >> "${log_file}" 2>&1 &
 test_pid=$!
 heartbeat_count=0
+next_heartbeat_epoch="${start_epoch}"
+last_progress_epoch="${start_epoch}"
+last_log_size="$(log_size)"
 
 while kill -0 "${test_pid}" 2>/dev/null; do
   now_epoch="$(date +%s)"
-  elapsed_seconds=$((now_epoch - start_epoch))
-  echo "[${log_name}-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') shard=\"${shard_name}\" elapsed=${elapsed_seconds}s timeout=${timeout_minutes:-none}m"
 
-  heartbeat_count=$((heartbeat_count + 1))
-  if (( heartbeat_count % 4 == 0 )); then
-    echo "[${log_name}-tail] last ${heartbeat_tail_lines} log lines"
-    tail -n "${heartbeat_tail_lines}" "${log_file}" || true
-    echo "[${log_name}-tail-end]"
+  # Progress = the shard's own stdout growing. Honua shards stream host/test
+  # output continuously, so this is what separates "still working, ran out of
+  # budget" from "wedged" when the inner timeout fires.
+  # Only growth observed BEFORE the timeout deadline counts. Once `timeout` has
+  # sent SIGTERM, a wedged shard commonly emits cancellation/cleanup output while
+  # it is being killed; crediting that as progress made `idle_seconds_at_exit`
+  # look small and misfiled a genuine hang as `capacity_exhausted`, which sends
+  # the train down capacity escalation instead of the hang retry.
+  current_log_size="$(log_size)"
+  if [[ "${current_log_size}" != "${last_log_size}" ]]; then
+    last_log_size="${current_log_size}"
+    if [[ -z "${progress_deadline_epoch}" ]] || (( now_epoch < progress_deadline_epoch )); then
+      last_progress_epoch="${now_epoch}"
+    fi
   fi
 
-  sleep "${heartbeat_seconds}"
+  if (( now_epoch >= next_heartbeat_epoch )); then
+    elapsed_seconds=$((now_epoch - start_epoch))
+    echo "[${log_name}-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') shard=\"${shard_name}\" elapsed=${elapsed_seconds}s timeout=${timeout_minutes:-none}m idle=$((now_epoch - last_progress_epoch))s"
+    next_heartbeat_epoch=$((now_epoch + heartbeat_seconds))
+
+    heartbeat_count=$((heartbeat_count + 1))
+    if (( heartbeat_count % 4 == 0 )); then
+      echo "[${log_name}-tail] last ${heartbeat_tail_lines} log lines"
+      tail -n "${heartbeat_tail_lines}" "${log_file}" || true
+      echo "[${log_name}-tail-end]"
+    fi
+  fi
+
+  sleep "${poll_seconds}"
 done
 
 set +e
@@ -128,13 +223,110 @@ completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 completed_epoch="$(date +%s)"
 duration_seconds=$((completed_epoch - start_epoch))
 timed_out="false"
+kill_escalated="false"
 status="failed"
 
+# ---------------------------------------------------------------------------
+# Exit-code classification.
+#
+# `timeout` exits 124 when the command dies from the SIGTERM it sends at the
+# cap. But a shard wedged hard enough to IGNORE that SIGTERM is escalated to
+# SIGKILL after --kill-after, and `timeout` then reports 128+9 = 137. Recognising
+# only 124 therefore missed exactly the worst case this instrumentation exists
+# for: the most stuck shard would be attributed as an ordinary real failure.
+#
+# 137 is ambiguous on its own — an OOM kill or any other external SIGKILL
+# produces it too — so it is NOT blanket-mapped to a timeout. The discriminator
+# is the clock, and it has to account for the FULL escalation schedule, not just
+# the cap: `timeout` sends SIGTERM at `timeout_seconds` and only sends SIGKILL
+# after `--kill-after` has elapsed on top of that. So the earliest instant a
+# SIGKILL attributable to this script can be observed is
+# `timeout_seconds + kill_after_seconds`; anything killed before that deadline —
+# including a host OOM kill during the grace window, which is precisely when a
+# memory-starved runner is most likely to reap the test host — was killed by
+# something else and must keep that diagnosis. Misreading it as a timeout emits
+# HONUA_SHARD_CAPACITY_EXHAUSTED and sends the merge train down its batch-wide
+# capacity escalation, whose remediation (raise/split the shard budget) is not
+# the remediation an OOM kill needs.
+# ---------------------------------------------------------------------------
+kill_escalation_floor_seconds=""
 if [[ "${test_exit_code}" -eq 0 ]]; then
   status="passed"
 elif [[ -n "${timeout_command}" && "${test_exit_code}" -eq 124 ]]; then
   status="timed_out"
   timed_out="true"
+elif [[ -n "${timeout_command}" && -n "${timeout_seconds}" && "${test_exit_code}" -eq 137 ]]; then
+  kill_escalation_floor_seconds=$((timeout_seconds + kill_after_seconds - kill_escalation_tolerance_seconds))
+  # A tolerance larger than the configured grace must never drag the deadline
+  # back below the cap itself; before the cap, `timeout` has not even sent the
+  # first signal.
+  if (( kill_escalation_floor_seconds < timeout_seconds )); then
+    kill_escalation_floor_seconds="${timeout_seconds}"
+  fi
+  if (( duration_seconds >= kill_escalation_floor_seconds )); then
+    status="timed_out"
+    timed_out="true"
+    kill_escalated="true"
+  else
+    status="killed"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# #3054 headroom classification.
+#
+# `test_timeout_minutes` exists to bound a genuine hang, not to bound normal
+# growth — but nothing used to watch how much of that budget a healthy shard
+# was already consuming, so a shard could sit at ~100% for weeks and then fail
+# whichever PR happened to add the test that tipped it over. The capability
+# completeness gate keeps pushing proving tests INTO shards, so the pressure is
+# structural rather than accidental.
+#
+# capacity_status is the distinct, actionable signal:
+#   unbounded          - no inner timeout configured; nothing to measure.
+#   not_assessed       - ran under a budget but neither passed nor timed out; a
+#                        failing run may abort early or run long on retries, so
+#                        its duration is not a valid capacity sample.
+#   ok                 - PASSED under the warn ratio.
+#   low_headroom       - PASSED, but consumed >= warn ratio of its budget.
+#   capacity_exhausted - hit the cap while still producing output.
+#   hang_suspected     - hit the cap after going silent for >= stall_seconds.
+# ---------------------------------------------------------------------------
+# Measured at the timeout deadline rather than at process exit. Progress tracking
+# already stops at the deadline, so measuring to `completed_epoch` would add the
+# whole SIGKILL grace period to every timed-out shard's idle figure and could tip a
+# still-progressing run over the stall threshold. The question the classification
+# asks is "had it gone quiet when the cap fired", so that is the instant to measure.
+progress_measured_at_epoch="${completed_epoch}"
+if [[ -n "${progress_deadline_epoch}" ]] && (( completed_epoch > progress_deadline_epoch )); then
+  progress_measured_at_epoch="${progress_deadline_epoch}"
+fi
+idle_seconds_at_exit=$((progress_measured_at_epoch - last_progress_epoch))
+headroom_ratio=""
+headroom_percent=""
+capacity_status="unbounded"
+
+if [[ -n "${timeout_seconds}" ]]; then
+  if [[ "${timeout_seconds}" -gt 0 ]]; then
+    headroom_ratio="$(awk -v d="${duration_seconds}" -v t="${timeout_seconds}" 'BEGIN { printf "%.4f", d / t }')"
+    headroom_percent="$(awk -v r="${headroom_ratio}" 'BEGIN { printf "%.1f", r * 100 }')"
+    if [[ "${timed_out}" == "true" ]]; then
+      if (( idle_seconds_at_exit >= stall_seconds )); then
+        capacity_status="hang_suspected"
+      else
+        capacity_status="capacity_exhausted"
+      fi
+    elif [[ "${status}" != "passed" ]]; then
+      # A shard that failed on a test/infrastructure error did not necessarily
+      # run its full workload, so claiming anything about its headroom (in
+      # either direction) would be false. Record the ratio, assert nothing.
+      capacity_status="not_assessed"
+    elif awk -v r="${headroom_ratio}" -v w="${headroom_warn_ratio}" 'BEGIN { exit !(r >= w) }'; then
+      capacity_status="low_headroom"
+    else
+      capacity_status="ok"
+    fi
+  fi
 fi
 
 if command -v jq >/dev/null 2>&1; then
@@ -148,7 +340,14 @@ if command -v jq >/dev/null 2>&1; then
     --arg duration_seconds "${duration_seconds}" \
     --arg timeout_minutes "${timeout_minutes}" \
     --arg timed_out "${timed_out}" \
+    --arg kill_escalated "${kill_escalated}" \
     --arg filter "${filter}" \
+    --arg timeout_seconds "${timeout_seconds}" \
+    --arg headroom_ratio "${headroom_ratio}" \
+    --arg headroom_warn_ratio "${headroom_warn_ratio}" \
+    --arg capacity_status "${capacity_status}" \
+    --arg idle_seconds_at_exit "${idle_seconds_at_exit}" \
+    --arg stall_seconds "${stall_seconds}" \
     '{
       shard: $shard,
       log_name: $log_name,
@@ -158,12 +357,20 @@ if command -v jq >/dev/null 2>&1; then
       completed_at: $completed_at,
       duration_seconds: ($duration_seconds | tonumber),
       timeout_minutes: (if $timeout_minutes == "" then null else ($timeout_minutes | tonumber) end),
+      timeout_seconds: (if $timeout_seconds == "" then null else ($timeout_seconds | tonumber) end),
       timed_out: ($timed_out == "true"),
+      kill_escalated: ($kill_escalated == "true"),
+      headroom_ratio: (if $headroom_ratio == "" then null else ($headroom_ratio | tonumber) end),
+      headroom_warn_ratio: ($headroom_warn_ratio | tonumber),
+      capacity_status: $capacity_status,
+      idle_seconds_at_exit: ($idle_seconds_at_exit | tonumber),
+      stall_seconds: ($stall_seconds | tonumber),
       filter: $filter
     }' > "${timing_file}"
 else
-  printf '{"shard":"%s","log_name":"%s","status":"%s","exit_code":%s,"started_at":"%s","completed_at":"%s","duration_seconds":%s,"timeout_minutes":null,"timed_out":%s}\n' \
-    "${shard_name}" "${log_name}" "${status}" "${test_exit_code}" "${started_at}" "${completed_at}" "${duration_seconds}" "${timed_out}" > "${timing_file}"
+  printf '{"shard":"%s","log_name":"%s","status":"%s","exit_code":%s,"started_at":"%s","completed_at":"%s","duration_seconds":%s,"timeout_minutes":%s,"timed_out":%s,"headroom_ratio":%s,"capacity_status":"%s","idle_seconds_at_exit":%s}\n' \
+    "${shard_name}" "${log_name}" "${status}" "${test_exit_code}" "${started_at}" "${completed_at}" "${duration_seconds}" \
+    "${timeout_minutes:-null}" "${timed_out}" "${headroom_ratio:-null}" "${capacity_status}" "${idle_seconds_at_exit}" > "${timing_file}"
 fi
 
 {
@@ -172,13 +379,56 @@ fi
   echo "Duration seconds: ${duration_seconds}"
   echo "Exit code: ${test_exit_code}"
   echo "Status: ${status}"
+  echo "Capacity status: ${capacity_status}"
+  echo "Budget used: ${headroom_percent:-n/a}% of ${timeout_minutes:-none}m (warn at $(awk -v w="${headroom_warn_ratio}" 'BEGIN { printf "%.0f", w * 100 }')%)"
+  echo "Idle seconds at exit: ${idle_seconds_at_exit}"
   echo "Timing artifact: ${timing_file}"
 } >> "${log_file}"
 
 cat "${log_file}"
 
+# The HONUA_SHARD_* tokens are the stable, greppable contract consumed by the
+# merge train's timeout classifier (scripts/ci/merge-train/classify-timeout.sh).
+# Keep them literal and on the same line as the annotation.
+case "${capacity_status}" in
+  low_headroom)
+    echo "::warning::HONUA_SHARD_LOW_HEADROOM shard='${shard_name}' used ${duration_seconds}s of its ${timeout_minutes}m test budget (${headroom_percent}%, warn at $(awk -v w="${headroom_warn_ratio}" 'BEGIN { printf "%.0f", w * 100 }')%). This shard passed but has almost no room for the next test routed into it — raise test_timeout_minutes/timeout_minutes or rebalance its filter in .github/ci-shards.json."
+    ;;
+  capacity_exhausted)
+    echo "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='${shard_name}' hit its ${timeout_minutes}m test budget while still producing output ${idle_seconds_at_exit}s ago. This is shard capacity exhaustion, not a hang, and it is not attributable to any single change: raise test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json."
+    ;;
+  hang_suspected)
+    echo "::error::HONUA_SHARD_HANG_SUSPECTED shard='${shard_name}' hit its ${timeout_minutes}m test budget after producing no output for ${idle_seconds_at_exit}s (stall threshold ${stall_seconds}s). Treat this as a genuine hang and investigate the last test in the log tail above."
+    ;;
+esac
+
+if [[ "${status}" == "killed" ]]; then
+  # exit 137 before this script's own SIGKILL deadline (cap + --kill-after
+  # grace): something outside this script SIGKILLed the test host (an OOM kill
+  # is the usual cause). Say so plainly rather than laundering it into a timeout
+  # signal it is not.
+  echo "::error::HONUA_SHARD_KILLED shard='${shard_name}' was SIGKILLed after ${duration_seconds}s, before this runner's own SIGKILL deadline of ${kill_escalation_floor_seconds}s (${timeout_minutes}m budget + ${kill_after_seconds}s grace), so this is not a timeout. Suspect an out-of-memory kill or an external cancellation of the test host."
+fi
+
 if [[ "${timed_out}" == "true" ]]; then
-  echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s). Filter: ${filter}"
+  if [[ "${kill_escalated}" == "true" ]]; then
+    echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s) and had to be SIGKILLed (exit 137): it ignored SIGTERM for the full ${kill_after_seconds}s grace. Filter: ${filter}"
+  else
+    echo "::error::Server test shard '${shard_name}' timed out after ${timeout_minutes} minute(s). Filter: ${filter}"
+  fi
+fi
+
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo "### Server test shard: ${shard_name}"
+    echo
+    echo "- Status: \`${status}\` (exit ${test_exit_code})"
+    echo "- Duration: \`${duration_seconds}s\` of \`${timeout_minutes:-none}m\` budget"
+    echo "- Headroom: \`${capacity_status}\` (\`${headroom_percent:-n/a}%\` used)"
+    if [[ "${kill_escalated}" == "true" ]]; then
+      echo "- Kill escalation: SIGTERM ignored; SIGKILLed after \`${kill_after_seconds}s\`"
+    fi
+  } >> "${GITHUB_STEP_SUMMARY}"
 fi
 
 exit "${test_exit_code}"
