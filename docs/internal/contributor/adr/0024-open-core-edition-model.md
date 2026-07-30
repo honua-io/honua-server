@@ -257,13 +257,36 @@ areas. Decisions, all "gate as declared" (no tier changes):
   `alerts.dwell`/`alerts.threshold` and the remaining channels = Enterprise).
   `Alerts:Edition` is retained **only as a downward operational cap** (nullable,
   default null = license-derived); it can restrict below the license-derived
-  tier but never grants above it. Admin rule mutations blocked by entitlement
-  now return HTTP 402 naming each missing key; `POST /rules/test` gates
-  `alerts.evaluation`.
-- **Output cache (#2998).** `caching.output-cache` (Pro) is gated at process
-  boot (`StartupConfigurationHelpers.IsOutputCacheEntitledAsync`), mirroring the
-  `caching.redis` bootstrap gate including DevGrantEdition-outside-Production
-  (#1787) and the license-content secret resolvers (#1755). When unentitled,
-  `app.UseOutputCache()` is skipped while `AddOutputCache` registration remains,
-  so endpoint `CacheOutput` metadata is inert and Community deployments serve
-  identical, uncached responses.
+  tier but never grants above it. The tier itself (`EffectiveEdition`) comes from
+  the edition the license snapshot declares, not from probing individual keys as
+  tier proxies — signed payloads enumerate entitlement keys independently, so an
+  Enterprise license granting `alerts.threshold` but not `alerts.dwell` must still
+  resolve to Enterprise. Per-key entitlement is enforced separately for each
+  trigger and channel. Admin rule mutations blocked by entitlement now return
+  HTTP 402 naming each missing key; `POST /rules/test` gates `alerts.evaluation`.
+  Like the OIDC gates, these checks read `ILicenseEntitlementService` at the point
+  of use, so a license applied or expired at runtime changes alert behavior
+  without a restart.
+- **Output cache (#2998).** `caching.output-cache` (Pro) is evaluated **live, per
+  request**, not captured at boot. `Program` wires `app.UseOutputCache()` inside
+  an `app.UseWhen(...)` branch whose predicate is
+  `LicenseGate.HasLiveEntitlement(context.RequestServices, FeatureCatalog.OutputCacheKey)`;
+  that helper resolves `ILicenseEntitlementService` from the request container and
+  reads `GetSnapshot().HasEntitlement(...)` on every request. **Applying or expiring
+  a license therefore takes effect without a restart** — a Community process
+  upgraded through `ILicenseManager.ApplyLicenseAsync` starts caching on the next
+  request, and (the direction that matters) a Pro license that lapses at runtime
+  stops serving cached responses immediately, because
+  `FileBackedLicenseService.GetSnapshot` performs the lazy expiry transition and
+  republishes an expired Community snapshot in place. Entries already written to
+  the output-cache store are simply no longer read once the branch stops running;
+  they age out on their own TTL. Unlike the `caching.redis` gate — which must run
+  before DI exists and so consults the bootstrap snapshot helper — this gate needs
+  no boot-time probe: it reads the same runtime `ILicenseEntitlementService` as
+  every other entitlement check, so a `Licensing:DevGrantEdition` grant outside
+  Production (#1787, registered last and therefore winning resolution) and a
+  license loaded through the license-content secret resolvers (#1755) are both
+  honored automatically. The predicate fails closed: a host with no licensing
+  services registered does not cache. `AddOutputCache` registration remains
+  unconditional, so when the branch is skipped the endpoint `CacheOutput` metadata
+  is inert and Community deployments serve identical, uncached responses.
