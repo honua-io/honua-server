@@ -44,6 +44,10 @@ internal static class AlertDeliveryServiceCollectionExtensions
             HttpResiliencePolicies.FastApiDefaults,
             configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
+        // Single outbound-destination guard shared by every HTTP alert sink, so the SSRF check and
+        // its retryable/non-retryable classification are implemented once (#3057).
+        services.TryAddSingleton(_ => new AlertDestinationGuard());
+
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, EmailAlertDeliverySink>();

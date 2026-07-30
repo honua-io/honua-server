@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
@@ -36,6 +37,31 @@ internal static class AlertTestFixtures
     /// </para>
     /// </summary>
     public const string RoutableWebhookBaseUrl = "https://8.8.8.8";
+
+    /// <summary>
+    /// Host-name destination used by the destination-classification tests. It is never resolved by
+    /// live DNS: those tests always supply an injected resolver through
+    /// <see cref="GuardWithUnavailableResolver"/> or <see cref="GuardResolvingTo"/>.
+    /// </summary>
+    public const string HostnameWebhookBaseUrl = "https://alerts.example.test";
+
+    /// <summary>
+    /// Builds a destination guard whose resolver always fails the way a momentarily unavailable
+    /// DNS resolver does, so a sink can be exercised against a transient resolution failure with
+    /// no live DNS involved (#3057).
+    /// </summary>
+    public static AlertDestinationGuard GuardWithUnavailableResolver()
+        => new((_, _) => Task.FromException<IPAddress[]>(new SocketException((int)SocketError.TryAgain)));
+
+    /// <summary>
+    /// Builds a destination guard whose resolver deterministically returns the supplied addresses,
+    /// so a sink can be exercised against a conclusively disallowed (or allowed) destination.
+    /// </summary>
+    public static AlertDestinationGuard GuardResolvingTo(params string[] addresses)
+    {
+        var resolved = addresses.Select(IPAddress.Parse).ToArray();
+        return new AlertDestinationGuard((_, _) => Task.FromResult(resolved));
+    }
 
     public static AlertDispatchItem CreateDispatchItem(
         AlertChannelType channelType,

@@ -59,14 +59,29 @@ public sealed class OutboundHttpUrlValidatorTests
     }
 
     [UnitTest]
-    public void ValidateConfiguration_WithUnresolvableHostname_ReturnsFailure()
+    public void ValidateConfiguration_WithFailingResolver_FailsClosedAsResolutionUnavailable()
     {
         OutboundHttpUrlValidationResult result = OutboundHttpUrlValidator.ValidateConfiguration(
             "https://does-not-resolve.example",
             host => throw new System.Net.Sockets.SocketException());
 
+        result.IsValid.Should().BeFalse("a host that cannot be vetted is still blocked");
+        result.FailureReason.Should().Be(OutboundHttpUrlFailureReason.HostResolutionUnavailable);
+        result.IsHostResolutionUnavailable.Should().BeTrue();
+        result.ErrorMessage.Should().Contain("resolution");
+    }
+
+    [UnitTest]
+    public void ValidateConfiguration_WithMalformedHostname_ReturnsDisallowedAddress()
+    {
+        OutboundHttpUrlValidationResult result = OutboundHttpUrlValidator.ValidateConfiguration(
+            "https://malformed.example",
+            host => throw new ArgumentException("host name too long", nameof(host)));
+
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("unresolvable");
+        result.FailureReason.Should().Be(
+            OutboundHttpUrlFailureReason.DisallowedAddress,
+            "a malformed host name is a permanent property of the URL, not a resolver outage");
     }
 
     [UnitTest]
@@ -77,7 +92,43 @@ public sealed class OutboundHttpUrlValidatorTests
             host => System.Array.Empty<IPAddress>());
 
         result.IsValid.Should().BeFalse();
+        result.FailureReason.Should().Be(OutboundHttpUrlFailureReason.DisallowedAddress);
         result.ErrorMessage.Should().Contain("unresolvable");
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_WithFailingResolver_FailsClosedAsResolutionUnavailable()
+    {
+        var result = await OutboundHttpUrlValidator.ValidateAsync(
+            "https://does-not-resolve.example",
+            (host, cancellationToken) => throw new System.Net.Sockets.SocketException());
+
+        result.IsValid.Should().BeFalse("the destination is never contacted when it cannot be vetted");
+        result.Uri.Should().BeNull();
+        result.FailureReason.Should().Be(OutboundHttpUrlFailureReason.HostResolutionUnavailable);
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_WithHostnameResolvingToPrivateAddress_ReturnsDisallowedAddress()
+    {
+        var result = await OutboundHttpUrlValidator.ValidateAsync(
+            "https://internal.example",
+            (host, cancellationToken) => Task.FromResult<IPAddress[]>([IPAddress.Parse("10.0.0.5")]));
+
+        result.IsValid.Should().BeFalse();
+        result.FailureReason.Should().Be(OutboundHttpUrlFailureReason.DisallowedAddress);
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_WithHostnameResolvingToPublicAddress_ReturnsSuccess()
+    {
+        var result = await OutboundHttpUrlValidator.ValidateAsync(
+            "https://public.example",
+            (host, cancellationToken) => Task.FromResult<IPAddress[]>([IPAddress.Parse("8.8.8.8")]));
+
+        result.IsValid.Should().BeTrue();
+        result.FailureReason.Should().Be(OutboundHttpUrlFailureReason.None);
+        result.Uri!.Host.Should().Be("public.example");
     }
 
     [UnitTest]

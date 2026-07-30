@@ -7,23 +7,67 @@ using System.Net.Sockets;
 namespace Honua.Core.Features.Infrastructure.Validation;
 
 /// <summary>
+/// Why an <see cref="OutboundHttpUrlValidator"/> check failed. The guard fails closed in every
+/// case — the destination is blocked regardless of the reason — but the reason lets callers tell a
+/// permanently disallowed destination apart from one that simply could not be vetted right now,
+/// so a momentary resolver outage can be retried instead of being treated as misconfiguration.
+/// </summary>
+public enum OutboundHttpUrlFailureReason
+{
+    /// <summary>No failure; the URL passed validation.</summary>
+    None = 0,
+
+    /// <summary>The value is not a well-formed absolute URL with an allowed scheme.</summary>
+    InvalidUrl,
+
+    /// <summary>The URL carries embedded credentials.</summary>
+    EmbeddedCredentials,
+
+    /// <summary>
+    /// The destination is a private, loopback, link-local, multicast, or otherwise reserved
+    /// address, or a host name that conclusively resolves to one. Permanent: retrying cannot help.
+    /// </summary>
+    DisallowedAddress,
+
+    /// <summary>
+    /// Host name resolution failed, so the destination could not be vetted on this attempt. The
+    /// destination is still blocked (fail closed), but the condition is indeterminate and usually
+    /// transient — a later attempt may resolve and be admitted or conclusively rejected.
+    /// </summary>
+    HostResolutionUnavailable
+}
+
+/// <summary>
 /// Outcome of an <see cref="OutboundHttpUrlValidator"/> check, exposing the parsed URI on success
 /// or a human-readable error suffix on failure.
 /// </summary>
 /// <param name="IsValid">Whether the URL passed all validation rules.</param>
 /// <param name="Uri">The parsed URI when <paramref name="IsValid"/> is <see langword="true"/>; otherwise <see langword="null"/>.</param>
 /// <param name="ErrorMessage">A short, sentence-fragment error suffix (e.g., "must be a valid HTTPS URL.") suitable for appending to a property name.</param>
-public readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
+/// <param name="FailureReason">Classification of the failure; <see cref="OutboundHttpUrlFailureReason.None"/> on success.</param>
+public readonly record struct OutboundHttpUrlValidationResult(
+    bool IsValid,
+    Uri? Uri,
+    string? ErrorMessage,
+    OutboundHttpUrlFailureReason FailureReason = OutboundHttpUrlFailureReason.None)
 {
+    /// <summary>
+    /// Indicates that the destination could not be vetted because host name resolution failed.
+    /// The destination is still blocked; the condition is indeterminate rather than permanent.
+    /// </summary>
+    public bool IsHostResolutionUnavailable
+        => FailureReason == OutboundHttpUrlFailureReason.HostResolutionUnavailable;
+
     /// <summary>
     /// Creates a successful validation result for the supplied parsed URI.
     /// </summary>
     public static OutboundHttpUrlValidationResult Success(Uri uri) => new(true, uri, null);
 
     /// <summary>
-    /// Creates a failed validation result with the supplied error message.
+    /// Creates a failed validation result with the supplied error message and classification.
     /// </summary>
-    public static OutboundHttpUrlValidationResult Failure(string message) => new(false, null, message);
+    public static OutboundHttpUrlValidationResult Failure(string message, OutboundHttpUrlFailureReason reason)
+        => new(false, null, message, reason);
 }
 
 /// <summary>
@@ -35,6 +79,20 @@ public static class OutboundHttpUrlValidator
     private const string EmbeddedCredentialsMessage = "must not include embedded credentials.";
     private const string DisallowedAddressMessage =
         "resolves to a private, loopback, or unresolvable network address, which is not allowed.";
+    private const string HostResolutionUnavailableMessage =
+        "could not be verified because host name resolution is currently unavailable; the destination was not contacted.";
+
+    /// <summary>
+    /// Result of vetting a destination host. Kept separate from the address predicate so that an
+    /// indeterminate resolver failure is not collapsed into the same "disallowed" answer as a host
+    /// that conclusively resolves to a reserved address.
+    /// </summary>
+    private enum HostVettingOutcome
+    {
+        Allowed,
+        Disallowed,
+        ResolutionUnavailable
+    }
 
     /// <summary>
     /// Asynchronously validates an outbound HTTPS URL, resolving the host and rejecting any
@@ -77,10 +135,17 @@ public static class OutboundHttpUrlValidator
     public static OutboundHttpUrlValidationResult ValidateConfiguration(string url, bool allowPrivateNetworks)
         => ValidateConfiguration(url, ResolveHostAddresses, allowPrivateNetworks);
 
-    internal static Task<OutboundHttpUrlValidationResult> ValidateAsync(
+    /// <summary>
+    /// Asynchronously validates an outbound HTTPS URL using the supplied host-address resolver
+    /// instead of a direct DNS lookup. The resolver only supplies candidate addresses; every
+    /// address is still vetted against the same private/loopback/reserved rules, and a resolver
+    /// failure still blocks the destination. Intended for callers that own a pinned or cached
+    /// resolver and for hermetic tests that must not depend on live DNS.
+    /// </summary>
+    public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
         string url,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
         => ValidateAsync(url, hostAddressResolver, allowPrivateNetworks: false, cancellationToken);
 
     internal static async Task<OutboundHttpUrlValidationResult> ValidateAsync(
@@ -94,10 +159,13 @@ public static class OutboundHttpUrlValidator
             return failure;
         }
 
-        if (!allowPrivateNetworks &&
-            await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
+        if (!allowPrivateNetworks)
         {
-            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+            var outcome = await VetHostAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false);
+            if (outcome != HostVettingOutcome.Allowed)
+            {
+                return CreateHostFailure(outcome);
+            }
         }
 
         return OutboundHttpUrlValidationResult.Success(uri);
@@ -118,13 +186,30 @@ public static class OutboundHttpUrlValidator
             return failure;
         }
 
-        if (!allowPrivateNetworks && IsPrivateOrUnresolvableAddress(uri, hostAddressResolver))
+        if (!allowPrivateNetworks)
         {
-            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+            var outcome = VetHost(uri, hostAddressResolver);
+            if (outcome != HostVettingOutcome.Allowed)
+            {
+                return CreateHostFailure(outcome);
+            }
         }
 
         return OutboundHttpUrlValidationResult.Success(uri);
     }
+
+    /// <summary>
+    /// Maps a non-allowed host vetting outcome onto the failure message and classification.
+    /// Both outcomes block the destination; only the classification differs.
+    /// </summary>
+    private static OutboundHttpUrlValidationResult CreateHostFailure(HostVettingOutcome outcome)
+        => outcome == HostVettingOutcome.ResolutionUnavailable
+            ? OutboundHttpUrlValidationResult.Failure(
+                HostResolutionUnavailableMessage,
+                OutboundHttpUrlFailureReason.HostResolutionUnavailable)
+            : OutboundHttpUrlValidationResult.Failure(
+                DisallowedAddressMessage,
+                OutboundHttpUrlFailureReason.DisallowedAddress);
 
     private static bool TryValidateBaseUri(
         string url,
@@ -135,13 +220,17 @@ public static class OutboundHttpUrlValidator
         if (!Uri.TryCreate(url, UriKind.Absolute, out uri!) ||
             !IsAllowedScheme(uri, allowPrivateNetworks))
         {
-            failure = OutboundHttpUrlValidationResult.Failure(InvalidHttpsUrlMessage);
+            failure = OutboundHttpUrlValidationResult.Failure(
+                InvalidHttpsUrlMessage,
+                OutboundHttpUrlFailureReason.InvalidUrl);
             return false;
         }
 
         if (!string.IsNullOrWhiteSpace(uri.UserInfo))
         {
-            failure = OutboundHttpUrlValidationResult.Failure(EmbeddedCredentialsMessage);
+            failure = OutboundHttpUrlValidationResult.Failure(
+                EmbeddedCredentialsMessage,
+                OutboundHttpUrlFailureReason.EmbeddedCredentials);
             return false;
         }
 
@@ -149,7 +238,9 @@ public static class OutboundHttpUrlValidator
         // opt-in deliberately permits it for trusted operator-configured destinations.
         if (!allowPrivateNetworks && (uri.IsLoopback || IsLocalhostHostName(uri.Host)))
         {
-            failure = OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+            failure = OutboundHttpUrlValidationResult.Failure(
+                DisallowedAddressMessage,
+                OutboundHttpUrlFailureReason.DisallowedAddress);
             return false;
         }
 
@@ -171,14 +262,23 @@ public static class OutboundHttpUrlValidator
     private static IPAddress[] ResolveHostAddresses(string host)
         => Dns.GetHostAddresses(host);
 
-    private static async Task<bool> IsPrivateOrUnresolvableAddressAsync(
+    /// <summary>
+    /// Vets a destination host. Fails closed: anything other than a conclusively public address
+    /// blocks the destination. A resolver <see cref="SocketException"/> is reported as
+    /// <see cref="HostVettingOutcome.ResolutionUnavailable"/> because the resolver — not the
+    /// destination — is the thing that failed, and the answer is unknown rather than negative.
+    /// An <see cref="ArgumentException"/> means the host name itself is malformed (for example
+    /// longer than the DNS limit), which is a permanent property of the URL, so it stays
+    /// <see cref="HostVettingOutcome.Disallowed"/>.
+    /// </summary>
+    private static async Task<HostVettingOutcome> VetHostAsync(
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
     {
         if (IPAddress.TryParse(uri.Host, out var literalAddress))
         {
-            return IsPrivateOrReservedAddress(literalAddress);
+            return ToOutcome(IsPrivateOrReservedAddress(literalAddress));
         }
 
         IPAddress[] addresses;
@@ -188,23 +288,26 @@ public static class OutboundHttpUrlValidator
         }
         catch (SocketException)
         {
-            return true;
+            return HostVettingOutcome.ResolutionUnavailable;
         }
         catch (ArgumentException)
         {
-            return true;
+            return HostVettingOutcome.Disallowed;
         }
 
-        return ContainsPrivateOrReservedAddress(addresses);
+        return ToOutcome(ContainsPrivateOrReservedAddress(addresses));
     }
 
-    private static bool IsPrivateOrUnresolvableAddress(
+    /// <summary>
+    /// Synchronous counterpart to <see cref="VetHostAsync"/>, with identical fail-closed semantics.
+    /// </summary>
+    private static HostVettingOutcome VetHost(
         Uri uri,
         Func<string, IPAddress[]> hostAddressResolver)
     {
         if (IPAddress.TryParse(uri.Host, out var literalAddress))
         {
-            return IsPrivateOrReservedAddress(literalAddress);
+            return ToOutcome(IsPrivateOrReservedAddress(literalAddress));
         }
 
         IPAddress[] addresses;
@@ -214,16 +317,23 @@ public static class OutboundHttpUrlValidator
         }
         catch (SocketException)
         {
-            return true;
+            return HostVettingOutcome.ResolutionUnavailable;
         }
         catch (ArgumentException)
         {
-            return true;
+            return HostVettingOutcome.Disallowed;
         }
 
-        return ContainsPrivateOrReservedAddress(addresses);
+        return ToOutcome(ContainsPrivateOrReservedAddress(addresses));
     }
 
+    private static HostVettingOutcome ToOutcome(bool isPrivateOrReserved)
+        => isPrivateOrReserved ? HostVettingOutcome.Disallowed : HostVettingOutcome.Allowed;
+
+    /// <summary>
+    /// An empty resolver result is a conclusive answer with no usable address, so it is treated as
+    /// a disallowed destination rather than an unavailable resolver.
+    /// </summary>
     private static bool ContainsPrivateOrReservedAddress(IPAddress[] addresses)
         => addresses.Length == 0 || addresses.Any(IsPrivateOrReservedAddress);
 
