@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
+using Honua.Geoprocessing.Execution;
 
 namespace Honua.Geoprocessing;
 
@@ -231,6 +232,22 @@ internal static partial class ProcessPlanValidator
                 unknownInputs.Add(inputName);
                 if (string.Equals(step.ProcessId, "sink.external-postgis", StringComparison.Ordinal)
                     && string.Equals(inputName, "connectionString", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // The submit-time layer gate stamps the requester-authorized dataset layer onto
+                // the step and authoring surfaces persist it with the plan, so a scheduled
+                // workflow's stored plan legitimately carries this input. It is deliberately not
+                // a catalog parameter -- it is server-owned, not caller-supplied -- and catalog
+                // validation runs BEFORE the gate, so rejecting it here would fail every
+                // correctly pinned workflow step (#3043 review).
+                //
+                // Admitting it is not a forgery hole: GeoprocessingLayerAccessGuard strips any
+                // caller-supplied value before writing the layer it actually authorized, so a
+                // value that survives validation is overwritten rather than trusted.
+                if (string.Equals(step.ProcessId, EnrichmentJobExecutor.HandledProcessId, StringComparison.Ordinal)
+                    && string.Equals(inputName, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -744,7 +761,14 @@ internal static partial class ProcessPlanValidator
                 "intersects, point-in-polygon, within, within-distance, nearest-neighbor", violations);
         }
 
-        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+        // Only validate 'predicate' when it can actually take effect. EnrichmentJobExecutor's
+        // BuildPlan reads it solely in its `case ""` branch — i.e. when 'method' is absent — so
+        // 'method' genuinely takes precedence, as the published contract says and as the
+        // wantsDistance computation below already assumes. Validating it unconditionally rejected
+        // plans the executor would have run happily, and made an async submission fail where the
+        // equivalent synchronous POST /api/enrich request succeeded (#3043 review).
+        if (!hasMethod
+            && step.Inputs.TryGetValue("predicate", out var predicateRaw)
             && !string.IsNullOrWhiteSpace(predicateRaw)
             && !SpatialJoinPredicateValues.Contains(predicateRaw.Trim()))
         {

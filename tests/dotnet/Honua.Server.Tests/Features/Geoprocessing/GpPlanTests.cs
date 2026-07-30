@@ -112,6 +112,70 @@ public sealed class GpPlanTests
     }
 
     [UnitTest]
+    public void Build_EnrichmentWithGateOwnedLayerPin_IsAccepted()
+    {
+        // The submit-time layer gate stamps authorizedDatasetLayerId onto the step and authoring
+        // surfaces persist it with the plan, so a scheduled workflow's stored plan carries it.
+        // Catalog validation runs BEFORE the gate, so treating this server-owned input as an
+        // unknown parameter rejected every correctly pinned workflow step (#3043 review).
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["layerId"] = "7",
+            ["datasetId"] = "demographics",
+            ["authorizedDatasetLayerId"] = "42",
+        };
+
+        var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+        plan.Should().NotBeNull();
+        plan!.Errors.Should().NotContain(
+            e => e.Contains("UNKNOWN_PARAMETER") && e.Contains("authorizedDatasetLayerId"),
+            "the gate-owned pin is server-written, not a caller parameter");
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentMethodWithLegacyPredicate_IsAccepted()
+    {
+        // EnrichmentJobExecutor.BuildPlan reads 'predicate' only when 'method' is absent, so
+        // 'method' takes precedence per the published contract. Validating 'predicate'
+        // unconditionally rejected plans the executor runs happily, and made an async submission
+        // fail where the equivalent synchronous POST /api/enrich succeeded (#3043 review).
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["layerId"] = "7",
+            ["datasetId"] = "demographics",
+            ["method"] = "point-in-polygon",
+            ["predicate"] = "legacy-ignored-value",
+        };
+
+        var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+        plan.Should().NotBeNull();
+        plan!.Errors.Should().NotContain(
+            e => e.Contains("predicate"),
+            "'method' takes precedence, so an ignored 'predicate' must not fail submission");
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentInvalidPredicateWithoutMethod_IsStillRejected()
+    {
+        // The precedence relaxation must not blanket-disable predicate validation: with no
+        // 'method', the executor DOES read 'predicate', so a bad value must still fail.
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["layerId"] = "7",
+            ["datasetId"] = "demographics",
+            ["predicate"] = "not-a-predicate",
+        };
+
+        var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+        plan.Should().NotBeNull();
+        plan!.IsValid.Should().BeFalse();
+        plan.Errors.Should().Contain(e => e.Contains("predicate"));
+    }
+
+    [UnitTest]
     public void GraphValidator_PlanWithCycle_IsRejected()
     {
         // The CLI plan path delegates structural validation to the SAME shared
