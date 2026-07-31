@@ -149,7 +149,17 @@ internal sealed class GeoprocessingJobAuthorizer
             // never consulted, and a mutating workflow could then sink that data
             // (honua-server#3046 review). Checked before the grant evaluation because a scope
             // denial is a property of the token and needs no catalog lookup.
-            var operatorOperation = isRead ? OperatorOperation.Read : OperatorOperation.Update;
+            // A layer MUTATION here is performed by the process, not by the caller directly, so
+            // the scope that delegates it is the mutating-process scope the tier gate already
+            // required — not OperatorOperation.Update, which OperatorScopeCatalog maps to no
+            // scope except honua.mcp.full. Mapping it to Update made every normally delegated
+            // mutating token fail this gate after passing the tier gate, so
+            // data-management.calculate-field could not run with the advertised
+            // honua.mcp.execute.mutating scope (honua-server#3046 review). Reads stay on Read,
+            // which honua.mcp.read grants, so an execute-only token still cannot read a layer.
+            var operatorOperation = isRead
+                ? OperatorOperation.Read
+                : OperatorOperation.ExecuteMutatingProcess;
             var scopeDecision = _scopeAuthorizer.Evaluate(
                 principal, OperatorResourceType.Catalog, operatorOperation);
             if (!scopeDecision.IsAllowed)

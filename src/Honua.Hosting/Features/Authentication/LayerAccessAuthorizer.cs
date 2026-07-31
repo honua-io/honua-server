@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Validation;
@@ -97,15 +98,53 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         }
 
         var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = LayerValidationHelpers.ResolveV2TripleForTenant(
-            snapshot,
-            layerId,
-            requiredProtocol: null,
-            tenantId,
-            applyTenantScope);
 
-        if (publication is null || resource is null ||
-            LayerValidationHelpers.IsRetired(publication) || LayerValidationHelpers.IsRetired(resource))
+        // A plan's layer id can resolve two different ways, and the executor does not
+        // necessarily use the one this gate would pick. `source.honua-layer` hands the id
+        // straight to IStreamingFeatureStore.StreamFeaturesAsync, whose security lookup keys on
+        // ResourcesByStorageLayerId, while the publication triple resolves it as a
+        // service-local publication index. Where a resource's storage layer id differs from its
+        // publication index, authorizing only the publication could clear a job that then reads
+        // a DIFFERENT, restricted storage layer (honua-server#3046 review).
+        //
+        // Both candidates are therefore evaluated and BOTH must allow. Requiring the
+        // intersection is the only reading that is correct without knowing which index the
+        // executor for this particular process uses, and it can only ever deny more than the
+        // previous behaviour, never less.
+        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>(2);
+
+        var (publication, publicationResource, publicationService) =
+            LayerValidationHelpers.ResolveV2TripleForTenant(
+                snapshot,
+                layerId,
+                requiredProtocol: null,
+                tenantId,
+                applyTenantScope);
+
+        if (publication is not null && publicationResource is not null &&
+            !LayerValidationHelpers.IsRetired(publication) && !LayerValidationHelpers.IsRetired(publicationResource))
+        {
+            candidates.Add((publicationResource, publicationService));
+        }
+
+        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var storageResource)
+            && !LayerValidationHelpers.IsRetired(storageResource)
+            && !candidates.Any(candidate => string.Equals(
+                candidate.Resource.Metadata.Id, storageResource.Metadata.Id, StringComparison.Ordinal)))
+        {
+            // The publication that owns this resource supplies the service context the decision
+            // core needs; a resource with no live publication is still authorized, just without
+            // service-level policy.
+            var storagePublication = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
+                .FirstOrDefault(candidate => !LayerValidationHelpers.IsRetired(candidate));
+            var storageService = storagePublication is null
+                ? null
+                : snapshot.Index.ServicesById.GetValueOrDefault(storagePublication.ServiceId);
+
+            candidates.Add((storageResource, storageService));
+        }
+
+        if (candidates.Count == 0)
         {
             // Unresolvable layer ids (unknown, retired, or hidden from the caller's tenant)
             // return the SAME denial as a permission failure so the check cannot be used to
@@ -113,15 +152,25 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             return AccessDecision.Forbidden(DenialReason);
         }
 
-        return await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
-            services,
-            principal,
-            tenantId,
-            applyTenantScope,
-            resource,
-            service,
-            operation,
-            cancellationToken).ConfigureAwait(false);
+        foreach (var (candidateResource, candidateService) in candidates)
+        {
+            var decision = await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
+                services,
+                principal,
+                tenantId,
+                applyTenantScope,
+                candidateResource,
+                candidateService,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!decision.IsAllowed)
+            {
+                return decision;
+            }
+        }
+
+        return AccessDecision.Allowed();
     }
 
     /// <summary>
