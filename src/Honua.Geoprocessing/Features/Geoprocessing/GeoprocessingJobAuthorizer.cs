@@ -142,6 +142,30 @@ internal sealed class GeoprocessingJobAuthorizer
             var operation = ToAuthorizationOperation(reference.Access);
             var isRead = operation == AuthorizationOperation.Query;
 
+            // OAuth scope narrowing applies to the DERIVED operation too, not just the baseline
+            // process gate. Without it, an execute-only delegated token (honua.mcp.execute with
+            // no honua.mcp.read) could run a layer-sourced plan purely on the strength of the
+            // underlying principal's roles — the token's deliberate lack of read authority was
+            // never consulted, and a mutating workflow could then sink that data
+            // (honua-server#3046 review). Checked before the grant evaluation because a scope
+            // denial is a property of the token and needs no catalog lookup.
+            var operatorOperation = isRead ? OperatorOperation.Read : OperatorOperation.Update;
+            var scopeDecision = _scopeAuthorizer.Evaluate(
+                principal, OperatorResourceType.Catalog, operatorOperation);
+            if (!scopeDecision.IsAllowed)
+            {
+                GeoprocessingServiceLog.AuthorizationScopeDenied(
+                    _logger, OperatorResourceType.Catalog.ToString(), operatorOperation.ToString());
+                throw new GeoprocessingAuthorizationException(
+                    requiresAuthentication: false,
+                    scopeDecision.Reason
+                        ?? $"The access token's scopes do not permit '{operatorOperation}' on "
+                        + $"{OperatorResourceType.Catalog}.",
+                    OperatorResourceType.Catalog,
+                    operatorOperation,
+                    AuthorizationDenialReason.InsufficientScope);
+            }
+
             var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
                 principal,
                 reference.LayerId,
@@ -166,7 +190,7 @@ internal sealed class GeoprocessingJobAuthorizer
                     : $"You do not have permission to {DescribeAccess(reference.Access)} layer "
                       + $"{reference.LayerId} referenced by step '{reference.StepId}'.",
                 OperatorResourceType.Catalog,
-                isRead ? OperatorOperation.Read : OperatorOperation.Update,
+                operatorOperation,
                 AuthorizationDenialReason.InsufficientGrant);
         }
     }
