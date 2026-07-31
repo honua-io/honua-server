@@ -43,8 +43,10 @@ public interface IWorkflowJobExecutor
     /// engine passes the RUN REQUESTER's snapshot here, because <paramref name="principal"/> is
     /// the synthesized orchestrator identity carrying <c>role=admin</c> and capturing from it
     /// would give a step job broader row/field visibility than the operator who scheduled the
-    /// run. <see langword="null"/> captures from <paramref name="principal"/>, which is correct
-    /// wherever the principal IS the submitter.
+    /// run. <see langword="null"/> means the run record predates the snapshot field;
+    /// implementations MUST refuse the submission rather than fall back to capturing from
+    /// <paramref name="principal"/>, which would launder admin visibility onto every step of a
+    /// pre-upgrade run. Such runs must be resubmitted.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<ExecutionJobRecord> SubmitJobAsync(

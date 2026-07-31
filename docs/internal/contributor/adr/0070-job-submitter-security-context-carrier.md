@@ -101,12 +101,27 @@ otherwise pin the wrong identity:
   `IWorkflowJobExecutor.SubmitJobAsync`'s `submitterSecurityContext` parameter, so the
   orchestrator identity gates *dispatch* while the requester's identity gates *visibility*.
 
+Both lanes **inherit** their snapshot from a durable record rather than capturing it from the
+principal in hand, so a *missing* inherited snapshot must be distinguished from "no snapshot
+argument supplied". `SubmitJobCoreAsync` takes an explicit `inheritsSubmitterSecurityContext`
+flag for exactly this reason: an ordinary adapter captures live from the submitter, while an
+inheriting lane whose record predates the field is REFUSED
+(`GeoprocessingAuthorizationException`) at submit time. A `??=` fallback here would be a
+privilege escalation, not a convenience — the workflow lane would recapture from the
+`role=admin` orchestrator, and the approval lane from the name-only resume principal whose zero
+role claims match zero RLS policies and therefore resolve to *no* row filter. Either fallback
+yields a non-null snapshot that sails past the fail-closed guards at the read seam, so the
+refusal has to happen at submit time.
+
 ## Consequences
 
 - Job output for RLS/field-mask-restricted callers shrinks to match the synchronous
   surfaces. This is a behavioral tightening and belongs in release notes.
 - Jobs queued before the upgrade have no snapshot and fail on their first catalog-layer
   read instead of returning unrestricted data. They must be resubmitted.
+- Workflow runs and approval proposals created before the upgrade are refused at *submit*
+  time (the step submission or the approval resume fails) rather than at first read, because
+  their snapshot is inherited and absent. They must be resubmitted too.
 - Policy changes take effect on already-queued jobs, because the predicate and mask are
   re-derived per read.
 - Out-of-process backends (GDAL worker, AWS Batch) are unaffected: catalog-layer reads go

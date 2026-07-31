@@ -413,9 +413,8 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
         var database = multiplexer.GetDatabase();
-        foreach (var endpoint in multiplexer.GetEndPoints())
+        foreach (var server in multiplexer.GetEndPoints().Select(endpoint => multiplexer.GetServer(endpoint)))
         {
-            var server = multiplexer.GetServer(endpoint);
             if (!server.IsConnected || server.IsReplica)
             {
                 continue;

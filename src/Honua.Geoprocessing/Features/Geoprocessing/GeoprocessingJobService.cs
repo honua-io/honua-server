@@ -293,7 +293,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         CancellationToken cancellationToken = default)
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
-            submitterSecurityContext: null, cancellationToken);
+            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false, cancellationToken);
 
     public Task<ExecutionJobRecord> SubmitJobWithSecurityContextAsync(
         AnalysisPlan plan,
@@ -304,7 +304,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         CancellationToken cancellationToken = default)
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
-            submitterSecurityContext, cancellationToken);
+            submitterSecurityContext, inheritsSubmitterSecurityContext: true, cancellationToken);
 
     /// <summary>
     /// Shared submit pipeline for both the caller-initiated submit path and the
@@ -321,15 +321,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata,
         bool resumingApproved,
-        JobSecurityContext? submitterSecurityContext = null,
+        JobSecurityContext? submitterSecurityContext,
+        bool inheritsSubmitterSecurityContext,
         CancellationToken cancellationToken = default)
     {
-        // Capture the submitter's row/field security identity once, before any gate can
+        // Resolve the submitter's row/field security identity once, before any gate can
         // divert the submission onto the approval lane (#3068). The approval lane persists
         // it on the proposal, so a job resumed hours later still resolves the ORIGINAL
         // submitter's RLS predicate and field mask rather than the identity-only principal
         // the resume path reconstructs from Audit.RequestedBy.
-        submitterSecurityContext ??= JobSecurityContextCapture.Capture(principal, _rbacOptions);
+        var resolvedSecurityContext = ResolveSubmitterSecurityContext(
+            principal, submitterSecurityContext, inheritsSubmitterSecurityContext);
 
         // Centralize submit-path authorization here so every adapter (GPServer,
         // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
@@ -412,7 +414,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             await EnsureApprovedAsync(
                 principal, plan, idempotencyKey, protocolMetadata, isCustomCode,
-                submitterSecurityContext, cancellationToken)
+                resolvedSecurityContext, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -512,7 +514,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 // RLS predicate and an EMPTY field mask and hand a restricted caller
                 // unrestricted data through a job artifact. Persisted on the durable record, so
                 // it survives a restart and is available to whichever node dequeues the job.
-                SubmitterSecurityContext = submitterSecurityContext
+                SubmitterSecurityContext = resolvedSecurityContext
             },
             Spec = spec
         };
@@ -1005,6 +1007,57 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Resolves the submitter snapshot to pin on the job, distinguishing the two cases a bare
+    /// <c>??=</c> conflated (#3068 review follow-up).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="false"/> the caller IS the submitter
+    /// (every ordinary adapter: GPServer, OGC Processes, MCP, AnalysisContent run/rerun), so
+    /// capturing live from <paramref name="principal"/> is exactly right.
+    /// </para>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="true"/> the snapshot must come from a
+    /// durable record written at the ORIGINAL submission — a workflow run's
+    /// <c>Audit.SubmitterSecurityContext</c>, or an approval proposal's persisted payload — and
+    /// <paramref name="principal"/> is a synthetic stand-in that must never be captured from.
+    /// Falling back to capture here is a privilege escalation, not a convenience: the workflow
+    /// principal is the orchestrator identity carrying <c>role=admin</c> (every step job would
+    /// read with ADMIN row/field visibility), and the approval-resume principal carries only a
+    /// name (zero role claims match zero RLS policies, and the row-level security filter source
+    /// returns no filter when no policy matches — an UNRESTRICTED read). Both produce a
+    /// non-null snapshot that sails past the missing-snapshot
+    /// guards at the read seam, so the refusal has to happen here.
+    /// </para>
+    /// <para>
+    /// This is reachable only for records persisted BEFORE the snapshot field existed. Those
+    /// workflow runs and approval proposals must be resubmitted; the PR's release-impact section
+    /// documents it.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GeoprocessingAuthorizationException">
+    /// Thrown when an inherited snapshot is required but absent.
+    /// </exception>
+    private JobSecurityContext ResolveSubmitterSecurityContext(
+        ClaimsPrincipal principal,
+        JobSecurityContext? inherited,
+        bool inherits)
+    {
+        if (!inherits)
+        {
+            return JobSecurityContextCapture.Capture(principal, _rbacOptions);
+        }
+
+        return inherited ?? throw new GeoprocessingAuthorizationException(
+            requiresAuthentication: false,
+            "This submission inherits its row/field security identity from a record that predates "
+            + "the submitter security context, so the original submitter's row-level security and "
+            + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
+            OperatorResourceType.Process,
+            OperatorOperation.Execute);
+    }
+
     public async Task<ExecutionJobRecord> ResumeApprovedJobAsync(
         GeoprocessExecutionPayload payload,
         CancellationToken cancellationToken = default)
@@ -1026,9 +1079,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 resumingApproved: true,
                 // Restore the ORIGINAL submitter's row/field security identity from the
                 // proposal (#3068). The reconstructed resume principal carries only the
-                // submitter's name, so re-capturing from it would pin an empty role set and
-                // silently drop every RLS predicate and field mask on the resumed job.
+                // submitter's name, so re-capturing from it would pin an empty role set,
+                // match zero RLS policies, and hand back an UNRESTRICTED read. Marked
+                // inherited so a proposal persisted before the snapshot existed is REFUSED
+                // rather than silently recaptured from that name-only principal.
                 submitterSecurityContext: payload.SubmitterSecurityContext,
+                inheritsSubmitterSecurityContext: true,
                 cancellationToken)
             .ConfigureAwait(false);
     }

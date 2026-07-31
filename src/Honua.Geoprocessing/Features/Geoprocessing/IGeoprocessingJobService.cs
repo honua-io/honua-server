@@ -39,8 +39,13 @@ internal interface IGeoprocessingJobService
     /// <param name="principal">The principal the submission's authorization gates evaluate against.</param>
     /// <param name="protocolMetadata">Protocol metadata for the submission.</param>
     /// <param name="submitterSecurityContext">
-    /// The row/field security identity to pin on the job. When <see langword="null"/> the
-    /// snapshot is captured from <paramref name="principal"/>.
+    /// The row/field security identity to pin on the job, inherited from the durable record
+    /// written at the ORIGINAL submission. <see langword="null"/> means that record predates the
+    /// snapshot field, and the submission is REFUSED with
+    /// <see cref="GeoprocessingAuthorizationException"/> — it is never recaptured from
+    /// <paramref name="principal"/>, which on this entrypoint is a synthetic orchestrator
+    /// identity carrying <c>role=admin</c> and would launder ADMIN row/field visibility onto the
+    /// job. Callers where the principal IS the submitter use <see cref="SubmitJobAsync"/>.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>

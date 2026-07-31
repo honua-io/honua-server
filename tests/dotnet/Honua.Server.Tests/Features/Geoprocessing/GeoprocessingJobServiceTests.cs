@@ -637,15 +637,106 @@ public sealed class GeoprocessingJobServiceTests
             Plan = CreateDeleteFeaturesPlan(),
             IdempotencyKey = "idem-resume",
             RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
         };
 
         var job = await _sut.ResumeApprovedJobAsync(payload);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Audit.RequestedBy.Should().Be("subject-123");
+
+        // The resumed job carries the ORIGINAL submitter's snapshot, not one recaptured from
+        // the name-only resume principal.
+        job.Audit.SubmitterSecurityContext.Should().BeSameAs(payload.SubmitterSecurityContext);
         await _jobStore.Received().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_ProposalWithoutSubmitterSecurityContext_IsRefused()
+    {
+        // A proposal persisted BEFORE the snapshot field existed cannot reconstruct the original
+        // submitter's RLS predicate or field mask. Recapturing from the resume principal would
+        // pin a name-only identity whose zero role claims match zero RLS policies, and "no
+        // matching policy" resolves to NO row filter — an unrestricted read. Fail closed
+        // instead; the proposal must be resubmitted.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-legacy",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = null,
+        };
+
+        var act = async () => await _sut.ResumeApprovedJobAsync(payload);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*predates the submitter security context*");
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_NullSnapshot_IsRefusedRatherThanCapturedFromPrincipal()
+    {
+        // The workflow reconcile loop reaches this entrypoint with the synthesized orchestrator
+        // principal (role=admin). For a run created before Audit.SubmitterSecurityContext
+        // existed the snapshot is null, and capturing from that principal would pin ADMIN
+        // row/field visibility onto every step of a pre-upgrade run.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+
+        var act = async () => await _sut.SubmitJobWithSecurityContextAsync(
+            CreateDeleteFeaturesPlan(), null, orchestratorPrincipal, null, null);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*predates the submitter security context*");
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_SuppliedSnapshot_IsPinnedVerbatim()
+    {
+        // The counterpart to the refusal above: when the run DOES carry a snapshot it is pinned
+        // as-is, never re-derived from the orchestrator principal.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+        var inherited = CreateSubmitterSecurityContext();
+
+        var job = await _sut.SubmitJobWithSecurityContextAsync(
+            CreateDeleteFeaturesPlan(), null, orchestratorPrincipal, null, inherited);
+
+        job.Audit.SubmitterSecurityContext.Should().BeSameAs(inherited);
+        job.Audit.SubmitterSecurityContext!.Claims.Should().NotContain(
+            claim => claim.Value == "admin",
+            "the orchestrator's admin role must never leak onto a step job's snapshot");
+    }
+
+    private static JobSecurityContext CreateSubmitterSecurityContext()
+        => new(
+            "subject-123",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
 
     [UnitTest]
     [Operation(Operations.Create)]
