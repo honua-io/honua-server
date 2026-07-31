@@ -386,7 +386,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             var members = await _redisDb!.SortedSetRangeByRankAsync(IndexKey, 0, BatchSize - 1, Order.Ascending).ConfigureAwait(false);
             if (members.Length == 0)
             {
-                return 0;
+                return await NothingRetainedAsync().ConfigureAwait(false);
             }
 
             remaining -= members.Length;
@@ -426,7 +426,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             if (members.Length < BatchSize)
             {
                 // The whole index was tombstones: nothing is retained.
-                return 0;
+                return await NothingRetainedAsync().ConfigureAwait(false);
             }
         }
 
@@ -438,6 +438,29 @@ internal sealed class InMemoryFeatureChangeEventStore(
         // above every real cursor, which classifies every resume cursor as expired and forces
         // a fresh snapshot until the sweep can see live payloads again.
         return long.MaxValue;
+    }
+
+    /// <summary>
+    /// The answer when the walk finds NO live payload: 0 only if the stream genuinely never
+    /// advanced, otherwise <see cref="long.MaxValue"/>.
+    /// </summary>
+    /// <remarks>
+    /// "Index empty" and "every event expired" are indistinguishable from the index alone once
+    /// the tombstones are pruned, and reporting 0 for the second case reads as "a store nobody
+    /// has written to" — replayable from any cursor. A client resuming an old cursor then
+    /// received neither the missing deltas nor a replacement snapshot (honua-server#3038
+    /// review). <c>CursorKey</c> is the durable monotonic counter the append script bumps; it
+    /// carries no per-event TTL, so it survives the payloads and is the evidence that the
+    /// stream once advanced.
+    /// </remarks>
+    private async Task<long> NothingRetainedAsync()
+    {
+        var counter = await _redisDb!.StringGetAsync(CursorKey).ConfigureAwait(false);
+        var advanced = counter.HasValue
+            && long.TryParse(counter.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var issued)
+            && issued > 0;
+
+        return advanced ? long.MaxValue : 0;
     }
 
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(

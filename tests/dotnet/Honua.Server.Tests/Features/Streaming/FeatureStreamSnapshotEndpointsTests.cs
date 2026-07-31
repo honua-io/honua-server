@@ -586,6 +586,12 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             baseline.Features.Should().HaveCount(1, "the cap admits exactly one feature");
             baseline.End.GetProperty("complete").GetBoolean().Should().BeFalse(
                 "ids beyond the emitted page were never read, so the baseline is not authoritative");
+
+            // A truncated baseline must not become a resumable checkpoint either: the features
+            // it omitted did not change, so no later delta will ever mention them and a delta
+            // resume from this cursor would strand the client permanently (#3038 review).
+            baseline.EventIds.Should().OnlyContain(id => id == null,
+                "no frame of an incomplete snapshot may publish a resumable SSE id");
         }
         finally
         {

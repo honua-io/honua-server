@@ -63,8 +63,9 @@ internal static partial class FeatureStreamEndpoints
     /// Writes snapshot frames as SSE events.
     /// </summary>
     /// <remarks>
-    /// Only <c>snapshot-end</c> carries an SSE <c>id:</c>. A baseline is resumable as a
-    /// delta cursor only once it is whole: if the connection drops after
+    /// Only a COMPLETE <c>snapshot-end</c> carries an SSE <c>id:</c>. A baseline is resumable
+    /// as a delta cursor only once it is whole in both senses — every frame delivered AND
+    /// nothing truncated by the feature/scan bounds. If the connection drops after
     /// <c>snapshot-begin</c> or a <c>snapshot-feature</c>, the browser reconnects with the
     /// last id it saw, and publishing the baseline cursor early would make that reconnect
     /// look like a replayable delta resume — the client would never receive the rest of its
@@ -103,7 +104,13 @@ internal static partial class FeatureStreamEndpoints
                 "snapshot-end",
                 frame,
                 FeatureStreamJsonContext.Default.FeatureStreamSnapshotEndFrame,
-                frame.Cursor,
+                // Only a COMPLETE baseline becomes a resumable checkpoint. A truncated one
+                // (feature cap or scan bound) omits features that no later delta will ever
+                // mention — they did not change — so resuming from its cursor leaves the client
+                // permanently missing them. Withholding the id keeps Last-Event-ID at its
+                // pre-snapshot value, so the reconnect takes another snapshot instead of a
+                // delta tail (honua-server#3038 review).
+                frame.Complete ? frame.Cursor : null,
                 cancellationToken).ConfigureAwait(false);
             await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
