@@ -171,7 +171,13 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new PortalCredentialPrincipal(principalId, displayName, tenantId, roles);
+        // Carry the transformation's provenance marker so the issued token knows whether its
+        // roles depend on an entitlement that can expire (honua-server#2997 review).
+        var rolesRequireClaimsMapping = principal.HasClaim(
+            static claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
+
+        return new PortalCredentialPrincipal(
+            principalId, displayName, tenantId, roles, rolesRequireClaimsMapping);
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(CancellationToken cancellationToken)

@@ -250,6 +250,28 @@ areas. Decisions, all "gate as declared" (no tier changes):
   configured `CustomMappings`/`AdditionalRoleClaimTypes` are skipped (default
   claims normalization still runs) when the entitlement is missing, so
   authentication never fails on edition.
+  **A non-default `ClaimsMapping:RoleClaimType` is a custom mapping too**, and is
+  gated with them — treating the primary role-claim setting as an ungated
+  exception would let an unentitled deployment point it at a provider claim such
+  as `groups` and have raw group values read as roles and match `AdminRoles`.
+  Gating the claim *gathering* is not sufficient on its own: the JWT/OIDC handlers
+  install the configured type as `TokenValidationParameters.RoleClaimType`, so the
+  identity resolves `IsInRole`/`[Authorize(Roles=…)]` against that claim directly
+  and never consults the normalized `ClaimTypes.Role` claims. The transformation
+  therefore **re-homes the identity onto `ClaimTypes.Role`** whenever a custom type
+  is configured — per request, so the gate stays live rather than restart-scoped.
+  Do not remove that re-home during later authentication work: it is also what
+  makes the *entitled* path correct, since the `admin` role synthesized from
+  `AdminRoles` is written as a `ClaimTypes.Role` claim that an identity keyed on
+  `groups` could never resolve.
+  **Roles that outlive the request are revalidated, not trusted.** The ArcGIS
+  portal token exchange persists the transformed roles into a durable record and
+  the restore path never re-runs the transformation, so a token minted while the
+  entitlement was valid would keep satisfying role authorization after it expired.
+  The transformation marks a principal whose roles depended on claims mapping, the
+  exchange persists that provenance, and `PortalTokenIssuer` re-checks the live
+  entitlement on every restore and introspection — dropping those roles when it is
+  no longer active.
 - **Alerts/Channels (#2998).** The standalone `Alerts:Edition` knob no longer
   defines the alert tier. `IAlertEditionPolicy` derives allowed triggers and
   channels from the active license entitlements

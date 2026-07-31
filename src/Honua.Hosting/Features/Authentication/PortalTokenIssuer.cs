@@ -8,6 +8,8 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -22,7 +24,8 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed partial class PortalTokenIssuer(
     IMemoryCache memoryCache,
     ILogger<PortalTokenIssuer> logger,
-    IDistributedCache? distributedCache = null) : IPortalTokenIssuer
+    IDistributedCache? distributedCache = null,
+    IServiceProvider? serviceProvider = null) : IPortalTokenIssuer
 {
     internal const string AuthSchemeName = "PortalToken";
     internal const string AuthTypeClaimValue = "portal-token";
@@ -33,6 +36,7 @@ internal sealed partial class PortalTokenIssuer(
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<PortalTokenIssuer> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
+    private readonly IServiceProvider? _serviceProvider = serviceProvider;
 
     /// <inheritdoc />
     public async Task<PortalTokenIssuance> IssueAsync(
@@ -48,6 +52,7 @@ internal sealed partial class PortalTokenIssuer(
             DisplayName = request.DisplayName,
             TenantId = request.TenantId,
             Roles = request.Roles.ToArray(),
+            RolesRequireClaimsMappingEntitlement = request.RolesRequireClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
             ExpiresAt = request.ExpiresAt
@@ -93,7 +98,7 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
-        var principal = ProjectPrincipal(record);
+        var principal = ProjectPrincipal(record, ClaimsMappingRolesAllowed(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
 
@@ -124,7 +129,7 @@ internal sealed partial class PortalTokenIssuer(
 
         return new PortalTokenIntrospection(
             record.PrincipalId,
-            record.Roles,
+            ClaimsMappingRolesAllowed(record) ? record.Roles : [],
             record.TenantId,
             record.ExpiresAt);
     }
@@ -204,7 +209,23 @@ internal sealed partial class PortalTokenIssuer(
         };
     }
 
-    private static ClaimsPrincipal ProjectPrincipal(PortalTokenRecord record)
+    /// <summary>
+    /// Whether the record's persisted roles may still be honoured.
+    /// </summary>
+    /// <remarks>
+    /// Roles produced under <c>identity.claims-mapping</c> are re-checked against the LIVE
+    /// entitlement on every restore. Without this, a portal token minted while the license was
+    /// valid kept satisfying role authorization — including a synthesized <c>admin</c> — for its
+    /// whole lifetime after the entitlement expired, because the restore path never re-runs the
+    /// claims transformation that applies the gate (honua-server#2997 review). Records with no
+    /// mapping provenance are unaffected.
+    /// </remarks>
+    private bool ClaimsMappingRolesAllowed(PortalTokenRecord record)
+        => !record.RolesRequireClaimsMappingEntitlement
+            || (_serviceProvider is not null
+                && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey));
+
+    private static ClaimsPrincipal ProjectPrincipal(PortalTokenRecord record, bool includeRoles)
     {
         var claims = new List<Claim>
         {
@@ -224,9 +245,12 @@ internal sealed partial class PortalTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        foreach (var role in record.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
+        if (includeRoles)
         {
-            claims.Add(new Claim(ClaimTypes.Role, role));
+            foreach (var role in record.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
         }
 
         var identity = new ClaimsIdentity(
@@ -362,6 +386,13 @@ internal sealed class PortalTokenRecord
     public string? TenantId { get; init; }
 
     public required string[] Roles { get; init; }
+
+    /// <summary>
+    /// True when <see cref="Roles"/> were produced with <c>identity.claims-mapping</c> active.
+    /// Revalidated on every restore so an expired entitlement cannot keep honouring roles it
+    /// would no longer grant (honua-server#2997 review).
+    /// </summary>
+    public bool RolesRequireClaimsMappingEntitlement { get; init; }
 
     public required PortalTokenClientType ClientType { get; init; }
 

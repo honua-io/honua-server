@@ -268,7 +268,11 @@ public static class SharingRestEndpoints
                 Roles: verified.Roles,
                 ClientType: clientType,
                 BindingValue: binding,
-                ExpiresAt: expiresAt),
+                ExpiresAt: expiresAt,
+                // Carry the verifier's provenance so the issued token's roles are revalidated
+                // against the live claims-mapping entitlement on every restore, rather than
+                // outliving it for the token's whole lifetime (honua-server#2997 review).
+                RolesRequireClaimsMappingEntitlement: verified.RolesRequireClaimsMappingEntitlement),
             context.RequestAborted).ConfigureAwait(false);
 
         if (logger.IsEnabled(LogLevel.Information))

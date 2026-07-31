@@ -36,8 +36,16 @@ public interface IPortalCredentialVerifier
 /// <param name="DisplayName">Display name surfaced through the issued token's hydrated principal.</param>
 /// <param name="TenantId">Tenant scope to attach to the issued token, or <see langword="null"/>.</param>
 /// <param name="Roles">Roles granted for the lifetime of the issued token.</param>
+/// <param name="RolesRequireClaimsMappingEntitlement">
+/// True when <paramref name="Roles"/> were produced with the Enterprise
+/// <c>identity.claims-mapping</c> entitlement active and would differ without it. The issued
+/// token persists these roles, and the restore path never re-runs the claims transformation, so
+/// this flag is what lets the restore revalidate them against the LIVE entitlement instead of
+/// honouring a snapshot taken while the license was valid (honua-server#2997 review).
+/// </param>
 public sealed record PortalCredentialPrincipal(
     string PrincipalId,
     string? DisplayName,
     string? TenantId,
-    IReadOnlyList<string> Roles);
+    IReadOnlyList<string> Roles,
+    bool RolesRequireClaimsMappingEntitlement = false);

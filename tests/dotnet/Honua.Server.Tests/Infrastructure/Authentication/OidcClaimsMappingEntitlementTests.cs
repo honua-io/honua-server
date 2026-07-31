@@ -163,6 +163,60 @@ public sealed class OidcClaimsMappingEntitlementTests
     }
 
     [UnitTest]
+    public async Task TransformAsync_WithEntitlement_MarksRolesAsClaimsMappingDerived()
+    {
+        // Provenance for anything that PERSISTS these roles. The portal token exchange copies
+        // the transformed ClaimTypes.Role values into a durable record and the restore path
+        // never re-runs this transformation, so without a marker an expired entitlement kept
+        // being honoured for the token's whole lifetime (honua-server#2997 review).
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
+
+        var result = await transformation.TransformAsync(CreateGroupsPrincipal());
+
+        Assert.NotNull(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_WithoutEntitlement_DoesNotMarkRolesAsClaimsMappingDerived()
+    {
+        // Nothing was granted by claims mapping, so there is nothing for a persisted token to
+        // revalidate — the marker must not be stamped where it would only cost a lookup.
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+
+        var result = await transformation.TransformAsync(CreateGroupsPrincipal());
+
+        Assert.Null(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_DefaultRolesOnly_IsNotMarkedAsClaimsMappingDerived()
+    {
+        // An Enterprise principal whose roles come from the ungated default claim owes nothing
+        // to the entitlement, so its portal token must keep working if the license lapses.
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions { AdditionalRoleClaimTypes = ["groups"] },
+        });
+
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+
+        var transformation = new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
+
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-123"), new Claim("roles", "editors")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("editors"));
+        Assert.Null(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
     public async Task TransformAsync_WithClaimsMappingEntitlement_AppliesCustomMappings()
     {
         var transformation = CreateTransformation(HonuaEdition.Enterprise);

@@ -532,6 +532,13 @@ internal sealed class PortalOAuthPrincipal
     /// <summary>Roles granted for the lifetime of issued tokens.</summary>
     public required string[] Roles { get; init; }
 
+    /// <summary>
+    /// True when <see cref="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+    /// entitlement, so tokens minted from this principal revalidate them on every restore
+    /// (honua-server#2997 review).
+    /// </summary>
+    public bool RolesRequireClaimsMappingEntitlement { get; init; }
+
     /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)
         => new()
@@ -540,6 +547,7 @@ internal sealed class PortalOAuthPrincipal
             DisplayName = principal.DisplayName,
             TenantId = principal.TenantId,
             Roles = principal.Roles.ToArray(),
+            RolesRequireClaimsMappingEntitlement = principal.RolesRequireClaimsMappingEntitlement,
         };
 }
 

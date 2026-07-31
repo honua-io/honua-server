@@ -26,6 +26,15 @@ internal sealed class OidcClaimsTransformation(
     private readonly OidcAuthenticationOptions _options = oidcOptions.Value;
 
     /// <summary>
+    /// Marker claim recording that this principal's roles were produced with the Enterprise
+    /// <c>identity.claims-mapping</c> entitlement active. Surfaces to anything that PERSISTS
+    /// the transformed roles — the ArcGIS portal token exchange — so the restore path can
+    /// revalidate them against the live entitlement rather than trusting a snapshot taken while
+    /// the license was valid (honua-server#2997 review).
+    /// </summary>
+    internal const string RolesFromClaimsMappingClaimType = "honua_roles_from_claims_mapping";
+
+    /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
     /// </summary>
     /// <param name="principal">The claims principal from authentication.</param>
@@ -107,7 +116,17 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Map roles from provider-specific claims
+        var rolesWithoutMapping = GetRoleClaims(identity, claimsMappingEntitled: false);
         var roles = GetRoleClaims(identity, claimsMappingEntitled);
+
+        // Provenance for anything that PERSISTS these roles. A portal token exchange copies the
+        // transformed ClaimTypes.Role values into a durable record, and restoring them later
+        // re-admits roles the live gate would now refuse — including a synthesized `admin` —
+        // because the restore path never re-runs this transformation. Marking the principal
+        // lets the exchange record that its roles depend on the entitlement, so the restore can
+        // revalidate instead of trusting them forever (honua-server#2997 review).
+        var rolesDependOnClaimsMapping = claimsMappingEntitled
+            && roles.Count > rolesWithoutMapping.Count;
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -126,6 +145,11 @@ internal sealed class OidcClaimsTransformation(
         if (hasAdminRole && !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == "admin"))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, "admin"));
+        }
+
+        if (rolesDependOnClaimsMapping && !identity.HasClaim(c => c.Type == RolesFromClaimsMappingClaimType))
+        {
+            transformedClaims.Add(new Claim(RolesFromClaimsMappingClaimType, "1"));
         }
 
         // Add auth_type claim if not present
