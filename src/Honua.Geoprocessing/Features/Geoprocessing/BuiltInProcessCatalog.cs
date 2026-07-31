@@ -1151,7 +1151,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                // Destructive target: gated on the layer DELETE grant, not a generic write
+                // (honua-server#3046 review).
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Delete),
                 Param("where", "Where", "ArcGIS SQL filter selecting features to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
                 Param("objectIds", "Object IDs", "Comma-separated feature identifiers to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
             ],
@@ -1166,7 +1168,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                // Mutating target: gated on the layer UPDATE grant (honua-server#3046 review).
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Update),
                 Param("fieldName", "Field Name", "Simple identifier naming the field to update (letters, digits, underscore; no dotted paths).", ProcessParameterValueType.Text, required: true),
                 Param("expression", "Expression", "Constant or SQL expression evaluated per feature. Parsed by the same allow-listed expression gate FeatureServer.Edits.CalculateFieldValue uses.", ProcessParameterValueType.Text, required: true),
                 Param("where", "Where", "Optional ArcGIS SQL filter selecting features to update.", ProcessParameterValueType.Text),
@@ -1209,7 +1212,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 // Destination, never a source: the importer tiles INTO this layer and never
                 // reads it, so the submit gate must not demand a read grant on it
                 // (honua-server#3046 review).
-                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.Write),
+                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.Insert),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },

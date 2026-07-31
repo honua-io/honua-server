@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 
+using Honua.Core.Features.Authorization.Domain;
+
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
 /// <summary>
@@ -136,16 +138,17 @@ public sealed record ProcessParameterSpec
     public IReadOnlyList<string>? AllowedValues { get; init; }
 
     /// <summary>
-    /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, whether the layer is
-    /// something the process READS or something it WRITES INTO. Ignored for every other value
-    /// type.
+    /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, what the process does to
+    /// the layer — which is what decides the authorization operation the submit-time gate
+    /// requires for it. Ignored for every other value type.
     /// </summary>
     /// <remarks>
     /// The submit-time layer gate authorizes each referenced layer for the operation this
-    /// declares, so a destination-only layer is not held to a read grant. Deriving the
-    /// operation from the value type alone required <c>Query</c> on every layer parameter,
-    /// which refused an import whose caller held the mutating grant but was deliberately
-    /// denied read on the destination (honua-server#3046 review). The default is
+    /// declares. Deriving it from the value type alone required <c>Query</c> on every layer
+    /// parameter, which refused an import whose caller held the mutating grant but was
+    /// deliberately denied read on the destination; collapsing every mutation to a single
+    /// "write" then gated <c>delete-features</c> and <c>calculate-field</c> on <c>insert</c>,
+    /// which is not the grant either performs (honua-server#3046 review). The default is
     /// <see cref="ProcessLayerAccess.Read"/> so a parameter added later is gated as a read
     /// until someone states otherwise — the conservative direction.
     /// </remarks>
@@ -153,22 +156,44 @@ public sealed record ProcessParameterSpec
 }
 
 /// <summary>
-/// How a process uses a layer named by a <see cref="ProcessParameterValueType.LayerId"/>
-/// parameter, which decides the permission the submit-time gate requires for it.
+/// What a process does to a layer named by a <see cref="ProcessParameterValueType.LayerId"/>
+/// parameter. Each member names the canonical authorization operation the submit-time gate
+/// requires for that layer, so a destructive process is gated on the grant it actually needs
+/// rather than on a generic "write".
 /// </summary>
+/// <remarks>
+/// Collapsing every mutation to one member was not sufficient: <c>delete-features</c> and
+/// <c>calculate-field</c> would both have demanded <c>insert</c>, which a principal holding
+/// only <c>update</c> (or only <c>delete</c>) does not have, and a principal holding
+/// <c>insert</c> could invoke either — neither is the grant the operation corresponds to
+/// (honua-server#3046 review).
+/// </remarks>
 public enum ProcessLayerAccess
 {
     /// <summary>
-    /// The process reads features or raster from the layer. Requires a read/query grant.
+    /// The process reads features or raster from the layer. Requires
+    /// <see cref="AuthorizationOperation.Query"/>.
     /// </summary>
     Read,
 
     /// <summary>
-    /// The layer is a destination the process writes into and never reads. Requires a write
-    /// grant; a read grant is deliberately NOT required, so a caller may be permitted to
-    /// import into a layer whose contents they cannot query.
+    /// The process adds features to the layer and never reads it. Requires
+    /// <see cref="AuthorizationOperation.Insert"/>; a read grant is deliberately NOT required,
+    /// so a caller may import into a layer whose contents they cannot query.
     /// </summary>
-    Write,
+    Insert,
+
+    /// <summary>
+    /// The process modifies existing features in the layer. Requires
+    /// <see cref="AuthorizationOperation.Update"/>.
+    /// </summary>
+    Update,
+
+    /// <summary>
+    /// The process removes features from the layer. Requires
+    /// <see cref="AuthorizationOperation.Delete"/>.
+    /// </summary>
+    Delete,
 }
 
 /// <summary>

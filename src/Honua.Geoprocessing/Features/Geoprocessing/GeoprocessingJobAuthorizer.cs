@@ -134,11 +134,13 @@ internal sealed class GeoprocessingJobAuthorizer
     {
         foreach (var reference in PlanLayerReferences.Derive(plan, catalog))
         {
-            // The parameter declares whether the process reads the layer or writes into it, so
-            // a destination-only layer is gated on the write grant instead of being refused for
-            // want of a read the process never performs (honua-server#3046 review).
-            var isWrite = reference.Access == ProcessLayerAccess.Write;
-            var operation = isWrite ? AuthorizationOperation.Insert : AuthorizationOperation.Query;
+            // The parameter declares WHAT the process does to the layer, so each target is gated
+            // on the grant that operation actually needs. A destination-only layer is not held
+            // to a read the process never performs, and a destructive process is not gated on
+            // `insert` — delete-features needs `delete`, calculate-field needs `update`
+            // (honua-server#3046 review).
+            var operation = ToAuthorizationOperation(reference.Access);
+            var isRead = operation == AuthorizationOperation.Query;
 
             var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
                 principal,
@@ -161,13 +163,36 @@ internal sealed class GeoprocessingJobAuthorizer
                 decision.RequiresAuthentication,
                 decision.RequiresAuthentication
                     ? "Authentication is required for this operation."
-                    : $"You do not have permission to {(isWrite ? "write to" : "read")} layer "
+                    : $"You do not have permission to {DescribeAccess(reference.Access)} layer "
                       + $"{reference.LayerId} referenced by step '{reference.StepId}'.",
                 OperatorResourceType.Catalog,
-                isWrite ? OperatorOperation.Create : OperatorOperation.Read,
+                isRead ? OperatorOperation.Read : OperatorOperation.Update,
                 AuthorizationDenialReason.InsufficientGrant);
         }
     }
+
+    /// <summary>
+    /// Maps a declared layer access onto the canonical authorization operation it requires.
+    /// One-to-one by construction, so a member added to either enum forces a decision here.
+    /// </summary>
+    private static AuthorizationOperation ToAuthorizationOperation(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => AuthorizationOperation.Insert,
+            ProcessLayerAccess.Update => AuthorizationOperation.Update,
+            ProcessLayerAccess.Delete => AuthorizationOperation.Delete,
+            _ => AuthorizationOperation.Query,
+        };
+
+    /// <summary>Caller-facing verb for a denial, matching the operation that was refused.</summary>
+    private static string DescribeAccess(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => "add features to",
+            ProcessLayerAccess.Update => "modify features in",
+            ProcessLayerAccess.Delete => "delete features from",
+            _ => "read",
+        };
 
     /// <summary>
     /// Evaluates the approval requirement for the supplied request. Callers own the
