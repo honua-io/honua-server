@@ -72,7 +72,13 @@ jobs:
           }
           # Source refs come from the Dockerfile ARG defaults, so the mirrored
           # images and the pins in the Dockerfiles cannot drift apart.
-          while IFS=$'\t' read -r tag src; do
+          #
+          # The tab is built with printf rather than written as an ANSI-C $'\t' literal:
+          # validate-single-merge-authority.sh rejects that construct in any workflow it does
+          # not allowlist, because $'...' can hide a command token from static analysis. Same
+          # idiom the merge-train scripts use.
+          tab="$(printf '\tX')"; tab="${tab%X}"
+          while IFS="${tab}" read -r tag src; do
             [ -n "$tag" ] || continue
             mirror "$src" "${BASE_REPO}:${tag}"
           done < <(scripts/ci/base-image-mirrors.sh)
