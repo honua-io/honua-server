@@ -106,6 +106,64 @@ public static class StudioCompositionBodyEditor
     /// directly needs no serializer metadata at all.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The stored member name for <see cref="StudioCompositionBody.View"/>, matching its
+    /// <c>JsonPropertyName</c>. It is the only projected member that can be absent from the
+    /// serialized projection, because layers and widgets always serialize (as arrays).
+    /// </summary>
+    private const string ViewMemberName = "view";
+
+    /// <summary>
+    /// Replaces the composition projection WHOLESALE, clearing projected members the replacement
+    /// omits, while leaving every unmodelled member of the stored document untouched.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="WriteBody"/> overlays only the keys the serialized projection actually emits,
+    /// and <c>StudioJsonContext</c> writes with <c>WhenWritingNull</c> — so a replacement with no
+    /// <c>view</c> never overwrote the stored one and the "wholesale" replacement silently kept
+    /// the previous viewport. That overlay behaviour is correct for the incremental edits
+    /// (add-layer, set-style, set-viewport) that share the editor, so replacement gets its own
+    /// seam rather than changing theirs (honua-server#2999 review).
+    /// </remarks>
+    /// <param name="envelope">The stored envelope.</param>
+    /// <param name="body">The replacement composition.</param>
+    /// <returns>The envelope with its composition projection replaced.</returns>
+    public static StudioPackageEnvelope ReplaceComposition(
+        StudioPackageEnvelope envelope,
+        StudioCompositionBody body)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(body);
+
+        var written = WriteBody(envelope, body);
+        if (body.View is not null || written.Body is not { ValueKind: JsonValueKind.Object } merged)
+        {
+            return written;
+        }
+
+        // The replacement carries no view, so the stored one must go rather than survive.
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var member in merged.EnumerateObject())
+            {
+                if (string.Equals(member.Name, ViewMemberName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                writer.WritePropertyName(member.Name);
+                member.Value.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return written with { Body = document.RootElement.Clone() };
+    }
+
     public static StudioPackageEnvelope WriteBody(StudioPackageEnvelope envelope, StudioCompositionBody body)
     {
         ArgumentNullException.ThrowIfNull(envelope);

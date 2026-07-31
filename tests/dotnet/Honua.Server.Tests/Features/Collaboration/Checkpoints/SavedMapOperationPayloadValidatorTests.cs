@@ -151,6 +151,43 @@ public sealed class SavedMapOperationPayloadValidatorTests
             "Path:");
     }
 
+    /// <summary>
+    /// System.Text.Json ignores properties it cannot bind, so a misspelled member produced an
+    /// empty composition that passed admission and then cleared the document at checkpoint time
+    /// (honua-server#2999 review).
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData("""{"layres":[{"id":"parcels"}]}""")]
+    [InlineData("""{"layers":[],"veiw":{"zoom":3}}""")]
+    [InlineData("""{"widget":[{"id":"legend","kind":"legend"}]}""")]
+    public void TryValidate_ReplacementWithUnmappedMember_IsRejected(string payload)
+    {
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain("unrecognized member");
+    }
+
+    /// <summary>
+    /// C# <c>required</c> only demands the JSON member be present; it does not make the value
+    /// non-null or non-blank (honua-server#2999 review).
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData("""{"widgets":[{"id":"legend","kind":null}]}""")]
+    [InlineData("""{"widgets":[{"id":"legend","kind":"   "}]}""")]
+    [InlineData("""{"widgets":[{"id":"legend","kind":""}]}""")]
+    public void TryValidate_ReplacementWidgetWithBlankKind_IsRejected(string payload)
+    {
+        SavedMapOperationPayloadValidator.TryValidate(
+            SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain("kind");
+    }
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

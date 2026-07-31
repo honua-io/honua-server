@@ -74,6 +74,55 @@ public sealed class SavedMapOperationDraftApplierTests
     }
 
     [UnitTest]
+    public void Apply_ReplaceDocumentOmittingView_ClearsTheStoredViewport()
+    {
+        // StudioJsonContext writes with WhenWritingNull, so a replacement carrying no `view`
+        // emitted no `view` key and WriteBody's overlay left the STORED viewport in place — the
+        // wholesale replacement was not wholesale (honua-server#2999 review).
+        var envelope = BuildEnvelope("""
+            {
+              "mapPackageId": "map-1",
+              "layers": [{"id":"parcels"}],
+              "view": {"zoom": 12, "bearing": 90}
+            }
+            """);
+
+        var applied = SavedMapOperationDraftApplier.Apply(
+            envelope,
+            [BuildOperation(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads"}]}""")]);
+
+        var body = applied.Body!.Value;
+        body.TryGetProperty("view", out _).Should().BeFalse(
+            "a replacement that carries no view replaces the view with nothing");
+        body.GetProperty("layers").EnumerateArray().Single().GetProperty("id").GetString()
+            .Should().Be("roads");
+        body.GetProperty("mapPackageId").GetString().Should().Be("map-1",
+            "clearing the view must not disturb unmodelled package metadata");
+    }
+
+    [UnitTest]
+    public void Apply_ReplaceDocumentWithView_WritesTheReplacementView()
+    {
+        // The counterpart: a supplied view still replaces the stored one wholesale.
+        var envelope = BuildEnvelope("""
+            {
+              "mapPackageId": "map-1",
+              "layers": [],
+              "view": {"zoom": 12, "bearing": 90}
+            }
+            """);
+
+        var applied = SavedMapOperationDraftApplier.Apply(
+            envelope,
+            [BuildOperation(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zoom":3}}""")]);
+
+        var view = applied.Body!.Value.GetProperty("view");
+        view.GetProperty("zoom").GetDouble().Should().Be(3);
+        view.TryGetProperty("bearing", out _).Should().BeFalse(
+            "the replacement view is not merged into the stored one");
+    }
+
+    [UnitTest]
     public void Apply_ReplaceDocumentThenScalarOperation_KeepsBothTheReplacementAndTheMetadata()
     {
         var envelope = BuildEnvelope(CanonicalMapBody);

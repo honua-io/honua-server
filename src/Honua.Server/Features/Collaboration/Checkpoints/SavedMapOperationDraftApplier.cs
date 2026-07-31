@@ -228,8 +228,9 @@ internal static class SavedMapOperationDraftApplier
     /// replacement corrupted both the draft and its checkpoint (honua-server#2999 review).
     /// <para>
     /// Routing through the editor makes this kind lossless exactly like every other kind in this
-    /// applier (this was the only one bypassing the shared seam): the projected keys are replaced
-    /// wholesale and every unmodelled member of the stored document survives, so no collaboration
+    /// applier (this was the only one bypassing the shared seam): the projected keys — including
+    /// a <c>view</c> the replacement omits — are replaced wholesale and every unmodelled member
+    /// of the stored document survives, so no collaboration
     /// operation can delete or corrupt package-lifecycle metadata the op log has no authority
     /// over. It also keeps the applier in exact lockstep with
     /// <see cref="SavedMapOperationPayloadValidator"/>, which admits the payload by deserializing
@@ -264,7 +265,11 @@ internal static class SavedMapOperationDraftApplier
         // Same normalization ReadBody performs: the source-generated converter assigns only
         // members present in the payload, so a document that omits "layers"/"widgets" leaves them
         // NULL rather than applying their Array.Empty initializers.
-        return StudioCompositionBodyEditor.WriteBody(
+        //
+        // ReplaceComposition, not WriteBody: the projection serializes with WhenWritingNull, so a
+        // replacement omitting "view" would leave the STORED viewport in place and the wholesale
+        // replacement would not be wholesale (honua-server#2999 review).
+        return StudioCompositionBodyEditor.ReplaceComposition(
             envelope,
             replacement with
             {

@@ -106,12 +106,36 @@ internal static class SavedMapOperationPayloadValidator
     /// (honua-server#2999 review).
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The members a replacement document may carry — the composition projection the applier
+    /// writes, and nothing else. Kept in step with <see cref="StudioCompositionBody"/>'s
+    /// <c>JsonPropertyName</c> values; anything outside it is a caller error rather than a
+    /// silently discarded property.
+    /// </summary>
+    private static readonly HashSet<string> ReplacementMembers =
+        new(StringComparer.Ordinal) { "layers", "view", "widgets" };
+
     private static bool TryValidateReplacementDocument(JsonElement payload, out string error)
     {
         if (payload.ValueKind != JsonValueKind.Object)
         {
             error = "The document-replace payload must be an object body.";
             return false;
+        }
+
+        // System.Text.Json ignores properties it cannot bind, so a misspelled member such as
+        // {"layres":[...]} deserializes to an EMPTY composition, passes every check below, and
+        // the applier then replaces the document with nothing — a typo silently clears every
+        // layer and widget at checkpoint time. Enumerate the payload and refuse anything the
+        // projection does not model (honua-server#2999 review).
+        foreach (var member in payload.EnumerateObject())
+        {
+            if (!ReplacementMembers.Contains(member.Name))
+            {
+                error = $"The document-replace payload has an unrecognized member '{member.Name}'; "
+                    + $"expected only {string.Join(", ", ReplacementMembers.Select(name => $"'{name}'"))}.";
+                return false;
+            }
         }
 
         StudioCompositionBody? body;
@@ -173,6 +197,16 @@ internal static class SavedMapOperationPayloadValidator
             if (!seenWidgets.Add(widget.Id))
             {
                 error = $"The document-replace payload repeats widget id '{widget.Id}'; widget ids must be unique.";
+                return false;
+            }
+
+            // C# `required` only demands the JSON member be PRESENT; it does not make the value
+            // non-null or non-blank, so {"widgets":[{"id":"legend","kind":null}]} bound cleanly
+            // and persisted a widget no composition client can interpret
+            // (honua-server#2999 review).
+            if (string.IsNullOrWhiteSpace(widget.Kind))
+            {
+                error = $"Widget '{widget.Id}' in the document-replace payload requires a non-empty 'kind'.";
                 return false;
             }
         }
