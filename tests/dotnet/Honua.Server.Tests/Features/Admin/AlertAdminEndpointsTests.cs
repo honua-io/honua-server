@@ -940,6 +940,16 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         public bool IsChannelAllowed(AlertChannelType channelType) => _allowedChannels.Contains(channelType);
 
         public bool IsChannelConfigured(AlertChannelType channelType) => _configuredChannels.Contains(channelType);
+
+        public AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey)
+            => AlertEditionDenialReason.None;
+
+        // These fixtures model "the license does not grant the channel", which is the shape that
+        // yields the unauthorized channel status and the 402 entitlement denial.
+        public AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType)
+            => _allowedChannels.Contains(channelType)
+                ? AlertEditionDenialReason.None
+                : AlertEditionDenialReason.MissingEntitlement;
     }
 
     private sealed class StubAlertAdminStore : IAlertAdminStore

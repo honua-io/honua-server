@@ -85,6 +85,23 @@ public sealed class AlertEntitlementGateTests
         Assert.Contains($"entitlement: {expectedKey}", body);
     }
 
+    /// <summary>
+    /// A denial caused only by the downward <c>Alerts:Edition</c> cap must not masquerade as a
+    /// missing entitlement: the license grants the feature, so a 402 naming the key would send an
+    /// operator to buy or reinstall a license they already own. It must surface as the ordinary
+    /// configured-edition validation failure instead.
+    /// </summary>
+    private static async Task AssertBlockedByEditionCapAsync(HttpClient client, object payload, string expectedFragment)
+    {
+        using var response = await client.PostAsJsonAsync(RulesRoute, payload);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.BadRequest,
+            $"Expected a configured-edition 400 but got {(int)response.StatusCode}: {body}");
+        Assert.DoesNotContain("entitlement: ", body, StringComparison.Ordinal);
+        Assert.Contains(expectedFragment, body, StringComparison.Ordinal);
+    }
+
     private static async Task AssertNotBlockedAsync(HttpClient client, object payload)
     {
         // The gate must not fire; downstream validation (nonexistent zone, unconfigured
@@ -179,8 +196,10 @@ public sealed class AlertEntitlementGateTests
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     public async Task EnterpriseEdition_WithProCap_BlocksEnterpriseFeaturesOnly()
     {
-        // Alerts:Edition=Pro is a downward cap: Enterprise features are blocked even though
-        // the license grants them, while Pro features keep working.
+        // Alerts:Edition=Pro is a downward cap: Enterprise features are blocked even though the
+        // license grants them, while Pro features keep working. Because the license does include
+        // alerts.dwell/channels.email here, the block must be reported as a configured-edition
+        // failure, not as a 402 claiming the license lacks those keys.
         var fixture = CreateFixture(HonuaEdition.Enterprise, alertsEditionCap: AlertEdition.Pro);
         await fixture.InitializeAsync();
         try
@@ -193,11 +212,14 @@ public sealed class AlertEntitlementGateTests
                 AlertEdition.Pro,
                 fixture.GetService<IOptions<AlertOptions>>().Value.Edition);
 
-            await AssertBlockedAsync(
+            await AssertBlockedByEditionCapAsync(
                 client,
                 RulePayload("dwell", "webhook", conditionsJson: "{\"dwellSeconds\":60}"),
-                "alerts.dwell");
-            await AssertBlockedAsync(client, RulePayload("enter", "email"), "channels.email");
+                "configured alert edition cap");
+            await AssertBlockedByEditionCapAsync(
+                client,
+                RulePayload("enter", "email"),
+                "configured alert edition cap");
             await AssertNotBlockedAsync(client, RulePayload("enter", "webhook"));
         }
         finally

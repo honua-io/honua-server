@@ -267,6 +267,18 @@ areas. Decisions, all "gate as declared" (no tier changes):
   Like the OIDC gates, these checks read `ILicenseEntitlementService` at the point
   of use, so a license applied or expired at runtime changes alert behavior
   without a restart.
+  **The two denial causes stay distinguishable.** `IAlertEditionPolicy` reports an
+  `AlertEditionDenialReason` (`MissingEntitlement` vs `EditionCap`) alongside its
+  allow predicates, because the remedies differ: a missing entitlement is fixed by
+  a license, an `Alerts:Edition` cap by configuration. Only `MissingEntitlement`
+  produces the 402 naming the key — a cap denial on a license that *does* grant the
+  feature (e.g. an Enterprise license with `Alerts:Edition=Pro` requesting
+  `alerts.dwell`) falls through to the ordinary configured-edition validation `400`,
+  whose message says the cap is the cause. Reporting a cap denial as a missing key
+  would send an operator to purchase or reinstall a license they already own. The
+  same split drives the per-channel `unauthorized` validation messages, and it is
+  the only way the `POST /rules/test` surface — which never runs the 402 gate — can
+  attribute a denial at all.
 - **Output cache (#2998).** `caching.output-cache` (Pro) is evaluated **live, per
   request**, not captured at boot. `Program` wires `app.UseOutputCache()` inside
   an `app.UseWhen(...)` branch whose predicate is

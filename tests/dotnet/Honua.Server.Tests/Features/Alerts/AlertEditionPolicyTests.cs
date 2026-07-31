@@ -191,6 +191,88 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
+    public void GetDenialReason_SeparatesEditionCapDenialsFromMissingEntitlements()
+    {
+        // An Enterprise license capped to Pro still *has* alerts.dwell/channels.email. Reporting
+        // that as a missing entitlement would tell an operator to buy a license they already own,
+        // so the cap must be attributable on its own.
+        var capped = CreatePolicy(HonuaEdition.Enterprise, editionCap: AlertEdition.Pro);
+
+        Assert.Equal(
+            AlertEditionDenialReason.EditionCap,
+            capped.GetEntitlementDenialReason(FeatureCatalog.AlertsDwellKey));
+        Assert.Equal(
+            AlertEditionDenialReason.EditionCap,
+            capped.GetChannelDenialReason(AlertChannelType.Email));
+
+        // The keyless WebSocket channel resolves through the effective edition and must make the
+        // same distinction.
+        Assert.Equal(
+            AlertEditionDenialReason.EditionCap,
+            capped.GetChannelDenialReason(AlertChannelType.WebSocket));
+
+        // Pro-tier features are untouched by a Pro cap.
+        Assert.Equal(
+            AlertEditionDenialReason.None,
+            capped.GetEntitlementDenialReason(FeatureCatalog.AlertsEnterExitKey));
+        Assert.Equal(
+            AlertEditionDenialReason.None,
+            capped.GetChannelDenialReason(AlertChannelType.Webhook));
+
+        // Uncapped licenses that genuinely lack the key report the licensing cause instead.
+        var pro = CreatePolicy(HonuaEdition.Pro);
+        Assert.Equal(
+            AlertEditionDenialReason.MissingEntitlement,
+            pro.GetEntitlementDenialReason(FeatureCatalog.AlertsDwellKey));
+        Assert.Equal(
+            AlertEditionDenialReason.MissingEntitlement,
+            pro.GetChannelDenialReason(AlertChannelType.Email));
+        Assert.Equal(
+            AlertEditionDenialReason.MissingEntitlement,
+            pro.GetChannelDenialReason(AlertChannelType.WebSocket));
+
+        // A Community license with the knob set upward is still a licensing denial: the cap is
+        // downward-only, so it is never the cause of a block.
+        var overreaching = CreatePolicy(HonuaEdition.Community, editionCap: AlertEdition.Enterprise);
+        Assert.Equal(
+            AlertEditionDenialReason.MissingEntitlement,
+            overreaching.GetEntitlementDenialReason(FeatureCatalog.AlertsEnterExitKey));
+        Assert.Equal(
+            AlertEditionDenialReason.MissingEntitlement,
+            overreaching.GetChannelDenialReason(AlertChannelType.WebSocket));
+    }
+
+    [UnitTest]
+    public void GetDenialReason_AgreesWithTheAllowPredicates()
+    {
+        // IsTriggerAllowed/IsChannelAllowed are defined as "no denial reason"; pin that so the two
+        // surfaces cannot drift into disagreeing about the same key.
+        foreach (var policy in new[]
+                 {
+                     CreatePolicy(HonuaEdition.Community),
+                     CreatePolicy(HonuaEdition.Pro),
+                     CreatePolicy(HonuaEdition.Enterprise),
+                     CreatePolicy(HonuaEdition.Enterprise, editionCap: AlertEdition.Pro),
+                 })
+        {
+            foreach (var channel in Enum.GetValues<AlertChannelType>())
+            {
+                Assert.Equal(
+                    policy.IsChannelAllowed(channel),
+                    policy.GetChannelDenialReason(channel) == AlertEditionDenialReason.None);
+            }
+
+            foreach (var trigger in Enum.GetValues<AlertTriggerType>())
+            {
+                var key = AlertEntitlementMap.GetTriggerEntitlementKey(trigger);
+                Assert.Equal(
+                    policy.IsTriggerAllowed(trigger),
+                    policy.GetEntitlementDenialReason(key) == AlertEditionDenialReason.None);
+            }
+        }
+    }
+
+    [UnitTest]
     public void IsChannelConfigured_WithConfiguredDispatchTargets_ReturnsExpectedAvailability()
     {
         var policy = CreatePolicy(

@@ -55,14 +55,7 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
     {
         get
         {
-            var snapshot = _entitlements.GetSnapshot();
-            AlertEdition? licenseDerived = snapshot switch
-            {
-                { IsValid: true, Edition: HonuaEdition.Enterprise } => AlertEdition.Enterprise,
-                { IsValid: true, Edition: HonuaEdition.Pro } => AlertEdition.Pro,
-                _ => null,
-            };
-
+            var licenseDerived = LicenseDerivedEdition;
             if (licenseDerived is null)
             {
                 return null;
@@ -73,18 +66,57 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
     }
 
     /// <summary>
+    /// The alert tier the active license snapshot declares, before the <c>Alerts:Edition</c> cap
+    /// is applied. Kept separate from <see cref="EffectiveEdition"/> so a denial can be attributed
+    /// to the cap rather than to the license (see <see cref="GetChannelDenialReason"/>).
+    /// </summary>
+    private AlertEdition? LicenseDerivedEdition => _entitlements.GetSnapshot() switch
+    {
+        { IsValid: true, Edition: HonuaEdition.Enterprise } => AlertEdition.Enterprise,
+        { IsValid: true, Edition: HonuaEdition.Pro } => AlertEdition.Pro,
+        _ => null,
+    };
+
+    /// <summary>
     /// True when the entitlement key is active on the license AND not excluded by the
     /// downward-only <c>Alerts:Edition</c> cap.
     /// </summary>
     private bool IsEntitled(string entitlementKey)
+        => GetEntitlementDenialReason(entitlementKey) == AlertEditionDenialReason.None;
+
+    public AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey)
     {
         if (!_entitlements.CheckEntitlement(entitlementKey).IsActive)
         {
-            return false;
+            return AlertEditionDenialReason.MissingEntitlement;
         }
 
-        return _options.Edition is not { } cap
-            || AlertEntitlementMap.GetRequiredAlertEdition(entitlementKey) <= cap;
+        // The license carries the key, so anything blocking it now is the operator's own cap.
+        return _options.Edition is { } cap
+            && AlertEntitlementMap.GetRequiredAlertEdition(entitlementKey) > cap
+                ? AlertEditionDenialReason.EditionCap
+                : AlertEditionDenialReason.None;
+    }
+
+    public AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType)
+    {
+        var entitlementKey = AlertEntitlementMap.GetChannelEntitlementKey(channelType);
+        if (entitlementKey is not null)
+        {
+            return GetEntitlementDenialReason(entitlementKey);
+        }
+
+        // Keyless channels (WebSocket) are gated by the effective edition, so the same two causes
+        // apply: an Enterprise license capped down to Pro is a configuration denial, anything
+        // else is the license not reaching the tier.
+        if (EffectiveEdition == AlertEdition.Enterprise)
+        {
+            return AlertEditionDenialReason.None;
+        }
+
+        return LicenseDerivedEdition == AlertEdition.Enterprise
+            ? AlertEditionDenialReason.EditionCap
+            : AlertEditionDenialReason.MissingEntitlement;
     }
 
     public bool IsTriggerAllowed(AlertTriggerType triggerType)
@@ -112,17 +144,7 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
     }
 
     public bool IsChannelAllowed(AlertChannelType channelType)
-    {
-        var entitlementKey = AlertEntitlementMap.GetChannelEntitlementKey(channelType);
-        if (entitlementKey is null)
-        {
-            // Channels without a catalog key of their own (WebSocket) retain their historical
-            // Enterprise tier via the effective edition.
-            return EffectiveEdition == AlertEdition.Enterprise;
-        }
-
-        return IsEntitled(entitlementKey);
-    }
+        => GetChannelDenialReason(channelType) == AlertEditionDenialReason.None;
 
     public bool IsChannelConfigured(AlertChannelType channelType)
     {

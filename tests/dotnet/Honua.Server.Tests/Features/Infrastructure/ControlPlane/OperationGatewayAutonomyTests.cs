@@ -639,6 +639,12 @@ public sealed class OperationGatewayAutonomyTests
         public bool IsChannelAllowed(AlertChannelType channelType) => true;
 
         public bool IsChannelConfigured(AlertChannelType channelType) => true;
+
+        public AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey)
+            => AlertEditionDenialReason.None;
+
+        public AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType)
+            => AlertEditionDenialReason.None;
     }
 
     private sealed class RecordingExecutor : IOperationExecutor

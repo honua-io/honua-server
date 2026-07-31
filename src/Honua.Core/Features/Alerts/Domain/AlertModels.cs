@@ -22,6 +22,35 @@ public enum AlertEdition
 }
 
 /// <summary>
+/// Why an alert trigger, channel, or entitlement key is not permitted (#2998). The two causes
+/// need different operator remedies, so the alert admin surface must not report them the same
+/// way: a missing entitlement is a licensing problem, while the downward-only
+/// <c>Alerts:Edition</c> cap is a configuration problem on a license that already grants the
+/// feature.
+/// </summary>
+public enum AlertEditionDenialReason
+{
+    /// <summary>
+    /// Permitted: the entitlement is active on the license and within the configured cap.
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// The active license does not include the entitlement. The remedy is a license that grants
+    /// it, and admin surfaces report this as an entitlement denial naming the key.
+    /// </summary>
+    MissingEntitlement = 1,
+
+    /// <summary>
+    /// The license includes the entitlement, but the configured <c>Alerts:Edition</c> cap sits
+    /// below the tier the entitlement belongs to. The remedy is a configuration change, so admin
+    /// surfaces must report this as a configured-edition denial and must not name the key as
+    /// missing — that would send an operator to buy a license they already own.
+    /// </summary>
+    EditionCap = 2,
+}
+
+/// <summary>
 /// Trigger types supported by the alert evaluator.
 /// </summary>
 public enum AlertTriggerType

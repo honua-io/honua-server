@@ -69,6 +69,24 @@ public interface IAlertEditionPolicy
     /// <param name="channelType">Delivery channel</param>
     /// <returns>True when the channel is configured for delivery</returns>
     bool IsChannelConfigured(AlertChannelType channelType);
+
+    /// <summary>
+    /// Explains why an <c>alerts.*</c>/<c>channels.*</c> entitlement key is not permitted:
+    /// the license does not carry it, or the downward-only <c>Alerts:Edition</c> cap excludes
+    /// the tier it belongs to. Admin surfaces use this so a cap-only denial is not reported as
+    /// a missing entitlement (#2998).
+    /// </summary>
+    /// <param name="entitlementKey">An <c>alerts.*</c> or <c>channels.*</c> entitlement key.</param>
+    /// <returns>The denial reason, or <see cref="AlertEditionDenialReason.None"/> when permitted.</returns>
+    AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey);
+
+    /// <summary>
+    /// Explains why a delivery channel is not permitted, including channels with no catalog key
+    /// of their own (WebSocket), which are gated by the effective edition rather than a key.
+    /// </summary>
+    /// <param name="channelType">Delivery channel</param>
+    /// <returns>The denial reason, or <see cref="AlertEditionDenialReason.None"/> when permitted.</returns>
+    AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType);
 }
 
 /// <summary>
