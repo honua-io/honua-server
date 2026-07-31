@@ -276,6 +276,29 @@ public sealed class GpPlanTests
     }
 
     [UnitTest]
+    public void Build_EnrichmentBboxWithBlankOrdinate_IsRejected()
+    {
+        // RemoveEmptyEntries dropped a MISSING ordinate, so `0,,1,2,3` collapsed to four values,
+        // passed validation, and the source parser read it as `0,1,2,3` — a different window
+        // than the caller supplied (#3043 review).
+        foreach (var bbox in new[] { "0,,1,2,3", "0,,2,3", ",0,1,2" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["layerId"] = "7",
+                ["bbox"] = bbox,
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.IsValid.Should().BeFalse($"'{bbox}' has a blank ordinate");
+            plan.Errors.Should().Contain(e => e.Contains("bbox"));
+        }
+    }
+
+    [UnitTest]
     public void Build_EnrichmentNearestNeighborWithAggregates_IsRejected()
     {
         // The nearest branch of EnrichmentJobExecutor.Enrich returns after AnnotateNearest

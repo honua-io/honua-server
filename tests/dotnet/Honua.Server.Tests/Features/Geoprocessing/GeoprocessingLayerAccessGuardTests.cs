@@ -313,6 +313,8 @@ public sealed class GeoprocessingLayerAccessGuardTests
         var plan = EnrichmentPlan(extraInputs: new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] = "+8",
+            [EnrichmentJobExecutor.AuthorizedSourceLayerInput] =
+                SourceLayerId.ToString(CultureInfo.InvariantCulture),
         });
 
         var bound = await guard.EnsureLayerReadAccessAsync(plan, OrchestrationPrincipal(), CancellationToken.None);
@@ -436,12 +438,68 @@ public sealed class GeoprocessingLayerAccessGuardTests
     /// The plan a workflow dispatch carries: an enrichment step already pinned to the dataset
     /// layer a live requester authorized (what publication persists onto the stored plan).
     /// </summary>
+    /// <summary>
+    /// The source layer needs its own requester pin, not just the dataset's. A ForEach
+    /// placeholder resolves to a concrete <c>layerId</c> only at run creation, so publication
+    /// never authorized it; without a source pin the reconcile tick re-derived the decision
+    /// against the orchestrator principal, whose wildcard <c>admin</c> grant admits everything
+    /// (honua-server#3043 review).
+    /// </summary>
+    [UnitTest]
+    public async Task EnsureLayerReadAccess_BackgroundSubmissionWithoutASourcePin_Denies()
+    {
+        var guard = BuildGuard(out _);
+
+        // Dataset pinned, source not — exactly the shape a dynamically bound source produces.
+        var plan = EnrichmentPlan(extraInputs: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] =
+                DatasetLayerId.ToString(CultureInfo.InvariantCulture),
+        });
+
+        var act = async () =>
+            await guard.EnsureLayerReadAccessAsync(plan, OrchestrationPrincipal(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>(
+            "no live requester ever authorized this source layer");
+    }
+
+    [UnitTest]
+    public async Task EnsureLayerReadAccess_BackgroundSubmissionWhoseSourcePinNamesAnotherLayer_Denies()
+    {
+        // The dynamic case proper: the stored plan was pinned for one source layer and the
+        // expanded step now names a different one. Matching the pin is what makes substitution
+        // after authorization detectable.
+        var guard = BuildGuard(out _);
+
+        var plan = EnrichmentPlan(extraInputs: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] =
+                DatasetLayerId.ToString(CultureInfo.InvariantCulture),
+            [EnrichmentJobExecutor.AuthorizedSourceLayerInput] =
+                (SourceLayerId + 1).ToString(CultureInfo.InvariantCulture),
+        });
+
+        var act = async () =>
+            await guard.EnsureLayerReadAccessAsync(plan, OrchestrationPrincipal(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>(
+            "the step names a source layer other than the one the requester authorized");
+    }
+
+    /// <summary>
+    /// A stored plan as a live requester's authorization leaves it: BOTH layers pinned. The
+    /// source pin is what stops a background re-authorization from admitting a source layer the
+    /// requester never saw (honua-server#3043 review).
+    /// </summary>
     private static AnalysisPlan PinnedEnrichmentPlan(int authorizedLayerId, string? datasetId = null)
         => EnrichmentPlan(
             extraInputs: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] =
                     authorizedLayerId.ToString(CultureInfo.InvariantCulture),
+                [EnrichmentJobExecutor.AuthorizedSourceLayerInput] =
+                    SourceLayerId.ToString(CultureInfo.InvariantCulture),
             },
             datasetId: datasetId);
 

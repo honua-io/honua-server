@@ -71,6 +71,23 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// </summary>
     internal const string AuthorizedDatasetLayerInput = "authorizedDatasetLayerId";
 
+    /// <summary>
+    /// Step input carrying the caller-selected SOURCE layer as authorized at submission, the
+    /// counterpart of <see cref="AuthorizedDatasetLayerInput"/> for the other layer an
+    /// enrichment job reads (honua-server#3043 review).
+    /// </summary>
+    /// <remarks>
+    /// Without it, a background submission re-authorized the source layer against the SUBMITTING
+    /// identity — for the workflow reconcile tick that is the orchestrator principal carrying the
+    /// wildcard <c>admin</c> role — so a source layer publication never saw, such as one supplied
+    /// through a ForEach placeholder, was authorized against admin rather than against the human
+    /// who published the workflow. Written exclusively by
+    /// <see cref="GeoprocessingLayerAccessGuard"/>, which strips any caller-supplied value first.
+    /// Not a declared catalog parameter — an internal binding, never part of the public process
+    /// description.
+    /// </remarks>
+    internal const string AuthorizedSourceLayerInput = "authorizedSourceLayerId";
+
     // Enrichment compute is a curated facade over spatial join, so it shares the
     // spatial-join entitlement rather than introducing a separate SKU line
     // (mirrors DataEnrichmentRequestHandlers).
@@ -669,9 +686,9 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             }
         }
 
-        OverlayExecutorSupport.Upsert(attributes, SpatialJoinSupport.JoinCountAttribute, nearestFeature is null ? 0L : 1L);
-        OverlayExecutorSupport.Upsert(
-            attributes, NearDistanceAttribute, nearestFeature is null ? null : (object)bestDistance);
+        // Carried attributes FIRST, computed fields after — same collision rule as the join
+        // path: a dataset carrying JOIN_COUNT or NEAR_DIST must not overwrite the values this
+        // method promises (honua-server#3043 review).
         foreach (var field in carryFields)
         {
             OverlayExecutorSupport.Upsert(
@@ -679,6 +696,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                 field,
                 nearestFeature is null ? null : SpatialJoinSupport.ReadValue(nearestFeature, field));
         }
+
+        OverlayExecutorSupport.Upsert(attributes, SpatialJoinSupport.JoinCountAttribute, nearestFeature is null ? 0L : 1L);
+        OverlayExecutorSupport.Upsert(
+            attributes, NearDistanceAttribute, nearestFeature is null ? null : (object)bestDistance);
 
         return new Feature(target.Geometry, attributes);
     }

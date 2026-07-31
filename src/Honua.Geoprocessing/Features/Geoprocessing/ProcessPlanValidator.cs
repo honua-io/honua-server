@@ -247,7 +247,8 @@ internal static partial class ProcessPlanValidator
                 // caller-supplied value before writing the layer it actually authorized, so a
                 // value that survives validation is overwritten rather than trusted.
                 if (string.Equals(step.ProcessId, EnrichmentJobExecutor.HandledProcessId, StringComparison.Ordinal)
-                    && string.Equals(inputName, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal))
+                    && (string.Equals(inputName, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal)
+                        || string.Equals(inputName, EnrichmentJobExecutor.AuthorizedSourceLayerInput, StringComparison.Ordinal)))
                 {
                     continue;
                 }
@@ -943,7 +944,11 @@ internal static partial class ProcessPlanValidator
         // envelope from those ordinates and then either fails deep in the provider path as a
         // generic read error or produces a filter the caller never asked for. Every ordinate
         // must be finite to be a coordinate at all (#3043 review).
-        var parts = bbox.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        // RemoveEmptyEntries would silently drop a MISSING ordinate, so `0,,1,2,3` collapsed to
+        // four values, passed, and the source parser then read it as `0,1,2,3` — a different
+        // window than the caller supplied. Split without it so a blank ordinate is a rejection
+        // (honua-server#3043 review).
+        var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
         var ok = parts.Length == 4
             && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate)
                 && double.IsFinite(ordinate));

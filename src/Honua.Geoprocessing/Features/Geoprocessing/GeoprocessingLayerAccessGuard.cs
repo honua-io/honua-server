@@ -181,11 +181,11 @@ internal sealed class GeoprocessingLayerAccessGuard
                 continue;
             }
 
-            var authorizedDatasetLayerId =
+            var authorized =
                 await EnsureEnrichmentLayersReadableAsync(step, principal, cancellationToken).ConfigureAwait(false);
 
             boundSteps ??= [.. plan.Steps];
-            boundSteps[index] = BindAuthorizedDatasetLayer(step, authorizedDatasetLayerId);
+            boundSteps[index] = BindAuthorizedLayers(step, authorized);
         }
 
         return boundSteps is null ? plan : plan with { Steps = boundSteps };
@@ -201,7 +201,7 @@ internal sealed class GeoprocessingLayerAccessGuard
     /// <see langword="null"/> when no dataset resolves and no pin has to be matched (the
     /// executor fails such a job before any layer read).
     /// </summary>
-    private async Task<int?> EnsureEnrichmentLayersReadableAsync(
+    private async Task<AuthorizedEnrichmentLayers> EnsureEnrichmentLayersReadableAsync(
         AnalysisPlanStep step,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
@@ -216,9 +216,26 @@ internal sealed class GeoprocessingLayerAccessGuard
         var hasRequesterBinding = TryReadLayerId(
             step, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, out var requesterAuthorizedLayerId);
 
+        // The same pin for the SOURCE layer. Without it a background submission re-authorized
+        // the source against the submitting identity, which for the workflow reconcile tick is
+        // the orchestrator principal carrying the wildcard `admin` role — so a source layer no
+        // live requester ever authorized (a ForEach placeholder resolves to a concrete id only
+        // at run creation) was admitted on admin's authority (honua-server#3043 review).
+        var hasRequesterSourceBinding = TryReadLayerId(
+            step, EnrichmentJobExecutor.AuthorizedSourceLayerInput, out var requesterAuthorizedSourceLayerId);
+
         var ambient = _httpContextAccessor.HttpContext;
         if (ambient is null)
         {
+            if (hasSourceLayer && (!hasRequesterSourceBinding || requesterAuthorizedSourceLayerId != sourceLayerId))
+            {
+                // Either no live requester ever authorized a source layer for this step, or the
+                // step now names a DIFFERENT one than the requester authorized — the dynamic
+                // case. Re-deriving here would authorize it under the background identity, so
+                // fail closed exactly as the dataset binding does.
+                throw Deny(principal, "background submission carries no requester-authorized source-layer binding");
+            }
+
             if (!hasRequesterBinding)
             {
                 // No live requester, and no pin a live requester left behind. Re-deriving the
@@ -277,7 +294,7 @@ internal sealed class GeoprocessingLayerAccessGuard
                 throw Deny(principal, "requester-authorized enrichment dataset no longer resolves");
             }
 
-            return null;
+            return new AuthorizedEnrichmentLayers(null, hasSourceLayer ? sourceLayerId : null);
         }
 
         // The pin is enforced, never refreshed: a dataset re-pointed after the requester
@@ -290,8 +307,17 @@ internal sealed class GeoprocessingLayerAccessGuard
 
         await EnsureLayerReadableAsync(context, principal, dataset.LayerId, cancellationToken)
             .ConfigureAwait(false);
-        return dataset.LayerId;
+        return new AuthorizedEnrichmentLayers(dataset.LayerId, hasSourceLayer ? sourceLayerId : null);
     }
+
+    /// <summary>
+    /// The layer ids this gate authorized for a step, pinned onto it so a later contextless
+    /// re-authorization matches the human requester's decision rather than re-deriving one under
+    /// a background identity.
+    /// </summary>
+    /// <param name="DatasetLayerId">The resolved dataset's backing layer, when a dataset resolved.</param>
+    /// <param name="SourceLayerId">The caller-selected source layer, when the job reads one.</param>
+    private readonly record struct AuthorizedEnrichmentLayers(int? DatasetLayerId, int? SourceLayerId);
 
     /// <summary>
     /// Evaluates one layer through the shared metadata-v2 resolution + access pipeline
@@ -320,20 +346,23 @@ internal sealed class GeoprocessingLayerAccessGuard
     }
 
     /// <summary>
-    /// Stamps the authorized dataset layer identity onto a gated step, always REPLACING the
-    /// incoming value so the binding can only ever come from this gate. When the step
+    /// Stamps the authorized dataset AND source layer identities onto a gated step, always
+    /// REPLACING the incoming values so a binding can only ever come from this gate. When the step
     /// arrived with a pin, the caller has already proven it matches the layer the gate
     /// resolved and authorized, so the rewrite is value-preserving; when it did not, this is
     /// the point at which a live requester's authorization becomes the pin every later
     /// (re-)authorization of that plan must match. A step whose dataset did not resolve
     /// carries no binding, and the executor fails it.
     /// </summary>
-    private static AnalysisPlanStep BindAuthorizedDatasetLayer(AnalysisPlanStep step, int? authorizedDatasetLayerId)
+    private static AnalysisPlanStep BindAuthorizedLayers(
+        AnalysisPlanStep step,
+        AuthorizedEnrichmentLayers authorized)
     {
-        var inputs = new Dictionary<string, string>(step.Inputs.Count + 1, StringComparer.Ordinal);
+        var inputs = new Dictionary<string, string>(step.Inputs.Count + 2, StringComparer.Ordinal);
         foreach (var input in step.Inputs)
         {
-            if (string.Equals(input.Key, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal))
+            if (string.Equals(input.Key, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal)
+                || string.Equals(input.Key, EnrichmentJobExecutor.AuthorizedSourceLayerInput, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -341,10 +370,16 @@ internal sealed class GeoprocessingLayerAccessGuard
             inputs[input.Key] = input.Value;
         }
 
-        if (authorizedDatasetLayerId is { } layerId)
+        if (authorized.DatasetLayerId is { } datasetLayerId)
         {
             inputs[EnrichmentJobExecutor.AuthorizedDatasetLayerInput] =
-                layerId.ToString(CultureInfo.InvariantCulture);
+                datasetLayerId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (authorized.SourceLayerId is { } sourceLayerId)
+        {
+            inputs[EnrichmentJobExecutor.AuthorizedSourceLayerInput] =
+                sourceLayerId.ToString(CultureInfo.InvariantCulture);
         }
 
         return step with { Inputs = inputs };
