@@ -347,7 +347,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
 
     /// <summary>
     /// Walks the index from the low end and returns the lowest cursor whose event payload is
-    /// still present, pruning index members whose payload key has already expired.
+    /// still present, pruning index members whose payload key has already expired. Returns
+    /// <see cref="long.MaxValue"/> when the walk cannot reach a live payload within its
+    /// budget, which classifies every resume cursor as expired.
     /// </summary>
     /// <remarks>
     /// Each <c>featurechange:event:*</c> key carries its own TTL, but the matching sorted-set
@@ -357,16 +359,24 @@ internal sealed class InMemoryFeatureChangeEventStore(
     /// cursor as "oldest retained" would make an expired resume cursor look replayable, and
     /// leaving the tombstones in place also lets a replay batch fill entirely with stale
     /// members and return empty before reaching live events. Pruning here fixes both.
+    /// <para>
+    /// The result feeds a "can this client still resume from deltas?" test, so an
+    /// UNDER-estimate is unsafe: it admits a resume whose events are actually gone, and the
+    /// client then keeps incomplete state believing it is current. When the budget is
+    /// exhausted without seeing a live payload the answer is unknown, so this fails closed
+    /// with <see cref="long.MaxValue"/> — every cursor reads as expired and clients take a
+    /// fresh baseline — rather than returning a lower bound that would read as replayable.
+    /// </para>
     /// </remarks>
     private async Task<long> GetOldestRetainedRedisCursorAsync(CancellationToken cancellationToken)
     {
         const int BatchSize = 128;
-        const int MaxExamined = 4096;
 
-        // Bound the sweep so one call can never walk an arbitrarily large tombstone run;
-        // each call prunes what it examined, so successive calls make progress.
-        var remaining = Math.Clamp(_maxRetained, BatchSize, MaxExamined);
-        long highestPruned = 0;
+        // TrimRedisAsync caps the index at _maxRetained, so a healthy index can never hold
+        // more members than that; the extra batch is slack for members appended while the
+        // sweep runs. Exceeding it means the index is in a state this code cannot reason
+        // about, which is handled by failing closed below rather than by guessing.
+        var remaining = _maxRetained + BatchSize;
 
         while (remaining > 0)
         {
@@ -409,10 +419,6 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 }
 
                 stale.Add(members[i]);
-                if (cursors[i] > highestPruned)
-                {
-                    highestPruned = cursors[i];
-                }
             }
 
             await _redisDb.SortedSetRemoveAsync(IndexKey, [.. stale]).ConfigureAwait(false);
@@ -424,10 +430,14 @@ internal sealed class InMemoryFeatureChangeEventStore(
             }
         }
 
-        // Sweep bound reached without finding a live payload. Everything examined is gone,
-        // so the true oldest retained cursor is at least one past the highest pruned member
-        // — a lower bound is still sound for the "can this resume cursor be replayed?" test.
-        return highestPruned + 1;
+        // The bound was reached without locating a live payload, so the oldest retained
+        // cursor is UNKNOWN — not "one past the last tombstone". A lower bound is not sound
+        // here: the caller's test is `oldest > cursor + 1`, and a bound below the true oldest
+        // admits a resume that then finds its events missing, so the client silently keeps
+        // incomplete state instead of taking a replacement baseline. Fail closed with a value
+        // above every real cursor, which classifies every resume cursor as expired and forces
+        // a fresh snapshot until the sweep can see live payloads again.
+        return long.MaxValue;
     }
 
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(
@@ -516,18 +526,22 @@ internal sealed class InMemoryFeatureChangeEventStore(
         int limit,
         CancellationToken cancellationToken)
     {
-        // Bounded rescan: a whole batch can be consumed by tombstoned members (the event key
-        // expired while its index member survived) or by events outside the from/to window.
-        // Returning empty in that case would stop replay short of live events sitting just
-        // past the batch, so advance beyond the examined range and retry a bounded number of
-        // times instead of reporting "no more events".
-        const int MaxPasses = 4;
+        // Rescan until the index is EXHAUSTED, not for a fixed number of passes. A whole
+        // batch can be consumed by tombstoned members (the event key expired while its index
+        // member survived) or by events outside the from/to window, and the replay loops read
+        // an empty result as end-of-stream — so stopping early on a long tombstone run makes
+        // live deltas sitting just past it permanently undeliverable. Each pass strictly
+        // advances `minimumCursor` past everything it examined and prunes the tombstones it
+        // found, so the walk terminates on a finite index; the examined budget below is a
+        // backstop against an index far larger than trimming should ever allow, not the
+        // normal exit.
+        var take = Math.Max(limit * 4, limit);
+        var examinedBudget = _maxRetained + take;
 
         var minimumCursor = (cursor ?? 0) + 1;
-        var take = Math.Max(limit * 4, limit);
         var results = new List<FeatureChangeEvent>(limit);
 
-        for (var pass = 0; pass < MaxPasses && results.Count < limit; pass++)
+        while (results.Count < limit && examinedBudget > 0)
         {
             var members = await _redisDb!.SortedSetRangeByScoreAsync(
                     IndexKey,
@@ -543,6 +557,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 break;
             }
 
+            examinedBudget -= members.Length;
             var lastExamined = minimumCursor - 1;
             foreach (var member in members)
             {

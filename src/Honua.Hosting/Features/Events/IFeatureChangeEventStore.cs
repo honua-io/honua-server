@@ -20,9 +20,20 @@ internal interface IFeatureChangeEventStore
     /// value to tell "no events since your cursor" apart from "the events since your cursor
     /// have been trimmed or expired" — the latter requires a replacement snapshot rather
     /// than silently continuing with deltas.
+    /// <para>
+    /// Because the value gates that decision, an implementation that cannot determine the
+    /// oldest retained cursor must fail CLOSED by returning <see cref="long.MaxValue"/>,
+    /// which reads as "everything you are missing is gone" and forces a replacement
+    /// snapshot. Returning a lower bound instead would admit a resume whose events are
+    /// actually unavailable, leaving the client permanently short of state it believes it
+    /// has.
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The oldest retained cursor, or 0 when the store is empty.</returns>
+    /// <returns>
+    /// The oldest retained cursor, 0 when the store is empty, or <see cref="long.MaxValue"/>
+    /// when the retained window cannot be determined.
+    /// </returns>
     Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(0L);
 
