@@ -88,9 +88,15 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // the gate refuses run creation when the definition's pinned dataset layer no longer
         // matches (or when the requester cannot read it), and a step whose stored plan carries
         // no pin at all fails closed at dispatch instead of being authorized as the orchestrator.
+        // Keep the plan the gate BOUND, not the one that went in. For a ForEach step the
+        // concrete layer/dataset id only exists after expansion, so publication saw a
+        // placeholder and stamped no pin; discarding this result left reconciliation submitting
+        // an unpinned step that the layer gate refuses, breaking every dynamic iteration
+        // (honua-server#3043 review).
+        var authorizedPlans = new Dictionary<string, AnalysisPlan>(StringComparer.Ordinal);
         foreach (var step in expanded.Steps)
         {
-            await _jobService
+            authorizedPlans[step.StepId] = await _jobService
                 .EnsurePlanExecutionAuthorizedAsync(step.Plan, principal, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -103,7 +109,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 StepId = step.StepId,
                 PlanId = step.Plan.PlanId,
                 Status = WorkflowStepStatus.Pending,
-                AttemptCount = 0
+                AttemptCount = 0,
+                AuthorizedPlan = authorizedPlans.GetValueOrDefault(step.StepId)
             })
             .ToArray();
 
@@ -655,12 +662,16 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.InputBindingResolved(_logger, run.RunId, state.StepId, pair.Key, pair.Value);
         }
 
-        // The plan comes from the STORED definition, so any per-layer binding the publishing
-        // human's authorization produced travels with it into this submission (#3043). The
-        // submit-time gate matches that binding against the layer the dataset resolves to now
-        // and refuses on a mismatch, so a dataset re-pointed between publication and dispatch
-        // fails this step rather than being re-authorized under the orchestrator identity below.
-        var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
+        // Prefer the plan the gate authorized at RUN CREATION: it carries the bindings produced
+        // for THIS run's expanded step, which is the only place a ForEach step's concrete layer
+        // and dataset ids are known. The stored definition is the fallback for runs created
+        // before that plan was persisted, where publication's binding on a static layer id is
+        // what travels (#3043). Either way the submit-time gate matches the binding against the
+        // layer the dataset resolves to NOW and refuses on a mismatch, so a dataset re-pointed
+        // between authorization and dispatch fails this step rather than being re-authorized
+        // under the orchestrator identity below.
+        var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
+        var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);

@@ -26,7 +26,15 @@ public interface IWorkflowJobExecutor
     /// faces the mutating-process tier (#2798), nor one whose steps read a layer the operator
     /// cannot read on any protocol surface (#2283/#3043).
     /// </summary>
-    Task EnsurePlanExecutionAuthorizedAsync(
+    /// <returns>
+    /// The plan with the gate's per-layer bindings stamped on it. Callers MUST persist this
+    /// instance for dispatch rather than the plan they passed in: for a ForEach step the
+    /// concrete layer/dataset id exists only after expansion, so publication could not stamp a
+    /// pin and the stored definition carries none. Discarding the bound plan therefore left
+    /// reconciliation submitting an unpinned step, which the layer gate refuses
+    /// (honua-server#3043 review).
+    /// </returns>
+    Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);

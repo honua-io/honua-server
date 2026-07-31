@@ -142,6 +142,67 @@ public sealed class WorkflowBranchingAndForEachTests
     }
 
     [Fact]
+    public async Task ReconcileWorkflowRun_ForEach_DispatchesThePlanTheGateAuthorized()
+    {
+        // Publication cannot pin a ForEach step's layer: the concrete id exists only after
+        // expansion at RUN CREATION. Discarding the plan the gate bound there left
+        // reconciliation submitting the stored, unpinned definition plan, which the layer gate
+        // refuses — every dynamic iteration failed before execution (honua-server#3043 review).
+        var harness = new Harness();
+        var now = harness.Clock.GetUtcNow();
+
+        // Stand in for the gate's binding: stamp a server-owned input the definition lacks.
+        harness.JobService.OnBindExecutionPlan = plan => plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs, StringComparer.Ordinal)
+                    {
+                        ["authorizedSourceLayerId"] = "42",
+                    },
+                },
+            ],
+        };
+
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf-foreach-binding",
+            Name = "foreach-binding",
+            Steps =
+            [
+                new WorkflowStepDefinition
+                {
+                    StepId = "work",
+                    Plan = BuildPlanWithInput("plan-work", "region", "${item}"),
+                    ForEach = new WorkflowForEachSpec(ForEachRegions)
+                }
+            ],
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+        Assert.All(run.StepStates, state => Assert.NotNull(state.AuthorizedPlan));
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        // Every dispatched iteration carries the gate's binding AND its own item substitution,
+        // so persisting the authorized plan did not cost the ForEach expansion.
+        Assert.All(
+            harness.JobService.Submitted,
+            plan => Assert.Equal("42", plan.Steps[0].Inputs["authorizedSourceLayerId"]));
+        Assert.Equal(
+            ExpectedRegionsSorted,
+            harness.JobService.Submitted
+                .Select(p => p.Steps[0].Inputs["region"])
+                .OrderBy(v => v, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_BranchInsideForEach_GatesEveryIteration()
     {
         var harness = new Harness();
