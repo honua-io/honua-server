@@ -55,6 +55,40 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         _logger = logger;
     }
 
+    /// <summary>
+    /// Resolves the row/field security snapshot to pin on a run.
+    /// </summary>
+    /// <remarks>
+    /// A manual run HAS a requesting principal, so the snapshot is captured from it. A cron or
+    /// event-triggered run does not: the scheduler and event-trigger services call in under the
+    /// synthesized orchestrator identity carrying <c>role=admin</c>, so capturing from it would
+    /// hand every step job ADMIN row and field visibility — a restricted author's scheduled
+    /// workflow would read all rows and unmasked fields on every tick. Those runs inherit the
+    /// snapshot captured from the author when the workflow was published.
+    /// <para>
+    /// A triggered run whose definition predates that field is REFUSED rather than falling back
+    /// to the orchestrator capture, matching the submit path's treatment of an absent inherited
+    /// snapshot: the fallback is a privilege escalation, and the resulting non-null snapshot
+    /// would sail past the fail-closed guards at the read seam. Republishing the workflow
+    /// captures the author and clears the refusal (honua-server#3068 review).
+    /// </para>
+    /// </remarks>
+    private JobSecurityContext ResolveRunSecurityContext(
+        WorkflowDefinition definition,
+        WorkflowTriggerKind triggerKind,
+        ClaimsPrincipal principal)
+    {
+        if (triggerKind == WorkflowTriggerKind.Manual)
+        {
+            return JobSecurityContextCapture.Capture(principal, _rbacOptions);
+        }
+
+        return definition.AuthorSecurityContext ?? throw new InvalidOperationException(
+            $"Workflow '{definition.WorkflowId}' was published before its author's row/field "
+            + "security identity was recorded, so a triggered run cannot reconstruct it. "
+            + "Republish the workflow to enable scheduled and event-triggered runs.");
+    }
+
     public async Task<WorkflowRun> CreateRunAsync(
         WorkflowDefinition definition,
         WorkflowTriggerKind triggerKind,
@@ -124,7 +158,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 // would give every step job admin row/field visibility and launder away the
                 // requester's RLS predicate and field mask. Captured here, where the real
                 // principal is still in hand, and replayed on every step submission.
-                SubmitterSecurityContext = JobSecurityContextCapture.Capture(principal, _rbacOptions)
+                SubmitterSecurityContext = ResolveRunSecurityContext(definition, triggerKind, principal)
             }
         };
 

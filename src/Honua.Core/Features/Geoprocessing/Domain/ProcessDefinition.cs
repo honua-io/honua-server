@@ -134,6 +134,41 @@ public sealed record ProcessParameterSpec
     /// can match ArcGIS-style mixed-case strings.
     /// </summary>
     public IReadOnlyList<string>? AllowedValues { get; init; }
+
+    /// <summary>
+    /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, whether the layer is
+    /// something the process READS or something it WRITES INTO. Ignored for every other value
+    /// type.
+    /// </summary>
+    /// <remarks>
+    /// The submit-time layer gate authorizes each referenced layer for the operation this
+    /// declares, so a destination-only layer is not held to a read grant. Deriving the
+    /// operation from the value type alone required <c>Query</c> on every layer parameter,
+    /// which refused an import whose caller held the mutating grant but was deliberately
+    /// denied read on the destination (honua-server#3046 review). The default is
+    /// <see cref="ProcessLayerAccess.Read"/> so a parameter added later is gated as a read
+    /// until someone states otherwise — the conservative direction.
+    /// </remarks>
+    public ProcessLayerAccess LayerAccess { get; init; } = ProcessLayerAccess.Read;
+}
+
+/// <summary>
+/// How a process uses a layer named by a <see cref="ProcessParameterValueType.LayerId"/>
+/// parameter, which decides the permission the submit-time gate requires for it.
+/// </summary>
+public enum ProcessLayerAccess
+{
+    /// <summary>
+    /// The process reads features or raster from the layer. Requires a read/query grant.
+    /// </summary>
+    Read,
+
+    /// <summary>
+    /// The layer is a destination the process writes into and never reads. Requires a write
+    /// grant; a read grant is deliberately NOT required, so a caller may be permitted to
+    /// import into a layer whose contents they cannot query.
+    /// </summary>
+    Write,
 }
 
 /// <summary>

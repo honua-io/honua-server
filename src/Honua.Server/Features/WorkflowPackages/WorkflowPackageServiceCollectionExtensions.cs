@@ -5,9 +5,11 @@ using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -32,7 +34,8 @@ internal static class WorkflowPackageServiceCollectionExtensions
             sp.GetRequiredService<ILogger<WorkflowPackageService>>(),
             sp.GetService<IWorkflowDefinitionStore>(),
             sp.GetService<WorkflowOrchestrationEngine>(),
-            sp.GetService<IMetadataReleaseService>()));
+            sp.GetService<IMetadataReleaseService>(),
+            sp.GetService<IOptions<RbacOptions>>()));
 
         return services;
     }

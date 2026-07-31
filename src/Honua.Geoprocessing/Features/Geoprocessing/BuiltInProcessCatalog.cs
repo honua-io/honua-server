@@ -1206,7 +1206,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("sourceUrl", "Source URL", "Optional originating URL when the source was fetched from a remote object, recorded in provenance.", ProcessParameterValueType.Text),
                 Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier for the imported geometries. Defaults to 4326.", ProcessParameterValueType.Srid),
-                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId),
+                // Destination, never a source: the importer tiles INTO this layer and never
+                // reads it, so the submit gate must not demand a read grant on it
+                // (honua-server#3046 review).
+                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.Write),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1774,7 +1777,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         ProcessParameterValueType valueType,
         bool required = false,
         string? defaultValue = null,
-        IReadOnlyList<string>? allowedValues = null) => new()
+        IReadOnlyList<string>? allowedValues = null,
+        ProcessLayerAccess layerAccess = ProcessLayerAccess.Read) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1782,6 +1786,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ValueType = valueType,
             Required = required,
             DefaultValue = defaultValue,
-            AllowedValues = allowedValues
+            AllowedValues = allowedValues,
+            LayerAccess = layerAccess
         };
 }

@@ -134,10 +134,16 @@ internal sealed class GeoprocessingJobAuthorizer
     {
         foreach (var reference in PlanLayerReferences.Derive(plan, catalog))
         {
+            // The parameter declares whether the process reads the layer or writes into it, so
+            // a destination-only layer is gated on the write grant instead of being refused for
+            // want of a read the process never performs (honua-server#3046 review).
+            var isWrite = reference.Access == ProcessLayerAccess.Write;
+            var operation = isWrite ? AuthorizationOperation.Insert : AuthorizationOperation.Query;
+
             var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
                 principal,
                 reference.LayerId,
-                AuthorizationOperation.Query,
+                operation,
                 cancellationToken).ConfigureAwait(false);
 
             if (decision.IsAllowed)
@@ -155,10 +161,10 @@ internal sealed class GeoprocessingJobAuthorizer
                 decision.RequiresAuthentication,
                 decision.RequiresAuthentication
                     ? "Authentication is required for this operation."
-                    : $"You do not have permission to read layer {reference.LayerId} "
-                      + $"referenced by step '{reference.StepId}'.",
+                    : $"You do not have permission to {(isWrite ? "write to" : "read")} layer "
+                      + $"{reference.LayerId} referenced by step '{reference.StepId}'.",
                 OperatorResourceType.Catalog,
-                OperatorOperation.Read,
+                isWrite ? OperatorOperation.Create : OperatorOperation.Read,
                 AuthorizationDenialReason.InsufficientGrant);
         }
     }

@@ -75,6 +75,60 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_MoreRolesThanTheClaimBudget_KeepsEveryRole()
+    {
+        // Capturing roles FIRST is not sufficient on its own: with more roles than the budget,
+        // the role pass itself hit the ceiling and dropped roles. A dropped role that owns an
+        // RLS or field-mask policy WIDENS access — RowLevelSecurityFilterSource returns no
+        // filter when no policy matches and FieldMaskSource returns an empty mask — so roles
+        // are exempt from the budget entirely (honua-server#3068 review).
+        var claims = new List<(string Type, string Value)>();
+        for (var i = 0; i < 400; i++)
+        {
+            claims.Add((ClaimTypes.Role, $"role-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+        }
+
+        var captured = JobSecurityContextCapture.Capture(BuildPrincipal([.. claims]), new RbacOptions());
+
+        captured.Claims.Count(claim => claim.Type == ClaimTypes.Role).Should().Be(400);
+        captured.Claims.Should().Contain(claim => claim.Value == "role-399",
+            "the last role must survive as surely as the first");
+    }
+
+    [UnitTest]
+    public void Capture_ConfiguredRoleClaimType_IsAlsoExemptFromTheBudget()
+    {
+        // The exemption follows RbacOptions.EffectiveRoleClaimType, not just ClaimTypes.Role,
+        // or a deployment using a custom role claim would still truncate policy identity.
+        var options = new RbacOptions { RoleClaimType = "honua_roles" };
+        var claims = new List<(string Type, string Value)>();
+        for (var i = 0; i < 300; i++)
+        {
+            claims.Add(("honua_roles", $"custom-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+        }
+
+        var captured = JobSecurityContextCapture.Capture(BuildPrincipal([.. claims]), options);
+
+        captured.Claims.Count(claim => claim.Type == "honua_roles").Should().Be(300);
+    }
+
+    [UnitTest]
+    public void Capture_NonRoleClaims_AreStillBounded()
+    {
+        // The bloat guard the budget exists for must survive the exemption: descriptive claims
+        // are still capped so a pathological token cannot inflate every durable job record.
+        var claims = new List<(string Type, string Value)>();
+        for (var i = 0; i < 2000; i++)
+        {
+            claims.Add(($"filler{i}", i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        var captured = JobSecurityContextCapture.Capture(BuildPrincipal([.. claims]), new RbacOptions());
+
+        captured.Claims.Should().HaveCountLessThan(2000);
+    }
+
+    [UnitTest]
     public void Capture_PrincipalWithNoClaims_ProducesEmptySnapshotRatherThanNull()
     {
         // An empty snapshot is strictly more restrictive than a missing one: it resolves no

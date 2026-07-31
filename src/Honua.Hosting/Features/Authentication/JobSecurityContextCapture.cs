@@ -36,10 +36,20 @@ internal static class JobSecurityContextCapture
     private const string RestoredAuthenticationType = "HonuaJobSecurityContext";
 
     /// <summary>
-    /// Upper bound on captured claims, so a pathological token cannot bloat every durable job
-    /// record. Role claims are captured first and are therefore never the ones dropped.
+    /// Upper bound on captured NON-ROLE claims, so a pathological token cannot bloat every
+    /// durable job record.
     /// </summary>
-    private const int MaxCapturedClaims = 256;
+    /// <remarks>
+    /// Role claims are deliberately exempt. Capturing roles first is not enough on its own: a
+    /// principal with more roles than the budget would have had roles themselves truncated,
+    /// and a dropped role that owns an RLS or field-mask policy WIDENS access rather than
+    /// narrowing it — <c>RowLevelSecurityFilterSource</c> returns no filter when no policy
+    /// matches, and <c>FieldMaskSource</c> returns an empty mask. Truncation must never be
+    /// able to grant visibility the live request did not have, so roles are captured in full
+    /// and the budget bounds only the descriptive claims alongside them (honua-server#3068
+    /// review).
+    /// </remarks>
+    private const int MaxCapturedNonRoleClaims = 256;
 
     /// <summary>
     /// Claim types never persisted: they carry credentials rather than policy identity, and a
@@ -77,10 +87,13 @@ internal static class JobSecurityContextCapture
         var captured = new List<JobSecurityClaim>();
         var seen = new HashSet<(string Type, string Value)>();
 
-        // Roles first: field masking keys purely on roles, so they must never be the claims a
-        // budget overflow drops.
-        AppendClaims(principal, captured, seen, roleClaimTypes, includeMatching: true);
-        AppendClaims(principal, captured, seen, roleClaimTypes, includeMatching: false);
+        // Roles are policy identity — RLS predicates and field masks key on them — so they are
+        // captured in full, with no budget. Everything else is descriptive and is what the
+        // budget bounds.
+        AppendClaims(principal, captured, seen, roleClaimTypes, includeMatching: true, limit: null);
+        AppendClaims(
+            principal, captured, seen, roleClaimTypes, includeMatching: false,
+            limit: captured.Count + MaxCapturedNonRoleClaims);
 
         return new JobSecurityContext(
             principal.Identity?.Name,
@@ -118,11 +131,12 @@ internal static class JobSecurityContextCapture
         List<JobSecurityClaim> captured,
         HashSet<(string Type, string Value)> seen,
         HashSet<string> roleClaimTypes,
-        bool includeMatching)
+        bool includeMatching,
+        int? limit)
     {
         foreach (var claim in principal.Claims)
         {
-            if (captured.Count >= MaxCapturedClaims)
+            if (limit is { } ceiling && captured.Count >= ceiling)
             {
                 return;
             }
