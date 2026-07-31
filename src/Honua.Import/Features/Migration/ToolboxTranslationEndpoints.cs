@@ -10,6 +10,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Import.FileImport;
 using Honua.ServiceDefaults;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Migration;
 
@@ -34,6 +35,9 @@ internal static partial class ToolboxTranslationEndpoints
     private const string ValidationActivityName = "honua.import.toolbox_translation.validate";
 
     private const string ValidationOperation = "toolbox-translation-validate";
+
+    /// <summary>The only media type this endpoint accepts a manifest in.</summary>
+    private const string JsonMediaType = "application/json";
 
     // Span attributes. Counts and the source format are low-cardinality; the rejection
     // attribute carries a fixed reason CODE rather than the caller-facing message, which
@@ -69,6 +73,20 @@ internal static partial class ToolboxTranslationEndpoints
         // so a manifest the server refuses shows up as an error span rather than no span.
         using var activity = HonuaTelemetry.StartActivity(ValidationActivityName);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, ValidationOperation);
+
+        // A non-JSON Content-Type is a MEDIA TYPE problem, not a malformed body:
+        // ReadFromJsonAsync refuses it before deserialization ever runs, and the generic catch
+        // below would report a perfectly well-formed payload as "Invalid request body". Check it
+        // up front so the caller gets 415 and knows what to change (honua-server#2145 review).
+        if (!HasJsonContentType(context.Request))
+        {
+            MarkRejected(activity, "unsupported-media-type");
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                $"Content-Type must be '{JsonMediaType}'.",
+                StatusCodes.Status415UnsupportedMediaType);
+            return;
+        }
 
         // The body is parsed as a document first so artifact identity can be judged on what
         // the caller actually sent: an omitted property is not distinguishable from an
@@ -153,6 +171,29 @@ internal static partial class ToolboxTranslationEndpoints
 
         await Results.Json(report, ImportJsonContext.Default.ToolboxTranslationReport)
             .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// True when the request declares a JSON body. Mirrors what
+    /// <c>HttpRequestJsonExtensions.ReadFromJsonAsync</c> accepts: the JSON media type or any
+    /// <c>+json</c> structured suffix, with an optional charset parameter. An ABSENT
+    /// Content-Type is accepted for compatibility with the existing empty-body path, which
+    /// answers 400 "Request body is required."
+    /// </summary>
+    private static bool HasJsonContentType(HttpRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ContentType))
+        {
+            return true;
+        }
+
+        if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType))
+        {
+            return false;
+        }
+
+        return mediaType.MediaType.Equals(JsonMediaType, StringComparison.OrdinalIgnoreCase)
+            || mediaType.Suffix.Equals("json", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

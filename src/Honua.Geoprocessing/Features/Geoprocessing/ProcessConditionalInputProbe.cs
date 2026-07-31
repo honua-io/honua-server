@@ -84,7 +84,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // written. Requirements only the fabricated branch imposes are therefore left to
         // FindUnverifiableConditionalParameters, which answers the same unenumerable-branch
         // case honestly with 'partially-translated'.
-        var branchIsFabricated = HasUnenumerableDiscriminator(definition, supplied, inputs);
+        var fabricatedDiscriminators = FabricatedDiscriminators(definition, supplied, inputs);
 
         var results = new List<ProcessAdmissibilityViolation>();
 
@@ -110,10 +110,13 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 continue;
             }
 
-            // Only the declared signature is branch-independent once a discriminator's value
-            // has been fabricated; anything a conditional rule imposes on an optional
-            // parameter is an artefact of the branch this probe happened to select.
-            if (branchIsFabricated && IsBranchConditional(definition, violation))
+            // Discount a violation ONLY when it is demonstrated to vary with the fabricated
+            // discriminator's value. Discounting every non-Required parameter was too broad: it
+            // also swallowed unconditional requirements, so surface.slope mapping `units` but
+            // no source at all was downgraded to partially-translated instead of unsupported
+            // (honua-server#2145 review).
+            if (fabricatedDiscriminators.Count > 0
+                && VariesWithFabricatedBranch(definition, inputs, fabricatedDiscriminators, violation))
             {
                 continue;
             }
@@ -223,33 +226,93 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         HashSet<string> supplied,
         Dictionary<string, string> baseInputs)
         => definition.Parameters.Any(parameter =>
-            supplied.Contains(parameter.Name)
+            IsUnenumerableDiscriminator(definition, supplied, baseInputs, parameter));
+
+    private bool IsUnenumerableDiscriminator(
+        ProcessDefinition definition,
+        HashSet<string> supplied,
+        Dictionary<string, string> baseInputs,
+        ProcessParameterSpec parameter)
+        => supplied.Contains(parameter.Name)
             && parameter.ValueType == ProcessParameterValueType.Text
             && parameter.AllowedValues is not { Count: > 0 }
             && DomainProbeValues.All(probeValue =>
-                IsRejectedAsForeignToken(definition.ProcessId, baseInputs, parameter.Name, probeValue)));
+                IsRejectedAsForeignToken(definition.ProcessId, baseInputs, parameter.Name, probeValue));
 
     /// <summary>
-    /// Returns true when a violation is imposed by a conditional rule rather than by the
-    /// process's declared signature, so a fabricated branch could be its only cause. A
-    /// declared-<c>Required</c> parameter is required in every branch and a process-level
-    /// failure has no parameter at all, so neither is ever discounted.
+    /// Returns true when <paramref name="violation"/> is DEMONSTRATED to depend on the value the
+    /// probe fabricated for a discriminator, by re-validating with that discriminator moved to a
+    /// different value and observing the violation disappear.
     /// </summary>
-    private static bool IsBranchConditional(
+    /// <remarks>
+    /// A requirement that survives every substitution holds in whatever branch the caller
+    /// selects, so it is a real reason the mapping cannot execute and must be reported. Only a
+    /// requirement that some other value removes is an artefact of the branch this probe
+    /// happened to pin — that is the case
+    /// <see cref="FindUnverifiableConditionalParameters"/> answers honestly as
+    /// branch-unverifiable.
+    /// <para>
+    /// The substituted values are the same sentinels the discriminator test uses. They are
+    /// rejected as foreign tokens by definition — that is what made the domain unenumerable —
+    /// but the canonical validator still evaluates every other rule, so a conditional
+    /// requirement keyed on the DEFAULT value is absent from that run while an unconditional one
+    /// persists. That difference is the whole signal, and it does not require guessing a legal
+    /// value from a domain the catalog never declared.
+    /// </para>
+    /// <para>
+    /// Replaces a coarser rule that discounted any violation on a non-<c>Required</c> parameter.
+    /// A member of an exactly-one-of source group is not declared <c>Required</c> either, so
+    /// that rule silently swallowed <c>surface.slope</c>'s unconditional missing-source failure
+    /// and certified a mapping that can never run (honua-server#2145 review).
+    /// </para>
+    /// </remarks>
+    private bool VariesWithFabricatedBranch(
         ProcessDefinition definition,
+        Dictionary<string, string> baseInputs,
+        IReadOnlyList<string> discriminators,
         GeoprocessingValidationFailure violation)
     {
-        var name = ParameterNameOf(violation.FieldPath);
-        if (name is null)
+        foreach (var discriminator in discriminators)
         {
-            return false;
+            foreach (var probeValue in DomainProbeValues)
+            {
+                var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal)
+                {
+                    [discriminator] = probeValue
+                };
+
+                if (!Validate(definition.ProcessId, inputs).Any(candidate => IsSameViolation(candidate, violation)))
+                {
+                    return true;
+                }
+            }
         }
 
-        var parameter = definition.Parameters.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        return parameter is not null && !parameter.Required;
+        return false;
     }
+
+    /// <summary>
+    /// Identity for comparing a violation across probe runs: the same rule on the same field.
+    /// The message is deliberately not compared — several rules interpolate the offending value,
+    /// which changes with every substitution.
+    /// </summary>
+    private static bool IsSameViolation(
+        GeoprocessingValidationFailure candidate,
+        GeoprocessingValidationFailure violation)
+        => string.Equals(candidate.Code, violation.Code, StringComparison.Ordinal)
+            && string.Equals(candidate.FieldPath, violation.FieldPath, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The supplied parameters whose value the probe had to fabricate because their domain is
+    /// an undeclared token set. Empty when the branch space is enumerable.
+    /// </summary>
+    private List<string> FabricatedDiscriminators(
+        ProcessDefinition definition,
+        HashSet<string> supplied,
+        Dictionary<string, string> baseInputs)
+        => [.. definition.Parameters
+            .Where(parameter => IsUnenumerableDiscriminator(definition, supplied, baseInputs, parameter))
+            .Select(parameter => parameter.Name)];
 
     /// <summary>
     /// Substitutes <paramref name="probeValue"/> for <paramref name="parameterName"/> and reports

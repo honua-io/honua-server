@@ -189,6 +189,21 @@ public sealed class ProcessConditionalInputProbeTests
         violations[0].Message.Should().Contain("input");
     }
 
+    [UnitTest]
+    public void FindAdmissibilityViolations_UnconditionalRequirement_SurvivesAFabricatedBranch()
+    {
+        // surface.slope's `units` is an undeclared token domain, so the probe fabricates a
+        // branch for it. Its missing-source failure holds in EVERY branch, though, so it must
+        // still be reported — an earlier rule discounted any violation on a non-Required
+        // parameter, and a member of an exactly-one-of source group is not declared Required
+        // either, so this mapping was certified as merely partial (honua-server#2145 review).
+        var violations = Probe().FindAdmissibilityViolations("surface.slope", ["units"]);
+
+        violations.Should().NotBeEmpty("no value of 'units' supplies a source raster");
+        violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.Inputs);
+    }
+
     // -----------------------------------------------------------------------
     // Structured-text validation is not a token domain
     // -----------------------------------------------------------------------

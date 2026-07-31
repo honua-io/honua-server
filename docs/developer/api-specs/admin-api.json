@@ -2084,6 +2084,16 @@
           },
           "413": {
             "description": "Request body exceeds the configured upload size limit."
+          },
+          "415": {
+            "description": "The request declares a Content-Type other than application/json (or a +json structured suffix). The body is not read, so a well-formed manifest sent with the wrong media type is refused here rather than reported as malformed. Written by the shared admin problem-details helper, so the payload is RFC 7807 application/problem+json.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }

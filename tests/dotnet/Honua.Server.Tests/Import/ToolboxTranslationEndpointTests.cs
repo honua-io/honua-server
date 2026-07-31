@@ -1076,6 +1076,42 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         span.GetTagItem("honua.import.toolbox.tool_count").Should().BeNull();
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_NonJsonContentType_Returns415()
+    {
+        // ReadFromJsonAsync refuses the media type before deserialization, and the generic catch
+        // reported a perfectly well-formed manifest as "Invalid request body" — a 400 that tells
+        // the caller to fix a payload that is not the problem (#3040).
+        using var content = new StringContent(
+            """{ "toolboxName": "T", "sourceFormat": "pyt", "tools": [] }""",
+            Encoding.UTF8,
+            "text/plain");
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/import/toolbox/translation/validate", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_JsonStructuredSuffixContentType_IsAccepted()
+    {
+        // The check must accept what ReadFromJsonAsync accepts, or a legitimate +json client
+        // would be refused for a media type the framework would have parsed.
+        using var content = new StringContent(
+            await File.ReadAllTextAsync(ResolveRepoFile(
+                "tests", "fixtures", "toolbox-translation", "partially-translatable-toolbox.json")),
+            Encoding.UTF8,
+            "application/vnd.honua.toolbox+json");
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/import/toolbox/translation/validate", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private async Task<HttpResponseMessage> PostFixtureAsync(string route, string fixtureName)
         => await PostJsonAsync(route, await File.ReadAllTextAsync(
             ResolveRepoFile("tests", "fixtures", "toolbox-translation", fixtureName)));
