@@ -3,7 +3,7 @@
 # Packages Honua as a custom-handler container behind the Azure Functions host.
 
 # Pin manifest digests to avoid mutable-tag noise in Trivy nightly scans.
-# Refresh cadence + remediation rationale: docs/security/code-scanning-2026-Q2-remediation.md.
+# Refresh cadence + remediation rationale: docs/internal/security/code-scanning-2026-Q2-remediation.md.
 ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/base:4-appservice@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
@@ -12,9 +12,12 @@ WORKDIR /src
 ENV DOTNET_ROOT=/usr/share/dotnet
 ENV PATH="${DOTNET_ROOT}:${PATH}"
 
+# The digest pins the package baseline; security updates are applied again in
+# the final runtime layer so build-only package versions need not be duplicated.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates wget && \
-    wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
+    wget -nv https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
     bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT" && \
     ln -sf "$DOTNET_ROOT/dotnet" /usr/bin/dotnet && \
     rm -f /tmp/dotnet-install.sh && \
@@ -105,9 +108,18 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS runtime
 WORKDIR /home/site/wwwroot
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 libstdc++6 zlib1g && \
-    rm -rf /var/lib/apt/lists/*
+# The Functions base can lag Bullseye security updates even when its tag digest
+# is current. Patch the runtime layer, then remove compile-only headers and
+# extension bundles excluded by this app's required 4.x bundle range.
+# hadolint ignore=DL3005,DL3008
+RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -y --no-install-recommends upgrade && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 install -y --no-install-recommends libgssapi-krb5-2 libstdc++6 zlib1g && \
+    apt-get purge -y libc6-dev linux-libc-dev && \
+    rm -rf \
+      /FuncExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/2.34.0 \
+      /FuncExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/3.35.0 \
+      /var/lib/apt/lists/*
 
 COPY --from=build /out/app /home/site/wwwroot/app
 COPY docker/cloud/azure-functions/ /home/site/wwwroot/
