@@ -122,6 +122,35 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().NotBeNullOrWhiteSpace();
     }
 
+    /// <summary>
+    /// The rejection reason is returned verbatim in the append endpoint's 400, so it must be a
+    /// stable validation message. <c>JsonException.Message</c> carries CLR type names, JSON paths
+    /// and byte offsets, which the shared error-handling rule forbids leaking to clients
+    /// (honua-server#2999 review).
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":"invalid"}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":"far"}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":"parcels"}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"center":"here"}}""")]
+    public void TryValidate_MalformedPayload_ReturnsStableErrorWithoutExceptionDetail(
+        SavedMapOperationKind kind,
+        string payload)
+    {
+        SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().NotBeNullOrWhiteSpace();
+        error.Should().NotContainAny(
+            "System.",
+            "Honua.",
+            "$.",
+            "LineNumber",
+            "BytePositionInLine",
+            "Path:");
+    }
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

@@ -212,6 +212,30 @@ internal static class SavedMapOperationDraftApplier
         return StudioCompositionBodyEditor.SetLayerStyleRef(body, layerId, styleRef);
     }
 
+    /// <summary>
+    /// Applies a whole-document replacement as a replacement of the COMPOSITION projection
+    /// (<c>layers</c>, <c>view</c>, <c>widgets</c>) through the shared
+    /// <see cref="StudioCompositionBodyEditor"/>, not as a wholesale overwrite of the envelope
+    /// body.
+    /// </summary>
+    /// <remarks>
+    /// Cloning the payload over <see cref="StudioPackageEnvelope.Body"/> installed the operation
+    /// payload as the ENTIRE body, so a replacement such as <c>{"layers":[]}</c> deleted
+    /// <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>, <c>sourceBindings</c>
+    /// and <c>initialView</c> — all required by the canonical <c>MapPackage</c>/<c>AppPackage</c>
+    /// contract that <c>StudioPackageValidator.ValidateFamilyBody</c> enforces. The lifecycle
+    /// records that validation failure but still creates the immutable version, so an accepted
+    /// replacement corrupted both the draft and its checkpoint (honua-server#2999 review).
+    /// <para>
+    /// Routing through the editor makes this kind lossless exactly like every other kind in this
+    /// applier (this was the only one bypassing the shared seam): the projected keys are replaced
+    /// wholesale and every unmodelled member of the stored document survives, so no collaboration
+    /// operation can delete or corrupt package-lifecycle metadata the op log has no authority
+    /// over. It also keeps the applier in exact lockstep with
+    /// <see cref="SavedMapOperationPayloadValidator"/>, which admits the payload by deserializing
+    /// it as this same projection.
+    /// </para>
+    /// </remarks>
     private static StudioPackageEnvelope ApplyReplaceDocument(
         StudioPackageEnvelope envelope,
         SavedMapOperationEnvelope operation)
@@ -221,7 +245,32 @@ internal static class SavedMapOperationDraftApplier
             throw new SavedMapCheckpointPayloadException(operation, "The document-replace payload must be an object body.");
         }
 
-        return envelope with { Body = operation.Payload.Clone() };
+        StudioCompositionBody? replacement;
+        try
+        {
+            replacement = operation.Payload.Deserialize(StudioJsonContext.Default.StudioCompositionBody);
+        }
+        catch (JsonException ex)
+        {
+            throw new SavedMapCheckpointPayloadException(
+                operation, "The document-replace payload is not a valid Studio composition body.", ex);
+        }
+
+        if (replacement is null)
+        {
+            throw new SavedMapCheckpointPayloadException(operation, "The document-replace payload is required.");
+        }
+
+        // Same normalization ReadBody performs: the source-generated converter assigns only
+        // members present in the payload, so a document that omits "layers"/"widgets" leaves them
+        // NULL rather than applying their Array.Empty initializers.
+        return StudioCompositionBodyEditor.WriteBody(
+            envelope,
+            replacement with
+            {
+                Layers = replacement.Layers ?? [],
+                Widgets = replacement.Widgets ?? [],
+            });
     }
 
     /// <summary>

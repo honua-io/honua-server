@@ -95,6 +95,16 @@ internal static class SavedMapOperationPayloadValidator
     /// <see cref="ArgumentException"/>. Either way every subsequent checkpoint fails against a
     /// replacement cursor that was already persisted, and the map can never save again — the same
     /// wedge class as the whitespace-id and non-string-styleRef fixes (honua-server#2999 review).
+    /// <para>
+    /// Validating the projection is also exactly what the applier writes:
+    /// <c>SavedMapOperationDraftApplier.ApplyReplaceDocument</c> replaces <c>layers</c>,
+    /// <c>view</c> and <c>widgets</c> through <see cref="StudioCompositionBodyEditor"/> and leaves
+    /// every other member of the stored document untouched. A replacement therefore cannot delete
+    /// the <c>mapPackageId</c>/<c>format</c>/<c>status</c>/<c>createdAt</c> members the canonical
+    /// Map/App family contract requires, so admission does not have to hold a composition-shaped
+    /// replacement to the stricter whole-package contract the draft body itself may not satisfy
+    /// (honua-server#2999 review).
+    /// </para>
     /// </remarks>
     private static bool TryValidateReplacementDocument(JsonElement payload, out string error)
     {
@@ -109,9 +119,13 @@ internal static class SavedMapOperationPayloadValidator
         {
             body = payload.Deserialize(StudioJsonContext.Default.StudioCompositionBody);
         }
-        catch (JsonException ex)
+        // The rejection reason is stable and payload-shaped on purpose: JsonException.Message
+        // carries CLR type names, JSON paths and byte offsets, and this string is returned
+        // verbatim in the append endpoint's 400 (honua-server#2999 review).
+        catch (JsonException)
         {
-            error = $"The document-replace payload is not a valid Studio composition body: {ex.Message}";
+            error = "The document-replace payload is not a valid Studio composition body; " +
+                "expected an object with optional 'layers', 'view' and 'widgets' members.";
             return false;
         }
 
@@ -197,9 +211,12 @@ internal static class SavedMapOperationPayloadValidator
         {
             view = payload.Deserialize(StudioJsonContext.Default.StudioCompositionView);
         }
-        catch (JsonException ex)
+        // Stable message for the same reason as the document-replace path above: the raw
+        // JsonException text would leak implementation detail through the 400 response.
+        catch (JsonException)
         {
-            error = $"The viewport payload is not a valid composition view: {ex.Message}";
+            error = "The viewport payload is not a valid composition view; expected an object with " +
+                "optional 'bbox', 'center', 'zoom', 'pitch', 'bearing' and 'crs' members.";
             return false;
         }
 
