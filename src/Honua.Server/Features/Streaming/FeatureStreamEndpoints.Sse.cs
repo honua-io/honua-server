@@ -169,6 +169,19 @@ internal static partial class FeatureStreamEndpoints
                     (StreamSubscriptionFilter)subscriptionFilter!,
                     snapshotReason,
                     linkedCts.Token).ConfigureAwait(false);
+
+                // A truncated baseline must not become a resumable checkpoint, and withholding
+                // the snapshot-end id is not sufficient on its own: continuing into delta
+                // delivery lets the FIRST subsequent feature-change publish an id, which
+                // advances Last-Event-ID past the incomplete baseline and makes the reconnect
+                // look replayable. The features the cap dropped did not change, so no delta
+                // will ever carry them. End the stream instead — the client reconnects with no
+                // Last-Event-ID and takes a fresh snapshot (honua-server#3038 review).
+                if (!snapshotResult.Complete)
+                {
+                    return;
+                }
+
                 replayCursor = snapshotResult.BaselineCursor;
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)

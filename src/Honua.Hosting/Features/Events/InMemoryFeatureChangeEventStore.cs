@@ -334,7 +334,12 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 _redisUnavailable = true;
                 if (!_allowInMemoryFallback)
                 {
-                    return 0;
+                    // The retained window is UNKNOWN here, and the interface's contract is to
+                    // fail closed on that. Returning 0 said "nothing was ever retained", which
+                    // reads as replayable — and the delta query that follows also cannot reach
+                    // Redis, so the client received neither its missing events nor a
+                    // replacement snapshot (honua-server#3038 review).
+                    return long.MaxValue;
                 }
             }
         }
