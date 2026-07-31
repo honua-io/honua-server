@@ -815,7 +815,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 .. NativeRasterSourceParameters,
                 Param("zones", "Zones Inline", "Inline zone polygons as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path; zonesLayerId-resolved sourcing is a follow-on.", ProcessParameterValueType.Text, required: true),
-                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId),
+                // Reserved placeholder: the executor reads only the inline `zones`, so there is
+                // no layer access to gate (honua-server#3046 review). Give this a real
+                // ProcessLayerAccess when the resolution path lands.
+                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.None),
                 Param("band", "Band", "1-based raster band to aggregate. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
                 Param("statistics", "Statistics", "Comma-separated stat names. Allowed values: count, sum, mean, min, max, stddev, variance.", ProcessParameterValueType.Text, defaultValue: "count,mean,stddev,min,max,sum"),
             ],

@@ -83,7 +83,13 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             return JobSecurityContextCapture.Capture(principal, _rbacOptions);
         }
 
-        return definition.AuthorSecurityContext ?? throw new InvalidOperationException(
+        // WorkflowDefinitionValidationException, not a generic one: both trigger loops classify
+        // an unrecognized exception as TRANSIENT and release the claim without advancing the
+        // cursor, so a legacy definition would reclaim the same occurrence and log a failure on
+        // every poll, forever. This is a permanent property of the stored definition — only
+        // republishing changes it — and that is the exception both loops already treat as
+        // permanent (honua-server#3068 review).
+        return definition.AuthorSecurityContext ?? throw new WorkflowDefinitionValidationException(
             $"Workflow '{definition.WorkflowId}' was published before its author's row/field "
             + "security identity was recorded, so a triggered run cannot reconstruct it. "
             + "Republish the workflow to enable scheduled and event-triggered runs.");

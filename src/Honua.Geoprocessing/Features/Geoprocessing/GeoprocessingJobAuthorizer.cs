@@ -181,6 +181,9 @@ internal sealed class GeoprocessingJobAuthorizer
             ProcessLayerAccess.Insert => AuthorizationOperation.Insert,
             ProcessLayerAccess.Update => AuthorizationOperation.Update,
             ProcessLayerAccess.Delete => AuthorizationOperation.Delete,
+            // None is filtered out by PlanLayerReferences.Derive and never arrives here; if it
+            // ever did, the conservative reading is the strictest, not the loosest.
+            ProcessLayerAccess.None => AuthorizationOperation.Delete,
             _ => AuthorizationOperation.Query,
         };
 

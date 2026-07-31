@@ -171,6 +171,20 @@ public sealed record ProcessParameterSpec
 public enum ProcessLayerAccess
 {
     /// <summary>
+    /// The parameter names a layer the executor never resolves — a reserved placeholder for a
+    /// deferred capability. Gated on nothing, because there is no access to authorize.
+    /// </summary>
+    /// <remarks>
+    /// Must be stated explicitly and only where the catalog documents the deferral. Gating a
+    /// non-operative parameter turned an otherwise executable job into a 403 for data the
+    /// process never touches — <c>raster.zonal-statistics</c> accepts an inline <c>zones</c>
+    /// and reads only that, so requiring read on the reserved <c>zonesLayerId</c> denied a
+    /// request that never used it (honua-server#3046 review). Delete this the moment the
+    /// resolution path lands.
+    /// </remarks>
+    None,
+
+    /// <summary>
     /// The process reads features or raster from the layer. Requires
     /// <see cref="AuthorizationOperation.Query"/>.
     /// </summary>
