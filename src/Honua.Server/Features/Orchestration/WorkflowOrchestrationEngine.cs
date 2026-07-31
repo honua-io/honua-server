@@ -49,6 +49,51 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         _logger = logger;
     }
 
+    /// <summary>
+    /// Input keys whose value names a catalog object the submit-time layer gate authorizes.
+    /// Deliberately a name match rather than a catalog lookup: the check must hold for any
+    /// process, including ones added later, and over-matching only ever refuses more.
+    /// </summary>
+    private static bool IsCatalogIdentifierInput(string key)
+        => key.EndsWith("layerId", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("datasetId", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Refuses a background-triggered workflow whose catalog identifiers are supplied through a
+    /// ForEach placeholder.
+    /// </summary>
+    /// <remarks>
+    /// Permanent by construction — it is a property of the stored definition — so it throws the
+    /// exception both trigger loops treat as permanent rather than spinning the occurrence.
+    /// Manual runs are unaffected: they carry a real principal, so run-creation authorization of
+    /// the expanded plan IS the requester's decision. Lifting this needs publisher-derived
+    /// authority at expansion time, which the definition does not currently carry
+    /// (honua-server#3043 review).
+    /// </remarks>
+    private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
+    {
+        foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
+        {
+            var placeholder = step.ForEach!.ItemPlaceholder;
+            foreach (var planStep in step.Plan.Steps)
+            {
+                var dynamicInput = planStep.Inputs.FirstOrDefault(input =>
+                    IsCatalogIdentifierInput(input.Key)
+                    && input.Value.Contains(placeholder, StringComparison.Ordinal));
+
+                if (dynamicInput.Key is not null)
+                {
+                    throw new WorkflowDefinitionValidationException(
+                        $"Step '{step.StepId}' supplies the catalog identifier '{dynamicInput.Key}' from a "
+                        + "ForEach item, which a background trigger cannot authorize: publication resolves "
+                        + "the publisher's access but cannot see the item value, and authorizing it at run "
+                        + "creation would use the orchestrator's admin authority. Use a static identifier, "
+                        + "or run this workflow manually.");
+                }
+            }
+        }
+    }
+
     public async Task<WorkflowRun> CreateRunAsync(
         WorkflowDefinition definition,
         WorkflowTriggerKind triggerKind,
@@ -88,6 +133,18 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // the gate refuses run creation when the definition's pinned dataset layer no longer
         // matches (or when the requester cannot read it), and a step whose stored plan carries
         // no pin at all fails closed at dispatch instead of being authorized as the orchestrator.
+        // A background trigger has no requesting human: the scheduler and event services call in
+        // as OrchestrationSystemPrincipal, which carries admin. Persisting a pin authorized by
+        // THAT principal would let a publisher who cannot read a layer have the system authorize
+        // it on their behalf at every firing — the exact escalation the pin exists to prevent.
+        // Publication is the only point with the publisher's authority, and it cannot resolve a
+        // ForEach placeholder, so a dynamic catalog identifier on a background-triggered
+        // workflow is refused rather than authorized by the system (honua-server#3043 review).
+        if (triggerKind != WorkflowTriggerKind.Manual)
+        {
+            RejectDynamicCatalogIdentifiers(definition);
+        }
+
         // Keep the plan the gate BOUND, not the one that went in. For a ForEach step the
         // concrete layer/dataset id only exists after expansion, so publication saw a
         // placeholder and stamped no pin; discarding this result left reconciliation submitting

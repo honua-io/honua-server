@@ -142,6 +142,109 @@ public sealed class WorkflowBranchingAndForEachTests
     }
 
     [Fact]
+    public async Task CreateRun_BackgroundTriggerWithDynamicCatalogIdentifier_IsRefused()
+    {
+        // Persisting the run-creation authorization is only sound when a real principal made it.
+        // A cron/event trigger calls in as OrchestrationSystemPrincipal, which carries admin, so
+        // authorizing a ForEach-supplied layerId there and pinning the result would let the
+        // SYSTEM grant access the publisher never had — and publication cannot resolve the
+        // placeholder to check it (honua-server#3043 review).
+        var harness = new Harness();
+        var now = harness.Clock.GetUtcNow();
+
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf-dynamic-layer",
+            Name = "dynamic-layer",
+            Steps =
+            [
+                new WorkflowStepDefinition
+                {
+                    StepId = "work",
+                    Plan = BuildPlanWithInput("plan-work", "layerId", "${item}"),
+                    ForEach = new WorkflowForEachSpec(ForEachRegions)
+                }
+            ],
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        // Permanent, not transient: both trigger loops treat this exception as terminal, so the
+        // occurrence is not reclaimed on every poll.
+        await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(
+            () => harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Cron, Operator));
+
+        await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(
+            () => harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.ChangeFeed, Operator));
+
+        await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(
+            () => harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.ObjectStore, Operator));
+    }
+
+    [Fact]
+    public async Task CreateRun_ManualTriggerWithDynamicCatalogIdentifier_IsAllowed()
+    {
+        // A manual run carries a real requesting principal, so authorizing the expanded plan at
+        // run creation IS that requester's decision — the refusal must not reach it.
+        var harness = new Harness();
+        var now = harness.Clock.GetUtcNow();
+
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf-dynamic-layer-manual",
+            Name = "dynamic-layer-manual",
+            Steps =
+            [
+                new WorkflowStepDefinition
+                {
+                    StepId = "work",
+                    Plan = BuildPlanWithInput("plan-work", "layerId", "${item}"),
+                    ForEach = new WorkflowForEachSpec(ForEachRegions)
+                }
+            ],
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        Assert.Equal(ForEachRegions.Length, run.StepStates.Count);
+    }
+
+    [Fact]
+    public async Task CreateRun_BackgroundTriggerWithStaticCatalogIdentifier_IsAllowed()
+    {
+        // The refusal is scoped to DYNAMIC identifiers: a static layerId was resolved and
+        // authorized at publication, so scheduled runs of it stay working.
+        var harness = new Harness();
+        var now = harness.Clock.GetUtcNow();
+
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf-static-layer",
+            Name = "static-layer",
+            Steps =
+            [
+                new WorkflowStepDefinition
+                {
+                    StepId = "work",
+                    Plan = BuildPlanWithInput("plan-work", "layerId", "7"),
+                    ForEach = new WorkflowForEachSpec(ForEachRegions)
+                }
+            ],
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Cron, Operator);
+
+        Assert.Equal(ForEachRegions.Length, run.StepStates.Count);
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_ForEach_DispatchesThePlanTheGateAuthorized()
     {
         // Publication cannot pin a ForEach step's layer: the concrete id exists only after
