@@ -2037,6 +2037,67 @@
         }
       }
     },
+    "/import/toolbox/translation/validate": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Validate a Translated Toolbox Manifest",
+        "description": "Validates an SDK-translated toolbox manifest against the canonical process catalog and returns a per-tool translatability report. Read-only and advisory: it neither imports nor executes anything, and the server does not parse proprietary binary toolbox formats -- callers submit a manifest produced by the honua-migrate translation CLI.",
+        "operationId": "validateToolboxTranslation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolboxTranslationManifest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Translation report for the submitted manifest.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolboxTranslationReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is malformed JSON, is not a toolbox translation manifest artifact, or is structurally invalid (blank toolbox name, unknown source format, no tools). Written by the shared admin problem-details helper, so the payload is RFC 7807 application/problem+json rather than the ErrorResponse envelope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "description": "Request body exceeds the configured upload size limit."
+          },
+          "415": {
+            "description": "The request declares a Content-Type other than application/json (or a +json structured suffix). The body is not read, so a well-formed manifest sent with the wrong media type is refused here rather than reported as malformed. Written by the shared admin problem-details helper, so the payload is RFC 7807 application/problem+json.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/preview": {
       "post": {
         "tags": [
@@ -4851,6 +4912,263 @@
       }
     },
     "schemas": {
+      "ToolboxTranslationManifest": {
+        "type": "object",
+        "description": "SDK-translated toolbox manifest submitted for validation against the canonical process catalog. Produced by the honua-migrate toolbox translation CLI; the server never parses a proprietary binary toolbox itself.",
+        "required": [
+          "toolboxName",
+          "sourceFormat",
+          "tools"
+        ],
+        "properties": {
+          "artifactKind": {
+            "type": "string",
+            "enum": ["honua.migration.toolbox-translation"],
+            "default": "honua.migration.toolbox-translation",
+            "description": "Artifact identity. May be omitted, in which case the v1 manifest contract is assumed, but an explicit value that does not match is rejected rather than reinterpreted."
+          },
+          "artifactVersion": {
+            "type": "string",
+            "enum": ["1.0"],
+            "default": "1.0",
+            "description": "Manifest schema version."
+          },
+          "toolboxName": {
+            "type": "string",
+            "description": "Name of the source toolbox."
+          },
+          "sourceFormat": {
+            "type": "string",
+            "enum": ["pyt", "tbx", "atbx"],
+            "description": "Source toolbox format the manifest was translated from."
+          },
+          "sourceLabel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional human-readable label for the source artifact."
+          },
+          "tools": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Tools to validate, at least one and at most 200. Tool names must be unique, compared case-insensitively.",
+            "items": {
+              "$ref": "#/components/schemas/ToolboxToolDescriptor"
+            }
+          }
+        }
+      },
+      "ToolboxToolDescriptor": {
+        "type": "object",
+        "required": [
+          "toolName"
+        ],
+        "properties": {
+          "toolName": {
+            "type": "string",
+            "description": "Source tool name. Must be unique within the manifest."
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional display label."
+          },
+          "targetProcessId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Proposed canonical process identifier this tool maps to."
+          },
+          "parameterMappings": {
+            "type": "array",
+            "description": "Proposed source-to-canonical parameter mappings.",
+            "items": {
+              "$ref": "#/components/schemas/ToolboxParameterMapping"
+            }
+          },
+          "unsupportedConstructs": {
+            "type": "array",
+            "description": "Constructs the translator already knows it cannot represent.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ToolboxParameterMapping": {
+        "type": "object",
+        "required": [
+          "sourceName",
+          "targetParameter"
+        ],
+        "properties": {
+          "sourceName": {
+            "type": "string",
+            "description": "Source toolbox parameter name."
+          },
+          "targetParameter": {
+            "type": "string",
+            "description": "Canonical process parameter name."
+          },
+          "sourceDataType": {
+            "type": "string",
+            "nullable": true,
+            "description": "Source parameter data type, when known."
+          }
+        }
+      },
+      "ToolboxTranslationReport": {
+        "type": "object",
+        "description": "Validation outcome for a submitted toolbox manifest. Advisory only: it classifies translatability and does not create or run anything.",
+        "required": [
+          "toolboxName",
+          "sourceFormat",
+          "summary"
+        ],
+        "properties": {
+          "artifactKind": {
+            "type": "string",
+            "enum": ["honua.migration.toolbox-translation-report"],
+            "description": "Artifact identity of the report."
+          },
+          "artifactVersion": {
+            "type": "string",
+            "example": "1.0",
+            "description": "Report schema version."
+          },
+          "toolboxName": {
+            "type": "string",
+            "description": "Toolbox name echoed from the manifest."
+          },
+          "sourceFormat": {
+            "type": "string",
+            "enum": ["pyt", "tbx", "atbx"],
+            "description": "Source format echoed from the manifest, normalized to lower case."
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ToolboxTranslationSummary"
+          },
+          "tools": {
+            "type": "array",
+            "description": "Per-tool outcomes, in manifest order.",
+            "items": {
+              "$ref": "#/components/schemas/ToolboxToolTranslation"
+            }
+          }
+        }
+      },
+      "ToolboxTranslationSummary": {
+        "type": "object",
+        "required": [
+          "toolCount",
+          "translatedCount",
+          "partiallyTranslatedCount",
+          "unsupportedCount"
+        ],
+        "properties": {
+          "toolCount": {
+            "type": "integer",
+            "description": "Total tools in the manifest."
+          },
+          "translatedCount": {
+            "type": "integer",
+            "description": "Tools whose full parameter signature round-trips onto a native process."
+          },
+          "partiallyTranslatedCount": {
+            "type": "integer",
+            "description": "Tools that resolve to a native process but carry unsupported parameters or constructs."
+          },
+          "unsupportedCount": {
+            "type": "integer",
+            "description": "Tools with no executable native mapping."
+          }
+        }
+      },
+      "ToolboxToolTranslation": {
+        "type": "object",
+        "required": [
+          "toolName",
+          "classification"
+        ],
+        "properties": {
+          "toolName": {
+            "type": "string",
+            "description": "Tool name echoed from the manifest."
+          },
+          "classification": {
+            "type": "string",
+            "enum": ["translated", "partially-translated", "unsupported"],
+            "description": "Translation classification."
+          },
+          "processId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Canonical process the tool resolves to, when the proposed target exists in the catalog. Populated for diagnostic value even when the tool is classified unsupported; null when no catalog process resolves."
+          },
+          "parameterBindings": {
+            "type": "array",
+            "description": "Round-tripped canonical signature for every valid mapping.",
+            "items": {
+              "$ref": "#/components/schemas/ToolboxParameterBinding"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "description": "Explicit unsupported-report entries. Empty only for fully translated tools.",
+            "items": {
+              "$ref": "#/components/schemas/ToolboxTranslationIssue"
+            }
+          }
+        }
+      },
+      "ToolboxParameterBinding": {
+        "type": "object",
+        "required": [
+          "sourceName",
+          "targetParameter",
+          "valueType",
+          "required"
+        ],
+        "properties": {
+          "sourceName": {
+            "type": "string",
+            "description": "Source toolbox parameter name."
+          },
+          "targetParameter": {
+            "type": "string",
+            "description": "Canonical process parameter name, in catalog casing."
+          },
+          "valueType": {
+            "type": "string",
+            "description": "Canonical parameter value type name, for example Wkb, Srid, or FloatingPoint."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "Whether the canonical parameter is required."
+          }
+        }
+      },
+      "ToolboxTranslationIssue": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable issue code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation of why the construct cannot be translated."
+          },
+          "parameterName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Parameter the issue applies to, when parameter-scoped."
+          }
+        }
+      },
       "ImportFilePreview": {
         "type": "object",
         "required": [
