@@ -55,6 +55,21 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// </summary>
     public int[]? LayerIds => _layerIds;
 
+    /// <summary>
+    /// True when membership depends on a feature's VALUE (bbox, attributes, or time) rather
+    /// than on where it lives.
+    /// </summary>
+    /// <remarks>
+    /// A feature cannot leave the service/layer scope by being edited, but it can be updated so
+    /// its geometry, attributes, or timestamp no longer match — and both replay and live fan-out
+    /// evaluate the post-mutation image, so the leaving update is filtered out and never
+    /// delivered. Baseline-plus-deltas is therefore not convergent for these filters without
+    /// transition semantics (a before-image or an explicit removal frame), which the event
+    /// pipeline does not carry (honua-server#3038 review).
+    /// </remarks>
+    public bool HasValueDependentPredicate =>
+        _bbox is not null || _attributeFilter is not null || _temporalFilter is not null;
+
     /// <inheritdoc />
     public string Summary
     {

@@ -77,12 +77,17 @@ internal static partial class FeatureStreamEndpoints
                 }
 
                 // Sequence is allocated only for frames that survive filtering and dedup, and
-                // only immediately before the write, so it stays contiguous per subscription
-                // even where the global cursor skips (#3038 REQ-002).
-                envelope = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
-
-                var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-                await SendWebSocketJsonAsync(webSocket, writeLock, payload, cancellationToken).ConfigureAwait(false);
+                // INSIDE the write lock, so allocation order is wire order even when the writer
+                // task is draining the same subscription concurrently (#3038 REQ-002 + review).
+                await SendStampedWebSocketJsonAsync(
+                    webSocket,
+                    writeLock,
+                    envelope,
+                    sessionManager,
+                    sessionId,
+                    subscriptionId,
+                    subscriptionGeneration,
+                    cancellationToken).ConfigureAwait(false);
                 delivered++;
             }
 

@@ -182,9 +182,21 @@ internal static partial class FeatureStreamEndpoints
             return null;
         }
 
-        return filter is StreamSubscriptionFilter { LayerIds.Length: > 0 }
-            ? null
-            : "snapshot subscriptions require an explicit layer scope; supply the layers parameter (or the layers/layerId control-frame field).";
+        if (filter is not StreamSubscriptionFilter scoped || scoped.LayerIds is not { Length: > 0 })
+        {
+            return "snapshot subscriptions require an explicit layer scope; supply the layers parameter (or the layers/layerId control-frame field).";
+        }
+
+        // A value-dependent predicate breaks convergence rather than merely narrowing the
+        // baseline: a feature admitted into the snapshot can be updated so it no longer matches,
+        // and because replay and live fan-out both evaluate the POST-mutation image, that
+        // leaving update is filtered out. The client keeps the stale baseline feature with no
+        // event that could ever correct it. Refuse the combination rather than advertise a
+        // baseline the deltas cannot keep true; delivering it needs transition semantics the
+        // event pipeline does not carry (honua-server#3038 review).
+        return scoped.HasValueDependentPredicate
+            ? "snapshot subscriptions cannot be combined with bbox, attribute, or temporal filters: a feature that leaves the filter after an update produces no delta, so the baseline could not be kept convergent. Use mode=delta with the filter, or mode=snapshot scoped by service/layer only."
+            : null;
     }
 
     /// <summary>

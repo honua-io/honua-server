@@ -599,6 +599,43 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotModeWithValueDependentFilter_IsRejected()
+    {
+        // A feature admitted into the baseline can be updated so it no longer matches a bbox,
+        // attribute, or temporal predicate, and both replay and live fan-out evaluate the
+        // POST-mutation image — so the leaving update is filtered out and the client keeps a
+        // stale feature no delta can ever correct. Refused rather than advertised (#3038 review).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        foreach (var query in new[]
+        {
+            "/api/v1/streaming/features?layers=0&mode=snapshot&bbox=-180,-90,180,90",
+            "/api/v1/streaming/features?layers=0&mode=snapshot&where=status%3D%27active%27",
+        })
+        {
+            using var request = BuildSseRequest(query);
+            var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, because: query);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotModeScopedByLayerOnly_IsStillAccepted()
+    {
+        // The refusal must be scoped to value-dependent predicates: a feature cannot leave its
+        // service/layer by being edited, so plain layer scoping stays convergent.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+        var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private static WebAppFixture CreateFixtureWithDeploymentConfig(Dictionary<string, string?> settings)

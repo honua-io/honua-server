@@ -318,8 +318,19 @@ internal sealed class InMemoryFeatureChangeEventStore(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_redisDb != null && await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
+        if (_redisDb != null)
         {
+            // The health PROBE failing never reaches the catch below, so it needed the same
+            // treatment: with Redis already down and the in-memory store empty, this returned 0
+            // — "nothing was ever retained", i.e. replayable — while QueryAsync could not read
+            // Redis either, so the client got neither its deltas nor a replacement snapshot
+            // (honua-server#3038 review). Every path on which the Redis retained window cannot
+            // be queried now yields the fail-closed sentinel.
+            if (!await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return _allowInMemoryFallback ? OldestInMemoryCursor() : long.MaxValue;
+            }
+
             try
             {
                 return await GetOldestRetainedRedisCursorAsync(cancellationToken).ConfigureAwait(false);
@@ -334,16 +345,22 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 _redisUnavailable = true;
                 if (!_allowInMemoryFallback)
                 {
-                    // The retained window is UNKNOWN here, and the interface's contract is to
-                    // fail closed on that. Returning 0 said "nothing was ever retained", which
-                    // reads as replayable — and the delta query that follows also cannot reach
-                    // Redis, so the client received neither its missing events nor a
-                    // replacement snapshot (honua-server#3038 review).
+                    // Same reasoning as the probe path above: the retained window is UNKNOWN,
+                    // and the interface's contract is to fail closed on that.
                     return long.MaxValue;
                 }
             }
         }
 
+        return OldestInMemoryCursor();
+    }
+
+    /// <summary>
+    /// The oldest cursor the in-memory buffer retains, or 0 when it holds nothing. Only reached
+    /// when the in-memory fallback is permitted.
+    /// </summary>
+    private long OldestInMemoryCursor()
+    {
         lock (_sync)
         {
             return _events.Count == 0 ? 0 : _events[0].Cursor;

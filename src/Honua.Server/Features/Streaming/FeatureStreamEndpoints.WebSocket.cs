@@ -571,18 +571,15 @@ internal static partial class FeatureStreamEndpoints
                     // Sequence is allocated after the delivery claim and immediately before
                     // the write, so numbers are never burned by filtered, deduplicated, or
                     // stale-generation frames (#3038 REQ-002).
-                    var liveEnvelope = StampSequence(
+                    await SendStampedWebSocketJsonAsync(
+                        webSocket,
+                        session.WriteLock,
                         message.Envelope,
                         sessionManager,
                         session.SessionId,
                         subscriptionId,
-                        message.SubscriptionGeneration);
-
-                    var payload = JsonSerializer.SerializeToUtf8Bytes(
-                        liveEnvelope,
-                        FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-
-                    await SendWebSocketJsonAsync(webSocket, session.WriteLock, payload, cancellationToken).ConfigureAwait(false);
+                        message.SubscriptionGeneration,
+                        cancellationToken).ConfigureAwait(false);
 
                     // Watermark advance after a successful live send. The bounded
                     // RecentEventIdCapacity dedup LRU only protects the most recent 128
@@ -1339,6 +1336,57 @@ internal static partial class FeatureStreamEndpoints
                 },
                 FeatureStreamJsonContext.Default.FeatureStreamErrorFrame),
             cancellationToken);
+
+    /// <summary>
+    /// Allocates the subscription-local sequence and writes the frame under ONE acquisition of
+    /// the session write lock, so allocation order is wire order.
+    /// </summary>
+    /// <remarks>
+    /// Stamping before the lock let two producers for the same subscription — the writer task
+    /// draining live events and the receive loop running a control-frame subscription's
+    /// post-unpause sweep — allocate N and N+1, then reach the wire in the opposite order after
+    /// a scheduling slip. The client observed a gap or a reversal despite receiving every frame
+    /// (honua-server#3038 review). The lock already serializes the sends; moving allocation
+    /// inside it makes the two orders the same order.
+    /// </remarks>
+    private static async Task SendStampedWebSocketJsonAsync(
+        WebSocket webSocket,
+        SemaphoreSlim writeLock,
+        FeatureStreamEnvelope envelope,
+        FeatureStreamSessionManager? sessionManager,
+        Guid sessionId,
+        string? subscriptionId,
+        long subscriptionGeneration,
+        CancellationToken cancellationToken)
+    {
+        if (webSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (webSocket.State != WebSocketState.Open)
+            {
+                return;
+            }
+
+            var stamped = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
+            var payload = JsonSerializer.SerializeToUtf8Bytes(
+                stamped, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+
+            await webSocket.SendAsync(
+                new ArraySegment<byte>(payload),
+                WebSocketMessageType.Text,
+                endOfMessage: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            writeLock.Release();
+        }
+    }
 
     private static async Task SendWebSocketJsonAsync(
         WebSocket webSocket,
