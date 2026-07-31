@@ -93,13 +93,22 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
                     var lifecycleStore = scope.ServiceProvider.GetRequiredService<IAlertLifecycleStore>();
 
+                    // Resolved per batch so the entitlement is read LIVE: a dispatch queued while
+                    // its channel was entitled can sit in the outbox across a license expiry —
+                    // suppressed, retrying, or dead-lettered and revived — and the admission-time
+                    // check in AlertPipeline.GetDeliverableChannels cannot see that
+                    // (honua-server#2998 review).
+                    var editionPolicy = scope.ServiceProvider.GetService<IAlertEditionPolicy>();
+
                     var batch = await dispatchStore
                         .ClaimPendingAsync(_options.Dispatch.ClaimBatchSize, now, stoppingToken)
                         .ConfigureAwait(false);
 
                     foreach (var item in batch)
                     {
-                        await ProcessItemAsync(dispatchStore, eventStore, lifecycleStore, item, stoppingToken).ConfigureAwait(false);
+                        await ProcessItemAsync(
+                            dispatchStore, eventStore, lifecycleStore, editionPolicy, item, stoppingToken)
+                            .ConfigureAwait(false);
                     }
 
                     // The backlog count is a full outbox aggregate; recompute it after a
@@ -187,10 +196,27 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         IAlertDispatchStore dispatchStore,
         IAlertEventStore eventStore,
         IAlertLifecycleStore lifecycleStore,
+        IAlertEditionPolicy? editionPolicy,
         AlertDispatchItem item,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+
+        // Re-check the channel entitlement immediately before the sink call. Admission gated it
+        // when the row was written, but delivery can happen much later, so an expired license
+        // would otherwise keep sending on a paid channel. Dead-lettered rather than retried:
+        // retrying cannot make an unentitled channel deliverable (honua-server#2998 review).
+        if (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType))
+        {
+            await dispatchStore
+                .MarkFailedAsync(
+                    item.DispatchId, now, now, deadLetter: true,
+                    "Channel is not permitted by the active license or configured alert edition.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            return;
+        }
 
         if (!_sinks.TryGetValue(item.ChannelType, out var sink))
         {

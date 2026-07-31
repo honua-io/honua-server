@@ -213,7 +213,8 @@ internal sealed partial class PortalTokenIssuer(
     /// Whether the record's persisted roles may still be honoured.
     /// </summary>
     /// <remarks>
-    /// Roles produced under <c>identity.claims-mapping</c> are re-checked against the LIVE
+    /// Roles produced under <c>identity.claims-mapping</c> — and roles whose provenance is
+    /// unknown because the record predates the field — are re-checked against the LIVE
     /// entitlement on every restore. Without this, a portal token minted while the license was
     /// valid kept satisfying role authorization — including a synthesized <c>admin</c> — for its
     /// whole lifetime after the entitlement expired, because the restore path never re-runs the
@@ -221,9 +222,20 @@ internal sealed partial class PortalTokenIssuer(
     /// mapping provenance are unaffected.
     /// </remarks>
     private bool ClaimsMappingRolesAllowed(PortalTokenRecord record)
-        => !record.RolesRequireClaimsMappingEntitlement
-            || (_serviceProvider is not null
-                && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey));
+    {
+        // false — this issuer stamped it and the roles owe nothing to claims mapping.
+        if (record.RolesRequireClaimsMappingEntitlement == false)
+        {
+            return true;
+        }
+
+        // true (mapping-derived) or null (persisted before the field existed, so provenance is
+        // unknown) both require the live entitlement. Treating null as "not mapping-derived"
+        // would let a pre-upgrade token keep its custom-mapped roles forever
+        // (honua-server#2997 review).
+        return _serviceProvider is not null
+            && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+    }
 
     private static ClaimsPrincipal ProjectPrincipal(PortalTokenRecord record, bool includeRoles)
     {
@@ -388,11 +400,18 @@ internal sealed class PortalTokenRecord
     public required string[] Roles { get; init; }
 
     /// <summary>
-    /// True when <see cref="Roles"/> were produced with <c>identity.claims-mapping</c> active.
+    /// Whether <see cref="Roles"/> were produced with <c>identity.claims-mapping</c> active.
     /// Revalidated on every restore so an expired entitlement cannot keep honouring roles it
     /// would no longer grant (honua-server#2997 review).
     /// </summary>
-    public bool RolesRequireClaimsMappingEntitlement { get; init; }
+    /// <remarks>
+    /// NULLABLE on purpose. A record persisted before this field existed deserializes with the
+    /// member absent, and a non-nullable bool would read that as an explicit "these roles do
+    /// not depend on claims mapping" — exactly the claim it cannot support, letting
+    /// pre-upgrade custom-mapped roles (including <c>admin</c>) outlive a later entitlement
+    /// expiry. Absent means UNKNOWN, and unknown fails closed.
+    /// </remarks>
+    public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
     public required PortalTokenClientType ClientType { get; init; }
 
