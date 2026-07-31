@@ -612,7 +612,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         foreach (var query in new[]
         {
             "/api/v1/streaming/features?layers=0&mode=snapshot&bbox=-180,-90,180,90",
-            "/api/v1/streaming/features?layers=0&mode=snapshot&where=status%3D%27active%27",
+            // 'filter' is the attribute-expression parameter the subscription parser reads;
+            // 'where' is silently ignored, which would have made this a layer-only snapshot
+            // returning 200 and the case would have asserted nothing (#3038 review).
+            "/api/v1/streaming/features?layers=0&mode=snapshot&filter=status%3D%27active%27",
         })
         {
             using var request = BuildSseRequest(query);

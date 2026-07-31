@@ -328,7 +328,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             // be queried now yields the fail-closed sentinel.
             if (!await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
             {
-                return _allowInMemoryFallback ? OldestInMemoryCursor() : long.MaxValue;
+                return UnavailableRedisWindow();
             }
 
             try
@@ -343,12 +343,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 // Intentional: same no-logger rationale as GetCurrentCursorAsync above.
                 _redisUnavailable = true;
-                if (!_allowInMemoryFallback)
-                {
-                    // Same reasoning as the probe path above: the retained window is UNKNOWN,
-                    // and the interface's contract is to fail closed on that.
-                    return long.MaxValue;
-                }
+                return UnavailableRedisWindow();
             }
         }
 
@@ -356,8 +351,22 @@ internal sealed class InMemoryFeatureChangeEventStore(
     }
 
     /// <summary>
-    /// The oldest cursor the in-memory buffer retains, or 0 when it holds nothing. Only reached
-    /// when the in-memory fallback is permitted.
+    /// The answer when the REDIS retained window cannot be read, whether the fallback is
+    /// permitted or not.
+    /// </summary>
+    /// <remarks>
+    /// The fallback lets writes keep flowing into the in-memory buffer; it does not recover the
+    /// history Redis already held. Answering from that buffer said "the window starts at 0" —
+    /// replayable — while <c>QueryAsync</c> could only inspect the same empty tail, so a client
+    /// whose cursor predates the outage silently skipped every pre-outage delta. The window is
+    /// indeterminate on this path regardless of the fallback, so it fails closed and the client
+    /// takes a replacement snapshot (honua-server#3038 review).
+    /// </remarks>
+    private static long UnavailableRedisWindow() => long.MaxValue;
+
+    /// <summary>
+    /// The oldest cursor the in-memory buffer retains, or 0 when it holds nothing. Reached only
+    /// when Redis is not configured at all, so the buffer IS the whole history.
     /// </summary>
     private long OldestInMemoryCursor()
     {
