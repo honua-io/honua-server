@@ -322,17 +322,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             try
             {
-                // Rank 0 ascending is the lowest retained score, i.e. the tail of the window
-                // after per-event TTL expiry and MaxRetainedEvents trimming.
-                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, 0, Order.Ascending).ConfigureAwait(false);
-                if (members.Length == 0)
-                {
-                    return 0;
-                }
-
-                return long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor)
-                    ? cursor
-                    : 0;
+                return await GetOldestRetainedRedisCursorAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -353,6 +343,91 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             return _events.Count == 0 ? 0 : _events[0].Cursor;
         }
+    }
+
+    /// <summary>
+    /// Walks the index from the low end and returns the lowest cursor whose event payload is
+    /// still present, pruning index members whose payload key has already expired.
+    /// </summary>
+    /// <remarks>
+    /// Each <c>featurechange:event:*</c> key carries its own TTL, but the matching sorted-set
+    /// member is only removed by <see cref="TrimRedisAsync"/> when the index exceeds
+    /// <c>MaxRetainedEvents</c>. On a low-volume stream the members therefore outlive their
+    /// payloads, and rank 0 can name an event that is no longer retained. Reporting that
+    /// cursor as "oldest retained" would make an expired resume cursor look replayable, and
+    /// leaving the tombstones in place also lets a replay batch fill entirely with stale
+    /// members and return empty before reaching live events. Pruning here fixes both.
+    /// </remarks>
+    private async Task<long> GetOldestRetainedRedisCursorAsync(CancellationToken cancellationToken)
+    {
+        const int BatchSize = 128;
+        const int MaxExamined = 4096;
+
+        // Bound the sweep so one call can never walk an arbitrarily large tombstone run;
+        // each call prunes what it examined, so successive calls make progress.
+        var remaining = Math.Clamp(_maxRetained, BatchSize, MaxExamined);
+        long highestPruned = 0;
+
+        while (remaining > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Always rank 0..N-1: pruned members are removed, so the window slides forward.
+            var members = await _redisDb!.SortedSetRangeByRankAsync(IndexKey, 0, BatchSize - 1, Order.Ascending).ConfigureAwait(false);
+            if (members.Length == 0)
+            {
+                return 0;
+            }
+
+            remaining -= members.Length;
+
+            var existence = new Task<bool>[members.Length];
+            var cursors = new long[members.Length];
+            for (var i = 0; i < members.Length; i++)
+            {
+                cursors[i] = long.TryParse(members[i].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : -1;
+                existence[i] = cursors[i] < 0
+                    ? Task.FromResult(false)
+                    : _redisDb.KeyExistsAsync(GetEventKey(cursors[i]));
+            }
+
+            var exists = await Task.WhenAll(existence).ConfigureAwait(false);
+
+            var stale = new List<RedisValue>(members.Length);
+            for (var i = 0; i < members.Length; i++)
+            {
+                if (exists[i])
+                {
+                    if (stale.Count > 0)
+                    {
+                        await _redisDb.SortedSetRemoveAsync(IndexKey, [.. stale]).ConfigureAwait(false);
+                    }
+
+                    return cursors[i];
+                }
+
+                stale.Add(members[i]);
+                if (cursors[i] > highestPruned)
+                {
+                    highestPruned = cursors[i];
+                }
+            }
+
+            await _redisDb.SortedSetRemoveAsync(IndexKey, [.. stale]).ConfigureAwait(false);
+
+            if (members.Length < BatchSize)
+            {
+                // The whole index was tombstones: nothing is retained.
+                return 0;
+            }
+        }
+
+        // Sweep bound reached without finding a live payload. Everything examined is gone,
+        // so the true oldest retained cursor is at least one past the highest pruned member
+        // — a lower bound is still sound for the "can this resume cursor be replayed?" test.
+        return highestPruned + 1;
     }
 
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(
@@ -441,43 +516,70 @@ internal sealed class InMemoryFeatureChangeEventStore(
         int limit,
         CancellationToken cancellationToken)
     {
+        // Bounded rescan: a whole batch can be consumed by tombstoned members (the event key
+        // expired while its index member survived) or by events outside the from/to window.
+        // Returning empty in that case would stop replay short of live events sitting just
+        // past the batch, so advance beyond the examined range and retry a bounded number of
+        // times instead of reporting "no more events".
+        const int MaxPasses = 4;
+
         var minimumCursor = (cursor ?? 0) + 1;
-        var members = await _redisDb!.SortedSetRangeByScoreAsync(
-                IndexKey,
-                minimumCursor,
-                double.PositiveInfinity,
-                Exclude.None,
-                Order.Ascending,
-                take: Math.Max(limit * 4, limit))
-            .ConfigureAwait(false);
+        var take = Math.Max(limit * 4, limit);
+        var results = new List<FeatureChangeEvent>(limit);
 
-        var results = new List<FeatureChangeEvent>(Math.Min(limit, members.Length));
-        foreach (var member in members)
+        for (var pass = 0; pass < MaxPasses && results.Count < limit; pass++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var members = await _redisDb!.SortedSetRangeByScoreAsync(
+                    IndexKey,
+                    minimumCursor,
+                    double.PositiveInfinity,
+                    Exclude.None,
+                    Order.Ascending,
+                    take: take)
+                .ConfigureAwait(false);
 
-            if (!long.TryParse(member.ToString(), out var eventCursor))
-            {
-                continue;
-            }
-
-            ObserveRedisCursor(eventCursor);
-            var featureEvent = await TryGetRedisEventAsync(eventCursor).ConfigureAwait(false);
-            if (featureEvent == null)
-            {
-                await _redisDb.SortedSetRemoveAsync(IndexKey, member).ConfigureAwait(false);
-                continue;
-            }
-            if (!MatchesWindow(featureEvent, from, to))
-            {
-                continue;
-            }
-
-            results.Add(featureEvent);
-            if (results.Count >= limit)
+            if (members.Length == 0)
             {
                 break;
             }
+
+            var lastExamined = minimumCursor - 1;
+            foreach (var member in members)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!long.TryParse(member.ToString(), out var eventCursor))
+                {
+                    continue;
+                }
+
+                lastExamined = eventCursor;
+                ObserveRedisCursor(eventCursor);
+                var featureEvent = await TryGetRedisEventAsync(eventCursor).ConfigureAwait(false);
+                if (featureEvent == null)
+                {
+                    await _redisDb.SortedSetRemoveAsync(IndexKey, member).ConfigureAwait(false);
+                    continue;
+                }
+                if (!MatchesWindow(featureEvent, from, to))
+                {
+                    continue;
+                }
+
+                results.Add(featureEvent);
+                if (results.Count >= limit)
+                {
+                    break;
+                }
+            }
+
+            if (members.Length < take)
+            {
+                // Partial batch: the index is exhausted, nothing further to scan.
+                break;
+            }
+
+            minimumCursor = lastExamined + 1;
         }
 
         return results;

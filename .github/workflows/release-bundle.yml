@@ -105,6 +105,10 @@ jobs:
           file: docker/Dockerfile.aot
           platforms: linux/amd64
           push: true
+          # Immutable deployment identity (#3038): the RC image must be able to advertise
+          # the commit it was built from on the capability manifest.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           provenance: true
           sbom: true
           tags: ${{ steps.ref.outputs.image_ref }}

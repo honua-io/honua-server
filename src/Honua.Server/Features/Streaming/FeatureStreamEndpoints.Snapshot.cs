@@ -59,6 +59,20 @@ internal static partial class FeatureStreamEndpoints
         public abstract Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken);
     }
 
+    /// <summary>
+    /// Writes snapshot frames as SSE events.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>snapshot-end</c> carries an SSE <c>id:</c>. A baseline is resumable as a
+    /// delta cursor only once it is whole: if the connection drops after
+    /// <c>snapshot-begin</c> or a <c>snapshot-feature</c>, the browser reconnects with the
+    /// last id it saw, and publishing the baseline cursor early would make that reconnect
+    /// look like a replayable delta resume — the client would never receive the rest of its
+    /// baseline yet would treat the partial state as current. Leaving those frames
+    /// id-less keeps <c>Last-Event-ID</c> at its pre-snapshot value (absent on a fresh
+    /// connection, or the same stale cursor that triggered the replacement snapshot), so an
+    /// interrupted baseline reconnects into another snapshot rather than a delta tail.
+    /// </remarks>
     private sealed class SseSnapshotSink(HttpResponse response) : FeatureStreamSnapshotSink
     {
         public override async Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
@@ -68,7 +82,7 @@ internal static partial class FeatureStreamEndpoints
                 "snapshot-begin",
                 frame,
                 FeatureStreamJsonContext.Default.FeatureStreamSnapshotBeginFrame,
-                frame.Cursor,
+                null,
                 cancellationToken).ConfigureAwait(false);
             await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -79,7 +93,7 @@ internal static partial class FeatureStreamEndpoints
                 "snapshot-feature",
                 frame,
                 FeatureStreamJsonContext.Default.FeatureStreamSnapshotFeatureFrame,
-                frame.Cursor,
+                null,
                 cancellationToken);
 
         public override async Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken)
@@ -172,14 +186,23 @@ internal static partial class FeatureStreamEndpoints
     /// emitted instead: the cursor is ahead of the store's current position, or the events
     /// between the cursor and the retained window have been trimmed or expired.
     /// </summary>
+    /// <remarks>
+    /// Only the <i>absence</i> of a cursor selects the initial-snapshot path; the callers
+    /// own that distinction. An explicit <c>cursor=0</c> is a real request to resume from
+    /// the beginning of the stream and is validated against the retained window like any
+    /// other value — once cursor 1 has been trimmed or expired, resuming at 0 with deltas
+    /// alone would leave the client permanently missing the trimmed history.
+    /// </remarks>
     private static async Task<string?> ResolveResnapshotReasonAsync(
         IFeatureChangeEventStore eventStore,
         long cursor,
         CancellationToken cancellationToken)
     {
-        if (cursor <= 0)
+        if (cursor < 0)
         {
-            return null;
+            // Cursors are monotonic and non-negative; a negative value cannot be resumed
+            // from and is treated like any other fabricated cursor.
+            return FeatureStreamSnapshotReasons.CursorInvalid;
         }
 
         var current = await eventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
@@ -243,8 +266,19 @@ internal static partial class FeatureStreamEndpoints
         long scanned = 0;
         var complete = true;
 
+        // Set once the feature cap is reached. Anything still unread after that point —
+        // later pages of the current layer, or any remaining layer — makes the baseline
+        // non-authoritative, including when the cap lands exactly on a page boundary.
+        var capped = false;
+
         foreach (var layerId in layerIds)
         {
+            if (capped)
+            {
+                complete = false;
+                break;
+            }
+
             var descriptor = ResolveStreamLayer(graph, service, layerId);
             if (descriptor is null)
             {
@@ -300,6 +334,8 @@ internal static partial class FeatureStreamEndpoints
                 {
                     if (emitted >= options.MaxSnapshotFeatures)
                     {
+                        // Rows left inside the current page: definitively truncated.
+                        capped = true;
                         complete = false;
                         break;
                     }
@@ -325,8 +361,23 @@ internal static partial class FeatureStreamEndpoints
                     emitted++;
                 }
 
+                if (capped)
+                {
+                    break;
+                }
+
                 if (emitted >= options.MaxSnapshotFeatures)
                 {
+                    // The cap landed exactly on a page boundary, so no row was visibly
+                    // dropped. Ids beyond this page are still unread, so the baseline is
+                    // authoritative only when this page was the layer's last one; the
+                    // remaining-layer case is handled at the top of the layer loop.
+                    capped = true;
+                    if (offset + options.SnapshotPageSize < ordered.Length)
+                    {
+                        complete = false;
+                    }
+
                     break;
                 }
             }

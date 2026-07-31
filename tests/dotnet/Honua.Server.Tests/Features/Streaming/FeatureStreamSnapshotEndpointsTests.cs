@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -75,15 +76,25 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var baselineCursor = baseline.Begin.GetProperty("cursor").GetInt64();
         baseline.End.GetProperty("cursor").GetInt64().Should().Be(baselineCursor);
 
+        // Only snapshot-end publishes a resumable SSE id. Checkpointing the baseline cursor
+        // on begin/feature frames would let a mid-baseline reconnect (EventSource replays
+        // Last-Event-ID) resume as a delta tail and treat a partial baseline as current.
+        baseline.EventIds.Should().HaveCount(baseline.Sequences.Count);
+        baseline.EventIds.Take(baseline.EventIds.Count - 1).Should().OnlyContain(id => id == null,
+            "an unfinished baseline must not publish a resumable SSE id");
+        baseline.EventIds[^1].Should().Be(baselineCursor.ToString(CultureInfo.InvariantCulture),
+            "snapshot-end checkpoints the baseline cursor once the baseline is whole");
+
         // One correlated mutation through the canonical GeoServices edit pipeline.
         var correlation = $"snapshot-delta-{Guid.NewGuid():N}";
         await ApplyEditAsync(correlation, cts.Token);
 
         var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         delta.Should().NotBeNull("the mutation must be observed on the stream after the baseline");
-        delta!.Value.GetProperty("sequence").GetInt64().Should().Be(baseline.Sequences.Count,
+        var deltaFrame = delta!.Value;
+        deltaFrame.GetProperty("sequence").GetInt64().Should().Be(baseline.Sequences.Count,
             "the first delta continues the baseline's subscription-local sequence");
-        delta.Value.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor,
+        deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor,
             "deltas resume strictly after the captured baseline cursor");
     }
 
@@ -164,8 +175,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
 
         delta.Should().NotBeNull();
-        delta!.Value.GetProperty("sequence").GetInt64().Should().Be(sequences.Count);
-        delta.Value.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
+        var deltaFrame = delta!.Value;
+        deltaFrame.GetProperty("sequence").GetInt64().Should().Be(sequences.Count);
+        deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
 
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
@@ -291,8 +303,24 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
             var begin = await ReadUntilEventAsync(reader, SnapshotBegin, cts.Token);
             begin.Should().NotBeNull("a cursor outside the retained window must produce a replacement snapshot");
-            begin!.Value.GetProperty("reason").GetString().Should().Be("cursor-expired");
-            begin.Value.GetProperty("sequence").GetInt64().Should().Be(0);
+            var beginFrame = begin!.Value;
+            beginFrame.GetProperty("reason").GetString().Should().Be("cursor-expired");
+            beginFrame.GetProperty("sequence").GetInt64().Should().Be(0);
+
+            // An explicit cursor=0 means "resume from the beginning", not "no cursor": it
+            // must be validated against the retained window like any other value, or a
+            // client resuming at 0 after trimming silently loses the trimmed history.
+            using var zeroRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            var zeroResponse = await fixture.CreateAdminClient()
+                .SendAsync(zeroRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            zeroResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var zeroStream = await zeroResponse.Content.ReadAsStreamAsync(cts.Token);
+            using var zeroReader = new StreamReader(zeroStream, Encoding.UTF8);
+
+            var zeroBegin = await ReadUntilEventAsync(zeroReader, SnapshotBegin, cts.Token);
+            zeroBegin.Should().NotBeNull("an explicit zero cursor outside the retained window must re-snapshot");
+            zeroBegin!.Value.GetProperty("reason").GetString().Should().Be("cursor-expired");
         }
         finally
         {
@@ -361,9 +389,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // feature-change, never a replacement snapshot.
         var frame = await ReadUntilAnyAsync(reader, [SnapshotBegin, FeatureChange], cts.Token);
         frame.Should().NotBeNull();
-        frame!.Value.EventName.Should().Be(FeatureChange);
-        frame.Value.Data.GetProperty("requestId").GetString().Should().Be($"replay-{run}-1");
-        frame.Value.Data.GetProperty("sequence").GetInt64().Should().Be(0);
+        var replayFrame = frame!.Value;
+        replayFrame.EventName.Should().Be(FeatureChange);
+        replayFrame.Data.GetProperty("requestId").GetString().Should().Be($"replay-{run}-1");
+        replayFrame.Data.GetProperty("sequence").GetInt64().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -510,11 +539,53 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var server = doc.RootElement.GetProperty("server");
 
+            // Absent/null is a legitimate outcome (no HONUA_GIT_SHA in the test host); the
+            // assertion is that the placeholder values are never advertised as a revision.
             var revision = server.TryGetProperty("deploymentRevision", out var value) && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
             revision.Should().NotBe("not-a-commit-sha");
             revision.Should().NotBe("sha256:short");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete()
+    {
+        // The cap is set equal to the page size, so it is reached exactly when a page ends and
+        // no row is visibly dropped inside the page. That branch used to exit without clearing
+        // 'complete', so snapshot-end advertised an authoritative baseline while ids beyond the
+        // first page were never read — a client would discard valid features outside it (#3038
+        // review). Any truncation must report complete=false.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
+        {
+            ["FeatureStreaming:MaxSnapshotFeatures"] = "1",
+            ["FeatureStreaming:SnapshotPageSize"] = "1"
+        });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+
+            baseline.Features.Should().HaveCount(1, "the cap admits exactly one feature");
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeFalse(
+                "ids beyond the emitted page were never read, so the baseline is not authoritative");
         }
         finally
         {
@@ -564,7 +635,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         JsonElement Begin,
         List<JsonElement> Features,
         JsonElement End,
-        List<long> Sequences);
+        List<long> Sequences,
+        List<string?> EventIds);
 
     private static async Task<BaselineFrames> ReadBaselineAsync(StreamReader reader, CancellationToken cancellationToken)
     {
@@ -572,6 +644,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         JsonElement end = default;
         var features = new List<JsonElement>();
         var sequences = new List<long>();
+        var eventIds = new List<string?>();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -586,21 +659,24 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 case SnapshotBegin:
                     begin = frame.Value.Data;
                     sequences.Add(begin.GetProperty("sequence").GetInt64());
+                    eventIds.Add(frame.Value.Id);
                     break;
                 case SnapshotFeature:
                     features.Add(frame.Value.Data);
                     sequences.Add(frame.Value.Data.GetProperty("sequence").GetInt64());
+                    eventIds.Add(frame.Value.Id);
                     break;
                 case SnapshotEnd:
                     end = frame.Value.Data;
                     sequences.Add(end.GetProperty("sequence").GetInt64());
-                    return new BaselineFrames(begin, features, end, sequences);
+                    eventIds.Add(frame.Value.Id);
+                    return new BaselineFrames(begin, features, end, sequences, eventIds);
                 default:
                     break;
             }
         }
 
-        return new BaselineFrames(begin, features, end, sequences);
+        return new BaselineFrames(begin, features, end, sequences, eventIds);
     }
 
     private static async Task<JsonElement?> ReadUntilEventAsync(
@@ -612,7 +688,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return frame?.Data;
     }
 
-    private static async Task<(string EventName, JsonElement Data)?> ReadUntilAnyAsync(
+    private static async Task<(string EventName, JsonElement Data, string? Id)?> ReadUntilAnyAsync(
         StreamReader reader,
         string[] eventNames,
         CancellationToken cancellationToken)
@@ -641,17 +717,24 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return null;
     }
 
-    private static async Task<(string EventName, JsonElement Data)?> ReadSseFrameAsync(
+    private static async Task<(string EventName, JsonElement Data, string? Id)?> ReadSseFrameAsync(
         StreamReader reader,
         CancellationToken cancellationToken)
     {
         string? eventName = null;
+        string? id = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken);
             if (line is null)
             {
                 return null;
+            }
+
+            if (line.StartsWith("id: ", StringComparison.Ordinal))
+            {
+                id = line["id: ".Length..];
+                continue;
             }
 
             if (line.StartsWith("event: ", StringComparison.Ordinal))
@@ -666,7 +749,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             }
 
             using var document = JsonDocument.Parse(line["data: ".Length..]);
-            return (eventName ?? "message", document.RootElement.Clone());
+            return (eventName ?? "message", document.RootElement.Clone(), id);
         }
 
         return null;

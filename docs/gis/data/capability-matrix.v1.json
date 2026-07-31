@@ -658,7 +658,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 13,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 2
       },
@@ -2321,7 +2321,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 2,
-      "provingTestCount": 43,
+      "provingTestCount": 54,
       "maturity": {
         "implemented": 2
       },
