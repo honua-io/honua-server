@@ -75,6 +75,93 @@ public sealed class OidcClaimsMappingEntitlementTests
         Assert.True(result.IsInRole("user"));
     }
 
+    /// <summary>
+    /// Builds a transformation whose PRIMARY role claim type is a provider-specific claim,
+    /// with no other custom mapping configured.
+    /// </summary>
+    private static OidcClaimsTransformation CreateRoleClaimTypeTransformation(HonuaEdition edition)
+    {
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["platform-admins"],
+            ClaimsMapping = new ClaimsMappingOptions { RoleClaimType = "groups" },
+        });
+
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition))
+            .BuildServiceProvider();
+
+        return new OidcClaimsTransformation(
+            options,
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+    }
+
+    /// <summary>
+    /// Mirrors what the JWT/OIDC handlers produce when
+    /// <c>TokenValidationParameters.RoleClaimType</c> is the configured custom type: the
+    /// identity itself resolves <c>IsInRole</c> against <c>groups</c>.
+    /// </summary>
+    private static ClaimsPrincipal CreateGroupsPrincipal() => new(new ClaimsIdentity(
+        [
+            new Claim("sub", "user-123"),
+            new Claim("name", "Test User"),
+            new Claim("groups", "platform-admins"),
+        ],
+        "Bearer",
+        "name",
+        "groups"));
+
+    [UnitTest]
+    public async Task TransformAsync_WithoutEntitlement_CustomRoleClaimTypeGrantsNoRoles()
+    {
+        // A non-default PRIMARY RoleClaimType is a custom mapping like any other. Without the
+        // gate an unentitled Pro deployment could point it at `groups` and have raw provider
+        // group values match AdminRoles (honua-server#2997 review).
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+
+        var result = await transformation.TransformAsync(CreateGroupsPrincipal());
+
+        Assert.False(result.IsInRole("platform-admins"),
+            "an ungated group value must not be read as a role");
+        Assert.False(result.IsInRole("admin"),
+            "and therefore must not satisfy AdminRoles");
+
+        // Soft-degrade, not failure: the default role still applies.
+        Assert.True(result.IsInRole("user"));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_WithoutEntitlement_RehomesTheIdentityOntoTheDefaultRoleClaim()
+    {
+        // Gating the claim gathering is not enough on its own: the handlers install the custom
+        // type as the identity's RoleClaimType, so IsInRole would read `groups` directly and
+        // never pass through this transformation at all.
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+
+        var result = await transformation.TransformAsync(CreateGroupsPrincipal());
+
+        Assert.Equal(ClaimTypes.Role, ((ClaimsIdentity)result.Identity!).RoleClaimType);
+        // The original claim is preserved — only its role-resolving status is withheld.
+        Assert.Equal("groups", result.FindFirst("groups")?.Type);
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_WithEntitlement_CustomRoleClaimTypeApplies()
+    {
+        // Enterprise gets what it configured: `groups` values are roles and reach AdminRoles.
+        // The admin assertion also pins a latent defect this change settles — `admin` is
+        // written as a ClaimTypes.Role claim, which an identity keyed on `groups` could never
+        // resolve, so a custom-role-claim deployment used to get no admin at all.
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
+
+        var result = await transformation.TransformAsync(CreateGroupsPrincipal());
+
+        Assert.True(result.IsInRole("platform-admins"));
+        Assert.True(result.IsInRole("admin"));
+    }
+
     [UnitTest]
     public async Task TransformAsync_WithClaimsMappingEntitlement_AppliesCustomMappings()
     {
