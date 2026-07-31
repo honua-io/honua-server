@@ -153,6 +153,15 @@ reference data as an ordinary layer, then register its key under the
 | `distanceMeters` | Default radius when `predicate` is `dwithin`. |
 | `attributes` | Default reference-layer attributes carried onto each enriched feature. |
 
+Predicate direction is **dataset-subject**: `contains` (and
+`method=point-in-polygon` / `pip`) means *the dataset feature contains the source
+feature* — the classic "which boundary polygon is my point in?" question — while
+`within` means *the dataset feature sits inside the source feature*. `intersects`
+and `dwithin` are symmetric, so their operand order does not matter. Both the
+synchronous endpoint and the async batch job evaluate the same canonical
+predicates, so a given method returns the same matches on either path
+([#3069](https://github.com/honua-io/honua-server/issues/3069)).
+
 ## Enriching features
 
 ```http

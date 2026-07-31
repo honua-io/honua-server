@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Index.Strtree;
@@ -20,27 +21,17 @@ namespace Honua.Geoprocessing.Execution;
 /// geometries — geodesic conversion is not performed, matching the other managed
 /// tool packs. Candidate join features are pruned through an in-memory
 /// <see cref="STRtree{T}"/> index before the exact predicate test.
+/// <para>
+/// Predicates are the canonical <see cref="SpatialJoinPredicate"/> members shared with
+/// the PostGIS pushdown (honua-server#3069), whose names spell out both operands, so a
+/// managed join cannot drift from the SQL one. Each caller owns the mapping from its own
+/// wire vocabulary onto them.
+/// </para>
 /// </summary>
 internal static class SpatialJoinSupport
 {
     /// <summary>Attribute holding the count of matched join features on each target.</summary>
     internal const string JoinCountAttribute = "JOIN_COUNT";
-
-    /// <summary>Spatial predicate evaluated between a join candidate and a target feature.</summary>
-    internal enum SpatialPredicate
-    {
-        /// <summary>The join geometry intersects the target.</summary>
-        Intersects,
-
-        /// <summary>The join geometry contains the target — the classic point-in-polygon case.</summary>
-        Contains,
-
-        /// <summary>The target contains the join geometry.</summary>
-        Within,
-
-        /// <summary>The join geometry lies within a distance threshold of the target (CRS units).</summary>
-        Dwithin,
-    }
 
     /// <summary>
     /// Builds an in-memory STRtree over the join features' envelopes, skipping
@@ -75,7 +66,7 @@ internal static class SpatialJoinSupport
     internal static Feature Join(
         IFeature target,
         STRtree<IFeature> index,
-        SpatialPredicate predicate,
+        SpatialJoinPredicate predicate,
         double distance,
         IReadOnlyList<string> carryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> stats,
@@ -220,10 +211,10 @@ internal static class SpatialJoinSupport
             ? feature.Attributes.GetOptionalValue(field)
             : null;
 
-    private static NtsEnvelope QueryEnvelope(NtsGeometry targetGeometry, SpatialPredicate predicate, double distance)
+    private static NtsEnvelope QueryEnvelope(NtsGeometry targetGeometry, SpatialJoinPredicate predicate, double distance)
     {
         var envelope = targetGeometry.EnvelopeInternal.Copy();
-        if (predicate == SpatialPredicate.Dwithin)
+        if (predicate == SpatialJoinPredicate.DWithin)
         {
             // Widen the candidate window by the distance threshold so join geometries
             // whose envelopes fall just outside the target's are still tested exactly.
@@ -236,7 +227,7 @@ internal static class SpatialJoinSupport
     private static bool Matches(
         NtsGeometry? joinGeometry,
         NtsGeometry targetGeometry,
-        SpatialPredicate predicate,
+        SpatialJoinPredicate predicate,
         double distance)
     {
         if (joinGeometry is null || joinGeometry.IsEmpty)
@@ -246,9 +237,9 @@ internal static class SpatialJoinSupport
 
         return predicate switch
         {
-            SpatialPredicate.Contains => joinGeometry.Contains(targetGeometry),
-            SpatialPredicate.Within => targetGeometry.Contains(joinGeometry),
-            SpatialPredicate.Dwithin => joinGeometry.IsWithinDistance(targetGeometry, distance),
+            SpatialJoinPredicate.JoinContainsTarget => joinGeometry.Contains(targetGeometry),
+            SpatialJoinPredicate.TargetContainsJoin => targetGeometry.Contains(joinGeometry),
+            SpatialJoinPredicate.DWithin => joinGeometry.IsWithinDistance(targetGeometry, distance),
             _ => joinGeometry.Intersects(targetGeometry),
         };
     }

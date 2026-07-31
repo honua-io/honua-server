@@ -274,7 +274,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects, contains, within, dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (the join geometry contains the target — point-in-polygon), within (the target contains the join geometry), dwithin.", ProcessParameterValueType.Text),
                 Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the threshold is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("carryFields", "Carry Fields", "Comma-separated join-layer columns whose matched values are emitted as arrays on each target feature.", ProcessParameterValueType.Text),
                 Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over the matched join rows for each target feature.", ProcessParameterValueType.Text),

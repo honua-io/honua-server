@@ -112,6 +112,50 @@ public sealed class SlackAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task DeliverAsync_WithTransientResolutionFailure_ReturnsRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-slack").Returns(client);
+
+        var sink = new SlackAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-slack");
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithWebhookUrlResolvingToPrivateAddress_ReturnsNonRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-slack").Returns(client);
+
+        var sink = new SlackAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-slack");
+    }
+
+    [UnitTest]
     public void ChannelType_ReturnsSlack()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();

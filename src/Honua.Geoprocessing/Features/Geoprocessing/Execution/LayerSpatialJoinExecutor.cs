@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -20,11 +21,15 @@ namespace Honua.Geoprocessing.Execution;
 ///
 /// <para>
 /// The join computation itself is the shared <see cref="SpatialJoinSupport"/>
-/// (also consumed by the <c>enrichment.enrich</c> executor, #2283): managed NTS
-/// relational predicates — <c>intersects</c> (default), <c>contains</c> (the join
-/// geometry contains the target — the classic point-in-polygon case), <c>within</c>
-/// (the target contains the join geometry), and <c>dwithin</c> (the join geometry is
-/// within <c>distance</c> of the target). Distances are evaluated in the CRS units of
+/// (also consumed by the <c>enrichment.enrich</c> executor, #2283), which evaluates
+/// the canonical <see cref="SpatialJoinPredicate"/> members shared with the PostGIS
+/// pushdown (honua-server#3069) using NetTopologySuite's managed relational operators
+/// (no GEOS/GDAL native dependency): <c>intersects</c> (default), <c>contains</c>
+/// (<see cref="SpatialJoinPredicate.JoinContainsTarget"/> — the join geometry contains
+/// the target, the classic point-in-polygon case), <c>within</c>
+/// (<see cref="SpatialJoinPredicate.TargetContainsJoin"/> — the target contains the
+/// join geometry), and <c>dwithin</c> (the join geometry is within <c>distance</c> of
+/// the target). Distances are evaluated in the CRS units of
 /// the supplied geometries — geodesic conversion is not performed, matching the other
 /// managed layer-aware analytics executors. Candidate join features are pruned through
 /// an in-memory STRtree index before the exact predicate test.
@@ -90,21 +95,24 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         return output;
     }
 
-    private static (SpatialJoinSupport.SpatialPredicate Predicate, double Distance) ReadPredicate(StepInputReader inputs)
+    // Wire vocabulary for this process is JOIN-SUBJECT: `contains` is the
+    // point-in-polygon direction (the join/reference geometry contains the target).
+    // Unchanged behavior — the mapping is now explicit about which operand leads.
+    private static (SpatialJoinPredicate Predicate, double Distance) ReadPredicate(StepInputReader inputs)
     {
         var raw = inputs.GetOrDefault("predicate", "intersects").Trim().ToLowerInvariant();
         var predicate = raw switch
         {
-            "" or "intersects" => SpatialJoinSupport.SpatialPredicate.Intersects,
-            "contains" => SpatialJoinSupport.SpatialPredicate.Contains,
-            "within" => SpatialJoinSupport.SpatialPredicate.Within,
-            "dwithin" => SpatialJoinSupport.SpatialPredicate.Dwithin,
+            "" or "intersects" => SpatialJoinPredicate.Intersects,
+            "contains" => SpatialJoinPredicate.JoinContainsTarget,
+            "within" => SpatialJoinPredicate.TargetContainsJoin,
+            "dwithin" => SpatialJoinPredicate.DWithin,
             _ => throw new TransformInputException(
                 $"predicate '{raw}' is not supported (allowed: intersects, contains, within, dwithin)"),
         };
 
         var distance = 0d;
-        if (predicate == SpatialJoinSupport.SpatialPredicate.Dwithin
+        if (predicate == SpatialJoinPredicate.DWithin
             && (!inputs.TryGet("distance", out var distanceRaw)
                 || !double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out distance)
                 || !double.IsFinite(distance)

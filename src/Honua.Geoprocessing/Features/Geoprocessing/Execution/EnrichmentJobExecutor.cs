@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -469,29 +470,29 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         var methodName = inputs.GetOrDefault("method", string.Empty).Trim().ToLowerInvariant();
         var nearest = false;
-        SpatialJoinSupport.SpatialPredicate predicate;
+        SpatialJoinPredicate predicate;
         switch (methodName)
         {
             case "":
                 predicate = ParsePredicate(
                     inputs.GetOrDefault("predicate", dataset.DefaultPredicate));
-                methodName = predicate.ToString().ToLowerInvariant();
+                methodName = WireMethodName(predicate);
                 break;
             case "intersects":
-                predicate = SpatialJoinSupport.SpatialPredicate.Intersects;
+                predicate = SpatialJoinPredicate.Intersects;
                 break;
             case "point-in-polygon" or "point_in_polygon" or "pip" or "contains":
-                predicate = SpatialJoinSupport.SpatialPredicate.Contains;
+                predicate = SpatialJoinPredicate.JoinContainsTarget;
                 break;
             case "within":
-                predicate = SpatialJoinSupport.SpatialPredicate.Within;
+                predicate = SpatialJoinPredicate.TargetContainsJoin;
                 break;
             case "within-distance" or "within_distance" or "dwithin":
-                predicate = SpatialJoinSupport.SpatialPredicate.Dwithin;
+                predicate = SpatialJoinPredicate.DWithin;
                 break;
             case "nearest-neighbor" or "nearest_neighbor" or "nearest":
                 nearest = true;
-                predicate = SpatialJoinSupport.SpatialPredicate.Intersects;
+                predicate = SpatialJoinPredicate.Intersects;
                 break;
             default:
                 throw new TransformInputException(
@@ -518,7 +519,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // endpoint's meters-based dataset default is deliberately NOT inherited —
         // callers must state the threshold explicitly.
         if (!nearest
-            && predicate == SpatialJoinSupport.SpatialPredicate.Dwithin
+            && predicate == SpatialJoinPredicate.DWithin
             && (!inputs.TryGet("distance", out var distanceRaw)
                 || !double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out distance)
                 || !double.IsFinite(distance)
@@ -575,13 +576,29 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         return value;
     }
 
-    private static SpatialJoinSupport.SpatialPredicate ParsePredicate(string raw)
+    // The canonical members name both operands (honua-server#3069), so the effective
+    // method echoed as artifact provenance is mapped back to THIS surface's wire
+    // vocabulary rather than derived from the enum member name.
+    private static string WireMethodName(SpatialJoinPredicate predicate)
+        => predicate switch
+        {
+            SpatialJoinPredicate.JoinContainsTarget => "contains",
+            SpatialJoinPredicate.TargetContainsJoin => "within",
+            SpatialJoinPredicate.DWithin => "dwithin",
+            _ => "intersects",
+        };
+
+    // Enrichment's wire vocabulary is DATASET-SUBJECT: the dataset layer supplies the
+    // join geometries, so `contains`/`point-in-polygon` means the dataset polygon
+    // contains the caller's source feature. Unchanged behavior — the canonical member
+    // names simply make the operand order explicit.
+    private static SpatialJoinPredicate ParsePredicate(string raw)
         => raw.Trim().ToLowerInvariant() switch
         {
-            "" or "intersects" => SpatialJoinSupport.SpatialPredicate.Intersects,
-            "contains" => SpatialJoinSupport.SpatialPredicate.Contains,
-            "within" => SpatialJoinSupport.SpatialPredicate.Within,
-            "dwithin" => SpatialJoinSupport.SpatialPredicate.Dwithin,
+            "" or "intersects" => SpatialJoinPredicate.Intersects,
+            "contains" => SpatialJoinPredicate.JoinContainsTarget,
+            "within" => SpatialJoinPredicate.TargetContainsJoin,
+            "dwithin" => SpatialJoinPredicate.DWithin,
             var other => throw new TransformInputException(
                 $"predicate '{other}' is not supported (allowed: intersects, contains, within, dwithin)"),
         };
@@ -707,7 +724,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private sealed record EnrichmentPlan(
         string MethodName,
         bool Nearest,
-        SpatialJoinSupport.SpatialPredicate Predicate,
+        SpatialJoinPredicate Predicate,
         double Distance,
         IReadOnlyList<string> CarryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> Stats,

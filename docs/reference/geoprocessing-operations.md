@@ -51,6 +51,11 @@ The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `anal
 | `analytics.density-managed` | Job-executable hex/square binning over inline features. | `input`, `mode`, `cellSize`, `weightField` |
 | `analytics.hotspot-managed` | Job-executable Getis-Ord Gi* Hot Spot Analysis over inline features; appends `GI_ZSCORE`, `GI_PVALUE`, `GI_BIN`. | `input`, `field`, `distanceBand` |
 
+For the spatial-join processes the `predicate` is read join-subject: `contains`
+means *the join geometry contains the target* (the classic point-in-polygon case)
+and `within` means *the target contains the join geometry*. `intersects` and
+`dwithin` are symmetric.
+
 ## Enrichment (1)
 
 Asynchronous batch counterpart of the synchronous `POST /api/enrich` endpoint. Resolves a managed or configured enrichment dataset by `datasetId` through the same catalog the sync endpoint uses, then joins the target features against the dataset's layer with the shared managed spatial-join computation (`JOIN_COUNT`, carried attributes, `field:stat` aggregates) or annotates each target with its nearest dataset feature (`NEAR_DIST`). Targets come from EITHER a registered `layerId` (with `where`/`bbox` windowing) OR a staged inline FeatureCollection (`input` data URI). The dataset's minimum edition and the shared `analytics.spatial-join` (Pro) entitlement are enforced at execution, and the published FeatureCollection carries the dataset id and attribution as foreign members. Both layers are streamed in EPSG:4326 and the artifact is published in EPSG:4326, so a cross-SRID pair is never joined on incomparable ordinates and the GeoJSON output is valid WGS 84 (RFC 7946). Distances (`distance`, `NEAR_DIST`) are therefore in degrees — no geodesic conversion, matching the other managed analytics executors — so the sync endpoint's meters-based dataset default is not inherited. `maxInputFeatures` (default 250000, clamped to an operator ceiling of 1000000 — callers may only lower it) bounds each layer read while streaming — including a staged `input` collection — and `maxCarriedMatchValues` (default 20000000, likewise lower-only) bounds the join's Cartesian growth.
