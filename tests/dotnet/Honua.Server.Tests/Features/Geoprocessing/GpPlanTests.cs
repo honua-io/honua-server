@@ -252,6 +252,79 @@ public sealed class GpPlanTests
     }
 
     [UnitTest]
+    public void Build_EnrichmentLayerSourceWithNonFiniteBbox_IsRejected()
+    {
+        // double.TryParse accepts "NaN"/"Infinity"/"-Infinity", so a syntax-only ordinate check
+        // let these clear submission and reach BuildSpatialFilter, which builds an envelope out
+        // of them — either failing deep in the provider path as a generic read error or
+        // producing a filter the caller never asked for (#3043 review).
+        foreach (var bbox in new[] { "NaN,0,1,1", "-Infinity,0,1,1", "0,0,1,Infinity" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["layerId"] = "7",
+                ["bbox"] = bbox,
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.IsValid.Should().BeFalse($"'{bbox}' carries a non-finite ordinate");
+            plan.Errors.Should().Contain(e => e.Contains("finite"));
+        }
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentNearestNeighborWithAggregates_IsRejected()
+    {
+        // The nearest branch of EnrichmentJobExecutor.Enrich returns after AnnotateNearest
+        // without ever consulting plan.Stats, so this combination used to queue a job that
+        // succeeded while silently omitting every requested aggregate. The catalog already
+        // advertises 'aggregates' as join-methods-only (#3043 review).
+        foreach (var method in new[] { "nearest-neighbor", "nearest_neighbor", "nearest" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["layerId"] = "7",
+                ["method"] = method,
+                ["aggregates"] = "population:sum",
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.IsValid.Should().BeFalse($"'{method}' has no match set to aggregate");
+            plan.Errors.Should().Contain(e => e.Contains("aggregates"));
+        }
+    }
+
+    [UnitTest]
+    public void Build_EnrichmentJoinMethodWithAggregates_IsAccepted()
+    {
+        // The counterpart guard: the refusal must be scoped to nearest-neighbor and must not
+        // regress aggregates on the join methods, which do compute them.
+        foreach (var method in new[] { "intersects", "point-in-polygon", "within" })
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["datasetId"] = "demographics",
+                ["layerId"] = "7",
+                ["method"] = method,
+                ["aggregates"] = "population:sum",
+            };
+
+            var plan = GpPlanner.Build("enrichment.enrich", inputs, Catalog(), DefaultCap, callerInputBytes: 0);
+
+            plan.Should().NotBeNull();
+            plan!.Errors.Should().NotContain(
+                e => e.Contains("aggregates"),
+                $"'{method}' is a join method and computes the requested aggregates");
+        }
+    }
+
+    [UnitTest]
     public void Build_EnrichmentLayerSourceWithValidBbox_IsAccepted()
     {
         // The syntax check must not widen into the raster-side extent rules: an inverted or

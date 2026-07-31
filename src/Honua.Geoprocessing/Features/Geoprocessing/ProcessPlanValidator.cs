@@ -723,6 +723,13 @@ internal static partial class ProcessPlanValidator
         "within-distance", "within_distance", "dwithin"
     };
 
+    // The nearest spellings EnrichmentJobExecutor.BuildPlan maps onto its nearest branch,
+    // which carries attributes but computes no aggregates.
+    private static readonly HashSet<string> EnrichmentNearestMethodValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "nearest-neighbor", "nearest_neighbor", "nearest"
+    };
+
     // Enrichment owns its raw-'predicate' allow-list rather than borrowing the
     // PostGIS analytics.spatial-join set: the two happen to agree today, but they are
     // different contracts, and a change on the spatial-join side must not silently
@@ -848,6 +855,28 @@ internal static partial class ProcessPlanValidator
             return;
         }
 
+        // The catalog advertises 'aggregates' as "join methods only", and the executor's
+        // nearest branch returns straight after AnnotateNearest without ever consulting
+        // plan.Stats — so this combination used to succeed while silently omitting every
+        // requested statistic. Aggregates summarise a MATCH SET; nearest-neighbor produces a
+        // single closest feature per target and has no set to summarise, so there is nothing
+        // meaningful to compute here. Refuse at submission rather than queue a job whose
+        // output cannot carry what the request asked for (#3043 review).
+        if (hasMethod && EnrichmentNearestMethodValues.Contains(methodRaw!.Trim()))
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "INVALID_PARAMETER_VALUE",
+                Message = $"Step '{step.StepId}' supplies 'aggregates' with method='{methodRaw!.Trim()}' for process "
+                    + $"'{step.ProcessId}': aggregates are computed over the matched dataset features and are "
+                    + "supported on the join methods only (intersects, point-in-polygon, within, within-distance). "
+                    + "The nearest-neighbor method annotates each target with its single closest dataset feature "
+                    + "(NEAR_DIST) and has no match set to aggregate — remove 'aggregates', or use a join method.",
+                FieldPath = $"steps[{step.StepId}].inputs.aggregates"
+            });
+            return;
+        }
+
         foreach (var token in aggregatesRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var parts = token.Split(':', StringSplitOptions.TrimEntries);
@@ -909,13 +938,19 @@ internal static partial class ProcessPlanValidator
         string bbox,
         List<GeoprocessingValidationFailure> violations)
     {
+        // double.TryParse accepts "NaN", "Infinity", and "-Infinity", so a syntax-only check
+        // let bbox=NaN,0,1,1 clear submission and reach BuildSpatialFilter, which builds an
+        // envelope from those ordinates and then either fails deep in the provider path as a
+        // generic read error or produces a filter the caller never asked for. Every ordinate
+        // must be finite to be a coordinate at all (#3043 review).
         var parts = bbox.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         var ok = parts.Length == 4
-            && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+            && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate)
+                && double.IsFinite(ordinate));
         if (!ok)
         {
             AddRangeViolationIfNew(step, "bbox",
-                $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
+                $"expected 'minX,minY,maxX,maxY' with four finite numeric values, got '{bbox}'", violations);
         }
     }
 

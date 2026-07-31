@@ -499,6 +499,19 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                     + "within-distance, nearest-neighbor)");
         }
 
+        // Runtime counterpart of the validator's submit-time refusal. The nearest branch of
+        // Enrich returns after AnnotateNearest without consulting plan.Stats, so accepting the
+        // combination here would produce an artifact silently missing every requested
+        // statistic. Aggregates summarise a match set; nearest-neighbor yields one closest
+        // feature per target and has no set to summarise (#3043 review).
+        if (nearest && stats.Count > 0)
+        {
+            throw new TransformInputException(
+                "'aggregates' is supported on the join methods only (intersects, point-in-polygon, within, "
+                + "within-distance); the nearest-neighbor method annotates each target with its single closest "
+                + "dataset feature (NEAR_DIST) and has no match set to aggregate");
+        }
+
         var distance = 0d;
         // The within-distance threshold is evaluated in the CRS units of the layer
         // geometries (no geodesic conversion on this managed path), so the sync

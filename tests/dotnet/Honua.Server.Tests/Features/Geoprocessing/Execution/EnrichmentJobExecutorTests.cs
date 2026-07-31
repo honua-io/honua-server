@@ -294,6 +294,43 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_NearestNeighborWithAggregates_Fails()
+    {
+        // The nearest branch returns after AnnotateNearest without consulting plan.Stats, so
+        // accepting this combination published an artifact silently missing every requested
+        // aggregate. The submit-time validator refuses it too; this is the runtime backstop
+        // for any path that reaches the executor without it (#3043 review).
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("method", "nearest-neighbor"),
+            ("aggregates", "population:sum"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("aggregates");
+        error.Should().Contain("nearest-neighbor");
+    }
+
+    [UnitTest]
+    public async Task Enrich_NearestNeighborWithoutAggregates_StillRuns()
+    {
+        // The refusal is scoped to the aggregates combination — nearest-neighbor itself keeps
+        // working and remains the only place NEAR_DIST comes from.
+        var services = DefaultServices(dataset: Dataset());
+
+        var (status, _) = await RunAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("method", "nearest-neighbor"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
     public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
     {
         // Codex P2: the budget's remedies must reach the caller verbatim rather than
