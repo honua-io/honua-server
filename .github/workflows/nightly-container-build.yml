@@ -78,10 +78,18 @@ jobs:
           # not allowlist, because $'...' can hide a command token from static analysis. Same
           # idiom the merge-train scripts use.
           tab="$(printf '\tX')"; tab="${tab%X}"
+
+          # Materialize the map BEFORE mirroring anything. A process substitution's exit status
+          # is not propagated through `while`, so a producer that emitted some entries and then
+          # failed on a missing or malformed pin left the step green after mirroring only part
+          # of the map — and the build jobs then pulled the previous run's stale GHCR tags,
+          # silently publishing images on old security pins.
+          mirror_map="$(scripts/ci/base-image-mirrors.sh)"
+
           while IFS="${tab}" read -r tag src; do
             [ -n "$tag" ] || continue
             mirror "$src" "${BASE_REPO}:${tag}"
-          done < <(scripts/ci/base-image-mirrors.sh)
+          done <<<"${mirror_map}"
 
   build-aot:
     name: Build & Push AOT (${{ matrix.arch }})
