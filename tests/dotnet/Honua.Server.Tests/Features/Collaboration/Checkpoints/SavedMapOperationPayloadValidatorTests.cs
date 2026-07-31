@@ -188,6 +188,37 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("kind");
     }
 
+    /// <summary>
+    /// Deserialization is permissive at every level, not just the payload root, so a typo
+    /// inside layers/widgets/view silently applied a default (honua-server#2999 review).
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visble":false}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend","titel":"x"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zom":12}}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zom":12}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pich":30}""")]
+    public void TryValidate_UnmappedNestedMember_IsRejected(SavedMapOperationKind kind, string payload)
+    {
+        SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
+            .Should().BeFalse();
+
+        error.Should().Contain("unrecognized member");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visible":false,"styleRef":"night"}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend","title":"Legend"}]}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pitch":30,"crs":"EPSG:3857"}""")]
+    public void TryValidate_FullyMappedNestedMembers_AreAccepted(SavedMapOperationKind kind, string payload)
+    {
+        // The allowlists must cover every modelled member, or a legitimate client is refused.
+        SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
+            .Should().BeTrue(because: error);
+    }
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

@@ -323,6 +323,10 @@ public sealed class InMemoryCollaborationSessionServiceTests
     {
         public List<CollaborationEventEnvelope> Published { get; } = [];
 
+        // Stands in for a real cross-replica backplane: these tests exercise fan-out, which is
+        // exactly the capability the flag advertises.
+        public bool SupportsCrossReplicaDelivery => true;
+
         public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
     }
 

@@ -115,6 +115,73 @@ internal static class SavedMapOperationPayloadValidator
     private static readonly HashSet<string> ReplacementMembers =
         new(StringComparer.Ordinal) { "layers", "view", "widgets" };
 
+    /// <summary>Members of <c>StudioCompositionLayer</c>, by <c>JsonPropertyName</c>.</summary>
+    private static readonly HashSet<string> LayerMembers =
+        new(StringComparer.Ordinal) { "id", "sourceId", "type", "title", "visible", "styleRef", "metadata" };
+
+    /// <summary>Members of <c>StudioCompositionWidget</c>, by <c>JsonPropertyName</c>.</summary>
+    private static readonly HashSet<string> WidgetMembers =
+        new(StringComparer.Ordinal) { "id", "kind", "title", "sourceId", "config" };
+
+    /// <summary>Members of <c>StudioCompositionView</c>, by <c>JsonPropertyName</c>.</summary>
+    private static readonly HashSet<string> ViewMembers =
+        new(StringComparer.Ordinal) { "bbox", "center", "zoom", "pitch", "bearing", "crs" };
+
+    /// <summary>
+    /// Refuses any member of <paramref name="element"/> the projection does not model.
+    /// </summary>
+    /// <remarks>
+    /// Applied at EVERY nesting level, not just the payload root. Deserialization is permissive
+    /// throughout, so <c>{"layers":[{"id":"roads","visble":false}]}</c> bound cleanly and
+    /// persisted <c>visible:true</c>, and a <c>SetViewport</c> payload of <c>{"zom":12}</c>
+    /// consumed a cursor and replaced the previous view with an empty object — a typo silently
+    /// applying a default in both cases (honua-server#2999 review).
+    /// </remarks>
+    private static bool TryRejectUnmappedMembers(
+        JsonElement element,
+        HashSet<string> allowed,
+        string subject,
+        out string error)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var member in element.EnumerateObject().Where(member => !allowed.Contains(member.Name)))
+            {
+                error = $"{subject} has an unrecognized member '{member.Name}'; expected only "
+                    + $"{string.Join(", ", allowed.Select(name => $"'{name}'"))}.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Applies <see cref="TryRejectUnmappedMembers"/> to every element of an array member.
+    /// </summary>
+    private static bool TryRejectUnmappedArrayMembers(
+        JsonElement payload,
+        string memberName,
+        HashSet<string> allowed,
+        string subject,
+        out string error)
+    {
+        if (payload.TryGetProperty(memberName, out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in array.EnumerateArray())
+            {
+                if (!TryRejectUnmappedMembers(item, allowed, subject, out error))
+                {
+                    return false;
+                }
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private static bool TryValidateReplacementDocument(JsonElement payload, out string error)
     {
         if (payload.ValueKind != JsonValueKind.Object)
@@ -128,14 +195,17 @@ internal static class SavedMapOperationPayloadValidator
         // the applier then replaces the document with nothing — a typo silently clears every
         // layer and widget at checkpoint time. Enumerate the payload and refuse anything the
         // projection does not model (honua-server#2999 review).
-        foreach (var member in payload.EnumerateObject())
+        if (!TryRejectUnmappedMembers(payload, ReplacementMembers, "The document-replace payload", out error)
+            || !TryRejectUnmappedArrayMembers(payload, "layers", LayerMembers, "A layer in the document-replace payload", out error)
+            || !TryRejectUnmappedArrayMembers(payload, "widgets", WidgetMembers, "A widget in the document-replace payload", out error))
         {
-            if (!ReplacementMembers.Contains(member.Name))
-            {
-                error = $"The document-replace payload has an unrecognized member '{member.Name}'; "
-                    + $"expected only {string.Join(", ", ReplacementMembers.Select(name => $"'{name}'"))}.";
-                return false;
-            }
+            return false;
+        }
+
+        if (payload.TryGetProperty("view", out var replacementView)
+            && !TryRejectUnmappedMembers(replacementView, ViewMembers, "The document-replace payload's view", out error))
+        {
+            return false;
         }
 
         StudioCompositionBody? body;
@@ -237,6 +307,11 @@ internal static class SavedMapOperationPayloadValidator
         if (payload.ValueKind != JsonValueKind.Object)
         {
             error = "The viewport payload is required.";
+            return false;
+        }
+
+        if (!TryRejectUnmappedMembers(payload, ViewMembers, "The viewport payload", out error))
+        {
             return false;
         }
 

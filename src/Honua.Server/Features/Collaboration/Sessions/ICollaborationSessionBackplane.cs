@@ -21,6 +21,19 @@ internal interface ICollaborationSessionBackplane
     /// must not block the caller and must swallow transport failures.
     /// </summary>
     void Publish(CollaborationEventEnvelope ev);
+
+    /// <summary>
+    /// Whether this backplane actually delivers events to peer replicas.
+    /// </summary>
+    /// <remarks>
+    /// The advertised presence capabilities are derived from this rather than from the declared
+    /// topology alone. <c>Collaboration:MultiReplica=true</c> without <c>Deployment:Mode</c>
+    /// does not require Redis, so a deployment could take that documented override, install the
+    /// no-op backplane, and still advertise cursors, selections and follow — participants routed
+    /// to different replicas would then never see each other's events despite the handshake
+    /// promising them (honua-server#2999 review).
+    /// </remarks>
+    bool SupportsCrossReplicaDelivery { get; }
 }
 
 /// <summary>
@@ -35,6 +48,9 @@ internal sealed class NullCollaborationSessionBackplane : ICollaborationSessionB
     private NullCollaborationSessionBackplane()
     {
     }
+
+    /// <inheritdoc />
+    public bool SupportsCrossReplicaDelivery => false;
 
     /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)

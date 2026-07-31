@@ -206,9 +206,27 @@ internal static partial class CollaborationSessionStreamEndpoint
                         .ConfigureAwait(false)
                     : SnapshotTail.Unavailable;
 
-                if (!tail.ResyncRequired || resyncAnnounced)
+                if (!tail.ResyncRequired)
                 {
                     break;
+                }
+
+                if (resyncAnnounced)
+                {
+                    // The gap was already announced AND the window moved again through both
+                    // retries, so the tail is empty while DeliveredThrough sits at the new base.
+                    // Emitting that snapshot would advance the client past retained,
+                    // UNCHECKPOINTED operations — it reloads the durable document, which reflects
+                    // only checkpointed ones, and would then discard those operations' later
+                    // envelopes as already-seen. There is no cursor that honestly describes this
+                    // state, so terminate the handshake and let the client reconnect into a
+                    // stable window (honua-server#2999 review).
+                    await CloseWithErrorAsync(
+                        webSocket,
+                        "The retained operation replay window is advancing faster than the snapshot "
+                        + "can be assembled. Reconnect to retry.",
+                        context.RequestAborted).ConfigureAwait(false);
+                    return;
                 }
 
                 // The resume cursor was inside the window during the preliminary replay, but
@@ -369,6 +387,36 @@ internal static partial class CollaborationSessionStreamEndpoint
     /// Emits the typed, non-terminal <c>resync-required</c> error telling the client its cursor
     /// cannot be resumed from the retained window and it must reload the durable document.
     /// </summary>
+    /// <summary>
+    /// Ends the handshake without emitting a snapshot the client could not safely trust.
+    /// </summary>
+    private static async Task CloseWithErrorAsync(
+        WebSocket webSocket,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (webSocket.State is not (WebSocketState.Open or WebSocketState.CloseReceived))
+        {
+            return;
+        }
+
+        try
+        {
+            await webSocket.CloseAsync(
+                WebSocketCloseStatus.InternalServerError,
+                reason,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (WebSocketException)
+        {
+            // Client already gone.
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down or the client disconnected mid-close.
+        }
+    }
+
     private static Task AnnounceResyncAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,

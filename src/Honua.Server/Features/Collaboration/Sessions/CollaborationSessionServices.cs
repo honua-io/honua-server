@@ -47,11 +47,26 @@ internal static class CollaborationSessionServices
         {
             var topology = sp.GetRequiredService<SavedMapCollaborationTopology>();
             var log = sp.GetRequiredService<Core.Features.Collaboration.Operations.ISavedMapOperationLogRepository>();
+            var backplane = sp.GetRequiredService<ICollaborationSessionBackplane>();
             var operationsAvailable = !topology.IsMultiReplica || log.SupportsReplicaSharedReplay;
+
+            // Presence (cursors/selections/follow) rides the BACKPLANE, not the operation log,
+            // so it is advertised only when one actually reaches peer replicas. MultiReplica can
+            // be declared without Redis — configuration validation does not require it for that
+            // override alone — and the no-op backplane would otherwise promise live presence
+            // that participants on other replicas never receive (honua-server#2999 review).
+            var presenceAvailable = !topology.IsMultiReplica || backplane.SupportsCrossReplicaDelivery;
             // Checkpointing additionally needs a restart-durable log: it mints an immutable
             // version and must not claim completeness it cannot prove (honua-server#2999 review).
             var checkpointsAvailable = operationsAvailable && log.SupportsRestartDurableReplay;
-            var capabilities = CollaborationCapabilities.Default with { Checkpoints = checkpointsAvailable };
+            var capabilities = CollaborationCapabilities.Default with
+            {
+                Checkpoints = checkpointsAvailable,
+                Cursors = presenceAvailable,
+                Selections = presenceAvailable,
+                Follow = presenceAvailable,
+            };
+
             return operationsAvailable
                 ? capabilities
                 : capabilities with { Operations = false, Replay = false };
