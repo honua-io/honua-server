@@ -204,6 +204,22 @@ public sealed class ProcessConditionalInputProbeTests
             violation.Kind == ProcessAdmissibilityViolationKind.Inputs);
     }
 
+    [UnitTest]
+    public void FindUnverifiableConditionalParameters_SatisfiedSourceGroup_IsNotReported()
+    {
+        // Mapping surface.slope's `source` AND `units` still fabricates a branch for `units`,
+        // but `source` already satisfies the exactly-one source group — no value of `units`
+        // makes layerId/rasterId required. Returning every candidate whenever a discriminator
+        // was fabricated downgraded a mapping the submit path accepts (honua-server#2145
+        // review).
+        var unverifiable = Probe().FindUnverifiableConditionalParameters(
+            "surface.slope",
+            ["source", "units"]);
+
+        unverifiable.Should().NotContain("layerId");
+        unverifiable.Should().NotContain("rasterId");
+    }
+
     // -----------------------------------------------------------------------
     // Structured-text validation is not a token domain
     // -----------------------------------------------------------------------

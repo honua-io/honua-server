@@ -174,11 +174,24 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         var baseInputs = BuildProbeInputs(definition, suppliedParameterNames);
 
         // When a supplied parameter's legal values cannot be enumerated, a caller can select a
-        // branch this probe never visits, so nothing about the candidates is provable and the
-        // pessimistic answer stands: over-claiming 'executable' is worse than over-reporting.
+        // branch this probe never visits — but that only makes a candidate unprovable if the
+        // discriminator's value can actually change whether it is required. Returning EVERY
+        // candidate downgraded mappings the submit path accepts: surface.slope mapping both
+        // `source` and `units` had `layerId`/`rasterId` reported, even though `source` already
+        // satisfies their exactly-one group and no value of `units` makes them required
+        // (honua-server#2145 review). Report only the candidates whose requiredness some
+        // substitution demonstrably turns on.
         if (HasUnenumerableDiscriminator(definition, supplied, baseInputs))
         {
-            return candidates;
+            // The pessimistic answer still stands for anything whose requiredness the
+            // discriminator could turn on — probing sentinels cannot reach the real branches, so
+            // their silence proves nothing. What CAN be proven is coverage: a candidate that a
+            // supplied parameter already satisfies is not waiting on any branch. surface.slope
+            // mapping `source` and `units` had layerId/rasterId reported even though `source`
+            // satisfies their exactly-one group under every value of `units`
+            // (honua-server#2145 review).
+            return [.. candidates.Where(candidate =>
+                !IsCoveredByASuppliedParameter(definition, supplied, baseInputs, candidate))];
         }
 
         // The branch space IS enumerable here, so a candidate is unverifiable exactly when
@@ -194,18 +207,14 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 inputs[name] = value;
             }
 
-            foreach (var failure in Validate(definition.ProcessId, inputs))
-            {
-                if (!string.Equals(failure.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
-                {
-                    continue;
-                }
+            var required = Validate(definition.ProcessId, inputs)
+                .Where(failure => string.Equals(failure.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
+                .Select(failure => ParameterNameOf(failure.FieldPath))
+                .Where(name => name is not null);
 
-                var name = ParameterNameOf(failure.FieldPath);
-                if (name is not null)
-                {
-                    branchDependent.Add(name);
-                }
+            foreach (var name in required)
+            {
+                branchDependent.Add(name!);
             }
         }
 
@@ -289,6 +298,81 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns true when some SUPPLIED parameter already satisfies whatever requirement
+    /// <paramref name="candidate"/> participates in, so no branch can be waiting on it.
+    /// </summary>
+    /// <remarks>
+    /// Detected by withdrawal rather than by declaration, because the catalog models no groups:
+    /// if removing a supplied parameter makes the canonical validator start demanding the
+    /// candidate, the two are alternatives for the same requirement and the supplied one covers
+    /// it. That is exactly an exactly-one-of source group — <c>surface.slope</c>'s
+    /// <c>source</c>/<c>layerId</c>/<c>rasterId</c> — and it holds regardless of which branch a
+    /// discriminator selects.
+    /// <para>
+    /// The inverse is deliberately NOT inferred. A candidate no withdrawal implicates stays in
+    /// the pessimistic set, because probing an unenumerable discriminator with foreign sentinels
+    /// cannot reach the branches a caller can: <c>transform.computed-field</c>'s <c>fields</c> is
+    /// required under some <c>op</c> the probe can never name, and its silence under the
+    /// sentinels is absence of evidence, not evidence of absence.
+    /// </para>
+    /// </remarks>
+    private bool IsCoveredByASuppliedParameter(
+        ProcessDefinition definition,
+        HashSet<string> supplied,
+        Dictionary<string, string> baseInputs,
+        string candidate)
+    {
+        // Whatever the current inputs already fail on is not evidence about the candidate.
+        var baseline = FailureKeys(Validate(definition.ProcessId, baseInputs));
+
+        foreach (var name in baseInputs.Keys.Where(supplied.Contains).ToArray())
+        {
+            var withheld = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
+            withheld.Remove(name);
+
+            // Withdrawing a supplied parameter must actually break something new, or it was not
+            // carrying a requirement at all.
+            var introduced = FailureKeys(Validate(definition.ProcessId, withheld)).Except(baseline).ToArray();
+            if (introduced.Length == 0)
+            {
+                continue;
+            }
+
+            // The candidate covers that requirement exactly when supplying it INSTEAD repairs
+            // what the withdrawal broke — which is what being alternatives in the same
+            // exactly-one-of group means, whatever code the validator reports it under.
+            var restored = new Dictionary<string, string>(withheld, StringComparer.Ordinal)
+            {
+                [candidate] = ProbeValueFor(definition, candidate)
+            };
+
+            if (!FailureKeys(Validate(definition.ProcessId, restored)).Intersect(introduced).Any())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Rule identity for set comparison across probe runs: code plus field path.</summary>
+    private static HashSet<string> FailureKeys(IEnumerable<GeoprocessingValidationFailure> failures)
+        => [.. failures.Select(failure => $"{failure.Code}|{failure.FieldPath}")];
+
+    /// <summary>
+    /// A syntactically acceptable value for a parameter, matching what
+    /// <see cref="BuildProbeInputs"/> would have assigned it.
+    /// </summary>
+    private static string ProbeValueFor(ProcessDefinition definition, string parameterName)
+    {
+        var declaredDefault = definition.Parameters
+            .FirstOrDefault(parameter =>
+                string.Equals(parameter.Name, parameterName, StringComparison.OrdinalIgnoreCase))?.DefaultValue;
+
+        return string.IsNullOrWhiteSpace(declaredDefault) ? "1" : declaredDefault;
     }
 
     /// <summary>
