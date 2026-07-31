@@ -220,6 +220,33 @@ public sealed class ProcessConditionalInputProbeTests
         unverifiable.Should().NotContain("rasterId");
     }
 
+    [UnitTest]
+    public void FindAdmissibilityViolations_ComputedFieldWithoutOpOrExpression_IsReported()
+    {
+        // ComputedFieldTransformExecutor infers op=expression only when 'expression' is
+        // supplied and otherwise throws "missing required input 'op'". Canonical validation
+        // returned silently on an absent 'op', so mapping input+target alone was certified as
+        // translated even though it can never run (honua-server#2145 review).
+        var violations = Probe().FindAdmissibilityViolations(
+            "transform.computed-field",
+            ["input", "target"]);
+
+        violations.Should().NotBeEmpty();
+        violations.Should().Contain(violation => violation.Message.Contains("expression"));
+    }
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_ComputedFieldWithExpressionOnly_IsAccepted()
+    {
+        // Expression mode is legal without 'op' — the executor infers it — so the new
+        // requirement must not reject the mapping the engine supports.
+        var violations = Probe().FindAdmissibilityViolations(
+            "transform.computed-field",
+            ["input", "target", "expression"]);
+
+        violations.Should().NotContain(violation => violation.Message.Contains("must supply 'op'"));
+    }
+
     // -----------------------------------------------------------------------
     // Structured-text validation is not a token domain
     // -----------------------------------------------------------------------

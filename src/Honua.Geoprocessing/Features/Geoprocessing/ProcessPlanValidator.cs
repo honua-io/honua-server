@@ -898,8 +898,28 @@ internal static partial class ProcessPlanValidator
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
     {
+        var hasExpression = step.Inputs.TryGetValue("expression", out var expressionRaw)
+            && !string.IsNullOrWhiteSpace(expressionRaw);
+
         if (!step.Inputs.TryGetValue("op", out var opRaw) || string.IsNullOrWhiteSpace(opRaw))
         {
+            // Absent 'op' is only legal in expression mode: ComputedFieldTransformExecutor
+            // infers op=expression when 'expression' is supplied and otherwise throws
+            // "missing required input 'op'". Returning silently let a mapping of input+target
+            // alone be certified as translated when it can never run
+            // (honua-server#2145 review).
+            if (!hasExpression)
+            {
+                violations.Add(new GeoprocessingValidationFailure
+                {
+                    Code = "MISSING_REQUIRED_PARAMETER",
+                    Message = $"Step '{step.StepId}' must supply 'op' or 'expression' for process "
+                        + $"'{step.ProcessId}': the computed-field transform infers op=expression only "
+                        + "when 'expression' is present, and fails at execution otherwise.",
+                    FieldPath = $"steps[{step.StepId}].inputs.op"
+                });
+            }
+
             return;
         }
 
