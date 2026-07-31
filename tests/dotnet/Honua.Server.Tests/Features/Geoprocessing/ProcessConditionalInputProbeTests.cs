@@ -141,6 +141,55 @@ public sealed class ProcessConditionalInputProbeTests
     }
 
     // -----------------------------------------------------------------------
+    // A fabricated discriminator branch is not an unavoidable violation
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_MappedDiscriminatorBranch_IsNotReported()
+    {
+        // analytics.cluster-managed maps input/algorithm/k, which executes when the caller
+        // supplies algorithm=kmeans. The probe cannot enumerate 'algorithm' so it pins the
+        // catalog default (dbscan), whose branch demands eps/minPoints. That requirement is
+        // an artefact of the fabricated branch and must not condemn the mapping; the
+        // unverifiable path reports it instead.
+        var violations = Probe().FindAdmissibilityViolations(
+            "analytics.cluster-managed",
+            ["input", "algorithm", "k"]);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_UnmappedDiscriminator_StillReportsDefaultBranch()
+    {
+        // With 'algorithm' UNMAPPED the caller can never override it, so the catalog default
+        // is the branch that actually runs and its eps/minPoints requirement is real. The
+        // guard above must be scoped to a mapped discriminator or it would certify this.
+        var violations = Probe().FindAdmissibilityViolations(
+            "analytics.cluster-managed",
+            ["input", "k"]);
+
+        violations.Should().NotBeEmpty();
+        violations.Should().OnlyContain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.Inputs);
+        violations.Should().Contain(violation => violation.Message.Contains("eps"));
+    }
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_FabricatedBranch_StillReportsDeclaredRequiredInputs()
+    {
+        // A declared-required parameter is required in EVERY branch, so a fabricated
+        // discriminator never excuses its absence.
+        var violations = Probe().FindAdmissibilityViolations(
+            "analytics.cluster-managed",
+            ["algorithm", "k"]);
+
+        violations.Should().ContainSingle();
+        violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.Inputs);
+        violations[0].Message.Should().Contain("input");
+    }
+
+    // -----------------------------------------------------------------------
     // Structured-text validation is not a token domain
     // -----------------------------------------------------------------------
 

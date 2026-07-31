@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -968,6 +969,111 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
         tool.GetProperty("classification").GetString().Should().Be("translated");
         tool.GetProperty("issues").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_MappedDiscriminatorBranch_IsNotReportedUnsupported()
+    {
+        // Mapping analytics.cluster-managed's input/algorithm/k executes when the caller
+        // supplies algorithm=kmeans. The probe cannot enumerate 'algorithm', so it pins the
+        // catalog default (dbscan) and that branch wants eps/minPoints — a requirement the
+        // caller avoids. The report must not declare the tool unsupported on the strength of
+        // a branch the probe fabricated; it is branch-unverifiable, not impossible (#3040).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "ClusterToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "ClusterKMeans",
+                  "targetProcessId": "analytics.cluster-managed",
+                  "parameterMappings": [
+                    { "sourceName": "in_features", "targetParameter": "input" },
+                    { "sourceName": "algo", "targetParameter": "algorithm" },
+                    { "sourceName": "cluster_count", "targetParameter": "k" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("partially-translated");
+        tool.GetProperty("issues").EnumerateArray()
+            .Should().Contain(issue =>
+                issue.GetProperty("code").GetString() == "unverifiable-conditional-branches");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_EmitsTelemetrySpanWithOutcomeCounts()
+    {
+        // The validation outcome must be traceable, not log-only: a clean toolbox and a
+        // degraded one are otherwise indistinguishable in OpenTelemetry (#3040).
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Honua",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var response = await PostFixtureAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            "partially-translatable-toolbox.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var span = activities.Should()
+            .ContainSingle(activity =>
+                activity.OperationName == "honua.import.toolbox_translation.validate")
+            .Subject;
+
+        span.GetTagItem("honua.operation").Should().Be("toolbox-translation-validate");
+        span.GetTagItem("honua.import.toolbox.source_format").Should().NotBeNull();
+        span.GetTagItem("honua.import.toolbox.tool_count").Should().NotBeNull();
+        span.GetTagItem("honua.import.toolbox.translated_count").Should().NotBeNull();
+        span.GetTagItem("honua.import.toolbox.partially_translated_count").Should().NotBeNull();
+        span.GetTagItem("honua.import.toolbox.unsupported_count").Should().NotBeNull();
+        span.GetTagItem("honua.import.toolbox.rejection_reason").Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_RejectedManifest_EmitsErrorSpanWithReasonCode()
+    {
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Honua",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """{ "toolboxName": "", "sourceFormat": "pyt", "tools": [] }""");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var span = activities.Should()
+            .ContainSingle(activity =>
+                activity.OperationName == "honua.import.toolbox_translation.validate")
+            .Subject;
+
+        span.Status.Should().Be(ActivityStatusCode.Error);
+        span.GetTagItem("honua.import.toolbox.rejection_reason").Should().Be("invalid-structure");
+        // The caller-facing message interpolates manifest content, so it must not leak into
+        // an unbounded span attribute.
+        span.GetTagItem("honua.import.toolbox.tool_count").Should().BeNull();
     }
 
     private async Task<HttpResponseMessage> PostFixtureAsync(string route, string fixtureName)

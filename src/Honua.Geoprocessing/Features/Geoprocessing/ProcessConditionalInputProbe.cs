@@ -62,6 +62,10 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             return [];
         }
 
+        var supplied = new HashSet<string>(
+            suppliedParameterNames.Where(name => !string.IsNullOrWhiteSpace(name)),
+            StringComparer.OrdinalIgnoreCase);
+
         var inputs = BuildProbeInputs(definition, suppliedParameterNames);
 
         // A mapped parameter's value is caller-supplied, so assuming the catalog default
@@ -71,6 +75,16 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // has a finite domain, every assignment is probed and only violations that survive
         // all of them are real - no admissible value avoids those.
         var violations = FindUniversalViolations(definition, inputs, suppliedParameterNames);
+
+        // Where that domain is NOT finite, BuildProbeInputs still pins the parameter to its
+        // catalog default, which fabricates one branch out of a set this probe cannot
+        // enumerate. Mapping analytics.cluster-managed's input/algorithm/k is executable when
+        // the caller supplies algorithm=kmeans, but the fabricated 'dbscan' branch demands
+        // eps/minPoints; reporting that would declare 'unsupported' a mapping that works as
+        // written. Requirements only the fabricated branch imposes are therefore left to
+        // FindUnverifiableConditionalParameters, which answers the same unenumerable-branch
+        // case honestly with 'partially-translated'.
+        var branchIsFabricated = HasUnenumerableDiscriminator(definition, supplied, inputs);
 
         var results = new List<ProcessAdmissibilityViolation>();
 
@@ -93,6 +107,14 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             {
                 results.Add(new ProcessAdmissibilityViolation(
                     ProcessAdmissibilityViolationKind.NotJobExecutable, violation.Message));
+                continue;
+            }
+
+            // Only the declared signature is branch-independent once a discriminator's value
+            // has been fabricated; anything a conditional rule imposes on an optional
+            // parameter is an artefact of the branch this probe happened to select.
+            if (branchIsFabricated && IsBranchConditional(definition, violation))
+            {
                 continue;
             }
 
@@ -206,6 +228,28 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             && parameter.AllowedValues is not { Count: > 0 }
             && DomainProbeValues.All(probeValue =>
                 IsRejectedAsForeignToken(definition.ProcessId, baseInputs, parameter.Name, probeValue)));
+
+    /// <summary>
+    /// Returns true when a violation is imposed by a conditional rule rather than by the
+    /// process's declared signature, so a fabricated branch could be its only cause. A
+    /// declared-<c>Required</c> parameter is required in every branch and a process-level
+    /// failure has no parameter at all, so neither is ever discounted.
+    /// </summary>
+    private static bool IsBranchConditional(
+        ProcessDefinition definition,
+        GeoprocessingValidationFailure violation)
+    {
+        var name = ParameterNameOf(violation.FieldPath);
+        if (name is null)
+        {
+            return false;
+        }
+
+        var parameter = definition.Parameters.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        return parameter is not null && !parameter.Required;
+    }
 
     /// <summary>
     /// Substitutes <paramref name="probeValue"/> for <paramref name="parameterName"/> and reports

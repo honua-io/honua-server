@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Import.FileImport;
+using Honua.ServiceDefaults;
 
 namespace Honua.Migration;
 
@@ -28,6 +30,21 @@ internal static partial class ToolboxTranslationEndpoints
 {
     private const int MaxTools = 200;
 
+    /// <summary>Span name for a toolbox translation validation, on the shared Honua source.</summary>
+    private const string ValidationActivityName = "honua.import.toolbox_translation.validate";
+
+    private const string ValidationOperation = "toolbox-translation-validate";
+
+    // Span attributes. Counts and the source format are low-cardinality; the rejection
+    // attribute carries a fixed reason CODE rather than the caller-facing message, which
+    // interpolates manifest content (tool names) and would be unbounded as a tag value.
+    private const string SourceFormatTag = "honua.import.toolbox.source_format";
+    private const string ToolCountTag = "honua.import.toolbox.tool_count";
+    private const string TranslatedCountTag = "honua.import.toolbox.translated_count";
+    private const string PartiallyTranslatedCountTag = "honua.import.toolbox.partially_translated_count";
+    private const string UnsupportedCountTag = "honua.import.toolbox.unsupported_count";
+    private const string RejectionReasonTag = "honua.import.toolbox.rejection_reason";
+
     /// <summary>
     /// Maps the toolbox translation validation endpoint.
     /// </summary>
@@ -46,6 +63,13 @@ internal static partial class ToolboxTranslationEndpoints
 
     private static async Task HandleValidateTranslation(HttpContext context)
     {
+        // A log line alone leaves a clean validation and a degraded one indistinguishable in
+        // OpenTelemetry, so the outcome is also carried on a span: the translated/partial/
+        // unsupported counts on success, and a stable rejection code on every early return,
+        // so a manifest the server refuses shows up as an error span rather than no span.
+        using var activity = HonuaTelemetry.StartActivity(ValidationActivityName);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, ValidationOperation);
+
         // The body is parsed as a document first so artifact identity can be judged on what
         // the caller actually sent: an omitted property is not distinguishable from an
         // explicit null once deserialized onto the manifest's non-nullable properties.
@@ -75,6 +99,7 @@ internal static partial class ToolboxTranslationEndpoints
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
+            MarkRejected(activity, "malformed-body");
             await AdminResponseWriter.WriteErrorAsync(
                 context, "Invalid request body.", StatusCodes.Status400BadRequest);
             return;
@@ -83,6 +108,7 @@ internal static partial class ToolboxTranslationEndpoints
         using var bodyDocument = document;
         if (manifest is null || bodyDocument is null || bodyDocument.RootElement.ValueKind != JsonValueKind.Object)
         {
+            MarkRejected(activity, "missing-body");
             await AdminResponseWriter.WriteErrorAsync(
                 context, "Request body is required.", StatusCodes.Status400BadRequest);
             return;
@@ -91,6 +117,7 @@ internal static partial class ToolboxTranslationEndpoints
         var identityError = ValidateArtifactIdentity(bodyDocument.RootElement);
         if (identityError is not null)
         {
+            MarkRejected(activity, "artifact-identity");
             await AdminResponseWriter.WriteErrorAsync(
                 context, identityError, StatusCodes.Status400BadRequest);
             return;
@@ -99,6 +126,7 @@ internal static partial class ToolboxTranslationEndpoints
         var structuralError = ValidateStructure(manifest);
         if (structuralError is not null)
         {
+            MarkRejected(activity, "invalid-structure");
             await AdminResponseWriter.WriteErrorAsync(
                 context, structuralError, StatusCodes.Status400BadRequest);
             return;
@@ -107,6 +135,12 @@ internal static partial class ToolboxTranslationEndpoints
         var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var conditionalInputProbe = context.RequestServices.GetService<IProcessConditionalInputProbe>();
         var report = ToolboxTranslationValidator.Validate(Normalize(manifest), catalog, conditionalInputProbe);
+
+        activity?.SetTag(SourceFormatTag, report.SourceFormat);
+        activity?.SetTag(ToolCountTag, report.Summary.ToolCount);
+        activity?.SetTag(TranslatedCountTag, report.Summary.TranslatedCount);
+        activity?.SetTag(PartiallyTranslatedCountTag, report.Summary.PartiallyTranslatedCount);
+        activity?.SetTag(UnsupportedCountTag, report.Summary.UnsupportedCount);
 
         Log.TranslationValidated(
             GetLogger(context),
@@ -119,6 +153,17 @@ internal static partial class ToolboxTranslationEndpoints
 
         await Results.Json(report, ImportJsonContext.Default.ToolboxTranslationReport)
             .ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records a refused manifest on the span with a stable reason code. The caller-facing
+    /// message is deliberately not used: it interpolates manifest content, so it belongs in
+    /// the response body rather than in an unbounded span attribute.
+    /// </summary>
+    private static void MarkRejected(Activity? activity, string reason)
+    {
+        activity?.SetTag(RejectionReasonTag, reason);
+        activity?.SetStatus(ActivityStatusCode.Error, reason);
     }
 
     /// <summary>
