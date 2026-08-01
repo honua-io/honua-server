@@ -56,6 +56,9 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.MySql/*.csproj src/Honua.MySql/
+COPY src/Honua.Redshift/*.csproj src/Honua.Redshift/
+COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
+COPY src/Honua.Databricks/*.csproj src/Honua.Databricks/
 COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
 COPY src/Honua.Oracle/*.csproj src/Honua.Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
@@ -74,6 +77,7 @@ COPY src/Honua.Protocols.Ogc.Shared/*.csproj src/Honua.Protocols.Ogc.Shared/
 COPY src/Honua.Protocols.OgcApi/*.csproj src/Honua.Protocols.OgcApi/
 COPY src/Honua.Protocols.OgcClassic/*.csproj src/Honua.Protocols.OgcClassic/
 COPY src/Honua.Protocols.Stac/*.csproj src/Honua.Protocols.Stac/
+COPY src/Honua.Protocols.SensorThings/*.csproj src/Honua.Protocols.SensorThings/
 COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
 COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
