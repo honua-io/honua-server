@@ -218,13 +218,18 @@ internal sealed partial class FeatureQueryBuilder
                 return FormattableString.Invariant(
                     $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Intersects({targetGeometryExpression}, {joinGeometryExpression})");
 
-            case SpatialJoinPredicate.Contains:
+            // Operand order is fixed by the canonical enum member names
+            // (honua-server#3069) — the join geometry is the subject of
+            // JoinContainsTarget, the target geometry the subject of
+            // TargetContainsJoin. The `&&` bounding-box pre-filter is symmetric,
+            // so it stays in target-then-join order for both.
+            case SpatialJoinPredicate.JoinContainsTarget:
+                return FormattableString.Invariant(
+                    $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Contains({joinGeometryExpression}, {targetGeometryExpression})");
+
+            case SpatialJoinPredicate.TargetContainsJoin:
                 return FormattableString.Invariant(
                     $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Contains({targetGeometryExpression}, {joinGeometryExpression})");
-
-            case SpatialJoinPredicate.Within:
-                return FormattableString.Invariant(
-                    $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Within({targetGeometryExpression}, {joinGeometryExpression})");
 
             case SpatialJoinPredicate.DWithin:
                 if (!joinQuery.DistanceMeters.HasValue || joinQuery.DistanceMeters.Value < 0)

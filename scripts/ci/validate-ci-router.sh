@@ -81,6 +81,28 @@ scripts/ci/validate-server-test-binary-artifacts.sh
 scripts/ci/validate-server-test-transfer-benchmark.sh
 scripts/ci/validate-server-test-shard-cache.sh
 
+# #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
+# room for the non-test part of the job (checkout, setup-dotnet, restore or
+# binary materialization, artifact uploads). If it does not, the runner cancels
+# the job before run-server-test-shard.sh can classify the timeout and upload
+# its log/timing/TRX artifacts, and the failure surfaces as an unattributable
+# cancellation instead of an actionable capacity signal.
+echo "Validating shard timeout budgets..."
+budget_violations="$(jq -r '
+  (.shard_budget_policy.min_job_overhead_minutes // 10) as $gap
+  | .shards[]
+  | select((.timeout_minutes - .test_timeout_minutes) < $gap)
+  | "  \(.name): timeout_minutes=\(.timeout_minutes) test_timeout_minutes=\(.test_timeout_minutes) (gap \(.timeout_minutes - .test_timeout_minutes) < \($gap))"
+' .github/ci-shards.json)"
+if [[ -n "${budget_violations}" ]]; then
+  echo "::error::shard timeout_minutes must exceed test_timeout_minutes by at least shard_budget_policy.min_job_overhead_minutes" >&2
+  printf '%s\n' "${budget_violations}" >&2
+  exit 1
+fi
+
+echo "Validating shard headroom instrumentation..."
+scripts/ci/fixtures/validate-shard-headroom.sh
+
 echo "Validating targeted_override_prefixes reference real shards..."
 jq -e '
   ([.shards[].name]) as $names

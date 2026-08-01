@@ -37,6 +37,54 @@ public sealed class WebhookAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task DeliverAsync_WithTransientResolutionFailure_ReturnsRetryableFailure()
+    {
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("alerts-webhook").Returns(httpClient);
+
+        var sink = new WebhookAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptions()),
+            AlertTestFixtures.GuardWithUnavailableResolver());
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(
+                AlertChannelType.Webhook,
+                destination: AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook"),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+        Assert.Equal(0, handler.SendCount);
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithDestinationResolvingToPrivateAddress_ReturnsNonRetryableFailure()
+    {
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("alerts-webhook").Returns(httpClient);
+
+        var sink = new WebhookAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptions()),
+            AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(
+                AlertChannelType.Webhook,
+                destination: AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook"),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        Assert.Equal(0, handler.SendCount);
+    }
+
+    [UnitTest]
     public async Task DeliverAsync_WithControlCharactersInDedupeKey_SanitizesHeaders()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
@@ -49,7 +97,9 @@ public sealed class WebhookAlertDeliverySinkTests
             Options.Create(CreateOptions()));
 
         var result = await sink.DeliverAsync(
-            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Webhook, destination: "https://example.com/webhook"),
+            AlertTestFixtures.CreateDispatchItem(
+                AlertChannelType.Webhook,
+                destination: AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook"),
             AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-\r\n123"));
 
         Assert.True(result.Succeeded);
@@ -84,7 +134,9 @@ public sealed class WebhookAlertDeliverySinkTests
         {
             Dispatch = new AlertDispatchOptions
             {
-                DefaultWebhookUrl = "https://example.com/webhook",
+                // IP literal keeps the outbound SSRF guard off live DNS; see
+                // AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+                DefaultWebhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook",
                 DefaultWebhookSecret = "signing-secret"
             }
         };

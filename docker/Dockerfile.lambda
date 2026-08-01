@@ -3,9 +3,9 @@
 
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx
 # and to keep Trivy scans deterministic. Refresh cadence + remediation rationale:
-# docs/security/code-scanning-2026-Q2-remediation.md.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ea8bde36c11b6e7eec2656d0e59101d4462f6bd630730f2c8201ed0572b295d5
-ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:735993764f5895e47fe77b060bb48d0e33e5059de93052169f1c195204685fda
+# docs/internal/security/code-scanning-2026-Q2-remediation.md.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664
+ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:6228848061d53f16eb774d4f1ddfce45c973376ad38da844dff144cc3e11e517
 
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
@@ -109,7 +109,11 @@ COPY docker/cloud/lambda/bootstrap.sh /var/runtime/bootstrap
 # is dynamically linked against libfontconfig.so.1 / libfreetype.so.6, so the first
 # Skia P/Invoke (any map render: MapServer export, OGC API Maps, WMS GetMap) fails to
 # dlopen the native lib and surfaces as a generic 500 without them.
-RUN dnf install -y krb5-libs libicu fontconfig freetype && \
+# The Lambda base can lag Amazon Linux security repositories. Resolve compatible
+# distro updates at build time so newly published fixes do not wait for a base refresh.
+# hadolint ignore=DL3041
+RUN dnf upgrade -y && \
+    dnf install -y krb5-libs libicu fontconfig freetype && \
     dnf clean all && \
     chmod +x /var/runtime/bootstrap /var/task/Honua.Server
 

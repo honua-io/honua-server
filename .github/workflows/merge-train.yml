@@ -56,6 +56,11 @@ on:
         type: string
         required: false
         default: ''
+      reset_state:
+        description: 'RECOVERY ONLY: clear the active batch in the Merge Train State issue back to the cleared select shape, release train:landing from its members, and stop. Requires train_apply=true. Use this instead of hand-editing the machine-managed state issue; refused while a batch carries durable land intent.'
+        type: boolean
+        required: false
+        default: false
 
 # Serialize train runs: a batch in flight must finish before the next starts.
 # cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
@@ -114,6 +119,7 @@ jobs:
           DISPATCH_USE_LLM: ${{ github.event.inputs.use_llm }}
           DISPATCH_USE_AUTOFIX: ${{ github.event.inputs.use_autofix }}
           DISPATCH_AUTOFIX_MODEL: ${{ github.event.inputs.autofix_model }}
+          DISPATCH_RESET_STATE: ${{ github.event.inputs.reset_state }}
           HAVE_BEDROCK_KEYS: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID != '' && secrets.BEDROCK_AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           scripts/ci/merge-train/resolve-mode.sh "$GITHUB_OUTPUT"
@@ -158,6 +164,10 @@ jobs:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          # RECOVERY ONLY. 1 clears the active batch and stops (no selection, no
+          # assembly, no landing). Resolved to 0 on every automatic trigger and
+          # whenever train_apply is false, so no schedule can ever reset state.
+          TRAIN_RESET_STATE: ${{ steps.mode.outputs.train_reset_state }}
           # Instrumentation: the run timestamp is injected here (not generated in
           # the script) so the Step Summary, metrics JSON, and state-issue
           # aggregate all agree on a single run instant.
@@ -244,7 +254,11 @@ jobs:
       # re-primes it. A normal run (landed / merged-through / escalated) exits 0 and
       # chains as intended.
       - name: Self-chain next run while PRs remain
-        if: success() && steps.mode.outputs.train_apply == '1'
+        # NEVER chain off a reset-only run. `reset_state=true` clears the state
+        # and exits 0 without selecting or landing; chaining here would
+        # immediately dispatch an ordinary live train that could land a batch
+        # the operator has not looked at yet, breaking the reset's contract.
+        if: success() && steps.mode.outputs.train_apply == '1' && steps.mode.outputs.train_reset_state == '0'
         env:
           # MUST be the PAT: a `gh workflow run` authenticated with GITHUB_TOKEN does
           # NOT trigger a new workflow run (GitHub's recursion guard), so the chain

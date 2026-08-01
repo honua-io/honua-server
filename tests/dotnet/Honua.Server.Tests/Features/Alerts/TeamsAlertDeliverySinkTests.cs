@@ -13,7 +13,10 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class TeamsAlertDeliverySinkTests
 {
-    private static AlertDeliveryOptions CreateOptionsWithTeams(string webhookUrl = "https://outlook.office.com/webhook/xxx") =>
+    // Destination is an IP literal so the sink's outbound SSRF guard does not perform a live DNS
+    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+    private static AlertDeliveryOptions CreateOptionsWithTeams(
+        string webhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx") =>
         new()
         {
             Dispatch = new AlertDeliveryDispatchOptions
@@ -35,6 +38,50 @@ public sealed class TeamsAlertDeliverySinkTests
         Assert.False(result.Succeeded);
         Assert.False(result.Retryable);
         Assert.Contains("not configured", result.Error, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithTransientResolutionFailure_ReturnsRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-teams").Returns(client);
+
+        var sink = new TeamsAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-teams");
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithWebhookUrlResolvingToPrivateAddress_ReturnsNonRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-teams").Returns(client);
+
+        var sink = new TeamsAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-teams");
     }
 
     [UnitTest]

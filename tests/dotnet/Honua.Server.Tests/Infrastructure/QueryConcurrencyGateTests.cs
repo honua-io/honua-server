@@ -131,7 +131,9 @@ public sealed class QueryConcurrencyGateTests
         gate.Release();
         await cts.CancelAsync();
 
-        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        // Bounded by the gate's own ConnectionAcquisitionTimeoutSeconds rather than a test-side
+        // wall-clock window, which a loaded CI runner can exceed while the gate is behaving correctly.
+        (await queued).Should().BeTrue();
         gate.AvailableSlots.Should().Be(0);
 
         gate.Release();
@@ -173,7 +175,8 @@ public sealed class QueryConcurrencyGateTests
 
         gate.SetTargetLimit(2);
 
-        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        gate.GetSnapshot().QueuedWaiters.Should().Be(0, "raising the target drains the queue synchronously");
+        (await queued).Should().BeTrue();
         gate.AvailableSlots.Should().Be(0);
     }
 
@@ -267,7 +270,7 @@ public sealed class QueryConcurrencyGateTests
         gate.CurrentLimit.Should().Be(4);
 
         gate.Release(4);
-        (await Task.WhenAll(queued).WaitAsync(TimeSpan.FromSeconds(1))).Should().OnlyContain(acquired => acquired);
+        (await Task.WhenAll(queued)).Should().OnlyContain(acquired => acquired);
         gate.Release(4);
     }
 
@@ -294,7 +297,7 @@ public sealed class QueryConcurrencyGateTests
         clock.Advance(TimeSpan.FromMilliseconds(125));
 
         gate.Release(TimeSpan.FromMilliseconds(1));
-        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        (await queued).Should().BeTrue();
 
         var snapshot = gate.GetSnapshot();
         snapshot.QueueWaitEwmaMs.Should().BeApproximately(125, 0.01);
@@ -306,6 +309,7 @@ public sealed class QueryConcurrencyGateTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Release_WithFastSaturatedLease_IncreasesAdaptiveLimitAndDrainsWaiter()
     {
+        var clock = new ManualTimeProvider();
         var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 4,
@@ -316,7 +320,7 @@ public sealed class QueryConcurrencyGateTests
             AdaptiveConcurrencyInitialQueries = 1,
             AdaptiveConcurrencyTargetDurationMs = 100,
             AdaptiveConcurrencyUpdateIntervalMs = 0
-        });
+        }, clock);
 
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
@@ -324,7 +328,19 @@ public sealed class QueryConcurrencyGateTests
 
         gate.Release(TimeSpan.FromMilliseconds(1));
 
-        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        // Release applies the adaptive adjustment and drains the queue synchronously under the gate
+        // lock, so the transition is asserted from gate state instead of from a wall-clock window
+        // around the waiter's continuation, which a loaded CI runner can delay past any fixed budget.
+        var snapshot = gate.GetSnapshot();
+        snapshot.CurrentLimit.Should().Be(2, "a fast lease released while saturated raises the adaptive limit");
+        snapshot.LastAdjustmentDirection.Should().Be("increase");
+        snapshot.QueuedWaiters.Should().Be(0, "raising the limit drains the queued waiter");
+        snapshot.InFlight.Should().Be(1, "the drained waiter now holds the slot");
+
+        // The waiter's own task must still observe admission. No test-side timeout: the gate's own
+        // ConnectionAcquisitionTimeoutSeconds bounds this await, so a regression surfaces as a false
+        // result rather than as a timing-dependent TimeoutException.
+        (await queued).Should().BeTrue();
         gate.CurrentLimit.Should().Be(2);
     }
 
@@ -363,7 +379,7 @@ public sealed class QueryConcurrencyGateTests
         clock.Advance(TimeSpan.FromMilliseconds(75));
 
         gate.Release(TimeSpan.FromMilliseconds(1));
-        (await queued.WaitAsync(TimeSpan.FromSeconds(1))).Should().BeTrue();
+        (await queued).Should().BeTrue();
 
         snapshot = gate.GetSnapshot();
         snapshot.CurrentLimit.Should().Be(2);
@@ -437,7 +453,7 @@ public sealed class QueryConcurrencyGateTests
 
         gate.TrySetLimit(2, out _).Should().BeTrue();
 
-        (await queued.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue(
+        (await queued).Should().BeTrue(
             "raising the admission target must admit queued waiters");
     }
 
