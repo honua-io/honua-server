@@ -272,6 +272,12 @@ jobs:
           push: true
           tags: ${{ steps.arch_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Immutable deployment identity (#3038). This workflow publishes the ECS JIT and AOT
+          # variants, and .git is excluded from the build context, so without this the argument
+          # defaults to empty and tag/manual platform releases advertise deploymentRevision:
+          # null — the exact evidence binding the revision plumbing exists to provide.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -289,6 +295,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           load: true
           tags: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
+          # Kept identical to the publish step so the scanned image is the image that ships.
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}

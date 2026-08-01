@@ -126,6 +126,29 @@ internal static partial class FeatureStreamEndpoints
                     (StreamSubscriptionFilter)subscriptionFilter!,
                     snapshotReason,
                     linkedCts.Token).ConfigureAwait(false);
+
+                // A truncated baseline must not become a resumable checkpoint. Advancing to its
+                // cursor and continuing into delta delivery lets the first subsequent change
+                // publish a cursor past the incomplete baseline, so the client checkpoints it
+                // and permanently omits the features the cap dropped — they did not change, so
+                // no delta will ever carry them. SSE ends the stream here; the socket paths must
+                // not silently accept what SSE refuses (honua-server#3038 review).
+                if (!snapshotResult.Complete)
+                {
+                    await SendWebSocketStatusAsync(
+                        webSocket,
+                        session.WriteLock,
+                        new FeatureStreamStatusFrame
+                        {
+                            Status = "error",
+                            Message = "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                            SessionId = session.SessionId,
+                            SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
+                        },
+                        linkedCts.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 replayCursor = snapshotResult.BaselineCursor;
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
@@ -854,6 +877,28 @@ internal static partial class FeatureStreamEndpoints
                     (StreamSubscriptionFilter)filter!,
                     snapshotReason!,
                     cancellationToken).ConfigureAwait(false);
+
+                // Same contract as the query-string path above: an incomplete baseline is not a
+                // resumable checkpoint. The subscription is REMOVED rather than unpaused, so the
+                // client must re-subscribe and take a fresh snapshot instead of resuming deltas
+                // from a truncated one (honua-server#3038 review).
+                if (!snapshotResult.Complete)
+                {
+                    deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
+                    await SendWebSocketStatusAsync(
+                        webSocket,
+                        session.WriteLock,
+                        new FeatureStreamStatusFrame
+                        {
+                            Status = "error",
+                            Message = "The baseline snapshot was incomplete; re-subscribe to take a fresh snapshot.",
+                            SessionId = session.SessionId,
+                            SubscriptionId = subscriptionId
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 replayCursor = snapshotResult.BaselineCursor;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
