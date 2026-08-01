@@ -92,13 +92,19 @@ internal sealed class FeatureServerEditsHandler(
             httpContext.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        // Tracks the idempotency reservation this request owns but has not yet replaced with a
-        // recorded response (#3052). It is set the moment TryReserveAsync wins and cleared only when
-        // SetAsync records the replay value; the finally block below releases whatever is still held,
+        // Tracks the idempotency reservation this request owns (#3052). It is set the moment
+        // TryReserveAsync wins; the finally block below releases it unless the edit committed rows,
         // so no post-reservation exit — exception, rejection, rollback, cancellation, or a
-        // committed-zero-row response — can leave the key pinned and turn a genuine client retry into
-        // a 409 Conflict.
+        // committed-zero-row response — can leave the key pinned and turn a genuine client retry
+        // into an idempotency conflict.
         ApplyEditsIdempotencyScope? heldReservation = null;
+
+        // Set once the edit has actually committed rows. From that moment the reservation must
+        // never be released: the rows exist, so a retry that re-applied them would duplicate. The
+        // success path replaces the reservation with the recorded response; if a post-commit step
+        // throws before that happens, the reservation is deliberately left to expire on its own
+        // (the pre-#3052 behavior) rather than freed.
+        var editCommittedRows = false;
 
         try
         {
@@ -253,11 +259,14 @@ internal sealed class FeatureServerEditsHandler(
                 if (!reserved)
                 {
                     FeatureServerLog.ApplyEditsIdempotencyConflict(_logger, serviceId, layerId);
-                    // Must go through the shared error helper, not Results.Conflict(new { ... }):
-                    // Honua.Server builds with JsonSerializerIsReflectionEnabledByDefault=false, so
-                    // serializing an anonymous type threw at response-write time and the failure was
-                    // mapped as a NotSupportedException — the conflict surfaced to clients as an
-                    // Esri error code 405, never the 409 this branch intends (#3052).
+                    // Routed through the shared error helper rather than the previous
+                    // Results.Conflict(new { error = "..." }) so the conflict is shaped like every
+                    // other GeoServices error (Esri envelope carrying code 409) and is serialized by
+                    // a source-generated context. The anonymous type it replaces cannot be
+                    // serialized at all once reflection-based serialization is off — Honua.Server
+                    // sets JsonSerializerIsReflectionEnabledByDefault=false — so this branch's
+                    // payload was the one applyEdits response that was neither AOT-safe nor
+                    // protocol-shaped (#3052).
                     return StandardErrorHelpers.CreateConflict(httpContext,
                         "A concurrent request with the same Idempotency-Key is already being processed. Retry after a brief delay.");
                 }
@@ -283,9 +292,10 @@ internal sealed class FeatureServerEditsHandler(
 
             // Execute edits in the database
             var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, cancellationToken);
+            editCommittedRows = !editResult.WasRolledBack &&
+                (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0;
 
-            if (!editResult.WasRolledBack &&
-                (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
+            if (editCommittedRows)
             {
                 using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 try
@@ -310,13 +320,13 @@ internal sealed class FeatureServerEditsHandler(
             // Record the response for at-most-once replay (#2250) only when the edit actually committed
             // rows. A fully-failed/no-op request is intentionally not recorded so a genuine retry is
             // re-attempted rather than replaying a no-op failure. Best-effort: the store swallows errors.
-            if (idempotencyScope is { } recordScope && !editResult.WasRolledBack && featureCount > 0)
+            if (idempotencyScope is { } recordScope && editCommittedRows)
             {
+                // The reservation is replaced by the recorded response rather than released: a
+                // successful key stays occupied for the whole dedupe window so a duplicate retry
+                // replays this response instead of re-applying the edit (#2250). The finally block
+                // below skips the release for exactly this reason (editCommittedRows).
                 await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
-                // The reservation has been replaced by the recorded response: it MUST NOT be released.
-                // A successful key stays reserved for the whole dedupe window so a duplicate retry
-                // replays this response instead of re-applying the edit (#2250).
-                heldReservation = null;
             }
 
             return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
@@ -349,16 +359,21 @@ internal sealed class FeatureServerEditsHandler(
         finally
         {
             // Release whatever reservation is still held (#3052). Reached from every post-reservation
-            // exit that did not record a replay value: the NotSupportedException read-only rejection,
-            // the catch-all 500 boundary, the rethrown cancellation, the rollbackOnFailure validation
-            // response, and the committed-but-zero-row response (which deliberately does not record so
-            // a genuine retry is re-attempted — the retry it must not then block with a 409).
+            // exit that committed nothing and therefore recorded no replay value: the
+            // NotSupportedException read-only rejection, the catch-all 500 boundary, the rethrown
+            // cancellation, the rollbackOnFailure validation response, and the committed-but-zero-row
+            // response (which deliberately does not record so a genuine retry is re-attempted — the
+            // retry it must not then block with a conflict).
+            //
+            // An edit that DID commit rows is excluded: its key stays occupied so a retry can never
+            // duplicate committed rows, whether the response was recorded or a post-commit step threw
+            // before it could be.
             //
             // ReleaseAsync takes no cancellation token on purpose, so an aborted/cancelled request
             // still frees its key. This covers in-process failures only: a process crash between
             // reserve and release still leaves the sentinel behind, which is what the store's
             // ReservationWindow TTL exists to bound.
-            if (heldReservation is { } releaseScope)
+            if (heldReservation is { } releaseScope && !editCommittedRows)
             {
                 await _idempotencyStore.ReleaseAsync(releaseScope).ConfigureAwait(false);
             }

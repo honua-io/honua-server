@@ -164,9 +164,10 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
         // honua-server#3052: the read-only rejection is raised as NotSupportedException AFTER the
         // handler has reserved the Idempotency-Key. Before the fix nothing released that
         // reservation, so a client retrying inside the ~60s reservation window found no replay
-        // value, lost TryReserveAsync, and got HTTP 409 Conflict instead of a repeat of the
-        // documented 405. This is the most visible instance of the leak because on a read/query-only
-        // provider EVERY keyed edit fails, so EVERY keyed retry degraded to 409.
+        // value, lost TryReserveAsync, and was answered with the idempotency conflict instead of a
+        // repeat of the documented 405. This is the most visible instance of the leak because on a
+        // read/query-only provider EVERY keyed edit fails, so EVERY keyed retry degraded to a
+        // conflict.
         var payload = /*lang=json,strict*/ """
             {
               "adds": [
@@ -189,12 +190,15 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
 
         var retry = await PostApplyEditsWithIdempotencyKeyAsync(payload, idempotencyKey);
         var retryBody = await retry.Content.ReadAsStringAsync();
-        retry.StatusCode.Should().NotBe(HttpStatusCode.Conflict,
-            "the rejected edit released its reservation, so the retry is not a concurrent request");
         retry.StatusCode.Should().Be(HttpStatusCode.OK, retryBody);
         using (var retryDocument = JsonDocument.Parse(retryBody))
         {
-            retryDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(405, retryBody);
+            // GeoServices reports errors Esri-style (HTTP 200 + error envelope), so the conflict
+            // this guards against is body code 409, not an HTTP 409.
+            var retryCode = retryDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+            retryCode.Should().NotBe(409,
+                "the rejected edit released its reservation, so the retry is not a concurrent request");
+            retryCode.Should().Be(405, retryBody);
         }
     }
 

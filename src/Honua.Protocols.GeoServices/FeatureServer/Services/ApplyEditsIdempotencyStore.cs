@@ -327,9 +327,14 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         // fallback dictionary (BH7-002), never to IDistributedCache, so the reservation is released
         // from the fallback only. Recorded responses (which SetAsync writes to both the cache and
         // the fallback) are left in place by the sentinel check.
+        //
+        // The KeyValuePair overload of TryRemove is the in-process equivalent of the Redis script
+        // above: it removes the entry only while it is still byte-for-byte the one just read, so a
+        // SetAsync landing between the read and the remove cannot have its recorded response
+        // deleted by this release.
         if (_fallback.TryGetValue(key, out var entry) && IsPendingSentinel(entry.Payload))
         {
-            _fallback.TryRemove(key, out _);
+            _fallback.TryRemove(new KeyValuePair<string, FallbackEntry>(key, entry));
         }
     }
 

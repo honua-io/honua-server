@@ -3209,7 +3209,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 {
                     Attributes = new Dictionary<string, object?>
                     {
-                        ["objectid"] = 987654321L,
+                        ["objectid"] = 987654321,
                         ["name"] = "no such row"
                     }
                 }
@@ -3228,10 +3228,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         first!.Success.Should().BeFalse("updating a non-existent objectid with rollbackOnFailure must fail");
 
         var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
-        secondResponse.StatusCode.Should().NotBe(HttpStatusCode.Conflict,
-            "the failed request released its reservation, so the retry must not be treated as a concurrent request");
         secondResponse.Be200Ok();
         var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        ShouldNotBeIdempotencyConflict(secondBody,
+            "the failed request released its reservation, so the retry must not be treated as a concurrent request");
         secondBody.Should().Be(firstBody, "the retry must reproduce the original rejection deterministically");
     }
 
@@ -3246,7 +3246,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var editsRequest = new ApplyEditsRequest
         {
-            Deletes = new object[] { 987654321L }
+            Deletes = new object[] { 987654321 }
         };
 
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
@@ -3262,11 +3262,26 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         first.DeleteResults![0].Success.Should().BeFalse();
 
         var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
-        secondResponse.StatusCode.Should().NotBe(HttpStatusCode.Conflict,
-            "a zero-row commit records nothing, so its reservation must be released for the retry");
         secondResponse.Be200Ok();
         var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        ShouldNotBeIdempotencyConflict(secondBody,
+            "a zero-row commit records nothing, so its reservation must be released for the retry");
         secondBody.Should().Be(firstBody, "the retry is genuinely re-attempted and reaches the same outcome");
+    }
+
+    /// <summary>
+    /// Asserts an <c>applyEdits</c> response is not the #3052 idempotency conflict. GeoServices
+    /// reports errors Esri-style (HTTP 200 with an <c>{"error":{"code":...}}</c> body), so a leaked
+    /// reservation surfaces as body code 409, not as an HTTP 409 status.
+    /// </summary>
+    private static void ShouldNotBeIdempotencyConflict(string body, string because)
+    {
+        using var document = JsonDocument.Parse(body);
+        if (document.RootElement.TryGetProperty("error", out var error) &&
+            error.TryGetProperty("code", out var code))
+        {
+            code.GetInt32().Should().NotBe(409, because);
+        }
     }
 
     [IntegrationTest]
@@ -3279,19 +3294,27 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // conflict rather than executing a duplicate edit. Reserving directly through the store makes
         // the race deterministic — no timing window to lose.
         //
-        // This also pins the conflict body's code: the branch used to build its payload with
-        // Results.Conflict(new { ... }), an anonymous type that cannot serialize under
-        // JsonSerializerIsReflectionEnabledByDefault=false, so the conflict reached clients as error
-        // code 405 instead of 409.
+        // This also pins the conflict body's shape: the branch used to build its payload with
+        // Results.Conflict(new { ... }), an anonymous type that cannot be serialized once
+        // reflection-based serialization is off (Honua.Server sets
+        // JsonSerializerIsReflectionEnabledByDefault=false), so it was neither AOT-safe nor
+        // Esri-shaped. It now goes through the shared error helper like every other GeoServices
+        // error, carrying code 409 in the standard envelope.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
-        // "admin" is the ClaimTypes.Name the admin API-key authentication handler stamps for the
-        // fixture client's X-API-Key. A mismatch cannot make this test silently pass: the reservation
-        // would target a different scope, the request would apply the edit, and the assertions below
-        // would fail.
-        var reserved = await store.TryReserveAsync(
-            new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, "admin", idempotencyKey));
-        reserved.Should().BeTrue();
+        // The store scopes a key to the resolved edit principal. This fixture's client is
+        // unauthenticated, so the handler resolves EditPrincipal.Anonymous and scopes to
+        // "anonymous"; "admin" (the ClaimTypes.Name an admin API key stamps) is reserved as well so
+        // the test does not silently depend on the fixture's auth posture. A principal outside both
+        // cannot make this test pass by accident — the reservation would miss, the edit would apply,
+        // and the assertions below would fail on a success body.
+        var heldScopes = new[] { "anonymous", "admin" }
+            .Select(principal => new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, principal, idempotencyKey))
+            .ToArray();
+        foreach (var heldScope in heldScopes)
+        {
+            (await store.TryReserveAsync(heldScope)).Should().BeTrue();
+        }
 
         var editsRequest = new ApplyEditsRequest
         {
@@ -3317,6 +3340,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(
             "a held reservation must reject the concurrent request instead of applying the edit: {0}", body);
         error.GetProperty("code").GetInt32().Should().Be(409, body);
+
+        // The loser must not release a reservation it never owned: the in-flight request's key is
+        // still held after the conflict, so a third request would still be rejected rather than
+        // racing the owner into a duplicate edit.
+        foreach (var heldScope in heldScopes)
+        {
+            (await store.TryReserveAsync(heldScope)).Should().BeFalse(
+                "the rejected request must leave the owner's reservation untouched");
+        }
 
         // Nothing was written by the rejected request.
         var countResponse = await _fixture.Client.GetAsync(
