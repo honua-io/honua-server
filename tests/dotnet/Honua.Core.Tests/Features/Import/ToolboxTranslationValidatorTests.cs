@@ -285,6 +285,50 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_ProbeReportsBranchQualifiedRequirement_ReplacesTheConservativeDowngrade()
+    {
+        // Where the discriminator's domain IS enumerable the probe answers exactly, so the
+        // report must name the faulting branches instead of falling back to the conservative
+        // "cannot pin this down" wording (#3048).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["source", "layerId"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("mode=exact", "source", "Step is missing 'source'."),
+                    new ProcessBranchRequirement("mode=strict", "source", "Step is missing 'source'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        var issue = tool.Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        issue.ParameterName.Should().Be("source");
+        // One issue per parameter, listing every branch that faults, rather than one per branch.
+        issue.Message.Should().Contain("mode=exact").And.Contain("mode=strict");
+    }
+
+    [Fact]
+    public void Validate_ProbeReportsBranchRequirementForAMappedParameter_IsIgnored()
+    {
+        // A mapped parameter is supplied at submit time on every branch, so a stale requirement
+        // naming it must never downgrade the tool.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["source", "layerId"],
+                branchRequirements:
+                    [new ProcessBranchRequirement("mode=exact", "layerId", "Step is missing 'layerId'.")]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Translated);
+        tool.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Validate_ProbeNotConsultedWhenStaticRequiredParameterMissing()
     {
         // A statically-missing required parameter already makes the tool unsupported; the
@@ -340,12 +384,23 @@ public sealed class ToolboxTranslationValidatorTests
 
     /// <summary>
     /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
-    /// missing conditional input unless at least one member of the group is supplied, and
-    /// reports the parameters it was told are branch-dependent.
+    /// missing conditional input unless at least one member of the group is supplied, reports
+    /// the parameters it was told are branch-dependent, and reports the exact branch
+    /// requirements it was told an enumerable domain proves.
     /// </summary>
-    private sealed class FakeProbe(string[] requiredAnyOf, string[]? branchDependent = null)
+    private sealed class FakeProbe(
+        string[] requiredAnyOf,
+        string[]? branchDependent = null,
+        ProcessBranchRequirement[]? branchRequirements = null)
         : IProcessConditionalInputProbe
     {
+        public IReadOnlyList<ProcessBranchRequirement> FindConditionalBranchRequirements(
+            string processId,
+            IReadOnlyCollection<string> suppliedParameterNames)
+            => [.. (branchRequirements ?? [])
+                .Where(requirement => !suppliedParameterNames.Contains(
+                    requirement.ParameterName, StringComparer.OrdinalIgnoreCase))];
+
         public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
             string processId,
             IReadOnlyCollection<string> suppliedParameterNames)

@@ -27,84 +27,66 @@ internal static partial class ProcessPlanValidator
     // (SpatialAnalyticsRequestHandlers.Clusters/SpatialJoin/Density/BufferAggregate).
     // Comparison is case-insensitive so validator and handler treat the same
     // caller input the same way.
-    private static readonly HashSet<string> ClusterAlgorithmValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dbscan", "kmeans", "k-means"
-    };
+    //
+    // Every token set below is built from ProcessValueDomains, which BuiltInProcessCatalog
+    // publishes verbatim as ProcessParameterSpec.AllowedValues, so the enforced domain and
+    // the advertised choice list cannot drift apart (#3048).
+    private static readonly HashSet<string> ClusterAlgorithmValues =
+        new(ProcessValueDomains.ClusterAlgorithm, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> SpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "contains", "within", "dwithin"
-    };
+    private static readonly HashSet<string> SpatialJoinPredicateValues =
+        new(ProcessValueDomains.SpatialJoinPredicate, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> DensityModeValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "hex", "hexgrid", "hex-grid", "square", "squaregrid", "square-grid"
-    };
+    private static readonly HashSet<string> DensityModeValues =
+        new(ProcessValueDomains.DensityMode, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> BufferAggregateUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "meters", "meter", "m",
-        "kilometers", "kilometer", "km",
-        "feet", "foot", "ft",
-        "miles", "mile", "mi"
-    };
+    private static readonly HashSet<string> BufferAggregateUnitValues =
+        new(ProcessValueDomains.BufferAggregateUnit, StringComparer.OrdinalIgnoreCase);
 
     // gdaldem emits degrees by default and percent slope under -p; radians are
     // not a first-class gdaldem output, so the native worker rejects them up
     // front. The validator stays in lockstep so plans accepted here are also
     // accepted by the executor at runtime.
-    private static readonly HashSet<string> SurfaceSlopeUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "degrees", "degree", "percent"
-    };
+    private static readonly HashSet<string> SurfaceSlopeUnitValues =
+        new(ProcessValueDomains.SurfaceSlopeUnit, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterResamplingValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "nearestneighbor", "nearest-neighbor", "nearest",
-        "bilinear",
-        "cubic", "bicubic",
-        "lanczos"
-    };
+    private static readonly HashSet<string> RasterResamplingValues =
+        new(ProcessValueDomains.RasterResampling, StringComparer.OrdinalIgnoreCase);
 
     // Mosaic overlap operators the native worker (GdalRasterMosaicJobExecutor) can
     // express through gdalwarp source ordering. Statistical operators are not yet
     // available and are rejected so a plan accepted here is also accepted by the
     // worker rather than failing at the CLI boundary.
-    private static readonly HashSet<string> RasterMosaicOperatorValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "first", "last"
-    };
+    private static readonly HashSet<string> RasterMosaicOperatorValues =
+        new(ProcessValueDomains.RasterMosaicOperator, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterFormatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "gtiff", "geotiff", "tiff", "tif",
-        "png",
-        "jpeg", "jpg",
-        "cog"
-    };
+    private static readonly HashSet<string> RasterFormatValues =
+        new(ProcessValueDomains.RasterFormat, StringComparer.OrdinalIgnoreCase);
 
     // gdal_calc.py --type values accepted by the calc-family executors
     // (raster.map-algebra / raster.spectral-index / raster.reclassify). Mirrors
     // GdalCalcInputs.TryNormalizeDataType so a plan accepted here is accepted by
     // the worker.
-    private static readonly HashSet<string> RasterCalcDataTypeValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "byte", "int16", "uint16", "int32", "uint32", "float32", "float64"
-    };
+    private static readonly HashSet<string> RasterCalcDataTypeValues =
+        new(ProcessValueDomains.RasterCalcDataType, StringComparer.OrdinalIgnoreCase);
 
     // Spectral-index presets the native worker (GdalRasterSpectralIndexJobExecutor)
     // recognizes, with the band roles each requires.
-    private static readonly HashSet<string> SpectralIndexValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "ndvi", "ndwi", "ndbi", "savi", "evi"
-    };
+    private static readonly HashSet<string> SpectralIndexValues =
+        new(ProcessValueDomains.SpectralIndex, StringComparer.OrdinalIgnoreCase);
 
     // Euclidean-distance units the native worker passes to gdal_proximity -distunits.
-    private static readonly HashSet<string> ProximityDistanceUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "GEO", "PIXEL"
-    };
+    private static readonly HashSet<string> ProximityDistanceUnitValues =
+        new(ProcessValueDomains.ProximityDistanceUnit, StringComparer.OrdinalIgnoreCase);
+
+    // imagery.classify's task token, matched case-SENSITIVELY against the cloud
+    // backends' spelling (unlike every other domain here).
+    private static readonly HashSet<string> ImageryClassifyTaskValues =
+        new(ProcessValueDomains.ImageryClassifyTask, StringComparer.Ordinal);
+
+    // conversion.polygonize pixel connectedness; numeric tokens, so ordinal.
+    private static readonly HashSet<string> PolygonizeConnectednessValues =
+        new(ProcessValueDomains.PolygonizeConnectedness, StringComparer.Ordinal);
 
     // NumPy element-wise functions the map-algebra allow-list admits. Mirrors
     // MapAlgebraExpression.AllowedFunctions in the worker.
@@ -115,15 +97,11 @@ internal static partial class ProcessPlanValidator
         "sin", "cos", "tan", "arctan", "nan_to_num"
     };
 
-    private static readonly HashSet<string> GeometryFormatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "wkt", "geojson", "wkb", "ewkt"
-    };
+    private static readonly HashSet<string> GeometryFormatValues =
+        new(ProcessValueDomains.GeometryFormat, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterZonalStatisticValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "count", "sum", "mean", "min", "max", "stddev", "variance"
-    };
+    private static readonly HashSet<string> RasterZonalStatisticValues =
+        new(ProcessValueDomains.RasterZonalStatistic, StringComparer.OrdinalIgnoreCase);
 
     // Mirrors SpatialAnalyticsRequestHandlers.TryParseStatisticType so the
     // validator rejects the same statisticType values the handler would reject.
@@ -537,7 +515,7 @@ internal static partial class ProcessPlanValidator
 
         if (step.Inputs.TryGetValue("task", out var task)
             && !string.IsNullOrWhiteSpace(task)
-            && task is not ("classification" or "segmentation" or "detection"))
+            && !ImageryClassifyTaskValues.Contains(task))
         {
             AddEnumViolation(step, "task", task, "classification, segmentation, detection", violations);
         }
@@ -620,25 +598,19 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    private static readonly HashSet<string> SpatialFilterPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "within"
-    };
+    private static readonly HashSet<string> SpatialFilterPredicateValues =
+        new(ProcessValueDomains.SpatialFilterPredicate, StringComparer.OrdinalIgnoreCase);
 
     // Managed spatial-join (analytics.spatial-join-managed) allow-lists mirror the
     // ManagedSpatialJoinExecutor body so the validator rejects the same predicate /
     // statistic spellings the executor refuses at runtime. Distinct from the
     // PostGIS-protocol analytics.spatial-join (which also has 'contains') because
     // this managed join has no 'dwithin'/distance support.
-    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "contains", "within"
-    };
+    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues =
+        new(ProcessValueDomains.ManagedSpatialJoinPredicate, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> ManagedSpatialJoinStatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "count", "sum", "mean", "avg", "average", "min", "max"
-    };
+    private static readonly HashSet<string> ManagedSpatialJoinStatValues =
+        new(ProcessValueDomains.ManagedSpatialJoinStat, StringComparer.OrdinalIgnoreCase);
 
     // analytics.spatial-join-managed reads two inline FeatureCollection data URIs
     // (input target + join reference), an optional predicate, and a 'statistics'
@@ -855,25 +827,17 @@ internal static partial class ProcessPlanValidator
     // GeoETL transform enum allow-lists mirror the executor bodies reconciled from
     // feat/geoetl-baseline so the validator rejects the same values the executors
     // would refuse at runtime.
-    private static readonly HashSet<string> AttributeCastTargetTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "int", "long", "double", "bool", "string"
-    };
+    private static readonly HashSet<string> AttributeCastTargetTypes =
+        new(ProcessValueDomains.AttributeCastTargetType, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> AttributeCastOnErrorValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "drop", "null", "keep"
-    };
+    private static readonly HashSet<string> AttributeCastOnErrorValues =
+        new(ProcessValueDomains.AttributeCastOnError, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> ComputedFieldOps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "concat", "add", "subtract", "multiply", "divide", "const"
-    };
+    private static readonly HashSet<string> ComputedFieldOps =
+        new(ProcessValueDomains.ComputedFieldOp, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> AttributeFilterOps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"
-    };
+    private static readonly HashSet<string> AttributeFilterOps =
+        new(ProcessValueDomains.AttributeFilterOp, StringComparer.OrdinalIgnoreCase);
 
     private static void ValidateAttributeCastSemantics(
         AnalysisPlanStep step,
@@ -1225,7 +1189,7 @@ internal static partial class ProcessPlanValidator
 
         if (step.Inputs.TryGetValue("connectedness", out var conn)
             && !string.IsNullOrWhiteSpace(conn)
-            && conn.Trim() is not "4" and not "8")
+            && !PolygonizeConnectednessValues.Contains(conn.Trim()))
         {
             AddEnumViolation(step, "connectedness", conn, "4, 8", violations);
         }

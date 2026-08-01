@@ -14294,7 +14294,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_BlankArtifactVersion_ReturnsBadRequest",
-        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_BranchDependentRequirement_IsNotCertifiedExecutable",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_BranchDependentRequirement_IsReportedPerBranch",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_ConstrainedFreeFormTextInput_IsCertifiedExecutable",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_EmitsTelemetrySpanWithOutcomeCounts",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_EmptyMappingOnOptionalParameterProcess_IsNotClaimedTranslated",

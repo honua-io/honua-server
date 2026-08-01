@@ -208,10 +208,16 @@ public static class ToolboxTranslationValidator
             // the probe, which unmapped parameters it can actually require under some admissible
             // branch instead of treating every optional omission as one: the submit path accepts
             // geometry.dissolve without 'groupKeys', so downgrading that mapping would report an
-            // executable tool as unproven. The probe still answers pessimistically wherever a
-            // discriminator's legal values are not enumerable (analytics.cluster-managed requires
-            // 'k' only when algorithm=kmeans, and the catalog declares no allowedValues for
-            // 'algorithm'), because certifying an unproven branch over-claims executability.
+            // executable tool as unproven.
+            //
+            // Where the discriminator's domain IS published (#3048), the probe enumerates every
+            // branch and the answer is exact: 'k' is required under algorithm=kmeans and under
+            // nothing else, so the report names the branch instead of shrugging. The conservative
+            // downgrade survives only for a genuinely unenumerable domain
+            // (transform.computed-field's 'op'), where certifying an unvisited branch would
+            // over-claim executability.
+            AddConditionalBranchIssues(definition, conditionalInputProbe, suppliedNames, issues);
+
             IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
                     definition.ProcessId, suppliedNames)
                 // With no probe the two cases cannot be told apart, so the pessimistic answer
@@ -241,6 +247,42 @@ public static class ToolboxTranslationValidator
                 : ToolboxToolClassifications.Translated;
 
         return BuildResult(descriptor, classification, definition.ProcessId, bindings, issues);
+    }
+
+    /// <summary>
+    /// Adds one exact, branch-qualified issue per unmapped parameter the canonical validator
+    /// requires on an enumerable discriminator branch. Grouped by parameter so a domain that
+    /// spells the same branch several ways (<c>kmeans</c> / <c>k-means</c>) reads as one gap
+    /// with several triggering values rather than as several gaps.
+    /// </summary>
+    private static void AddConditionalBranchIssues(
+        ProcessDefinition definition,
+        IProcessConditionalInputProbe? conditionalInputProbe,
+        IReadOnlyCollection<string> suppliedNames,
+        List<ToolboxTranslationIssue> issues)
+    {
+        var requirements = conditionalInputProbe?.FindConditionalBranchRequirements(
+            definition.ProcessId, suppliedNames);
+        if (requirements is not { Count: > 0 })
+        {
+            return;
+        }
+
+        foreach (var group in requirements.GroupBy(
+            requirement => requirement.ParameterName, StringComparer.OrdinalIgnoreCase))
+        {
+            var branches = group
+                .Select(requirement => requirement.Branch)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            issues.Add(new ToolboxTranslationIssue
+            {
+                Code = ToolboxTranslationIssueCodes.ConditionalBranchRequirement,
+                Message = $"Parameter '{group.Key}' of process '{definition.ProcessId}' is neither mapped nor defaulted and the canonical validator requires it on branch(es) {string.Join("; ", branches)}. Every other admissible value executes, so map it (or constrain the source value) to certify this tool.",
+                ParameterName = group.Key
+            });
+        }
     }
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)
