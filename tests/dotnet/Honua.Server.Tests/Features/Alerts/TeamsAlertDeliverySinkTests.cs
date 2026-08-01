@@ -41,6 +41,50 @@ public sealed class TeamsAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task DeliverAsync_WithTransientResolutionFailure_ReturnsRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-teams").Returns(client);
+
+        var sink = new TeamsAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-teams");
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithWebhookUrlResolvingToPrivateAddress_ReturnsNonRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-teams").Returns(client);
+
+        var sink = new TeamsAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-teams");
+    }
+
+    [UnitTest]
     public async Task DeliverAsync_WithSuccessfulPost_ReturnsSuccess()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);

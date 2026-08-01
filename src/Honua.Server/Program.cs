@@ -1517,6 +1517,7 @@ if (app.Environment.IsDevelopment())
 app.MapImportEndpoints();
 app.MapMigrationScannerEndpoints();
 app.MapArcGisMigrationEvidenceEndpoints();
+app.MapToolboxTranslationEndpoints();
 app.MapMigrationPerformanceEvidenceEndpoints();
 app.MapRasterImportEndpoints();
 

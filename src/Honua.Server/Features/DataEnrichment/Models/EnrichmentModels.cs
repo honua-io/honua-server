@@ -88,17 +88,24 @@ internal sealed class EnrichmentRequest
 
     /// <summary>
     /// Enrichment method vocabulary (#2282) mapping to the canonical spatial
-    /// predicates: <c>intersects</c>, <c>point-in-polygon</c> (→ contains),
-    /// <c>within-distance</c> (→ dwithin). <c>nearest-neighbor</c> is recognised but
-    /// requires the async batch path. Takes precedence over <see cref="Predicate"/>.
+    /// predicates. The vocabulary is dataset-subject (#3069) — it describes what the
+    /// enrichment dataset does to the source feature being enriched:
+    /// <c>intersects</c>, <c>point-in-polygon</c>/<c>pip</c>/<c>contains</c> (the
+    /// dataset polygon contains the source feature), <c>within</c> (the dataset
+    /// feature sits inside the source feature), <c>within-distance</c> (→ dwithin).
+    /// <c>nearest-neighbor</c> is recognised but requires the async batch path. Takes
+    /// precedence over <see cref="Predicate"/>.
     /// </summary>
     [JsonPropertyName("method")]
     public string? Method { get; set; }
 
     /// <summary>
-    /// Optional spatial predicate override (intersects, contains, within, dwithin).
-    /// Falls back to the dataset default when neither <see cref="Method"/> nor this
-    /// is supplied.
+    /// Optional spatial predicate override (intersects, contains, within, dwithin),
+    /// read with the same dataset-subject direction as <see cref="Method"/> (#3069):
+    /// <c>contains</c> means the dataset feature contains the source feature and
+    /// <c>within</c> means the dataset feature is inside the source feature. Falls
+    /// back to the dataset default when neither <see cref="Method"/> nor this is
+    /// supplied.
     /// </summary>
     [JsonPropertyName("predicate")]
     public string? Predicate { get; set; }

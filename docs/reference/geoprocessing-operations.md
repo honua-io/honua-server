@@ -51,6 +51,11 @@ The layer-scoped processes (`analytics.cluster`, `analytics.spatial-join`, `anal
 | `analytics.density-managed` | Job-executable hex/square binning over inline features. | `input`, `mode`, `cellSize`, `weightField` |
 | `analytics.hotspot-managed` | Job-executable Getis-Ord Gi* Hot Spot Analysis over inline features; appends `GI_ZSCORE`, `GI_PVALUE`, `GI_BIN`. | `input`, `field`, `distanceBand` |
 
+For the spatial-join processes the `predicate` is read join-subject: `contains`
+means *the join geometry contains the target* (the classic point-in-polygon case)
+and `within` means *the target contains the join geometry*. `intersects` and
+`dwithin` are symmetric.
+
 ## Overlay (6)
 
 Managed (NetTopologySuite) overlay ops over **two inline FeatureCollections** addressed by data URI — the layer-aware counterparts of the single-WKB `geometry.*` primitives, covering the Esri Clip/Intersect/Union/Erase/Merge/Split toolset. No Postgres or GDAL dependency.

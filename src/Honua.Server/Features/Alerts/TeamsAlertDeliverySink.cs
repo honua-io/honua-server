@@ -8,7 +8,6 @@ using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
@@ -18,15 +17,18 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertDeliveryOptions _options;
     private readonly ILogger<TeamsAlertDeliverySink>? _logger;
+    private readonly AlertDestinationGuard _destinationGuard;
 
     public TeamsAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
         IOptions<AlertDeliveryOptions> options,
-        ILogger<TeamsAlertDeliverySink>? logger = null)
+        ILogger<TeamsAlertDeliverySink>? logger = null,
+        AlertDestinationGuard? destinationGuard = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
+        _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
 
     public AlertChannelType ChannelType => AlertChannelType.MicrosoftTeams;
@@ -51,17 +53,17 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
 
         try
         {
-            var destinationValidation = await OutboundHttpUrlValidator
-                .ValidateAsync(webhookUrl, cancellationToken: cancellationToken)
+            var destinationCheck = await _destinationGuard
+                .CheckAsync(webhookUrl, "Teams webhook URL", cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!destinationValidation.IsValid || destinationValidation.Uri is null)
+            if (!destinationCheck.IsAllowed)
             {
                 return new AlertDeliveryResult
                 {
                     Succeeded = false,
-                    Retryable = false,
-                    Error = $"Teams webhook URL {destinationValidation.ErrorMessage ?? "must be a valid HTTPS URL."}"
+                    Retryable = destinationCheck.Retryable,
+                    Error = destinationCheck.Error
                 };
             }
 
@@ -89,7 +91,7 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
                 },
                 AlertDeliveryJsonContext.Default.TeamsAlertPayload);
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
+            using var request = new HttpRequestMessage(HttpMethod.Post, destinationCheck.Uri)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };

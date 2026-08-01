@@ -28,6 +28,11 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
 {
     private const string DatasetKey = "test-boundaries";
 
+    // Containment fixture object ids (honua-server#3069), outside the seeded ranges.
+    private const int PointInsideObjectId = 7701;
+    private const int PointOutsideObjectId = 7702;
+    private const int PolygonContainerObjectId = 7703;
+
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .WithTestLicense(HonuaEdition.Pro)
         .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
@@ -128,13 +133,22 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Enrich)]
     [Endpoint("POST /api/enrich")]
-    public async Task Enrich_PointInPolygonMethod_ReturnsFeatureCollection()
+    public async Task Enrich_PointInPolygonMethod_MatchesOnlySourcePointsInsideTheDatasetPolygon()
     {
+        // honua-server#3069: this assertion used to be "HTTP 200 and type ==
+        // FeatureCollection", which passed while the SQL path evaluated
+        // ST_Contains(sourcePoint, datasetPolygon) — always false — so synchronous
+        // point-in-polygon silently returned zero matches for every caller. The
+        // containment direction is now proven by the match counts themselves.
+        await SeedContainmentFixtureAsync();
+
         var payload = JsonSerializer.Serialize(new
         {
             datasetKey = DatasetKey,
             sourceLayerId = WebAppFixture.TestLayerId,
             method = "point-in-polygon",
+            where = "category = 'pip-source'",
+            outputFields = new[] { "description" },
         });
 
         using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
@@ -145,7 +159,94 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(content);
         doc.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+
+        var byObjectId = IndexByObjectId(doc.RootElement);
+        byObjectId.Should().HaveCount(2, "the where filter narrows the source rows to the two fixture points");
+
+        byObjectId[PointInsideObjectId].GetProperty("matchCount").GetInt64()
+            .Should().Be(1, "the source point falls inside the enrichment dataset polygon");
+        byObjectId[PointInsideObjectId].GetProperty("description").EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().BeEquivalentTo(["pip-zone"], "the containing dataset polygon's attributes are carried onto the point");
+
+        byObjectId[PointOutsideObjectId].GetProperty("matchCount").GetInt64()
+            .Should().Be(0, "the source point outside the polygon must not be enriched");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon()
+    {
+        // The inverse containment direction (honua-server#3069): `within` is
+        // dataset-subject too, so it matches dataset features that sit inside the
+        // caller's source geometry. Asserting both directions with the same fixture
+        // proves the operands are not simply symmetric.
+        await SeedContainmentFixtureAsync();
+
+        using var within = JsonDocument.Parse(await EnrichAsync("within"));
+        var withinByObjectId = IndexByObjectId(within.RootElement);
+        withinByObjectId.Should().HaveCount(1, "the where filter narrows the source rows to the container polygon");
+        withinByObjectId[PolygonContainerObjectId].GetProperty("matchCount").GetInt64()
+            .Should().Be(1, "exactly one dataset point sits inside the source polygon");
+        withinByObjectId[PolygonContainerObjectId].GetProperty("description").EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().BeEquivalentTo(["pip-poi"]);
+
+        using var pointInPolygon = JsonDocument.Parse(await EnrichAsync("point-in-polygon"));
+        var pipByObjectId = IndexByObjectId(pointInPolygon.RootElement);
+        pipByObjectId[PolygonContainerObjectId].GetProperty("matchCount").GetInt64()
+            .Should().Be(0, "the dataset point does not contain the source polygon, so the opposite direction finds nothing");
+
+        async Task<string> EnrichAsync(string method)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                datasetKey = DatasetKey,
+                sourceLayerId = WebAppFixture.TestLayerId,
+                method,
+                where = "category = 'pip-container'",
+                outputFields = new[] { "description" },
+            });
+
+            using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            return await response.Content.ReadAsStringAsync();
+        }
+    }
+
+    // Deterministic containment fixture shared by the point-in-polygon / within
+    // assertions: two source points (one inside, one outside a dataset polygon) plus
+    // a source polygon that contains a dataset point. All coordinates are far away
+    // from the seeded features so no seed row can satisfy either predicate.
+    private Task SeedContainmentFixtureAsync()
+        => _fixture.Postgres.ExecuteAsync(
+            $"""
+            DELETE FROM features WHERE objectid IN ({PointInsideObjectId}, {PointOutsideObjectId}, {PolygonContainerObjectId}, 7801, 7802);
+
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                ({PointInsideObjectId}, {WebAppFixture.TestLayerId}, ST_SetSRID(ST_MakePoint(10.5, 10.5), 4326),
+                    jsonb_build_object('objectid', {PointInsideObjectId}, 'name', 'pip-inside', 'category', 'pip-source')),
+                ({PointOutsideObjectId}, {WebAppFixture.TestLayerId}, ST_SetSRID(ST_MakePoint(20.5, 20.5), 4326),
+                    jsonb_build_object('objectid', {PointOutsideObjectId}, 'name', 'pip-outside', 'category', 'pip-source')),
+                ({PolygonContainerObjectId}, {WebAppFixture.TestLayerId},
+                    ST_SetSRID(ST_GeomFromText('POLYGON((30 30, 31 30, 31 31, 30 31, 30 30))'), 4326),
+                    jsonb_build_object('objectid', {PolygonContainerObjectId}, 'name', 'pip-container', 'category', 'pip-container'));
+
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                (7801, 1, ST_SetSRID(ST_GeomFromText('POLYGON((10 10, 11 10, 11 11, 10 11, 10 10))'), 4326),
+                    jsonb_build_object('objectid', 7801, 'name', 'pip-zone', 'description', 'pip-zone')),
+                (7802, 1, ST_SetSRID(ST_MakePoint(30.5, 30.5), 4326),
+                    jsonb_build_object('objectid', 7802, 'name', 'pip-poi', 'description', 'pip-poi'));
+            """,
+            _fixture.CurrentSchema);
+
+    private static Dictionary<long, JsonElement> IndexByObjectId(JsonElement root)
+        => root.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("properties"))
+            .ToDictionary(properties => properties.GetProperty("objectId").GetInt64(), properties => properties);
 
     [IntegrationTest]
     [Operation(Operations.Enrich)]
