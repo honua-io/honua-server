@@ -16,15 +16,12 @@ env:
   # we mirror the digest-pinned base images into GHCR once (the mirror-base-images
   # job below, with retries) and the build jobs pull them from GHCR (authenticated,
   # no anonymous limit) via the Dockerfiles' DOTNET_*_IMAGE build args.
-  # NOTE: keep these digests in sync with the ARG defaults in Dockerfile,
-  # docker/Dockerfile.aot, and docker/Dockerfile.lambda.aot.
+  # The digests are NOT duplicated here: scripts/ci/base-image-mirrors.sh reads
+  # them straight out of the `ARG DOTNET_*_IMAGE` defaults in Dockerfile,
+  # docker/Dockerfile.aot, and docker/Dockerfile.lambda.aot, so refreshing a pin
+  # in a Dockerfile is automatically what gets mirrored (and therefore what the
+  # build jobs pull back out of GHCR).
   BASE_REPO: ghcr.io/${{ github.repository }}-base
-  SDK_10_0: mcr.microsoft.com/dotnet/sdk:10.0@sha256:dc8430e6024d454edadad1e160e1973be3cabbb7125998ef190d9e5c6adf7dbb
-  ASPNET_10_0_ALPINE: mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:1e37a8236c558ae31bd6bc8144e38e6036b73cf1b0616fe56d79e60babb9d93b
-  SDK_10_0_ALPINE: mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:0191ff386e93923edf795d363ea0ae0669ce467ada4010b370644b670fa495c1
-  RUNTIMEDEPS_10_0_ALPINE: mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:4f08c162590324de60f31937f5b5fa9f2b5eddaa4f0aaec3c872f855bf16c36c
-  SDK_10_0_LAMBDA: mcr.microsoft.com/dotnet/sdk:10.0@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc
-  RUNTIMEDEPS_10_0: mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:962ef681468320cc5ef25fa18259cf3200247cec2ee96c2574174d4824272151
 
 concurrency:
   group: nightly-container-build-${{ github.ref }}
@@ -39,6 +36,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
@@ -48,6 +48,11 @@ jobs:
           registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fails the run before anything is mirrored if a build job pulls a mirror
+      # tag that no Dockerfile ARG produces (or vice versa).
+      - name: Verify mirror map covers every consumed base tag
+        run: scripts/ci/base-image-mirrors.sh --verify .github/workflows/nightly-container-build.yml
 
       - name: Mirror digest-pinned base images to GHCR (with retries)
         run: |
@@ -65,12 +70,26 @@ jobs:
             echo "::error::failed to mirror $src to $dst after 5 attempts"
             return 1
           }
-          mirror "${SDK_10_0}"                "${BASE_REPO}:sdk-10.0"
-          mirror "${ASPNET_10_0_ALPINE}"      "${BASE_REPO}:aspnet-10.0-alpine"
-          mirror "${SDK_10_0_ALPINE}"         "${BASE_REPO}:sdk-10.0-alpine"
-          mirror "${RUNTIMEDEPS_10_0_ALPINE}" "${BASE_REPO}:runtime-deps-10.0-alpine"
-          mirror "${SDK_10_0_LAMBDA}"         "${BASE_REPO}:sdk-10.0-lambda"
-          mirror "${RUNTIMEDEPS_10_0}"        "${BASE_REPO}:runtime-deps-10.0"
+          # Source refs come from the Dockerfile ARG defaults, so the mirrored
+          # images and the pins in the Dockerfiles cannot drift apart.
+          #
+          # The tab is built with printf rather than written as an ANSI-C $'\t' literal:
+          # validate-single-merge-authority.sh rejects that construct in any workflow it does
+          # not allowlist, because $'...' can hide a command token from static analysis. Same
+          # idiom the merge-train scripts use.
+          tab="$(printf '\tX')"; tab="${tab%X}"
+
+          # Materialize the map BEFORE mirroring anything. A process substitution's exit status
+          # is not propagated through `while`, so a producer that emitted some entries and then
+          # failed on a missing or malformed pin left the step green after mirroring only part
+          # of the map — and the build jobs then pulled the previous run's stale GHCR tags,
+          # silently publishing images on old security pins.
+          mirror_map="$(scripts/ci/base-image-mirrors.sh)"
+
+          while IFS="${tab}" read -r tag src; do
+            [ -n "$tag" ] || continue
+            mirror "$src" "${BASE_REPO}:${tag}"
+          done <<<"${mirror_map}"
 
   build-aot:
     name: Build & Push AOT (${{ matrix.arch }})

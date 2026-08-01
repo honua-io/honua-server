@@ -399,6 +399,15 @@ internal static class DataEnrichmentRequestHandlers
 
     // Resolves the effective spatial predicate from the enrichment method vocabulary,
     // a direct predicate override, or the dataset default.
+    //
+    // The enrichment vocabulary is DATASET-SUBJECT (honua-server#3069): the caller
+    // asks what the enrichment dataset does to the source features being enriched,
+    // so `point-in-polygon`/`contains` means "the dataset polygon contains my source
+    // feature" (canonical JoinContainsTarget — the dataset layer is the join side)
+    // and `within` means "the dataset feature sits inside my source feature"
+    // (canonical TargetContainsJoin). Mapping `contains` onto the target-subject
+    // direction is what made synchronous point-in-polygon evaluate
+    // ST_Contains(point, polygon) and always return zero matches.
     private static bool TryResolvePredicate(
         EnrichmentRequest request,
         ResolvedEnrichmentDataset dataset,
@@ -416,10 +425,10 @@ internal static class DataEnrichmentRequestHandlers
                     predicate = SpatialJoinPredicate.Intersects;
                     return true;
                 case "point-in-polygon" or "point_in_polygon" or "pip" or "contains":
-                    predicate = SpatialJoinPredicate.Contains;
+                    predicate = SpatialJoinPredicate.JoinContainsTarget;
                     return true;
                 case "within":
-                    predicate = SpatialJoinPredicate.Within;
+                    predicate = SpatialJoinPredicate.TargetContainsJoin;
                     return true;
                 case "within-distance" or "within_distance" or "dwithin":
                     predicate = SpatialJoinPredicate.DWithin;
@@ -447,10 +456,10 @@ internal static class DataEnrichmentRequestHandlers
                 predicate = SpatialJoinPredicate.Intersects;
                 return true;
             case "contains":
-                predicate = SpatialJoinPredicate.Contains;
+                predicate = SpatialJoinPredicate.JoinContainsTarget;
                 return true;
             case "within":
-                predicate = SpatialJoinPredicate.Within;
+                predicate = SpatialJoinPredicate.TargetContainsJoin;
                 return true;
             case "dwithin":
                 predicate = SpatialJoinPredicate.DWithin;

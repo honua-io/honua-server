@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -23,10 +24,13 @@ namespace Honua.Geoprocessing.Execution;
 ///
 /// <para>
 /// Predicates reuse NetTopologySuite's managed relational operators (no GEOS/GDAL
-/// native dependency): <c>intersects</c> (default), <c>contains</c> (the join
-/// geometry contains the target — the classic point-in-polygon case), <c>within</c>
-/// (the target contains the join geometry), and <c>dwithin</c> (the join geometry is
-/// within <c>distance</c> of the target). Distances are evaluated in the CRS units of
+/// native dependency) over the canonical <see cref="SpatialJoinPredicate"/> members
+/// shared with the PostGIS pushdown (honua-server#3069): <c>intersects</c> (default),
+/// <c>contains</c> (<see cref="SpatialJoinPredicate.JoinContainsTarget"/> — the join
+/// geometry contains the target, the classic point-in-polygon case), <c>within</c>
+/// (<see cref="SpatialJoinPredicate.TargetContainsJoin"/> — the target contains the
+/// join geometry), and <c>dwithin</c> (the join geometry is within <c>distance</c> of
+/// the target). Distances are evaluated in the CRS units of
 /// the supplied geometries — geodesic conversion is not performed, matching the other
 /// managed layer-aware analytics executors. Candidate join features are pruned through
 /// an in-memory <see cref="STRtree{T}"/> index before the exact predicate test.
@@ -95,7 +99,7 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     private static Feature Join(
         IFeature target,
         STRtree<IFeature> index,
-        SpatialPredicate predicate,
+        SpatialJoinPredicate predicate,
         double distance,
         IReadOnlyList<string> carryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> stats)
@@ -179,10 +183,10 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         return index;
     }
 
-    private static NtsEnvelope QueryEnvelope(NtsGeometry targetGeometry, SpatialPredicate predicate, double distance)
+    private static NtsEnvelope QueryEnvelope(NtsGeometry targetGeometry, SpatialJoinPredicate predicate, double distance)
     {
         var envelope = targetGeometry.EnvelopeInternal.Copy();
-        if (predicate == SpatialPredicate.Dwithin)
+        if (predicate == SpatialJoinPredicate.DWithin)
         {
             // Widen the candidate window by the distance threshold so join geometries
             // whose envelopes fall just outside the target's are still tested exactly.
@@ -195,7 +199,7 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     private static bool Matches(
         NtsGeometry? joinGeometry,
         NtsGeometry targetGeometry,
-        SpatialPredicate predicate,
+        SpatialJoinPredicate predicate,
         double distance)
     {
         if (joinGeometry is null || joinGeometry.IsEmpty)
@@ -203,11 +207,13 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
             return false;
         }
 
+        // The canonical member names carry the operand order, so the managed
+        // evaluation cannot drift from the PostGIS pushdown (honua-server#3069).
         return predicate switch
         {
-            SpatialPredicate.Contains => joinGeometry.Contains(targetGeometry),
-            SpatialPredicate.Within => targetGeometry.Contains(joinGeometry),
-            SpatialPredicate.Dwithin => joinGeometry.IsWithinDistance(targetGeometry, distance),
+            SpatialJoinPredicate.JoinContainsTarget => joinGeometry.Contains(targetGeometry),
+            SpatialJoinPredicate.TargetContainsJoin => targetGeometry.Contains(joinGeometry),
+            SpatialJoinPredicate.DWithin => joinGeometry.IsWithinDistance(targetGeometry, distance),
             _ => joinGeometry.Intersects(targetGeometry),
         };
     }
@@ -217,21 +223,24 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
             ? feature.Attributes.GetOptionalValue(field)
             : null;
 
-    private static (SpatialPredicate Predicate, double Distance) ReadPredicate(StepInputReader inputs)
+    // Wire vocabulary for this process is JOIN-SUBJECT: `contains` is the
+    // point-in-polygon direction (the join/reference geometry contains the target).
+    // Unchanged behavior — the mapping is now explicit about which operand leads.
+    private static (SpatialJoinPredicate Predicate, double Distance) ReadPredicate(StepInputReader inputs)
     {
         var raw = inputs.GetOrDefault("predicate", "intersects").Trim().ToLowerInvariant();
         var predicate = raw switch
         {
-            "" or "intersects" => SpatialPredicate.Intersects,
-            "contains" => SpatialPredicate.Contains,
-            "within" => SpatialPredicate.Within,
-            "dwithin" => SpatialPredicate.Dwithin,
+            "" or "intersects" => SpatialJoinPredicate.Intersects,
+            "contains" => SpatialJoinPredicate.JoinContainsTarget,
+            "within" => SpatialJoinPredicate.TargetContainsJoin,
+            "dwithin" => SpatialJoinPredicate.DWithin,
             _ => throw new TransformInputException(
                 $"predicate '{raw}' is not supported (allowed: intersects, contains, within, dwithin)"),
         };
 
         var distance = 0d;
-        if (predicate == SpatialPredicate.Dwithin
+        if (predicate == SpatialJoinPredicate.DWithin
             && (!inputs.TryGet("distance", out var distanceRaw)
                 || !double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out distance)
                 || !double.IsFinite(distance)
@@ -242,13 +251,5 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         }
 
         return (predicate, distance);
-    }
-
-    private enum SpatialPredicate
-    {
-        Intersects,
-        Contains,
-        Within,
-        Dwithin,
     }
 }
