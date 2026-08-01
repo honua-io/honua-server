@@ -57,6 +57,27 @@ internal static class JobSecurityContextCapture
     private const int MaxCapturedNonRoleClaims = 256;
 
     /// <summary>
+    /// Claim types exempt from <see cref="MaxCapturedNonRoleClaims"/> alongside roles, because
+    /// dropping them WIDENS authority rather than narrowing it.
+    /// </summary>
+    /// <remarks>
+    /// <c>OperatorScopeCatalog.IsScopeGoverned</c> decides whether a principal is subject to
+    /// OAuth scope narrowing by looking for exactly these claims. A principal presenting 256
+    /// other claims before them would have had them truncated away, and the restored identity
+    /// would then read as UNGOVERNED — so an approval resume or a triggered firing would apply
+    /// the captured roles to operations the original token never delegated, skipping the
+    /// narrowing entirely. The budget exists to bound record size, never to remove a
+    /// restriction (honua-server#3046 review).
+    /// </remarks>
+    private static readonly HashSet<string> BudgetExemptClaimTypes = new(StringComparer.Ordinal)
+    {
+        OperatorScopeCatalog.ScopeGovernedClaimType,
+        OperatorScopeCatalog.ScopeClaimType,
+        OperatorScopeCatalog.ScpClaimType,
+        OperatorScopeCatalog.ScopeClaimUri,
+    };
+
+    /// <summary>
     /// Claim types never persisted: they carry credentials rather than policy identity, and a
     /// durable job record is not a credential store.
     /// </summary>
@@ -93,11 +114,15 @@ internal static class JobSecurityContextCapture
         var seen = new HashSet<(string Type, string Value)>();
 
         // Roles are policy identity — RLS predicates and field masks key on them — so they are
-        // captured in full, with no budget. Everything else is descriptive and is what the
-        // budget bounds.
-        AppendClaims(principal, captured, seen, roleClaimTypes, includeMatching: true, limit: null);
+        // captured in full, with no budget. The OAuth scope-governance claims are exempt for the
+        // mirror-image reason: losing them removes the scope narrowing rather than a description.
+        // Everything else is descriptive and is what the budget bounds.
+        var exemptClaimTypes = new HashSet<string>(roleClaimTypes, StringComparer.OrdinalIgnoreCase);
+        exemptClaimTypes.UnionWith(BudgetExemptClaimTypes);
+
+        AppendClaims(principal, captured, seen, exemptClaimTypes, includeMatching: true, limit: null);
         AppendClaims(
-            principal, captured, seen, roleClaimTypes, includeMatching: false,
+            principal, captured, seen, exemptClaimTypes, includeMatching: false,
             limit: captured.Count + MaxCapturedNonRoleClaims);
 
         return new JobSecurityContext(

@@ -28,12 +28,18 @@ namespace Honua.Infrastructure.Authentication;
 /// the permission resolver, and the tenant rail — are resolved from the AMBIENT request scope
 /// when the call happens on a request thread, exactly as the HTTP helpers do. When no request
 /// is ambient (workflow orchestration, schedulers, background replay) a fresh scope is created
-/// and tenant filtering is skipped: there is no request tenant rail to resolve, and failing
-/// closed there would deny every tenant-scoped layer to server-internal callers that never
-/// pass through tenant middleware.
+/// and the tenant is taken from the PRINCIPAL: the deferred-submission lanes authorize a
+/// restored author/submitter snapshot that carries the tenant it was captured with, so tenant
+/// visibility stays enforced for user-attributed background checks. Only a caller with no
+/// tenant at all — a tenant-less deployment, or a server-internal identity that never passed
+/// through tenant middleware — skips the filter, because scoping on a null tenant would deny
+/// every tenant-scoped layer rather than just the foreign ones.
 /// </remarks>
 internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 {
+    /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
+    private const string TenantClaimType = "tenant_id";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IServiceScopeFactory _scopeFactory;
 
@@ -70,11 +76,24 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         }
 
         using var scope = _scopeFactory.CreateScope();
+
+        // No ambient HttpContext, but a background check is still attributed to a real user: the
+        // restored author/submitter snapshot carries the tenant it was captured with. Leaving
+        // tenant filtering off here meant a stored numeric id later rebound to ANOTHER tenant's
+        // layer could be cleared by a matching role or a permissive access policy, and the
+        // executor would then read that foreign layer through its global storage address. The
+        // principal's own tenant wins; the ambient scope value is the fallback for a background
+        // caller that is not user-attributed (honua-server#3046 review).
+        var tenantId = principal.FindFirstValue(TenantClaimType)
+            ?? scope.ServiceProvider.GetService<ITenantContext>()?.TenantId;
+
         return await EvaluateAsync(
             scope.ServiceProvider,
             principal,
-            tenantId: scope.ServiceProvider.GetService<ITenantContext>()?.TenantId,
-            applyTenantScope: false,
+            tenantId,
+            // A tenant-less deployment resolves nothing here, and scoping on a null tenant would
+            // hide every layer rather than the foreign ones. Scope only when a tenant is known.
+            applyTenantScope: !string.IsNullOrWhiteSpace(tenantId),
             layerId,
             operation,
             cancellationToken).ConfigureAwait(false);
@@ -99,38 +118,23 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 
         var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        // A plan's layer id can resolve two different ways, and the executor does not
-        // necessarily use the one this gate would pick. `source.honua-layer` hands the id
-        // straight to IStreamingFeatureStore.StreamFeaturesAsync, whose security lookup keys on
-        // ResourcesByStorageLayerId, while the publication triple resolves it as a
-        // service-local publication index. Where a resource's storage layer id differs from its
-        // publication index, authorizing only the publication could clear a job that then reads
-        // a DIFFERENT, restricted storage layer (honua-server#3046 review).
+        // A plan's layer id can resolve two different ways, and only ONE of them is what the
+        // job goes on to read. Every layer-sourced process reaches its data through
+        // `source.honua-layer`, which hands the id straight to
+        // IStreamingFeatureStore.StreamFeaturesAsync; the provider stores' security lookup keys
+        // on ResourcesByStorageLayerId. So the storage resource is the one the executor
+        // actually accesses, and it is the one this gate must authorize.
         //
-        // Both candidates are therefore evaluated and BOTH must allow. Requiring the
-        // intersection is the only reading that is correct without knowing which index the
-        // executor for this particular process uses, and it can only ever deny more than the
-        // previous behaviour, never less.
-        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>(2);
-
-        var (publication, publicationResource, publicationService) =
-            LayerValidationHelpers.ResolveV2TripleForTenant(
-                snapshot,
-                layerId,
-                requiredProtocol: null,
-                tenantId,
-                applyTenantScope);
-
-        if (publication is not null && publicationResource is not null &&
-            !LayerValidationHelpers.IsRetired(publication) && !LayerValidationHelpers.IsRetired(publicationResource))
-        {
-            candidates.Add((publicationResource, publicationService));
-        }
+        // The publication triple resolves the same integer as a SERVICE-LOCAL publication
+        // index. Those are separate namespaces and small values collide constantly — a
+        // publication index of 1 exists in most services — so requiring both to allow denied
+        // jobs whose only sin was that an unrelated, restricted publication happened to share
+        // the number. A collision does not make that publication an input to this plan
+        // (honua-server#3046 review).
+        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>(1);
 
         if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var storageResource)
-            && !LayerValidationHelpers.IsRetired(storageResource)
-            && !candidates.Any(candidate => string.Equals(
-                candidate.Resource.Metadata.Id, storageResource.Metadata.Id, StringComparison.Ordinal)))
+            && !LayerValidationHelpers.IsRetired(storageResource))
         {
             // The publication that owns this resource supplies the service context the decision
             // core needs; a resource with no live publication is still authorized, just without
@@ -142,6 +146,28 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
                 : snapshot.Index.ServicesById.GetValueOrDefault(storagePublication.ServiceId);
 
             candidates.Add((storageResource, storageService));
+        }
+        else
+        {
+            // The id names no storage layer, so the read seam would resolve nothing for it.
+            // Fall back to the publication triple rather than denying outright: this keeps the
+            // gate resolving for any caller that addresses a layer by publication index, and
+            // the tenant scope below still applies. It is only ever reached when the storage
+            // index has no entry, so it cannot reintroduce the collision above.
+            var (publication, publicationResource, publicationService) =
+                LayerValidationHelpers.ResolveV2TripleForTenant(
+                    snapshot,
+                    layerId,
+                    requiredProtocol: null,
+                    tenantId,
+                    applyTenantScope);
+
+            if (publication is not null && publicationResource is not null &&
+                !LayerValidationHelpers.IsRetired(publication) &&
+                !LayerValidationHelpers.IsRetired(publicationResource))
+            {
+                candidates.Add((publicationResource, publicationService));
+            }
         }
 
         if (candidates.Count == 0)

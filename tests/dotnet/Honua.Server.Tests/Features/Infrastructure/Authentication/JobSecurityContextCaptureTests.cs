@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 
@@ -110,6 +111,52 @@ public sealed class JobSecurityContextCaptureTests
         var captured = JobSecurityContextCapture.Capture(BuildPrincipal([.. claims]), options);
 
         captured.Claims.Count(claim => claim.Type == "honua_roles").Should().Be(300);
+    }
+
+    [UnitTest]
+    public void Capture_ScopeGovernanceClaims_SurviveTheBudget()
+    {
+        // The mirror image of the role exemption. OperatorScopeCatalog.IsScopeGoverned decides
+        // whether OAuth scope narrowing applies by looking for exactly these claims, so a
+        // principal presenting enough other claims to push them past the budget would restore
+        // as UNGOVERNED — and an approval resume or a triggered firing would then apply the
+        // captured roles to operations the original token never delegated. Dropping them
+        // removes a restriction, which the budget must never do (honua-server#3046 review).
+        var claims = new List<(string Type, string Value)>();
+        for (var i = 0; i < 400; i++)
+        {
+            claims.Add(($"filler{i}", i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        // Declared LAST, so enumeration order alone would have truncated them away.
+        claims.Add((OperatorScopeCatalog.ScopeGovernedClaimType, "true"));
+        claims.Add((OperatorScopeCatalog.ScopeClaimType, "honua.mcp.read"));
+        claims.Add((OperatorScopeCatalog.ScpClaimType, "honua.mcp.execute"));
+
+        var captured = JobSecurityContextCapture.Capture(BuildPrincipal([.. claims]), new RbacOptions());
+
+        captured.Claims.Should().Contain(claim => claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType);
+        captured.Claims.Should().Contain(claim => claim.Type == OperatorScopeCatalog.ScopeClaimType);
+        captured.Claims.Should().Contain(claim => claim.Type == OperatorScopeCatalog.ScpClaimType);
+
+        // The restored identity must still read as scope-governed, which is the property that
+        // actually matters — the claims are only the means.
+        OperatorScopeCatalog.IsScopeGoverned(JobSecurityContextCapture.Restore(captured))
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Restore_SnapshotWhoseTenantClaimWasTruncated_KeepsTheTenantScope()
+    {
+        // Tenant is captured in its own field as well as among the claims. The deferred lanes
+        // authorize against the restored identity, and the layer gate scopes on its tenant, so
+        // a restored identity that lost its tenant would widen rather than narrow.
+        var context = new JobSecurityContext(
+            "subject-123", TenantId: "tenant-a", [new JobSecurityClaim(ClaimTypes.Role, "analyst")]);
+
+        var restored = JobSecurityContextCapture.Restore(context);
+
+        restored.FindFirst("tenant_id")?.Value.Should().Be("tenant-a");
     }
 
     [UnitTest]
