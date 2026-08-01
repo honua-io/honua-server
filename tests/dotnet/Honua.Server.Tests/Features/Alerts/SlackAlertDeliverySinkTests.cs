@@ -12,7 +12,10 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class SlackAlertDeliverySinkTests
 {
-    private static AlertDeliveryOptions CreateOptionsWithSlack(string webhookUrl = "https://hooks.slack.com/services/T00/B00/xxx") =>
+    // Destination is an IP literal so the sink's outbound SSRF guard does not perform a live DNS
+    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+    private static AlertDeliveryOptions CreateOptionsWithSlack(
+        string webhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx") =>
         new()
         {
             Dispatch = new AlertDeliveryDispatchOptions
@@ -106,6 +109,50 @@ public sealed class SlackAlertDeliverySinkTests
         Assert.Contains("op-9f3c", handler.LastRequestBody, StringComparison.Ordinal);
         Assert.Contains("Critical", handler.LastRequestBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Rule:", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithTransientResolutionFailure_ReturnsRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-slack").Returns(client);
+
+        var sink = new SlackAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-slack");
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithWebhookUrlResolvingToPrivateAddress_ReturnsNonRetryableFailure()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-slack").Returns(client);
+
+        var sink = new SlackAlertDeliverySink(
+            httpClientFactory,
+            Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        httpClientFactory.DidNotReceive().CreateClient("alerts-slack");
     }
 
     [UnitTest]

@@ -11,9 +11,12 @@ on:
       - 'src/Honua.Server/ogc-maps-openapi.json'
       - 'src/Honua.Server/ogc-processes-openapi.json'
       - 'src/Honua.Server/ogc-coverages-openapi.json'
+      - 'docs/developer/api-specs/admin-api.json'
+      - 'docs/developer/api-specs/admin-api.undocumented.json'
       - 'src/Honua.Server/EndpointRegistry*.cs'
       - 'src/Honua.Server/Features/Protocols/**'
       - 'scripts/ci/openapi-drift-check.py'
+      - 'tests/python/unit/test_openapi_drift_check.py'
       - '.github/workflows/openapi-drift.yml'
   workflow_dispatch:
 
@@ -37,6 +40,11 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+
+      - name: Prove the drift check fails on drift
+        run: |
+          python3 -m unittest discover -s tests/python/unit \
+            -p 'test_openapi_drift_check.py' -v
 
       - name: Run OpenAPI <-> EndpointRegistry drift check
         run: |

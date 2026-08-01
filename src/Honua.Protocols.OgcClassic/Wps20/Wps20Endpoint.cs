@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using System.Xml.Schema;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -72,6 +73,11 @@ internal static partial class Wps20Endpoint
             return Exception(ex.Code, ex.Message, ex.Locator, ex.StatusCode);
         }
         catch (XmlException ex)
+        {
+            Log.InvalidRequest(logger, ex.Message);
+            return Exception("InvalidParameterValue", "The XML request is not valid or contains prohibited constructs.", "request");
+        }
+        catch (XmlSchemaException ex)
         {
             Log.InvalidRequest(logger, ex.Message);
             return Exception("InvalidParameterValue", "The XML request is not valid or contains prohibited constructs.", "request");
@@ -427,7 +433,10 @@ internal static partial class Wps20Endpoint
             MaxCharactersInDocument = RequestBodySizeGuard.ResolveMaxBodyBytes(context),
             MaxCharactersFromEntities = 0,
             IgnoreComments = true,
-            IgnoreProcessingInstructions = true
+            IgnoreProcessingInstructions = true,
+            ValidationType = ValidationType.Schema,
+            Schemas = Wps20RequestSchema.SchemaSet,
+            ValidationFlags = XmlSchemaValidationFlags.None
         };
         using var reader = XmlReader.Create(context.Request.Body, settings);
         var document = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);

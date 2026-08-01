@@ -92,6 +92,25 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 **Runtime OpenAPI Endpoint**: `https://your-honua-server.com/api/v1/admin/openapi.json`
 **Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
+> **Contract scope — curated, not a full mirror**: `admin-api.json` documents a
+> curated subset of the routes `EndpointRegistry` registers under `/api/v1/admin`.
+> The subset is **declared, not implied**. Every registered admin route that the
+> bundle does not document is listed in
+> [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code:
+>
+> - `method-not-allowed-responder` — registered only to answer `405` for a
+>   non-primary verb; never an OpenAPI operation, permanent exclusion.
+> - `undocumented-backlog` — a live, supported route the bundle does not describe
+>   yet; burn-down tracked by [honua-server#3063](https://github.com/honua-io/honua-server/issues/3063).
+>
+> `scripts/ci/openapi-drift-check.py` enforces this in both directions and runs in
+> the required PR Gate. A registered admin route that is neither documented nor
+> declared fails the gate (`missing-in-spec`); a declaration for a route that has
+> since been removed or documented also fails it (`stale-exemption`); and a
+> documented path with no registered endpoint fails it (`missing-in-code`).
+> **Adding a route under `/api/v1/admin` therefore forces an explicit choice:
+> document it, or declare why not.** See honua-server#3051.
+
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../../reference/admin-api/overview.md) and `/api/v1/admin/config` for operational guidance.
 > The saved-query and analysis-package content surface lives beside the admin

@@ -72,6 +72,68 @@ train_classify_timeout 123 0 || fail "first exit-124 failure was not retried"
 grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "retry did not target failed jobs only"
 pass "failed-job-only timeout retry"
 
+# #3054: a shard that consumed its whole CONFIGURED budget while still running
+# tests is a CI-capacity failure. It must never consume a rerun (a rerun
+# reproduces it at full runner cost) AND must never reach per-PR attribution
+# (which would drop or escalate an arbitrary batch member for a defect none of
+# them introduced), so it gets its own terminal result code.
+TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \
+  "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget while still producing output 2s ago." \
+  "::error::Server test shard 'Migration' timed out after 29 minute(s).")"
+: >"${record}"
+rc=0
+train_classify_timeout 123 0 || rc=$?
+[[ "${rc}" == "7" ]] || fail "capacity exhaustion was not given its own result code (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
+if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun"; fi
+rc=0
+train_classify_retry_candidate 123 0 0 || rc=$?
+[[ "${rc}" == "7" ]] || fail "capacity exhaustion was folded into the generic real-failure path (rc=${rc})"
+if [[ -s "${record}" ]]; then fail "capacity exhaustion consumed a rerun through the orchestration policy"; fi
+pass "shard capacity exhaustion is terminal, not retried and not attributed"
+
+# The train's ci-gate loop must have an explicit branch for that code, or the
+# batch would fall through to autofix/attribution anyway.
+grep -q 'rc_retry.*==.*"7"' "${TRAIN_DIR}/train.sh" \
+  || fail "train.sh has no branch for the capacity-exhausted result code"
+pass "train.sh routes capacity exhaustion away from attribution"
+
+# A generic timeout in an EARLIER failing job must not shortcut past a
+# capacity-exhausted shard in a later one; capacity has precedence.
+: >"${record}"
+saved_gh_before_scan="$(declare -f gh)"
+saved_run_log_text="${TRAIN_RUN_LOG_TEXT}"
+gh() {
+  case "$*" in
+    *"--json jobs"*conclusion*) printf '11\tServer Tests (Other)\n12\tServer Tests (Migration)\n' ;;
+    *"--job 11"*) printf 'Error: Process completed with exit code 124.\n' ;;
+    *"--job 12"*) printf "::error::HONUA_SHARD_CAPACITY_EXHAUSTED shard='Migration' hit its 29m test budget.\n::error::Server test shard 'Migration' timed out after 29 minute(s).\n" ;;
+    *) printf '1\n' ;;
+  esac
+}
+unset TRAIN_RUN_LOG_TEXT
+rc=0
+train_classify_timeout 123 0 || rc=$?
+[[ "${rc}" == "7" ]] || fail "capacity marker in a later failing job was missed (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "capacity" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected capacity"
+if [[ -s "${record}" ]]; then fail "a later-job capacity exhaustion still consumed a rerun"; fi
+pass "capacity marker takes precedence over an earlier generic timeout"
+eval "${saved_gh_before_scan}"
+TRAIN_RUN_LOG_TEXT="${saved_run_log_text}"
+
+# A timeout that stalled (suspected hang) keeps the existing one-rerun budget.
+TRAIN_RUN_LOG_TEXT="$(printf '%s\n%s\n' \
+  "::error::HONUA_SHARD_HANG_SUSPECTED shard='Migration' hit its 29m test budget after producing no output for 900s." \
+  "::error::Server test shard 'Migration' timed out after 29 minute(s).")"
+: >"${record}"
+train_classify_timeout 123 0 || fail "suspected hang was not retried once"
+[[ "${TRAIN_TIMEOUT_KIND}" == "hang" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected hang"
+grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "suspected hang did not retry failed jobs only"
+pass "suspected hang keeps the one-rerun budget"
+
+TRAIN_RUN_LOG_TEXT='Error: Process completed with exit code 124.'
+: >"${record}"
+
 # Command failure is propagated distinctly for the main loop to fail closed.
 side_effect_fails=1
 rc=0
@@ -527,16 +589,337 @@ grep -Fq 'gh issue edit 1 --body-file' "${record}" || fail "trunk-moved restart 
 grep -Fqx 'selection-entered' "${record}" || fail "trunk-moved restart did not reselect"
 pass "trunk-moved state restarts through release-only recovery"
 
-# Unknown nonempty active phases have no proven recovery contract and must stop
-# without overwriting state, touching labels, or entering selection.
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"forward-fix","run_id":123}}\n```'
+# --- #3045: no accepted phase may be unrecoverable ---------------------------
+# A run that ended during `attribute` used to strand the train: the read schema
+# accepted the phase, terminal recovery had no branch for it, and every later
+# dispatch failed closed before selection until #2044 was hand-edited. This
+# mirrors the live state of batch train/batch/f012686/1785307743.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/f012686/1785307743","trunk_base":"f0126862e2f4f4bd1f60ea25b2a3f83d3e37e1b7","included":[3040,3042,3043],"phase":"attribute","run_id":30435781232,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns_total":0},"config":{"max_batch":10},"last_landed_trunk":null}\n```'
 : >"${record}"
-train_select() { fail "unknown active phase reached selection"; }
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "restart after an interrupted attribution failed"
+for stranded_pr in 3040 3042 3043; do
+  grep -Fqx "gh pr edit ${stranded_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "interrupted attribution did not release #${stranded_pr}"
+done
+! grep -Fq -- "--add-label ${TRAIN_LABEL_ESCALATED}" "${record}" \
+  || fail "interrupted attribution escalated a member it never attributed"
+! grep -Fq -- "--remove-label ${TRAIN_LABEL_ESCALATED}" "${record}" \
+  || fail "interrupted attribution discarded an escalation a member already received"
+grep -Fq 'gh issue edit 1 --body-file' "${record}" || fail "interrupted attribution did not clear state"
+grep -Fqx 'selection-entered' "${record}" || fail "interrupted attribution did not reselect"
+pass "run stranded mid-attribute recovers and selection proceeds"
+
+# The attribution rebuild persists the surviving members under "assemble" with
+# no branch yet. A crash in that window leaves members holding train:landing
+# with nothing assembled, and must still release rather than fail closed.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101,102],"phase":"assemble","run_id":null,"fwdfix_attempts":0,"flake_reruns":0}}\n```'
+: >"${record}"
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "restart after a branchless rebuild-assemble failed"
+grep -Fqx "gh pr edit 102 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+  || fail "branchless rebuild-assemble did not release its members"
+! grep -Fq -- "--add-label ${TRAIN_LABEL_ESCALATED}" "${record}" \
+  || fail "branchless rebuild-assemble escalated an unattributed member"
+grep -Fqx 'selection-entered' "${record}" || fail "branchless rebuild-assemble did not reselect"
+pass "branchless rebuild-assemble state releases and reselects"
+
+# TOTALITY: every phase the read schema accepts must have a recovery owner, and
+# a terminal one must actually clear state and let selection proceed. Without
+# this, a phase added to the schema alone re-creates the #3045 deadlock.
+for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
+  case "${TRAIN_PHASE_RECOVERY[${accepted_phase}]:-}" in
+    escalate|release) ;;
+    retry|post-land) continue ;;
+    *) fail "phase ${accepted_phase} has no recovery class" ;;
+  esac
+  printf -v TRAIN_STATE_BODY_OVERRIDE '```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"%s","run_id":123,"fwdfix_attempts":0,"flake_reruns":0}}\n```\n' "${accepted_phase}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  : >"${record}"
+  train_select() { printf 'selection-entered\n' >>"${record}"; }
+  unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+  main || fail "accepted phase ${accepted_phase} was unrecoverable at startup"
+  grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "accepted phase ${accepted_phase} did not release its members"
+  grep -Fq 'gh issue edit 1 --body-file' "${record}" \
+    || fail "accepted phase ${accepted_phase} did not clear state"
+  grep -Fqx 'selection-entered' "${record}" \
+    || fail "accepted phase ${accepted_phase} did not continue to selection"
+  ! grep -Eq 'gh (workflow run|pr merge)|git push' "${record}" \
+    || fail "accepted phase ${accepted_phase} requeued or landed a stale batch"
+  if [[ "${TRAIN_PHASE_RECOVERY[${accepted_phase}]}" == "release" ]]; then
+    ! grep -Fq -- "--add-label ${TRAIN_LABEL_ESCALATED}" "${record}" \
+      || fail "release-class phase ${accepted_phase} added an unattributed escalation"
+  else
+    grep -Fqx "gh pr edit 101 --add-label ${TRAIN_LABEL_ESCALATED}" "${record}" \
+      || fail "escalate-class phase ${accepted_phase} did not escalate its member"
+  fi
+done
+pass "every accepted terminal phase recovers before selection"
+
+# Retry-class phases are owned by train_restore_retry_intent. Terminal recovery
+# must defer to it — never release the batch or overwrite the retry intent.
+for retry_phase in timeout-retry-intent timeout-retry-requesting timeout-retry-accepted \
+                   flake-retry-intent flake-retry-requesting flake-retry-accepted; do
+  printf -v TRAIN_STATE_BODY_OVERRIDE '```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"%s","run_id":123,"fwdfix_attempts":0,"flake_reruns":0}}\n```\n' "${retry_phase}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  : >"${record}"
+  train_select() { fail "retry-class phase ${retry_phase} reached selection"; }
+  unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+  rc=0
+  main || rc=$?
+  [[ "${rc}" == "1" && ! -s "${record}" ]] \
+    || fail "retry-class phase ${retry_phase} did not defer to retry restoration"
+done
+pass "retry-class phases defer to retry restoration without mutation"
+
+# DRIFT GUARD: the read schema's phase list (state.sh) and the recovery dispatch
+# table (train.sh) are asserted consistent in BOTH directions, with negative
+# controls proving the guard actually detects each drift direction.
+[[ -z "$(train_state_phase_recovery_drift)" ]] \
+  || fail "phase recovery drift: $(train_state_phase_recovery_drift | tr '\n' ' ')"
+TRAIN_STATE_PHASES+=(fixture-unclassified-phase)
+grep -Fqx 'unrecoverable-phase fixture-unclassified-phase' <<<"$(train_state_phase_recovery_drift)" \
+  || fail "drift guard missed a schema phase with no recovery class"
+unset 'TRAIN_STATE_PHASES[-1]'
+TRAIN_PHASE_RECOVERY[fixture-orphan-phase]=release
+grep -Fqx 'orphan-recovery-class fixture-orphan-phase' <<<"$(train_state_phase_recovery_drift)" \
+  || fail "drift guard missed a recovery class for a phase the schema rejects"
+unset 'TRAIN_PHASE_RECOVERY[fixture-orphan-phase]'
+TRAIN_PHASE_RECOVERY[attribute]=nonsense
+grep -Fqx 'unknown-recovery-class attribute=nonsense' <<<"$(train_state_phase_recovery_drift)" \
+  || fail "drift guard missed an unknown recovery class value"
+TRAIN_PHASE_RECOVERY[attribute]=release
+[[ -z "$(train_state_phase_recovery_drift)" ]] || fail "drift guard did not restore cleanly"
+pass "schema phases and recovery dispatch cannot drift apart"
+
+# Non-vacuity: TRAIN_STATE_PHASES is really what the read schema enforces, so
+# the drift guard is comparing the live list rather than a decorative copy.
+for accepted_phase in "${TRAIN_STATE_PHASES[@]}"; do
+  case "${accepted_phase}" in
+    land|pre-land-cleanup|post-land-finalize)
+      printf -v TRAIN_STATE_BODY_OVERRIDE '```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"%s","run_id":123,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"dddddddddddddddddddddddddddddddddddddddd"}}\n```\n' "${accepted_phase}" ;;
+    *)
+      printf -v TRAIN_STATE_BODY_OVERRIDE '```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"%s","run_id":123}}\n```\n' "${accepted_phase}" ;;
+  esac
+  export TRAIN_STATE_BODY_OVERRIDE
+  train_state_read >/dev/null || fail "read schema rejected accepted phase ${accepted_phase}"
+done
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"not-a-real-phase","run_id":123}}\n```'
+rc=0
+train_state_read >/dev/null || rc=$?
+[[ "${rc}" == "3" ]] || fail "read schema accepted a phase outside TRAIN_STATE_PHASES"
+pass "read schema accepts exactly TRAIN_STATE_PHASES"
+
+# State the read schema itself rejects still has no recovery contract and must
+# stop without overwriting state, touching labels, or entering selection.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"not-a-real-phase","run_id":123}}\n```'
+: >"${record}"
+train_select() { fail "unreadable active state reached selection"; }
 unset TRAIN_CONTROLLER_DEADLINE_EPOCH
 rc=0
 main || rc=$?
-[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "unknown active phase did not fail closed without mutation"
-pass "unknown active phase stops before overwrite or selection"
+[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "unreadable active state did not fail closed without mutation"
+pass "state outside the accepted schema stops before overwrite or selection"
+
+# --- sanctioned reset path (#3045 AC4) ---------------------------------------
+# The operator escape hatch replaces hand-editing the machine-managed state
+# issue. It clears the batch to the exact shape train_state_render emits, stops
+# before selection, and refuses while durable land intent is outstanding.
+export TRAIN_RESET_STATE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/f012686/1785307743","trunk_base":"f0126862e2f4f4bd1f60ea25b2a3f83d3e37e1b7","included":[3040,3042],"phase":"attribute","run_id":30435781232},"config":{"max_batch":10},"last_landed_trunk":null}\n```'
+: >"${record}"
+reset_capture="$(mktemp)"
+train_side_effect() {
+  printf '%s\n' "$*" >>"${record}"
+  [[ "$1 $2 $3 $5" == "gh issue edit --body-file" ]] && cp "$6" "${reset_capture}"
+  return 0
+}
+train_select() { fail "state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset failed"
+for reset_pr in 3040 3042; do
+  grep -Fqx "gh pr edit ${reset_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "state reset did not release #${reset_pr}"
+done
+! grep -Fq -- "--add-label" "${record}" || fail "state reset added a label"
+[[ -s "${reset_capture}" ]] || fail "state reset never wrote the state issue"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch | type' <<<"${reset_json}")" == "object" ]] \
+  || fail "state reset wrote an active_batch the read schema rejects"
+[[ "$(jq -r '.active_batch.branch' <<<"${reset_json}")" == "" ]] || fail "state reset kept a branch"
+[[ "$(jq -c '.active_batch.included' <<<"${reset_json}")" == "[]" ]] || fail "state reset kept members"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] || fail "state reset did not return to select"
+[[ "$(jq -r '.active_batch.run_id' <<<"${reset_json}")" == "null" ]] || fail "state reset kept a run id"
+[[ "$(jq -r '.config.max_batch' <<<"${reset_json}")" == "${MAX_BATCH}" ]] || fail "state reset dropped config"
+TRAIN_STATE_BODY_OVERRIDE="$(printf '```json\n%s\n```' "${reset_json}")"
+export TRAIN_STATE_BODY_OVERRIDE
+train_state_read >/dev/null || fail "state reset wrote a body the read schema cannot parse"
+pass "operator state reset clears the batch to a readable cleared shape"
+
+# Schema-INVALID state is exactly what an emergency hand edit leaves behind
+# (the live `active_batch: null` repair). The reset must repair it too, or the
+# operator is sent straight back to editing the machine-managed issue by hand.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":null,"config":{"max_batch":10},"last_landed_trunk":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: active_batch:null is readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "salvaging state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair schema-invalid state"
+[[ -s "${reset_capture}" ]] || fail "salvaging reset never wrote the state issue"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch | type' <<<"${reset_json}")" == "object" ]] \
+  || fail "salvaging reset left active_batch non-object"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] || fail "salvaging reset did not return to select"
+[[ "$(jq -r '.last_landed_trunk' <<<"${reset_json}")" == "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]] \
+  || fail "salvaging reset lost the last-landed record it could still read"
+TRAIN_STATE_BODY_OVERRIDE="$(printf '```json\n%s\n```' "${reset_json}")"
+export TRAIN_STATE_BODY_OVERRIDE
+train_state_read >/dev/null || fail "salvaging reset wrote a body the read schema cannot parse"
+pass "operator state reset repairs schema-invalid state"
+
+# Salvage still releases members and preserves telemetry it can read.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101,102],"phase":"not-a-real-phase","run_id":123,"timeout_reruns_total":4},"last_landed_trunk":null}\n```'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "salvaging state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair an unknown persisted phase"
+for reset_pr in 101 102; do
+  grep -Fqx "gh pr edit ${reset_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "salvaging reset did not release #${reset_pr}"
+done
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.trunk_base' <<<"${reset_json}")" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]] \
+  || fail "salvaging reset lost the recorded trunk base"
+[[ "$(jq -r '.active_batch.timeout_reruns_total' <<<"${reset_json}")" == "4" ]] \
+  || fail "salvaging reset lost cumulative rerun telemetry"
+pass "operator state reset salvages members and telemetry from invalid state"
+
+# A batch SHA is NOT land intent: _write_state records one for every assembled
+# phase (smart-ci, attribute, the retry phases). Refusing on it would refuse the
+# ordinary stuck batch this escape hatch exists for.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"smart-ci","run_id":"bad-run-id-type","included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"dddddddddddddddddddddddddddddddddddddddd","fwdfix_attempts":"nope"}}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: assembled-batch body is still readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "assembled-batch salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused an assembled non-land batch merely for carrying a batch SHA"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+  || fail "assembled-batch salvage did not release its member"
+[[ -s "${reset_capture}" ]] || fail "assembled-batch salvage never cleared state"
+pass "salvage treats an assembled batch SHA as recoverable, not land intent"
+
+# Salvage must refuse durable land intent even when the body is schema-invalid
+# or not JSON at all — the raw-text guard, not the parser, is what protects it.
+for salvage_land_body in \
+  $'```json\n{"active_batch":{"phase":"land","included":["oops"]}}\n```' \
+  $'```json\n{"active_batch":{"phase":"pre-land-cleanup","included":[101],"batch_sha":"nope"}}\n```' \
+  $'```json\n{"active_batch": {"phase": "post-land-finalize", NOT VALID JSON\n```' \
+  $'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"land","included":[101],,\n```' \
+  $'```json\n{"active_batch":{"phase"\n:\n"post-land-finalize" BROKEN\n```' \
+  $'```json\n{"active_batch":{"phase"\t:\t"land" BROKEN\n```'
+do
+  TRAIN_STATE_BODY_OVERRIDE="${salvage_land_body}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  : >"${record}"
+  train_select() { fail "refused salvage reached selection"; }
+  unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+  rc=0
+  main || rc=$?
+  [[ "${rc}" == "1" && ! -s "${record}" ]] \
+    || fail "salvage did not refuse durable land intent without mutation"
+done
+pass "salvage refuses durable land intent in unreadable state"
+
+# Newline-robust detection must NOT swing to refusing everything: a damaged
+# state whose non-land phase sits on its own line still resets, or the
+# sanctioned reset becomes useless for exactly the bodies it exists to repair.
+# Schema-invalid but still parseable, so the members are recoverable too.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"attribute","included":[101,102],"fwdfix_attempts":"nope"}}\n```'
+rc=0
+train_state_read >/dev/null 2>&1 || rc=$?
+[[ "${rc}" == "3" ]] || fail "fixture premise wrong: multiline non-land body is still readable"
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "multiline non-land salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused a damaged non-land state after the newline fix"
+for reset_pr in 101 102; do
+  grep -Fqx "gh pr edit ${reset_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" \
+    || fail "multiline non-land salvage did not release #${reset_pr}"
+done
+[[ -s "${reset_capture}" ]] || fail "multiline non-land salvage never cleared state"
+pass "salvage still resets a damaged non-land state across newlines"
+
+# Same shape, but now unparseable as well. Members cannot be recovered from a
+# body that does not parse, so the contract here is narrower: it must still
+# RESET rather than refuse, and must not enter selection.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","phase":\n"attribute","included":[101,102],,\n```'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "unparseable non-land salvage continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "salvage refused an unparseable non-land state after the newline fix"
+[[ -s "${reset_capture}" ]] || fail "unparseable non-land salvage never cleared state"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] \
+  || fail "unparseable non-land salvage did not return to select"
+pass "salvage resets an unparseable non-land state instead of refusing"
+
+# Token-exactness: only a real land-family PHASE refuses. Text that merely
+# contains those letters — a branch name, last_landed_trunk, a phase like
+# "landing" — must not, or the guard refuses every reset.
+for salvage_ok_body in \
+  $'```json\n{"active_batch":{"branch":"train/batch/pre-land-cleanup-topic/9","phase":"smart-ci","included":[101],,\n```' \
+  $'```json\n{"active_batch":{"phase":"requeue","included":[101]},"last_landed_trunk":"land","x":,\n```' \
+  $'```json\n{"active_batch":{"phase":"landing","included":[101],,\n```'
+do
+  TRAIN_STATE_BODY_OVERRIDE="${salvage_ok_body}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  train_state_salvage >/dev/null 2>&1 \
+    || fail "salvage refused a state whose land-like text is not a land phase"
+done
+pass "salvage refusal keys on the phase token, not stray land-like text"
+
+# Totally illegible state still resets: there is no detectable land intent to
+# protect, and this is the last resort that replaces a hand edit.
+export TRAIN_STATE_BODY_OVERRIDE='this body has no machine-state block at all'
+: >"${record}"
+: >"${reset_capture}"
+train_select() { fail "illegible-state reset continued into selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "operator state reset could not repair an illegible body"
+reset_json="$(sed -n '/^```json$/,/^```$/p' "${reset_capture}" | sed '1d;$d')"
+[[ "$(jq -r '.active_batch.phase' <<<"${reset_json}")" == "select" ]] || fail "illegible-state reset did not clear"
+TRAIN_STATE_BODY_OVERRIDE="$(printf '```json\n%s\n```' "${reset_json}")"
+export TRAIN_STATE_BODY_OVERRIDE
+train_state_read >/dev/null || fail "illegible-state reset wrote an unreadable body"
+pass "operator state reset repairs a body with no machine-state block"
+
+# A durable land intent must reconcile against trunk before any reset.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"land","run_id":123,"included_heads":[{"number":101,"head":"cccccccccccccccccccccccccccccccccccccccc"}],"batch_sha":"dddddddddddddddddddddddddddddddddddddddd"}}\n```'
+: >"${record}"
+train_select() { fail "refused state reset reached selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+rc=0
+main || rc=$?
+[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "state reset did not refuse durable land intent without mutation"
+pass "state reset refuses while durable land intent is outstanding"
+unset TRAIN_RESET_STATE
+rm -f "${reset_capture}"
+train_side_effect() {
+  [[ "${side_effect_fails}" == "1" ]] && return 42
+  printf '%s\n' "$*" >>"${record}"
+}
 
 # Validate every value needed to render cleared state before mutating labels.
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"ci-incomplete","run_id":123,"timeout_reruns_total":"bad"},"last_landed_trunk":"not-a-sha"}\n```'

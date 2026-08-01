@@ -1,0 +1,38 @@
+{
+  "artifactKind": "honua.migration.toolbox-translation",
+  "artifactVersion": "1.0",
+  "toolboxName": "LegacyScriptToolbox",
+  "sourceFormat": "tbx",
+  "sourceLabel": "legacy_scripts.tbx",
+  "tools": [
+    {
+      "toolName": "RunCustomScript",
+      "displayName": "Run Custom Script",
+      "targetProcessId": null,
+      "parameterMappings": [],
+      "unsupportedConstructs": [
+        "custom Python execution body",
+        "arcpy.CheckOutExtension('spatial') license dependency"
+      ]
+    },
+    {
+      "toolName": "TopoValidate",
+      "displayName": "Topology Validate",
+      "targetProcessId": "topology.validate-network",
+      "parameterMappings": [
+        { "sourceName": "in_features", "targetParameter": "input", "sourceDataType": "GPFeatureLayer" }
+      ],
+      "unsupportedConstructs": []
+    },
+    {
+      "toolName": "BufferWithoutDistance",
+      "displayName": "Buffer Without Distance",
+      "targetProcessId": "geometry.buffer",
+      "parameterMappings": [
+        { "sourceName": "in_geometry", "targetParameter": "wkb", "sourceDataType": "GPGeometry" },
+        { "sourceName": "in_srid", "targetParameter": "srid", "sourceDataType": "GPLong" }
+      ],
+      "unsupportedConstructs": []
+    }
+  ]
+}

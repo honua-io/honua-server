@@ -102,14 +102,141 @@ public sealed class DigestAlertDeliverySinkTests
         await dispatchStore.DidNotReceiveWithAnyArgs().MarkDeliveredAsync(default, default, default);
     }
 
-    private static AlertOptions CreateDigestOptions() =>
+    [UnitTest]
+    public async Task FlushAsync_WithTransientResolutionFailure_MarksBatchFailedForRetry()
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var dispatchItem = AlertTestFixtures.CreateDispatchItem(AlertChannelType.Digest) with
+        {
+            DispatchId = 31,
+            EventId = 301,
+            Attempts = 0,
+            MaxAttempts = 3
+        };
+
+        dispatchStore.ClaimPendingDigestAsync(2, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([dispatchItem]);
+        eventStore.GetAsync(301, Arg.Any<CancellationToken>())
+            .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-301"));
+
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var httpClient = new HttpClient(handler);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("alerts-digest").Returns(httpClient);
+
+        using var provider = CreateServiceProvider(dispatchStore, eventStore);
+        var service = new DigestFlushBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.GuardWithUnavailableResolver());
+
+        await service.FlushAsync(CancellationToken.None);
+
+        // Blocked (nothing was sent) but scheduled for another attempt rather than dead-lettered.
+        await dispatchStore.Received(1).MarkFailedAsync(
+            31,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            false,
+            Arg.Is<string?>(value => value != null && value.Contains("resolution", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        httpClientFactory.DidNotReceive().CreateClient("alerts-digest");
+    }
+
+    [UnitTest]
+    public async Task FlushAsync_WithTransientResolutionFailureOnFinalAttempt_DeadLettersBatch()
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var dispatchItem = AlertTestFixtures.CreateDispatchItem(AlertChannelType.Digest) with
+        {
+            DispatchId = 32,
+            EventId = 302,
+            Attempts = 2,
+            MaxAttempts = 3
+        };
+
+        dispatchStore.ClaimPendingDigestAsync(2, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([dispatchItem]);
+        eventStore.GetAsync(302, Arg.Any<CancellationToken>())
+            .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-302"));
+
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+
+        using var provider = CreateServiceProvider(dispatchStore, eventStore);
+        var service = new DigestFlushBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.GuardWithUnavailableResolver());
+
+        await service.FlushAsync(CancellationToken.None);
+
+        // Retries stay bounded by MaxAttempts: a permanently broken resolver still dead-letters.
+        await dispatchStore.Received(1).MarkFailedAsync(
+            32,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            true,
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task FlushAsync_WithDestinationResolvingToPrivateAddress_DeadLettersBatch()
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var dispatchItem = AlertTestFixtures.CreateDispatchItem(AlertChannelType.Digest) with
+        {
+            DispatchId = 33,
+            EventId = 303,
+            Attempts = 0,
+            MaxAttempts = 3
+        };
+
+        dispatchStore.ClaimPendingDigestAsync(2, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([dispatchItem]);
+        eventStore.GetAsync(303, Arg.Any<CancellationToken>())
+            .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-303"));
+
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+
+        using var provider = CreateServiceProvider(dispatchStore, eventStore);
+        var service = new DigestFlushBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
+
+        await service.FlushAsync(CancellationToken.None);
+
+        await dispatchStore.Received(1).MarkFailedAsync(
+            33,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            true,
+            Arg.Is<string?>(value => value != null && value.Contains("not allowed", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        httpClientFactory.DidNotReceive().CreateClient("alerts-digest");
+    }
+
+    private static AlertOptions CreateDigestOptions(string? webhookUrl = null) =>
         new()
         {
             Dispatch = new AlertDispatchOptions
             {
                 Digest = new DigestAlertOptions
                 {
-                    WebhookUrl = "https://example.com/digest",
+                    // IP literal keeps the outbound SSRF guard off live DNS; see
+                    // AlertTestFixtures.RoutableWebhookBaseUrl (#3056). Tests that exercise host
+                    // resolution pass a host name here and inject a resolver instead.
+                    WebhookUrl = webhookUrl ?? AlertTestFixtures.RoutableWebhookBaseUrl + "/digest",
                     WebhookSecret = "digest-secret",
                     MaxBatchSize = 2
                 }
