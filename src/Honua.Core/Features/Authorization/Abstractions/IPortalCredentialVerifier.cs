@@ -48,4 +48,4 @@ public sealed record PortalCredentialPrincipal(
     string? DisplayName,
     string? TenantId,
     IReadOnlyList<string> Roles,
-    bool? RolesRequireClaimsMappingEntitlement = null);
+    bool RolesRequireClaimsMappingEntitlement = false);

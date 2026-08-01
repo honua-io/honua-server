@@ -108,8 +108,15 @@ public sealed record PortalTokenIntrospection(
 /// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
 /// entitlement. The issuer persists it and revalidates the roles against the live entitlement
 /// on every restore, so an expired license cannot keep honouring roles it would no longer
-/// grant. <see langword="null"/> means the provenance is unknown — a record predating the
-/// field — and is treated exactly like <see langword="true"/> (honua-server#2997 review).
+/// grant.
+/// <para>
+/// Nullable only so the OAuth exchange can forward the UNKNOWN provenance of a cached
+/// authorization code or refresh token that predates the field; unknown is treated exactly
+/// like <see langword="true"/> and fails closed. It defaults to <see langword="false"/>, not
+/// null, because every other caller mints from a live verification where the provenance is
+/// known — defaulting to unknown there would strip roles from ordinary tokens that never
+/// touched claims mapping (honua-server#2997 review).
+/// </para>
 /// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
@@ -119,7 +126,7 @@ public sealed record PortalTokenIssueRequest(
     PortalTokenClientType ClientType,
     string BindingValue,
     DateTimeOffset ExpiresAt,
-    bool? RolesRequireClaimsMappingEntitlement = null);
+    bool? RolesRequireClaimsMappingEntitlement = false);
 
 /// <summary>
 /// Token issuance result.
