@@ -167,14 +167,15 @@ internal static class SavedMapOperationPayloadValidator
         string subject,
         out string error)
     {
-        if (payload.TryGetProperty(memberName, out var array) && array.ValueKind == JsonValueKind.Array)
+        var items = payload.TryGetProperty(memberName, out var array) && array.ValueKind == JsonValueKind.Array
+            ? array.EnumerateArray()
+            : Enumerable.Empty<JsonElement>();
+
+        foreach (var item in items.Where(item => item.ValueKind == JsonValueKind.Object))
         {
-            foreach (var item in array.EnumerateArray())
+            if (!TryRejectUnmappedMembers(item, allowed, subject, out error))
             {
-                if (!TryRejectUnmappedMembers(item, allowed, subject, out error))
-                {
-                    return false;
-                }
+                return false;
             }
         }
 

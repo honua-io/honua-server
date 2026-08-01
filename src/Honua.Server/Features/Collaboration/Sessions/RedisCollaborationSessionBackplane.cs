@@ -96,7 +96,14 @@ internal sealed partial class RedisCollaborationSessionBackplane
     }
 
     /// <inheritdoc />
-    public bool SupportsCrossReplicaDelivery => true;
+    /// <remarks>
+    /// Reports the ACTIVATION state, not the configuration. <c>StartAsync</c> deliberately
+    /// swallows a failed subscription and leaves the backplane disabled, so returning a
+    /// constant <see langword="true"/> advertised cursors, selections and follow while
+    /// <c>Publish</c> returned immediately and no peer received anything — the same false
+    /// promise the capability derivation exists to prevent (honua-server#2999 review).
+    /// </remarks>
+    public bool SupportsCrossReplicaDelivery => _enabled;
 
     /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)
