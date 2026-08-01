@@ -113,7 +113,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 >     a future route can be parked deliberately rather than silently.
 >
 > As of the #3063 burn-down the admin surface accounts for all **458** registered
-> routes: **397** documented, **1** declared, **60** derived.
+> routes: **395** documented, **3** declared, **60** derived.
 >
 > `scripts/ci/openapi-drift-check.py` enforces this in both directions and runs in
 > the required PR Gate. A registered admin route that is neither documented, derived,
