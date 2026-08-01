@@ -348,7 +348,13 @@ were being conflated.
    upstream publishes a fix. That is a strictly better "tell me when the fix
    lands" signal than an alert that is already open and already ignored.
 
-Both passes honour `.trivyignore`, which stays reserved for advisories that are
+Only the actionable pass honours `.trivyignore`. The inventory pass filters on
+severity alone, because a risk-accepted advisory is precisely the kind of record
+the inventory artifact is meant to preserve -- suppressing it there would hide it
+from the complete register and keep it hidden after upstream shipped a fix. Read
+the inventory artifact expecting risk-accepted advisories to be PRESENT.
+
+`.trivyignore` stays reserved for advisories that are
 unactionable for some reason *other* than "unfixed upstream", with a written
 justification per entry. No CVE was added to `.trivyignore` for this change and
 no alert was dismissed in the UI.

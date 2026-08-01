@@ -345,9 +345,12 @@ jobs:
       #      has not shipped a fix stays fully recorded here, and moves into pass 1
       #      (and therefore onto the Security tab) the moment upstream publishes one.
       #
-      # Both passes honour `.trivyignore`, which is reserved for advisories that are
-      # unactionable for a reason other than "unfixed upstream" and carries a written
-      # justification per entry.
+      # Only pass 1 honours `.trivyignore`. That file is reserved for advisories that
+      # are unactionable for a reason other than "unfixed upstream" and carries a
+      # written justification per entry -- but those are exactly the records the
+      # inventory exists to retain, so applying it there would drop them from the one
+      # artifact meant to be complete, and keep them missing after a fix shipped until
+      # someone un-ignored them by hand. Pass 2 therefore filters on severity alone.
       - name: Run Trivy vulnerability scanner (actionable, fixed only)
         shell: bash
         env:
