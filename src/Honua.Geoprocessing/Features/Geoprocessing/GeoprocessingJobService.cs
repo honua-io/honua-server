@@ -113,7 +113,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         IOperationGateway? operationGateway = null,
-        IOperatorScopeAuthorizer? scopeAuthorizer = null)
+        IOperatorScopeAuthorizer? scopeAuthorizer = null,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -122,6 +124,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 authEvaluator,
                 approvalEvaluator,
                 scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
+                // Always composed (never null): the submit-time layer read gate must not be
+                // skippable by construction path. A caller that omits BOTH the accessor and
+                // the scope factory gets a gate with no evaluable authorization context,
+                // which denies layer-sourced plans rather than waving them through.
+                new GeoprocessingLayerAccessGuard(
+                    httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
                 logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
@@ -147,7 +155,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
-    public async Task EnsurePlanExecutionTierAuthorizedAsync(
+    public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -162,6 +170,25 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorOperation.ExecuteMutatingProcess,
                 cancellationToken).ConfigureAwait(false);
         }
+
+        // Per-layer read authorization, evaluated against the REQUESTING principal at
+        // workflow-authoring time (honua-server#3043 review). The reconcile tick later
+        // submits each step under the synthesized orchestrator identity, so this is the
+        // only point where the human who scheduled the workflow faces the layer gate —
+        // the same reason the mutating-process tier is pre-checked here (#2798).
+        //
+        // The bound plan is RETURNED, not discarded: it carries the dataset-layer binding
+        // this principal was authorized for, and the authoring surface has to persist that
+        // with the durable workflow definition. The reconcile tick's SubmitJobAsync re-runs
+        // this gate under the orchestrator identity, which carries the wildcard-granted
+        // `admin` role — so if the binding did not travel with the plan, the tick would
+        // simply re-authorize and re-stamp whatever layer the dataset points at then and the
+        // requester's authorization would be moot. With the binding present, the gate
+        // enforces it and a re-pointed dataset fails the step. Steps whose layerId/datasetId
+        // are still unresolved workflow bindings do not resolve to a layer here and are
+        // gated at submission instead.
+        return await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
@@ -356,6 +383,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorResourceType.Process,
                 OperatorOperation.ExecuteMutatingProcess,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        // Per-LAYER read authorization for layer-sourced processes (#2283 review).
+        // Process.Execute authorizes running a process; it does not authorize the specific
+        // catalog layers that process will read. This is the only point in the job's life
+        // where the submitter's real principal (roles, grants, tenant scope) is still in
+        // hand — the durable record keeps only the submitter id — so the gate runs here
+        // and a caller that cannot read a layer is refused at submission instead of being
+        // handed a queued job that would read it. Skipped on the approval-resume path for
+        // the same reason as the gates above: it already ran, against the live submitter,
+        // when the proposal was created — and the persisted proposal plan already carries
+        // the authorized-layer bindings the gate stamped before EnsureApprovedAsync parked it.
+        //
+        // The gate returns the plan with the authorized dataset layer bound to each gated
+        // step; reassigning `plan` here is what carries that binding into the approval
+        // proposal, the request fingerprint, and the durable job spec the executor reads,
+        // so a dataset re-pointed while the job is queued cannot be read unauthorized.
+        if (!resumingApproved)
+        {
+            plan = await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (!resumingApproved)

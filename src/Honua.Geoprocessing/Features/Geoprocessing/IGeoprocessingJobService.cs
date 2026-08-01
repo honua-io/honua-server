@@ -27,16 +27,27 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Evaluates the additional execution-tier authorization a plan requires (currently the
-    /// mutating-process tier) against <paramref name="principal"/>, throwing
-    /// <see cref="GeoprocessingAuthorizationException"/> when a mutating step is present and
-    /// the principal lacks <see cref="OperatorOperation.ExecuteMutatingProcess"/>. This is the
-    /// same tier gate <see cref="SubmitJobAsync"/> applies, exposed so the workflow
+    /// Evaluates the additional execution-tier authorization a plan requires against
+    /// <paramref name="principal"/>, throwing <see cref="GeoprocessingAuthorizationException"/>
+    /// when the principal lacks it. Two tiers are covered: the mutating-process tier
+    /// (<see cref="OperatorOperation.ExecuteMutatingProcess"/>, #2798) and per-layer READ access
+    /// on every catalog layer the plan's layer-sourced steps would read (#2283/#3043). Both are
+    /// the same gates <see cref="SubmitJobAsync"/> applies, exposed so the workflow
     /// orchestration engine can evaluate the REQUESTING principal at run creation before step
-    /// jobs are dispatched under the admin-bypassing orchestrator identity (#2798). Baseline
+    /// jobs are dispatched under the admin-bypassing orchestrator identity. Baseline
     /// <see cref="OperatorOperation.Execute"/> is assumed pre-checked by the caller.
+    ///
+    /// <para>
+    /// Returns the plan with the layers this principal was authorized to read BOUND to each
+    /// gated step. Authoring surfaces that persist a plan for later background dispatch —
+    /// workflow publication above all — must store the returned plan rather than the input:
+    /// the reconcile tick submits under an <c>admin</c>-carrying orchestrator identity that
+    /// would otherwise re-derive the binding against whatever the dataset points at then, so
+    /// the requester's binding has to travel with the durable plan and be matched at
+    /// dispatch (#3043 review). Callers that only need the yes/no decision may discard it.
+    /// </para>
     /// </summary>
-    Task EnsurePlanExecutionTierAuthorizedAsync(
+    Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);

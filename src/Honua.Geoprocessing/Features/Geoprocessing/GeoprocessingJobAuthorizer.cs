@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
@@ -21,24 +22,44 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
+    private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
     /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851).
+    /// (honua-server#2851) and the per-layer read gate (honua-server#2283).
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
+        GeoprocessingLayerAccessGuard layerAccessGuard,
         ILogger<GeoprocessingJobService> logger)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _scopeAuthorizer = scopeAuthorizer;
+        _layerAccessGuard = layerAccessGuard;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Enforces read access, for the submitting principal, on every catalog layer the plan's
+    /// gated steps will read, and returns the plan with the authorized dataset-layer identity
+    /// bound to each gated step. Delegates to <see cref="GeoprocessingLayerAccessGuard"/>, which
+    /// is composed here rather than injected alongside this type so that all of the submit-time
+    /// authorization concerns reach the job service through a single collaborator.
+    /// </summary>
+    /// <param name="plan">The submitted analysis plan.</param>
+    /// <param name="principal">The submitting principal.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The plan to submit, carrying the authorized dataset-layer bindings.</returns>
+    public Task<AnalysisPlan> EnsureLayerReadAccessAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+        => _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken);
 
     /// <summary>
     /// Evaluates the caller's authorization for the specified resource/operation and throws

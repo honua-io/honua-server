@@ -46,6 +46,73 @@ spatial predicates, supports `outputFields` and per-match `aggregates`
 `X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
 async batch path) when the source selection exceeds the synchronous input cap.
 
+## Async batch enrichment jobs (`enrichment.enrich`)
+
+Large or staged-input enrichment runs as a **canonical geoprocessing job**
+(#2283) through the existing OGC API Processes surface — there is no
+enrichment-local job lifecycle:
+
+- **Submit**: `POST /ogc/processes/processes/enrichment.enrich/execution` with
+  the same enrichment vocabulary as `POST /api/enrich` — `datasetId` (required),
+  `method` (`intersects`, `point-in-polygon`, `within`, `within-distance`,
+  `nearest-neighbor`), `outputFields`, `aggregates` (`field:stat` pairs), and the
+  source as EITHER a registered `layerId` (with optional `where`/`bbox`
+  windowing) OR a staged inline FeatureCollection via `input`
+  (`data:application/geo+json;base64` data URI). Returns `201` with a job id.
+- **`where`/`bbox` are layer-source-only.** They window the registered source
+  layer read; a staged `input` collection is enriched verbatim. Submitting
+  either alongside `input` is **rejected at submission** (`400`) rather than
+  silently ignored, so a job never succeeds with a broader result than was
+  asked for. `bbox` must be exactly four numeric ordinates
+  (`minX,minY,maxX,maxY`); a malformed value is refused at submission too,
+  instead of queueing a job that fails later inside the provider read.
+- **Poll / results / dismiss**: the standard job endpoints —
+  `GET /ogc/processes/jobs/{jobId}`, `GET /ogc/processes/jobs/{jobId}/results`,
+  `DELETE /ogc/processes/jobs/{jobId}`.
+- **Results** are an enriched GeoJSON FeatureCollection artifact (`JOIN_COUNT`,
+  carried attributes, aggregates; `NEAR_DIST` for nearest-neighbor) with the
+  dataset id and attribution embedded as foreign members.
+- **Gating**: the shared `analytics.spatial-join` (Pro) entitlement and the
+  dataset's `minimumEdition` are enforced at execution.
+- **CRS**: both the source and dataset layers are streamed in EPSG:4326 and the
+  result is published in EPSG:4326, so a cross-SRID pair is never joined on
+  incomparable ordinates and the GeoJSON output is valid WGS 84 (RFC 7946).
+  `bbox` is likewise EPSG:4326. Within-distance thresholds and `NEAR_DIST` are
+  therefore in degrees (managed NTS join, no geodesic conversion) — the sync
+  endpoint's `distanceMeters` semantics do not apply, so supply `distance`
+  explicitly in degrees.
+- **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
+  while streaming, so an oversized selection fails fast with an actionable error
+  instead of exhausting worker memory. The value is clamped to an operator
+  ceiling of 1000000 — a caller may only lower the cap, never disable it — and it
+  applies equally to a staged `input` collection. `maxCarriedMatchValues`
+  (default 20000000, likewise lower-only) additionally bounds the join itself,
+  which is a Cartesian product the per-layer caps cannot see.
+
+### Authorization on the async path
+
+- **Layer read access is enforced at submission**, against the submitting
+  principal, for BOTH the caller-selected source layer and the dataset's backing
+  layer — the same pair the synchronous endpoint validates. `Process.Execute`
+  authorizes running a process; it never authorizes the specific layers the
+  process reads. A caller that cannot read either layer is refused with `401`/
+  `403` and no job is queued. Denials are indistinguishable from "layer does not
+  exist", so the submit surface cannot be used to probe layer ids.
+- **The authorized dataset layer is bound to the job.** Re-pointing a managed
+  enrichment dataset at a different layer while a job is queued causes that job
+  to fail at execution rather than read a layer that was never authorized;
+  resubmit so the new layer is authorized.
+- **Known limitation — row-level security and field masking are NOT applied to
+  the job's layer reads.** Both are request-scoped concerns and a job executes on
+  a background worker with no request context, so a caller who may read a layer
+  but is restricted to particular rows or fields receives unrestricted rows and
+  unmasked attributes in the job artifact. This affects every layer-sourced
+  geoprocessing process, not only enrichment, and is tracked as
+  [#3068](https://github.com/honua-io/honua-server/issues/3068). Until it lands,
+  do not rely on RLS or field-mask policies to constrain what a
+  `Process.Execute` holder can obtain through a job artifact — restrict the layer
+  itself.
+
 ## Registering enrichment datasets
 
 The catalog is **operator-curated** and configuration-driven. Publish the
@@ -125,12 +192,14 @@ enterprise/revenue features in the ticket:
   demographic data** (ACS/Census/OSM extracts, Natural Earth boundaries, etc.) —
   no such dataset ships with the server. Operators bring their own reference data
   and register it as above.
-- **No inline-GeoJSON source feature sets.** The source must be a registered
-  layer; ad-hoc inline feature sets are not yet supported.
+- **No inline-GeoJSON source feature sets on the synchronous endpoint.** The
+  sync source must be a registered layer; inline/staged feature sets run through
+  the async `enrichment.enrich` job's `input` data URI instead.
 - **Synchronous spatial-join method only.** The point-in-polygon / within /
   contains / dwithin predicates are served through the shared spatial-join
-  pipeline. Nearest-neighbour, buffer+aggregate weighting, and intersection
-  area-weighting as *enrichment methods*, plus async/batch jobs and
-  CDC-triggered enrichment, are deferred to follow-up work.
+  pipeline. Nearest-neighbour is available on the async `enrichment.enrich` job
+  path (#2283); buffer+aggregate weighting and intersection area-weighting as
+  *enrichment methods*, plus CDC-triggered enrichment, are deferred to
+  follow-up work.
 
 These deferrals are tracked under [#374](https://github.com/honua-io/honua-server/issues/374).

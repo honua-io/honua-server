@@ -355,7 +355,14 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     private readonly List<AnalysisPlan> _executionAuthChecked = [];
 
-    public Task EnsurePlanExecutionAuthorizedAsync(
+    /// <summary>
+    /// When set, rewrites the plan the gate returns, standing in for the per-layer bindings the
+    /// real gate stamps. Run creation must persist THIS instance, not the one it passed in
+    /// (honua-server#3043 review).
+    /// </summary>
+    public Func<AnalysisPlan, AnalysisPlan>? OnBindExecutionPlan { get; set; }
+
+    public Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -371,7 +378,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
                 $"Requesting principal is not authorized to execute mutating plan '{plan.PlanId}'.");
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(OnBindExecutionPlan?.Invoke(plan) ?? plan);
     }
 
     /// <summary>
