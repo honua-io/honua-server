@@ -1,8 +1,7 @@
 {
-  "$comment": "Machine-readable declaration of registered /api/v1/admin routes that admin-api.json intentionally does not document. Read by scripts/ci/openapi-drift-check.py: a registered admin route that is neither documented nor listed here fails the drift gate, and an entry here that is no longer registered (or has since been documented) also fails it. Absence from the bundle is therefore always a deliberate, reviewable declaration.",
+  "$comment": "Machine-readable declaration of registered /api/v1/admin routes that admin-api.json intentionally does not document. Read by scripts/ci/openapi-drift-check.py: a registered admin route that is neither documented, listed here, nor derived as a 405 Method Not Allowed responder fails the drift gate, and an entry here that is no longer registered (or has since been documented) also fails it. Absence from the bundle is therefore always a deliberate, reviewable declaration. Routes registered only to answer 405 for a non-primary verb are NOT listed here: they are derived from their MapMethods registration by derive_method_not_allowed_routes (honua-server#3063).",
   "spec": "docs/developer/api-specs/admin-api.json",
   "reasons": {
-    "method-not-allowed-responder": "Route registered only to answer 405 Method Not Allowed for a non-primary verb on a path whose primary verb is handled elsewhere. Never an OpenAPI operation; permanent exclusion.",
     "undocumented-backlog": "Live, supported admin route that the curated bundle does not yet describe. Temporary; burn-down tracked by honua-server#3063."
   },
   "routes": [
@@ -97,26 +96,6 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "DELETE",
-      "path": "/api/v1/admin/config",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/config",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/config",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/config",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "GET",
       "path": "/api/v1/admin/configuration/audit",
       "reason": "undocumented-backlog"
@@ -160,26 +139,6 @@
       "method": "POST",
       "path": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh",
       "reason": "undocumented-backlog"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/connections/{id}/tables",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/connections/{id}/tables",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/connections/{id}/tables",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/connections/{id}/tables",
-      "reason": "method-not-allowed-responder"
     },
     {
       "method": "POST",
@@ -412,26 +371,6 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/formats",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/formats",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/formats",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/formats",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "POST",
       "path": "/api/v1/admin/import/geoserver/discover",
       "reason": "undocumented-backlog"
@@ -482,86 +421,6 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/jobs",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/jobs",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/jobs",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/jobs",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/jobs/{jobId}",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/jobs/{jobId}",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/jobs/{jobId}",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/jobs/{jobId}",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/limits",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/limits",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/limits",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/limits",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "POST",
       "path": "/api/v1/admin/import/migrations",
       "reason": "undocumented-backlog"
@@ -597,46 +456,6 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/preview",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/preview",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/preview",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/preview",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/preview-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/preview-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/preview-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/preview-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "POST",
       "path": "/api/v1/admin/import/raster",
       "reason": "undocumented-backlog"
@@ -662,84 +481,9 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/upload",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/upload",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/upload",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/upload",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/upload-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/upload-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/upload-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/upload-url",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/uploads",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "GET",
       "path": "/api/v1/admin/import/uploads",
       "reason": "undocumented-backlog"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/uploads",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/uploads",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/uploads",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "GET",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
-      "reason": "method-not-allowed-responder"
     },
     {
       "method": "POST",
@@ -747,34 +491,9 @@
       "reason": "undocumented-backlog"
     },
     {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
-      "reason": "method-not-allowed-responder"
-    },
-    {
       "method": "GET",
       "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
       "reason": "undocumented-backlog"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
-      "reason": "method-not-allowed-responder"
     },
     {
       "method": "GET",
@@ -1225,26 +944,6 @@
       "method": "POST",
       "path": "/api/v1/admin/oidc/providers/{id}/test",
       "reason": "undocumented-backlog"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/admin/openapi.json",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/v1/admin/openapi.json",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "POST",
-      "path": "/api/v1/admin/openapi.json",
-      "reason": "method-not-allowed-responder"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/admin/openapi.json",
-      "reason": "method-not-allowed-responder"
     },
     {
       "method": "GET",

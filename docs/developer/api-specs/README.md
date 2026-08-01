@@ -94,18 +94,22 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 
 > **Contract scope — curated, not a full mirror**: `admin-api.json` documents a
 > curated subset of the routes `EndpointRegistry` registers under `/api/v1/admin`.
-> The subset is **declared, not implied**. Every registered admin route that the
-> bundle does not document is listed in
-> [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code:
+> The subset is **declared, not implied**. A registered admin route that the bundle
+> does not document is legitimate in exactly two ways:
 >
-> - `method-not-allowed-responder` — registered only to answer `405` for a
->   non-primary verb; never an OpenAPI operation, permanent exclusion.
-> - `undocumented-backlog` — a live, supported route the bundle does not describe
->   yet; burn-down tracked by [honua-server#3063](https://github.com/honua-io/honua-server/issues/3063).
+> - **Derived** — a route registered only to answer `405 Method Not Allowed` for a
+>   non-primary verb is never an OpenAPI operation. These are *computed* from their
+>   `MapMethods(route, NonGetMethods, HandleGetMethodNotAllowed)` registrations by
+>   `derive_method_not_allowed_routes`, so they need no hand maintenance
+>   ([#3063](https://github.com/honua-io/honua-server/issues/3063)).
+> - **Declared** — everything else must be listed in
+>   [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code.
+>   The only remaining reason is `undocumented-backlog`: a live, supported route the
+>   bundle does not describe yet.
 >
 > `scripts/ci/openapi-drift-check.py` enforces this in both directions and runs in
-> the required PR Gate. A registered admin route that is neither documented nor
-> declared fails the gate (`missing-in-spec`); a declaration for a route that has
+> the required PR Gate. A registered admin route that is neither documented, derived,
+> nor declared fails the gate (`missing-in-spec`); a declaration for a route that has
 > since been removed or documented also fails it (`stale-exemption`); and a
 > documented path with no registered endpoint fails it (`missing-in-code`).
 > **Adding a route under `/api/v1/admin` therefore forces an explicit choice:
