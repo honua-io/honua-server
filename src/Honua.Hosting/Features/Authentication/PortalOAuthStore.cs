@@ -533,11 +533,19 @@ internal sealed class PortalOAuthPrincipal
     public required string[] Roles { get; init; }
 
     /// <summary>
-    /// True when <see cref="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+    /// Whether <see cref="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
     /// entitlement, so tokens minted from this principal revalidate them on every restore
     /// (honua-server#2997 review).
     /// </summary>
-    public bool RolesRequireClaimsMappingEntitlement { get; init; }
+    /// <remarks>
+    /// NULLABLE for the same reason as <c>PortalTokenRecord</c>'s copy: a cached authorization
+    /// code or refresh token persisted before this field existed deserializes the member as
+    /// absent, and a non-nullable bool would read that as an explicit "not mapping-derived".
+    /// Exchanging or refreshing it would then stamp an explicit <see langword="false"/> onto the
+    /// new token record and skip the live entitlement check entirely — laundering legacy
+    /// custom-mapped roles through a refresh. Absent means unknown, and unknown fails closed.
+    /// </remarks>
+    public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
     /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)

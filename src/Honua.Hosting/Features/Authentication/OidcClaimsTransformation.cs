@@ -125,8 +125,18 @@ internal sealed class OidcClaimsTransformation(
         // because the restore path never re-runs this transformation. Marking the principal
         // lets the exchange record that its roles depend on the entitlement, so the restore can
         // revalidate instead of trusting them forever (honua-server#2997 review).
+        // A CustomMappings entry can target ClaimTypes.Role directly, which emits a role LATER
+        // in this method — after GetRoleClaims has already run — so counting gathered roles
+        // alone missed it and the principal went unmarked. The portal exchange then persisted
+        // that custom role as entitlement-independent and it kept authorizing requests after
+        // identity.claims-mapping expired (honua-server#2997 review).
+        var customMappingEmitsRole = claimsMappingEntitled
+            && _options.ClaimsMapping.CustomMappings.Any(mapping =>
+                string.Equals(mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value));
+
         var rolesDependOnClaimsMapping = claimsMappingEntitled
-            && roles.Count > rolesWithoutMapping.Count;
+            && (roles.Count > rolesWithoutMapping.Count || customMappingEmitsRole);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));

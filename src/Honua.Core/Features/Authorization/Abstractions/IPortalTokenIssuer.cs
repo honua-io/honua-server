@@ -105,10 +105,11 @@ public sealed record PortalTokenIntrospection(
 /// <param name="BindingValue">Bound referer URL or client IP address.</param>
 /// <param name="ExpiresAt">Absolute expiry instant for the token.</param>
 /// <param name="RolesRequireClaimsMappingEntitlement">
-/// True when <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
-/// entitlement. The issuer persists the flag and revalidates the roles against the live
-/// entitlement on every restore, so an expired license cannot keep honouring roles it would no
-/// longer grant (honua-server#2997 review).
+/// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+/// entitlement. The issuer persists it and revalidates the roles against the live entitlement
+/// on every restore, so an expired license cannot keep honouring roles it would no longer
+/// grant. <see langword="null"/> means the provenance is unknown — a record predating the
+/// field — and is treated exactly like <see langword="true"/> (honua-server#2997 review).
 /// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
@@ -118,7 +119,7 @@ public sealed record PortalTokenIssueRequest(
     PortalTokenClientType ClientType,
     string BindingValue,
     DateTimeOffset ExpiresAt,
-    bool RolesRequireClaimsMappingEntitlement = false);
+    bool? RolesRequireClaimsMappingEntitlement = null);
 
 /// <summary>
 /// Token issuance result.
