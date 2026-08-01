@@ -268,6 +268,15 @@ public static class ToolboxTranslationValidator
             return;
         }
 
+        // "Constrain the source value instead of mapping" is only sound advice when some
+        // admissible discriminator value is left with no gap. Gaps are reported per PARAMETER,
+        // so each group individually looks escapable even when the groups TOGETHER cover every
+        // branch — e.g. a mapping supplying only `input` and `algorithm` omits `eps`/`minPoints`
+        // on dbscan and `k` on kmeans, and then no value of `algorithm` executes at all.
+        // Coverage is therefore computed across ALL requirements before the claim is made
+        // (honua-server#3048 review).
+        var remedy = DescribeBranchRemedy(definition, requirements);
+
         foreach (var group in requirements.GroupBy(
             requirement => requirement.ParameterName, StringComparer.OrdinalIgnoreCase))
         {
@@ -279,10 +288,71 @@ public static class ToolboxTranslationValidator
             issues.Add(new ToolboxTranslationIssue
             {
                 Code = ToolboxTranslationIssueCodes.ConditionalBranchRequirement,
-                Message = $"Parameter '{group.Key}' of process '{definition.ProcessId}' is neither mapped nor defaulted and the canonical validator requires it on branch(es) {string.Join("; ", branches)}. Every other admissible value executes, so map it (or constrain the source value) to certify this tool.",
+                Message = $"Parameter '{group.Key}' of process '{definition.ProcessId}' is neither mapped nor defaulted and the canonical validator requires it on branch(es) {string.Join("; ", branches)}. {remedy}",
                 ParameterName = group.Key
             });
         }
+    }
+
+    /// <summary>
+    /// Decides which remedy the branch-requirement issues may honestly recommend, by testing
+    /// whether any discriminator has every one of its declared values covered by some gap.
+    /// </summary>
+    private static string DescribeBranchRemedy(
+        ProcessDefinition definition,
+        IReadOnlyList<ProcessBranchRequirement> requirements)
+    {
+        const string MapOrConstrain =
+            "Every other admissible value executes, so map it (or constrain the source value) to certify this tool.";
+        const string MapOnly =
+            "Every admissible value of the discriminator has an unmapped requirement, so constraining the source value cannot certify this tool - the parameter must be mapped or defaulted.";
+        const string MapUnqualified =
+            "Map it, or constrain the source value to a branch that does not require it, to certify this tool.";
+
+        var covered = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var requirement in requirements)
+        {
+            var assignments = requirement.Branch.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+            // A branch naming several discriminators at once only covers that COMBINATION, so
+            // it says nothing definite about any single discriminator's value. Rather than
+            // over- or under-claiming from a partial reading, drop to the unqualified remedy.
+            if (assignments.Length != 1)
+            {
+                return MapUnqualified;
+            }
+
+            var separator = assignments[0].IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                return MapUnqualified;
+            }
+
+            var name = assignments[0][..separator].Trim();
+            var value = assignments[0][(separator + 1)..].Trim();
+
+            if (!covered.TryGetValue(name, out var values))
+            {
+                values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                covered[name] = values;
+            }
+
+            values.Add(value);
+        }
+
+        foreach (var (name, values) in covered)
+        {
+            // Only a declared domain makes "every admissible value" a decidable claim; without
+            // AllowedValues the branch space is open and no exhaustion can be proven.
+            if (FindParameter(definition, name)?.AllowedValues is { Count: > 0 } allowed &&
+                allowed.All(values.Contains))
+            {
+                return MapOnly;
+            }
+        }
+
+        return MapOrConstrain;
     }
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)

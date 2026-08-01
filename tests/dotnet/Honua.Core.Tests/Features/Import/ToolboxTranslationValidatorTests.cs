@@ -311,6 +311,52 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_BranchGapsCoverEveryDiscriminatorValue_DoesNotRecommendConstrainingTheSource()
+    {
+        // Gaps are reported per PARAMETER, so each group read as individually escapable even
+        // when the groups TOGETHER covered every branch. With eps missing on dbscan and k
+        // missing on kmeans, no value of `algorithm` executes, and telling the operator to
+        // "constrain the source value" points at a remedy that cannot exist (#3048 review).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Code == ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        tool.Issues.Should().HaveCount(2, "one issue per unmapped parameter");
+        tool.Issues.Should().OnlyContain(issue => issue.Message.Contains("must be mapped or defaulted"));
+        tool.Issues.Should().NotContain(issue => issue.Message.Contains("Every other admissible value executes"));
+    }
+
+    [Fact]
+    public void Validate_BranchGapsLeaveOneDiscriminatorValueClear_StillRecommendsConstrainingTheSource()
+    {
+        // The complement: `kmeans` has no gap, so constraining the source value genuinely does
+        // certify the tool and the report must keep offering that cheaper remedy.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan", "eps", "Step is missing 'eps'.")
+                ]));
+
+        var issue = report.Tools.Single().Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        issue.Message.Should().Contain("Every other admissible value executes");
+    }
+
+    [Fact]
     public void Validate_ProbeReportsBranchRequirementForAMappedParameter_IsIgnored()
     {
         // A mapped parameter is supplied at submit time on every branch, so a stale requirement
@@ -468,15 +514,41 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
+        /// <summary>
+        /// Mirrors a process such as <c>analytics.cluster-managed</c>: an enumerable
+        /// discriminator whose branches require different parameters, so branch coverage across
+        /// all reported gaps is decidable.
+        /// </summary>
+        private static readonly ProcessDefinition Branching = new()
+        {
+            ProcessId = "test.branching",
+            Title = "Branching",
+            Description = "Test process with an enumerable discriminator.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "algorithm",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["dbscan", "kmeans"]),
+                Parameter("eps", ProcessParameterValueType.FloatingPoint, required: false),
+                Parameter("k", ProcessParameterValueType.WholeNumber, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
         public ProcessDefinition? GetProcess(string processId) => processId switch
         {
             "test.buffer" => Buffer,
             "test.simplify" => Simplify,
             "test.optional-only" => OptionalOnly,
+            "test.branching" => Branching,
             _ => null
         };
 
-        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify, OptionalOnly];
+        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify, OptionalOnly, Branching];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) =>
             ListProcesses().Where(definition => definition.Category == category).ToArray();
@@ -485,14 +557,16 @@ public sealed class ToolboxTranslationValidatorTests
             string name,
             ProcessParameterValueType valueType,
             bool required,
-            string? defaultValue = null) => new()
+            string? defaultValue = null,
+            IReadOnlyList<string>? allowedValues = null) => new()
             {
                 Name = name,
                 DisplayName = name,
                 Description = name,
                 ValueType = valueType,
                 Required = required,
-                DefaultValue = defaultValue
+                DefaultValue = defaultValue,
+                AllowedValues = allowedValues
             };
     }
 }
