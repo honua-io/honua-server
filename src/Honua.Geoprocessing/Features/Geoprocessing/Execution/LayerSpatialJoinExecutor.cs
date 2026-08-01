@@ -89,7 +89,11 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         foreach (var target in context.Features)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            output.Add(SpatialJoinSupport.Join(target, index, predicate, distance, carryFields, stats));
+            // The token also goes INTO the join: a single target against a broadly
+            // overlapping dataset can spend a long time in the candidate loop, so checking
+            // only between targets left a dismissed job running (honua-server#3075).
+            output.Add(SpatialJoinSupport.Join(
+                target, index, predicate, distance, carryFields, stats, budget: null, cancellationToken));
         }
 
         return output;

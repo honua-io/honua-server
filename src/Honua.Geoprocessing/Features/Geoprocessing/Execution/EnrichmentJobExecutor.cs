@@ -645,13 +645,15 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var index = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
         // One budget for the WHOLE join: the per-layer caps bound each input, but the
         // match set is a Cartesian product, so overlapping layers can buffer far more
-        // carried values than either input has features.
+        // carried values — and compare far more candidate pairs — than either input has
+        // features.
         var budget = new SpatialJoinSupport.MatchBudget(plan.MaxCarriedMatchValues);
         foreach (var target in targets)
         {
             cancellationToken.ThrowIfCancellationRequested();
             output.Add(SpatialJoinSupport.Join(
-                target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats, budget));
+                target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats, budget,
+                cancellationToken));
         }
 
         return output;

@@ -70,7 +70,8 @@ internal static class SpatialJoinSupport
         double distance,
         IReadOnlyList<string> carryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> stats,
-        MatchBudget? budget = null)
+        MatchBudget? budget = null,
+        CancellationToken cancellationToken = default)
     {
         var attributes = OverlayExecutorSupport.CopyAttributes(target);
 
@@ -92,6 +93,15 @@ internal static class SpatialJoinSupport
         {
             foreach (var candidate in index.Query(QueryEnvelope(geometry, predicate, distance)))
             {
+                // The exact predicate test is the expensive part and it runs on every candidate,
+                // matched or not. Two layers whose envelopes overlap broadly but whose exact
+                // predicates mostly fail evaluate up to targets x dataset pairs while charging
+                // the match budget almost nothing — so neither the budget nor the loop itself
+                // bounded the work, and a dismissed job kept a worker busy because nothing
+                // observed cancellation between targets (honua-server#3075).
+                cancellationToken.ThrowIfCancellationRequested();
+                budget?.ChargeCandidate();
+
                 if (!Matches(candidate.Geometry, geometry, predicate, distance))
                 {
                     continue;
@@ -173,20 +183,56 @@ internal static class SpatialJoinSupport
     }
 
     /// <summary>
-    /// Cumulative budget over the carried match values a whole join may buffer. The
-    /// per-layer admission caps bound each INPUT, but the join itself is a Cartesian
-    /// product: highly overlapping layers can materialize far more carried values than
-    /// either input has features. Charging every carried value against one shared budget
+    /// Cumulative budget over the work a whole join may do. The per-layer admission caps
+    /// bound each INPUT, but the join itself is a Cartesian product: highly overlapping
+    /// layers can materialize far more carried values — and evaluate far more candidate
+    /// pairs — than either input has features. Charging both against one shared budget
     /// makes that growth fail fast with an actionable message.
     /// </summary>
+    /// <remarks>
+    /// The two ceilings are separate because they bound different failure modes and neither
+    /// implies the other. Carried values bound MEMORY, and a join carrying no fields charges
+    /// nothing against them. Candidate evaluations bound CPU, and they accrue even when the
+    /// exact predicate rejects every pair — which is precisely the case the carried-value
+    /// ceiling cannot see (honua-server#3075).
+    /// </remarks>
     internal sealed class MatchBudget
     {
         private readonly long _limit;
+        private readonly long _candidateLimit;
         private long _used;
+        private long _candidatesEvaluated;
 
         /// <summary>Creates a budget over the maximum number of carried match values.</summary>
         /// <param name="limit">Maximum carried values across the entire join.</param>
-        internal MatchBudget(long limit) => _limit = limit;
+        /// <param name="candidateLimit">
+        /// Maximum exact-predicate evaluations across the entire join. Defaults to
+        /// <paramref name="limit"/>: the same order-of-magnitude ceiling, which keeps a
+        /// pathological join bounded without a second knob to tune, and is the ONLY bound in
+        /// force when the join carries no fields.
+        /// </param>
+        internal MatchBudget(long limit, long? candidateLimit = null)
+        {
+            _limit = limit;
+            _candidateLimit = candidateLimit ?? limit;
+        }
+
+        /// <summary>
+        /// Charges one exact-predicate evaluation, throwing once the cumulative candidate
+        /// budget is exhausted.
+        /// </summary>
+        internal void ChargeCandidate()
+        {
+            _candidatesEvaluated++;
+            if (_candidatesEvaluated > _candidateLimit)
+            {
+                throw new TransformInputException(
+                    $"the join exceeded the cumulative candidate budget of {_candidateLimit} "
+                    + "spatial comparisons; the inputs' envelopes overlap too broadly for this "
+                    + "method. Narrow the selection (where/bbox) or use a more selective spatial "
+                    + "method.");
+            }
+        }
 
         /// <summary>
         /// Charges <paramref name="count"/> carried values, throwing once the cumulative
