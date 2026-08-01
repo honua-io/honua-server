@@ -310,10 +310,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// Shared submit pipeline for both the caller-initiated submit path and the
     /// approval-resume path. When <paramref name="resumingApproved"/> is true the
     /// caller is the operation gateway replaying a proposal that already cleared the
-    /// baseline execute, mutating-process, and approval gates at proposal-creation
-    /// time; those gates are therefore bypassed here so the resumed submission is not
-    /// re-denied against the reconstructed submitter principal (ADR-0064, #2814).
-    /// Structural, executability, and catalog validation always run.
+    /// baseline execute and approval gates at proposal-creation time; those two are
+    /// bypassed here so the resumed submission is not re-denied against the
+    /// reconstructed submitter principal (ADR-0064, #2814). Structural, executability,
+    /// and catalog validation always run, and so do the RESOURCE gates — mutating-process
+    /// tier and per-layer read — which are re-evaluated against the persisted submitter
+    /// snapshot because their answer can change while a proposal waits
+    /// (honua-server#3046 review).
     /// </summary>
     private async Task<ExecutionJobRecord> SubmitJobCoreAsync(
         AnalysisPlan plan,
@@ -332,6 +335,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // the resume path reconstructs from Audit.RequestedBy.
         var resolvedSecurityContext = ResolveSubmitterSecurityContext(
             principal, submitterSecurityContext, inheritsSubmitterSecurityContext);
+
+        // Identity the RESOURCE gates below are evaluated against. For an ordinary submit that
+        // is the caller. For an approval resume it is the restored submitter snapshot, because
+        // BuildResumePrincipal carries only a name — evaluating the resume principal directly
+        // would deny every authorized resume, and skipping the gates (the previous behavior)
+        // let a proposal that waited out a permission change execute anyway. A proposal can sit
+        // pending indefinitely: the submitter's layer grant can be revoked, the stored numeric
+        // layer id can be rebound to a different restricted layer, or update/delete authority
+        // can be withdrawn, all after the proposal was authorized. Re-evaluating the CURRENT
+        // grants against the persisted submitter identity — the same identity the worker will
+        // read under — closes that window (honua-server#3046 review).
+        var authorizationPrincipal = resumingApproved
+            ? JobSecurityContextCapture.Restore(resolvedSecurityContext)
+            : principal;
 
         // Centralize submit-path authorization here so every adapter (GPServer,
         // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
@@ -387,10 +404,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // plan carries no executable mutating Geoprocess step, so running this for both
         // branches closes the gap where a mutating catalog step smuggled onto a custom-code
         // submission would never face the ExecuteMutatingProcess gate (#2798).
-        if (!resumingApproved && ContainsMutatingProcess(plan))
+        // Runs on the resume lane too, against the restored submitter identity: an approved
+        // proposal must not retain update/delete authority that was withdrawn while it waited
+        // (honua-server#3046 review).
+        if (ContainsMutatingProcess(plan))
         {
             await _authorizer.EnsureAuthorizedAsync(
-                principal,
+                authorizationPrincipal,
                 OperatorResourceType.Process,
                 OperatorOperation.ExecuteMutatingProcess,
                 cancellationToken).ConfigureAwait(false);
@@ -400,15 +420,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // A Process.Execute grant authorizes running a process; it does NOT authorize
         // reading an arbitrary layer's features through one. This runs BEFORE the job
         // record is created (and before raster sources are materialized onto the spec)
-        // so a denied submission leaves no job behind. The approval-resume path skips it
-        // for the same reason it skips the gates above: the layers were authorized
-        // against the real submitter when the proposal was created, and the reconstructed
-        // principal must not be re-evaluated (ADR-0064, #2814).
-        if (!resumingApproved)
-        {
-            await _authorizer.EnsurePlanLayerAccessAsync(principal, plan, _processCatalog, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        // so a denied submission leaves no job behind.
+        //
+        // The resume lane re-evaluates rather than skipping. Proposal-time authorization is not
+        // a durable fact about the resumed job: the worker resolves the CURRENT layer bound to
+        // the stored numeric id, so a grant revoked — or an id rebound to a restricted layer —
+        // while the proposal sat pending would otherwise be honoured anyway. What the resume
+        // lane must not do is re-evaluate the name-only reconstructed principal; it evaluates
+        // the persisted submitter snapshot instead (ADR-0064, #2814, honua-server#3046 review).
+        await _authorizer
+            .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, _processCatalog, cancellationToken)
+            .ConfigureAwait(false);
 
         if (!resumingApproved)
         {
@@ -1065,11 +1087,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(payload.Plan);
 
-        // The approval and mutating-process gates were satisfied when the proposal
-        // was created; re-run the submission with those gates bypassed, attributing
-        // the job to the original submitter recorded in the payload. A synthetic
-        // principal carrying only the submitter identity preserves job ownership and
-        // partition-scoped admission without re-deriving the submitter's roles.
+        // The baseline execute and approval gates were satisfied when the proposal was
+        // created; re-run the submission with those two bypassed, attributing the job to
+        // the original submitter recorded in the payload. A synthetic principal carrying
+        // only the submitter identity preserves job ownership and partition-scoped
+        // admission without re-deriving the submitter's roles. The resource gates
+        // (mutating tier, per-layer read) are NOT bypassed — SubmitJobCoreAsync re-runs
+        // them against the payload's submitter snapshot, so a grant revoked while the
+        // proposal waited denies the resume (honua-server#3046 review).
         var principal = BuildResumePrincipal(payload.RequestedBy);
         return await SubmitJobCoreAsync(
                 payload.Plan,

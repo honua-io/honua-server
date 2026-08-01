@@ -19,9 +19,14 @@ namespace Honua.Infrastructure.Authentication;
 /// run their existing logic against the restored principal with no behavioral fork.
 /// </para>
 /// <para>
-/// The restored principal is a policy-evaluation identity ONLY. It is never used to authorize an
-/// operation (layer read authorization is a submit-time gate, honua-server#3046) and it is never
-/// surfaced as an authenticated request identity.
+/// The restored principal is never surfaced as an authenticated request identity. Beyond policy
+/// resolution it is also the identity the two deferred-submission lanes authorize against —
+/// an approval resume and a cron/event-triggered workflow run — because on both the ambient
+/// principal is a synthetic stand-in (name-only, or the orchestrator carrying <c>role=admin</c>)
+/// and the real submitter is reachable only through this snapshot. That is sound precisely
+/// because the snapshot can only attenuate: it is exactly the claims the submitter presented,
+/// so authorizing against it can never grant more than authorizing the submitter live would
+/// have (honua-server#3046 review).
 /// </para>
 /// </remarks>
 internal static class JobSecurityContextCapture
@@ -121,6 +126,18 @@ internal static class JobSecurityContextCapture
             !claims.Exists(claim => string.Equals(claim.Type, ClaimTypes.Name, StringComparison.OrdinalIgnoreCase)))
         {
             claims.Add(new Claim(ClaimTypes.Name, context.PrincipalId));
+        }
+
+        // Tenant is captured in its own field as well as (ordinarily) among the claims, and the
+        // non-role claim budget is applied in enumeration order — so a principal presenting a
+        // pathological number of descriptive claims could have had its tenant claim truncated
+        // away. Restoring it from the dedicated field keeps the tenant SCOPE on the restored
+        // identity, which the deferred-submission lanes authorize against; a tenant-less
+        // identity would widen, not narrow (honua-server#3046 review).
+        if (!string.IsNullOrWhiteSpace(context.TenantId) &&
+            !claims.Exists(claim => string.Equals(claim.Type, TenantClaimType, StringComparison.OrdinalIgnoreCase)))
+        {
+            claims.Add(new Claim(TenantClaimType, context.TenantId));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, RestoredAuthenticationType, ClaimTypes.Name, ClaimTypes.Role));

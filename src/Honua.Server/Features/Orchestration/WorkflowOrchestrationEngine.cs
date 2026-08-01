@@ -115,19 +115,36 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // the flat DAG the reconciler will rebuild from the stored definition each tick.
         var expanded = WorkflowDefinitionExpander.Expand(definition);
 
-        // #2798: gate the REQUESTING principal against the mutating-process execution tier
+        // Resolved before the gate loop below because that loop authorizes against it on the
+        // triggered paths. Ordering is otherwise unchanged: this throws only for a legacy
+        // definition, the same permanent failure both trigger loops already classify, and
+        // nothing has been persisted yet either way.
+        var runSecurityContext = ResolveRunSecurityContext(definition, triggerKind, principal);
+
+        // #2798/#3046: gate the mutating-process execution tier AND per-layer read access
         // BEFORE any step job is submitted. The reconcile loop submits step jobs under a
         // synthesized orchestrator principal that carries role=admin and so bypasses the
         // operator evaluator; without this pre-check an Execute-only operator could schedule
         // a workflow whose compiled steps import, mutate, or write durable sinks and have
-        // every step execute without anyone facing the ExecuteMutatingProcess gate. Cron- and
-        // event-driven runs pass a system principal here (admin) and are gated at authoring
-        // time, so the admin bypass on that path is intentional. The check runs before the run
+        // every step execute without anyone facing the gates. The check runs before the run
         // is persisted so a denial leaves no orphaned run state.
+        //
+        // A cron or event-triggered firing has no requesting principal — the scheduler and
+        // event-trigger services call in as the orchestrator, which is exactly the admin
+        // identity this gate exists to avoid evaluating. Authorizing it would make every
+        // subsequent tick pass unconditionally: the publication-time check goes stale the
+        // moment the author's layer grant is revoked or the referenced numeric id is rebound
+        // to a different layer, yet the run would still read under the author's captured
+        // row/field claims. Each firing therefore re-authorizes the AUTHOR, restored from the
+        // snapshot captured at publish (honua-server#3046 review).
+        var authorizationPrincipal = triggerKind == WorkflowTriggerKind.Manual
+            ? principal
+            : JobSecurityContextCapture.Restore(runSecurityContext);
+
         foreach (var step in expanded.Steps)
         {
             await _jobService
-                .EnsurePlanExecutionAuthorizedAsync(step.Plan, principal, cancellationToken)
+                .EnsurePlanExecutionAuthorizedAsync(step.Plan, authorizationPrincipal, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -164,7 +181,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 // would give every step job admin row/field visibility and launder away the
                 // requester's RLS predicate and field mask. Captured here, where the real
                 // principal is still in hand, and replayed on every step submission.
-                SubmitterSecurityContext = ResolveRunSecurityContext(definition, triggerKind, principal)
+                SubmitterSecurityContext = runSecurityContext
             }
         };
 

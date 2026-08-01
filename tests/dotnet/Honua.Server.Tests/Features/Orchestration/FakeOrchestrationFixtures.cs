@@ -355,7 +355,24 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         }
     }
 
+    /// <summary>
+    /// Principals passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so
+    /// tests can assert WHICH identity the gate evaluated — a triggered run must be authorized
+    /// as the workflow's author, not as the admin-carrying orchestrator (#3046).
+    /// </summary>
+    public IReadOnlyList<ClaimsPrincipal> ExecutionAuthorizationPrincipals
+    {
+        get
+        {
+            lock (_executionAuthChecked)
+            {
+                return _executionAuthPrincipals.ToArray();
+            }
+        }
+    }
+
     private readonly List<AnalysisPlan> _executionAuthChecked = [];
+    private readonly List<ClaimsPrincipal> _executionAuthPrincipals = [];
 
     public Task EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
@@ -365,6 +382,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         lock (_executionAuthChecked)
         {
             _executionAuthChecked.Add(plan);
+            _executionAuthPrincipals.Add(principal);
         }
 
         if (DenyExecutionAuthorizationForPlanIds.Contains(plan.PlanId))

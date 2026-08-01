@@ -619,16 +619,16 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task ResumeApprovedJob_ExecutesGatedPlan_BypassingApprovalAndMutatingGates()
+    public async Task ResumeApprovedJob_ExecutesGatedPlan_BypassingApprovalGate()
     {
         // Approving the proposal resumes execution: the plan is submitted through the
-        // normal pipeline with the approval and mutating-process gates bypassed
-        // (they were satisfied at proposal-creation time), attributing the job to the
-        // original submitter recorded in the payload.
+        // normal pipeline with the approval gate bypassed (it was satisfied at
+        // proposal-creation time), attributing the job to the original submitter recorded
+        // in the payload. The RESOURCE gates are not bypassed — they re-run against the
+        // restored submitter, who here still holds the authority (honua-server#3046 review).
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "would-block-if-not-bypassed"));
-        DenyMutatingProcessPermission();
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -650,6 +650,74 @@ public sealed class GeoprocessingJobServiceTests
         job.Audit.SubmitterSecurityContext.Should().BeSameAs(payload.SubmitterSecurityContext);
         await _jobStore.Received().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_MutatingAuthorityRevokedWhileWaiting_IsDeniedAndCreatesNoJob()
+    {
+        // A proposal can sit pending indefinitely. Treating proposal-time authorization as a
+        // durable fact let an approval granted after the submitter's update/delete authority was
+        // withdrawn execute anyway. The resource gates therefore re-run at resume time
+        // (honua-server#3046 review).
+        DenyMutatingProcessPermission();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-revoked",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        var act = async () => await _sut.ResumeApprovedJobAsync(payload);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_ResourceGatesEvaluateTheRestoredSubmitter_NotTheNameOnlyResumePrincipal()
+    {
+        // The resume principal carries only a name. Evaluating IT would deny every authorized
+        // resume (zero roles), which is why the gates were skipped outright before. They are now
+        // evaluated against the persisted submitter snapshot instead — the same identity the
+        // worker reads under — so the gate sees the submitter's real roles.
+        ClaimsPrincipal? gated = null;
+        _authEvaluator
+            .EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.Operation == OperatorOperation.ExecuteMutatingProcess),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                gated = call.Arg<ClaimsPrincipal>();
+                return Task.FromResult(AccessDecision.Allowed());
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-identity",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        await _sut.ResumeApprovedJobAsync(payload);
+
+        gated.Should().NotBeNull();
+        gated!.IsInRole("analyst").Should().BeTrue();
+        gated.FindFirst("region")?.Value.Should().Be("west");
     }
 
     [UnitTest]
