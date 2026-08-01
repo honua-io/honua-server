@@ -198,6 +198,14 @@ internal static class SpatialJoinSupport
     /// </remarks>
     internal sealed class MatchBudget
     {
+        /// <summary>
+        /// Default ceiling on exact-predicate evaluations across a whole join. This is a
+        /// runaway guard, not a tuning knob: it sits far above what the per-layer input caps
+        /// admit for any well-formed join, and exists only so two broadly-overlapping layers
+        /// cannot keep a worker busy indefinitely evaluating predicates that mostly fail.
+        /// </summary>
+        internal const long DefaultCandidateEvaluations = 50_000_000L;
+
         private readonly long _limit;
         private readonly long _candidateLimit;
         private long _used;
@@ -207,14 +215,18 @@ internal static class SpatialJoinSupport
         /// <param name="limit">Maximum carried values across the entire join.</param>
         /// <param name="candidateLimit">
         /// Maximum exact-predicate evaluations across the entire join. Defaults to
-        /// <paramref name="limit"/>: the same order-of-magnitude ceiling, which keeps a
-        /// pathological join bounded without a second knob to tune, and is the ONLY bound in
-        /// force when the join carries no fields.
+        /// <see cref="DefaultCandidateEvaluations"/>, deliberately INDEPENDENT of
+        /// <paramref name="limit"/>. The two count different things — carried values grow as
+        /// targets x matches x fields, candidate evaluations as targets x envelope overlaps —
+        /// so deriving one from the other means a caller who legitimately lowers
+        /// <c>maxCarriedMatchValues</c> (or carries no fields at all, making the value budget
+        /// zero) also crushes the candidate ceiling and fails a join that was never
+        /// pathological.
         /// </param>
         internal MatchBudget(long limit, long? candidateLimit = null)
         {
             _limit = limit;
-            _candidateLimit = candidateLimit ?? limit;
+            _candidateLimit = candidateLimit ?? DefaultCandidateEvaluations;
         }
 
         /// <summary>

@@ -69,6 +69,24 @@ public sealed class SpatialJoinSupportBudgetTests
     }
 
     [UnitTest]
+    public void Join_LoweredCarriedValueBudget_DoesNotLowerTheCandidateCeiling()
+    {
+        // `maxCarriedMatchValues` is a caller-facing knob that may only be LOWERED, and the
+        // carried-value budget is legitimately zero for a join that carries no fields. Deriving
+        // the candidate ceiling from it therefore turned an intentional, modest carried-value
+        // cap into a candidate cap that fires on the first comparison — failing joins that were
+        // never pathological, and with the wrong remedy attached. The two ceilings count
+        // different things and must stay independent.
+        var (target, index) = BuildOffDiagonalCase(candidateCount: 200);
+        var budget = new SpatialJoinSupport.MatchBudget(limit: 0);
+
+        var result = SpatialJoinSupport.Join(
+            target, index, SpatialJoinPredicate.Intersects, distance: 0, carryFields: [], stats: [], budget);
+
+        result.Attributes.GetOptionalValue(SpatialJoinSupport.JoinCountAttribute).Should().Be(0L);
+    }
+
+    [UnitTest]
     public void Join_CancelledMidCandidateLoop_Throws()
     {
         // A single target against a broadly overlapping dataset can sit in this loop for a
