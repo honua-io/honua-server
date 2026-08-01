@@ -1,0 +1,30 @@
+{
+  "artifactKind": "honua.migration.toolbox-translation",
+  "artifactVersion": "1.0",
+  "toolboxName": "VectorAnalysisToolbox",
+  "sourceFormat": "pyt",
+  "sourceLabel": "vector_analysis.pyt",
+  "tools": [
+    {
+      "toolName": "BufferGeometry",
+      "displayName": "Buffer Geometry",
+      "targetProcessId": "geometry.buffer",
+      "parameterMappings": [
+        { "sourceName": "in_geometry", "targetParameter": "wkb", "sourceDataType": "GPGeometry" },
+        { "sourceName": "in_srid", "targetParameter": "srid", "sourceDataType": "GPLong" },
+        { "sourceName": "buffer_distance", "targetParameter": "distance", "sourceDataType": "GPDouble" }
+      ],
+      "unsupportedConstructs": []
+    },
+    {
+      "toolName": "ClipFeatures",
+      "displayName": "Clip Features",
+      "targetProcessId": "overlay.clip",
+      "parameterMappings": [
+        { "sourceName": "in_features", "targetParameter": "input", "sourceDataType": "GPFeatureLayer" },
+        { "sourceName": "clip_features", "targetParameter": "clip", "sourceDataType": "GPFeatureLayer" }
+      ],
+      "unsupportedConstructs": []
+    }
+  ]
+}

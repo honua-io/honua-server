@@ -7,7 +7,6 @@ using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -38,17 +37,20 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertOptions _options;
     private readonly ILogger<DigestFlushBackgroundService> _logger;
+    private readonly AlertDestinationGuard _destinationGuard;
 
     public DigestFlushBackgroundService(
         IServiceScopeFactory scopeFactory,
         IHttpClientFactory httpClientFactory,
         IOptions<AlertOptions> options,
-        ILogger<DigestFlushBackgroundService> logger)
+        ILogger<DigestFlushBackgroundService> logger,
+        AlertDestinationGuard? destinationGuard = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -119,18 +121,18 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
         LogFlushing(_logger, batchItems.Count);
 
         var webhookUrl = _options.Dispatch.Digest.WebhookUrl!;
-        var destinationValidation = await Honua.Core.Features.Infrastructure.Validation.OutboundHttpUrlValidator
-            .ValidateAsync(webhookUrl, cancellationToken: cancellationToken)
+        var destinationCheck = await _destinationGuard
+            .CheckAsync(webhookUrl, "Digest webhook URL", cancellationToken)
             .ConfigureAwait(false);
 
-        if (!destinationValidation.IsValid || destinationValidation.Uri is null)
+        if (!destinationCheck.IsAllowed)
         {
             await MarkBatchFailedAsync(
                 batchItems,
                 dispatchStore,
                 now,
-                retryable: false,
-                $"Digest webhook URL validation failed: {destinationValidation.ErrorMessage}",
+                destinationCheck.Retryable,
+                destinationCheck.Error,
                 cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -168,7 +170,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
+            using var request = new HttpRequestMessage(HttpMethod.Post, destinationCheck.Uri)
             {
                 Content = new StringContent(payload, Encoding.UTF8)
             };
@@ -228,6 +230,9 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
                 dispatchItem.Attempts + 1,
                 attemptedAt,
                 _options.Dispatch);
+
+            // A retryable failure is still bounded by the dispatch item's MaxAttempts, so a
+            // persistently unresolvable destination dead-letters instead of retrying forever.
             var exhausted = dispatchItem.Attempts + 1 >= dispatchItem.MaxAttempts || !retryable;
 
             await dispatchStore

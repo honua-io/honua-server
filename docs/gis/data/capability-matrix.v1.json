@@ -801,7 +801,7 @@
       "category": "Enrichment",
       "edition": "Community",
       "entryCount": 7,
-      "provingTestCount": 22,
+      "provingTestCount": 23,
       "maturity": {
         "implemented": 7
       },
@@ -1080,10 +1080,10 @@
       "displayName": "File Import",
       "category": "Import",
       "edition": "Community",
-      "entryCount": 73,
-      "provingTestCount": 181,
+      "entryCount": 74,
+      "provingTestCount": 215,
       "maturity": {
-        "implemented": 73
+        "implemented": 74
       },
       "noSurface": null,
       "cite": [],

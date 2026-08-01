@@ -18,6 +18,33 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 {
     public const string CatalogVersion = "honua.process_catalog.builtin.v1";
 
+    /// <summary>
+    /// Processes the catalog advertises for discoverability but whose executor fails EVERY job
+    /// unconditionally in this build, keyed by process id with the reason as the value.
+    /// <para>
+    /// The plan validator deliberately admits these at submit time so the limitation surfaces
+    /// as an explicit job failure rather than a silent absence from the catalog (see the
+    /// <c>raster.interpolate-kriging</c> case in <see cref="ProcessPlanValidator"/> and
+    /// <c>GdalRasterInterpolateJobExecutor.KrigingUnsupportedMessage</c>). That posture is
+    /// right for submit, but tooling that <em>certifies</em> executability — the toolbox
+    /// translation report, migration evidence — must not tell a migrating user a tool works
+    /// when its executor can only fail, so it consults this set.
+    /// </para>
+    /// <para>
+    /// Membership requires an UNCONDITIONAL failure. Processes that fail only because a
+    /// deployment has not configured a backend (<c>imagery.classify</c>) are deliberately
+    /// absent: a configured deployment runs them, and a static catalog cannot see that.
+    /// </para>
+    /// </summary>
+    internal static readonly FrozenDictionary<string, string> AdvertisedButNotExecutableProcesses =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["raster.interpolate-kriging"] =
+                "Process 'raster.interpolate-kriging' is advertised for discoverability only: no "
+                + "kriging-capable numerical backend is bundled in this build, so every submitted "
+                + "job fails. Use 'raster.interpolate-idw' for inverse-distance-weighted interpolation.",
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private readonly FrozenDictionary<string, ProcessDefinition> _processes;
     private readonly ImmutableArray<ProcessDefinition> _all;
     private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;
@@ -274,7 +301,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects, contains, within, dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (the join geometry contains the target — point-in-polygon), within (the target contains the join geometry), dwithin.", ProcessParameterValueType.Text),
                 Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the threshold is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("carryFields", "Carry Fields", "Comma-separated join-layer columns whose matched values are emitted as arrays on each target feature.", ProcessParameterValueType.Text),
                 Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over the matched join rows for each target feature.", ProcessParameterValueType.Text),

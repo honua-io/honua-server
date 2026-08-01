@@ -1,0 +1,22 @@
+{
+  "artifactKind": "honua.migration.toolbox-translation",
+  "artifactVersion": "1.0",
+  "toolboxName": "PartialOverlayToolbox",
+  "sourceFormat": "pyt",
+  "sourceLabel": "partial_overlay.pyt",
+  "tools": [
+    {
+      "toolName": "IntersectWithReport",
+      "displayName": "Intersect With Report",
+      "targetProcessId": "overlay.intersect",
+      "parameterMappings": [
+        { "sourceName": "in_features", "targetParameter": "input", "sourceDataType": "GPFeatureLayer" },
+        { "sourceName": "intersect_features", "targetParameter": "overlay", "sourceDataType": "GPFeatureLayer" },
+        { "sourceName": "report_units", "targetParameter": "outputUnits", "sourceDataType": "GPString" }
+      ],
+      "unsupportedConstructs": [
+        "arcpy.env.workspace assignment in tool execute()"
+      ]
+    }
+  ]
+}

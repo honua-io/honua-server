@@ -82,6 +82,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
 
+        // Exposes the canonical plan validator's presence-based (including conditional)
+        // input requirements so translation/migration tooling cannot certify a mapping
+        // the submit path would reject (#2145).
+        services.TryAddSingleton<IProcessConditionalInputProbe, ProcessConditionalInputProbe>();
+
         // Usage-ranked GP tool tiering telemetry (#2144). Real, queryable,
         // process-local store the dispatcher records into and an admin view ranks.
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();

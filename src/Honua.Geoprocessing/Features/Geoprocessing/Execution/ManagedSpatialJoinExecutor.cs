@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Index.Strtree;
@@ -93,7 +94,7 @@ internal sealed class ManagedSpatialJoinExecutor(
     private static Feature Summarize(
         IFeature target,
         STRtree<IFeature> index,
-        SpatialPredicate predicate,
+        SpatialJoinPredicate predicate,
         IReadOnlyList<StatSpec> stats)
     {
         var merged = new AttributesTable();
@@ -144,32 +145,33 @@ internal sealed class ManagedSpatialJoinExecutor(
         }
     }
 
-    private static bool Matches(NtsGeometry? joinGeometry, NtsGeometry targetGeometry, SpatialPredicate predicate)
+    private static bool Matches(NtsGeometry? joinGeometry, NtsGeometry targetGeometry, SpatialJoinPredicate predicate)
     {
         if (joinGeometry is null)
         {
             return false;
         }
 
+        // Canonical operand order (honua-server#3069): the member name states which
+        // geometry is the subject, so this stays in lockstep with the PostGIS pushdown.
         return predicate switch
         {
-            // contains: the join geometry contains the target — the classic
-            // point-in-polygon case.
-            SpatialPredicate.Contains => joinGeometry.Contains(targetGeometry),
-            // within: the target contains the join geometry.
-            SpatialPredicate.Within => targetGeometry.Contains(joinGeometry),
+            SpatialJoinPredicate.JoinContainsTarget => joinGeometry.Contains(targetGeometry),
+            SpatialJoinPredicate.TargetContainsJoin => targetGeometry.Contains(joinGeometry),
             _ => joinGeometry.Intersects(targetGeometry),
         };
     }
 
-    private static SpatialPredicate ReadPredicate(StepInputReader inputs)
+    // Wire vocabulary for this process is JOIN-SUBJECT: `contains` is the
+    // point-in-polygon direction (the join geometry contains the target).
+    private static SpatialJoinPredicate ReadPredicate(StepInputReader inputs)
     {
         var raw = inputs.GetOrDefault("predicate", "intersects");
         return raw.Trim().ToLowerInvariant() switch
         {
-            "intersects" => SpatialPredicate.Intersects,
-            "contains" => SpatialPredicate.Contains,
-            "within" => SpatialPredicate.Within,
+            "intersects" => SpatialJoinPredicate.Intersects,
+            "contains" => SpatialJoinPredicate.JoinContainsTarget,
+            "within" => SpatialJoinPredicate.TargetContainsJoin,
             _ => throw new TransformInputException(
                 $"predicate '{raw}' is not supported (allowed: intersects, contains, within)"),
         };
@@ -223,13 +225,6 @@ internal sealed class ManagedSpatialJoinExecutor(
         StatKind.Max => "MAX_" + field,
         _ => field,
     };
-
-    private enum SpatialPredicate
-    {
-        Intersects,
-        Contains,
-        Within,
-    }
 
     private enum StatKind
     {
