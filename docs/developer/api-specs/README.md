@@ -103,9 +103,17 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 >   `derive_method_not_allowed_routes`, so they need no hand maintenance
 >   ([#3063](https://github.com/honua-io/honua-server/issues/3063)).
 > - **Declared** — everything else must be listed in
->   [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code.
->   The only remaining reason is `undocumented-backlog`: a live, supported route the
->   bundle does not describe yet.
+>   [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code:
+>   - `non-production-fixture` — registered only behind a Development/Test-only flag
+>     whose options validator fails host startup outside those environments, so a
+>     Production host never serves it. Permanent.
+>   - `undocumented-backlog` — a live, supported route the bundle does not describe
+>     yet. **Zero entries**: the backlog was burned down in
+>     [#3063](https://github.com/honua-io/honua-server/issues/3063). The code is kept so
+>     a future route can be parked deliberately rather than silently.
+>
+> As of the #3063 burn-down the admin surface accounts for all **458** registered
+> routes: **397** documented, **1** declared, **60** derived.
 >
 > `scripts/ci/openapi-drift-check.py` enforces this in both directions and runs in
 > the required PR Gate. A registered admin route that is neither documented, derived,
