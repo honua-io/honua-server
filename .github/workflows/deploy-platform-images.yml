@@ -371,6 +371,11 @@ jobs:
             --output "/work/$SARIF_OUTPUT" \
             "$SCAN_LOCAL"
 
+      # Deliberately NO --ignorefile here. Trivy excludes anything the ignore file names, and
+      # .trivyignore carries entries precisely BECAUSE they have no upstream fix — so applying
+      # it to the inventory pass would drop the very advisories this pass exists to retain, and
+      # they would stay invisible after a fix shipped until someone un-ignored them by hand.
+      # The actionable pass above keeps the ignore file; this one is the complete record.
       - name: Run Trivy vulnerability scanner (full inventory, including unfixed)
         if: always() && steps.scan_prep.outcome == 'success'
         shell: bash
@@ -389,7 +394,6 @@ jobs:
             --scanners vuln \
             --skip-version-check \
             --severity HIGH,CRITICAL \
-            --ignorefile /work/.trivyignore \
             --format json \
             --output "/work/$INVENTORY_OUTPUT" \
             "$SCAN_LOCAL"
