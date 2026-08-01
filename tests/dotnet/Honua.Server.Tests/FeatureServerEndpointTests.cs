@@ -3313,7 +3313,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             .ToArray();
         foreach (var heldScope in heldScopes)
         {
-            (await store.TryReserveAsync(heldScope)).Should().BeTrue();
+            (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
         }
 
         var editsRequest = new ApplyEditsRequest
@@ -3346,7 +3346,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // racing the owner into a duplicate edit.
         foreach (var heldScope in heldScopes)
         {
-            (await store.TryReserveAsync(heldScope)).Should().BeFalse(
+            (await store.TryReserveAsync(heldScope)).Should().BeNull(
                 "the rejected request must leave the owner's reservation untouched");
         }
 

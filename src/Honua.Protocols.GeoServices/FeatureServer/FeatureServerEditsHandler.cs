@@ -92,19 +92,24 @@ internal sealed class FeatureServerEditsHandler(
             httpContext.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        // Tracks the idempotency reservation this request owns (#3052). It is set the moment
-        // TryReserveAsync wins; the finally block below releases it unless the edit committed rows,
-        // so no post-reservation exit — exception, rejection, rollback, cancellation, or a
-        // committed-zero-row response — can leave the key pinned and turn a genuine client retry
-        // into an idempotency conflict.
+        // Tracks the idempotency reservation this request owns (#3052) and the token that proves
+        // ownership. Set the moment TryReserveAsync wins; the finally block below releases it
+        // unless the write may have committed rows, so no post-reservation exit — rejection,
+        // rollback, cancellation before the write, or a committed-zero-row response — can leave the
+        // key pinned and turn a genuine client retry into an idempotency conflict.
         ApplyEditsIdempotencyScope? heldReservation = null;
+        string? heldReservationToken = null;
 
-        // Set once the edit has actually committed rows. From that moment the reservation must
-        // never be released: the rows exist, so a retry that re-applied them would duplicate. The
-        // success path replaces the reservation with the recorded response; if a post-commit step
-        // throws before that happens, the reservation is deliberately left to expire on its own
-        // (the pre-#3052 behavior) rather than freed.
-        var editCommittedRows = false;
+        // Whether this request may have put rows in the database. It is deliberately NOT derived
+        // from the ExecuteEdits return value: with the default rollbackOnFailure=false the writer
+        // commits rows independently, so a cancellation or transport fault part-way through the
+        // batch unwinds with earlier rows already committed and no result to inspect. The flag is
+        // therefore raised inside ExecuteEdits immediately BEFORE the write is dispatched and only
+        // lowered once the outcome is known to be "nothing committed".
+        //
+        // The bias is deliberate: retaining a reservation costs one spurious 409 until the window
+        // expires, releasing one wrongly costs duplicate rows.
+        var writeOutcome = new EditWriteOutcome();
 
         try
         {
@@ -255,8 +260,8 @@ internal sealed class FeatureServerEditsHandler(
                 // Atomic reserve: only one concurrent request carrying the same Idempotency-Key may
                 // proceed to execute the edit. The loser returns 409 so the client can retry after the
                 // winner has written the response; the retry will hit the replay path above (#2250, BH5-001).
-                var reserved = await _idempotencyStore.TryReserveAsync(replayScope, cancellationToken).ConfigureAwait(false);
-                if (!reserved)
+                var reservationToken = await _idempotencyStore.TryReserveAsync(replayScope, cancellationToken).ConfigureAwait(false);
+                if (reservationToken is null)
                 {
                     FeatureServerLog.ApplyEditsIdempotencyConflict(_logger, serviceId, layerId);
                     // Routed through the shared error helper rather than the previous
@@ -272,6 +277,7 @@ internal sealed class FeatureServerEditsHandler(
                 }
 
                 heldReservation = replayScope;
+                heldReservationToken = reservationToken;
             }
 
             // Process edit operations
@@ -291,9 +297,13 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Execute edits in the database
-            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, cancellationToken);
-            editCommittedRows = !editResult.WasRolledBack &&
+            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+            var editCommittedRows = !editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0;
+
+            // The writer returned, so its counts are authoritative: lower the flag when they prove
+            // nothing landed, keep it raised when rows did.
+            writeOutcome.MayHaveCommitted = editCommittedRows;
 
             if (editCommittedRows)
             {
@@ -325,7 +335,7 @@ internal sealed class FeatureServerEditsHandler(
                 // The reservation is replaced by the recorded response rather than released: a
                 // successful key stays occupied for the whole dedupe window so a duplicate retry
                 // replays this response instead of re-applying the edit (#2250). The finally block
-                // below skips the release for exactly this reason (editCommittedRows).
+                // below skips the release for exactly this reason (writeOutcome.MayHaveCommitted).
                 await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
             }
 
@@ -344,6 +354,10 @@ internal sealed class FeatureServerEditsHandler(
         // transaction handlers already do (honua-server#2983).
         catch (NotSupportedException ex)
         {
+            // A blanket refusal, not a partial write: a read-only provider rejects the batch before
+            // touching a row, so unlike other write-path exceptions this one is proof that nothing
+            // committed and the reservation is safe to release.
+            writeOutcome.MayHaveCommitted = false;
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateFromException(httpContext, ex);
@@ -358,24 +372,27 @@ internal sealed class FeatureServerEditsHandler(
         }
         finally
         {
-            // Release whatever reservation is still held (#3052). Reached from every post-reservation
-            // exit that committed nothing and therefore recorded no replay value: the
-            // NotSupportedException read-only rejection, the catch-all 500 boundary, the rethrown
-            // cancellation, the rollbackOnFailure validation response, and the committed-but-zero-row
-            // response (which deliberately does not record so a genuine retry is re-attempted — the
-            // retry it must not then block with a conflict).
+            // Release the reservation only when this request provably put nothing in the database
+            // (#3052). That covers every post-reservation exit that recorded no replay value and
+            // committed nothing: a rejection or cancellation before the write was dispatched, the
+            // read-only provider's blanket NotSupportedException, the rollbackOnFailure validation
+            // response, a rolled-back batch, and the committed-but-zero-row response (which
+            // deliberately does not record so a genuine retry is re-attempted — the retry it must
+            // not then block with a conflict).
             //
-            // An edit that DID commit rows is excluded: its key stays occupied so a retry can never
-            // duplicate committed rows, whether the response was recorded or a post-commit step threw
-            // before it could be.
+            // Two cases deliberately KEEP the key. An edit that committed rows, so a retry can never
+            // duplicate them whether or not the response was recorded. And an edit whose write was
+            // dispatched but whose outcome is unknown — a cancellation between the per-row commits
+            // the default rollbackOnFailure=false performs, a transport fault mid-batch — because
+            // rows may already exist and re-running them would duplicate.
             //
             // ReleaseAsync takes no cancellation token on purpose, so an aborted/cancelled request
             // still frees its key. This covers in-process failures only: a process crash between
-            // reserve and release still leaves the sentinel behind, which is what the store's
+            // reserve and release still leaves the reservation behind, which is what the store's
             // ReservationWindow TTL exists to bound.
-            if (heldReservation is { } releaseScope && !editCommittedRows)
+            if (heldReservation is { } releaseScope && heldReservationToken is { } releaseToken && !writeOutcome.MayHaveCommitted)
             {
-                await _idempotencyStore.ReleaseAsync(releaseScope).ConfigureAwait(false);
+                await _idempotencyStore.ReleaseAsync(releaseScope, releaseToken).ConfigureAwait(false);
             }
         }
     }
@@ -766,7 +783,10 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     /// <summary>
-    /// Executes the validated edit operations in the database
+    /// Executes the validated edit operations in the database. <paramref name="writeOutcome"/> is
+    /// raised immediately before the write is dispatched to the provider so the caller can tell a
+    /// failure that definitely wrote nothing from one that may have committed rows before it
+    /// unwound (#3052).
     /// </summary>
     private async Task<FeatureEditResult> ExecuteEdits(
         int layerId,
@@ -775,6 +795,7 @@ internal sealed class FeatureServerEditsHandler(
         ApplyEditsRequest request,
         string serviceId,
         VersionContext? versionContext,
+        EditWriteOutcome writeOutcome,
         CancellationToken cancellationToken)
     {
         if (context.CreateFeatures.Count == 0 && context.UpdateFeatures.Count == 0 && context.DeleteIds.Count == 0)
@@ -835,6 +856,14 @@ internal sealed class FeatureServerEditsHandler(
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
+
+        // From here the outcome is no longer knowable from control flow alone: under the default
+        // rollbackOnFailure=false the writer commits rows independently, so an exception out of
+        // ApplyEditsAsync — a cancellation between rows, a transport fault mid-batch — can unwind
+        // with rows already committed and no result to inspect. Raise the flag BEFORE dispatching so
+        // the handler's finally keeps the idempotency reservation in exactly that case (#3052); the
+        // caller lowers it again once the returned counts prove nothing landed.
+        writeOutcome.MayHaveCommitted = true;
         var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults, FeatureEditOperationKind.Create);
@@ -1233,6 +1262,27 @@ internal sealed class FeatureServerEditsHandler(
         {
             context.DeleteFeatures.RemoveAt(k);
         }
+    }
+
+    /// <summary>
+    /// Carries the "may this request have put rows in the database?" signal out of
+    /// <see cref="ExecuteEdits"/> while the write is still in flight (#3052).
+    ///
+    /// A return value cannot express this: with the default <c>rollbackOnFailure=false</c> the
+    /// writer commits rows independently, so an exception out of the provider unwinds without a
+    /// result even though earlier rows are already committed. A mutable holder raised before the
+    /// dispatch is observable from the handler's <c>finally</c> on exactly those paths, and decides
+    /// whether the idempotency reservation is released or kept.
+    /// </summary>
+    private sealed class EditWriteOutcome
+    {
+        /// <summary>
+        /// <see langword="true"/> from the moment a write is dispatched to the provider until
+        /// something proves nothing was committed — the writer returning counts of zero, or a
+        /// read-only provider's blanket rejection. While it is <see langword="true"/> the handler
+        /// keeps the idempotency reservation rather than freeing a key whose rows may exist.
+        /// </summary>
+        public bool MayHaveCommitted { get; set; }
     }
 
     /// <summary>

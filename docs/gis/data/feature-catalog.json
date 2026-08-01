@@ -18242,6 +18242,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_WithUseGlobalIdsEnabled_ReturnsBadRequest",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterWriteFailedWithUnknownOutcome_ReportsConflictRatherThanReapplying",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_DeleteMissingFeature_ReturnsDeleteConflictCode",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_DeleteNonNumericObjectId_ReturnsInvalidObjectIdCode",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_UpdateMissingFeature_ReturnsNotFoundCode",

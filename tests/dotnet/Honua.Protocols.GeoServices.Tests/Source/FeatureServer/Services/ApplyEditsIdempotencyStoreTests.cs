@@ -40,17 +40,17 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var results = await Task.WhenAll(tasks);
 
         // Assert: exactly one winner.
-        results.Count(r => r).Should().Be(1,
+        results.Count(token => token is not null).Should().Be(1,
             "ConcurrentDictionary.TryAdd is atomic; exactly one concurrent caller must win " +
             "the reservation (BH5-001)");
-        results.Count(r => !r).Should().Be(9,
+        results.Count(token => token is null).Should().Be(9,
             "all other concurrent callers must fail the reservation and return 409");
     }
 
     [Fact]
     public async Task TryGetAsync_AfterReservation_ReturnsPendingNull()
     {
-        // After a successful TryReserveAsync the pending sentinel is stored; TryGetAsync
+        // After a successful TryReserveAsync the reservation is stored; TryGetAsync
         // must return null (not try to deserialize the sentinel as a response).
         var store = new DistributedApplyEditsIdempotencyStore(
             cache: null,
@@ -59,7 +59,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-sentinel");
 
         var reserved = await store.TryReserveAsync(scope);
-        reserved.Should().BeTrue("first reserve must succeed");
+        reserved.Should().NotBeNull("first reserve must succeed");
 
         var response = await store.TryGetAsync(scope);
         response.Should().BeNull(
@@ -80,7 +80,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var expected = BuildTestResponse();
 
         var reserved = await store.TryReserveAsync(scope);
-        reserved.Should().BeTrue();
+        reserved.Should().NotBeNull();
 
         await store.SetAsync(scope, expected);
 
