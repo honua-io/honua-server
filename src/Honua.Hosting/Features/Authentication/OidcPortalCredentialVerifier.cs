@@ -176,8 +176,15 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         var rolesRequireClaimsMapping = principal.HasClaim(
             static claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
 
+        // Same provenance question for the tenant: a CustomMappings entry can synthesize it,
+        // and a mapping-derived tenant that outlives the entitlement authorizes another
+        // tenant's data (honua-server#2997 review).
+        var tenantRequiresClaimsMapping = principal.HasClaim(
+            static claim => claim.Type == OidcClaimsTransformation.TenantFromClaimsMappingClaimType);
+
         return new PortalCredentialPrincipal(
-            principalId, displayName, tenantId, roles, rolesRequireClaimsMapping);
+            principalId, displayName, tenantId, roles, rolesRequireClaimsMapping,
+            tenantRequiresClaimsMapping);
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(CancellationToken cancellationToken)

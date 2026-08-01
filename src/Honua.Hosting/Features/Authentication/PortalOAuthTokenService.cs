@@ -462,7 +462,8 @@ internal sealed class PortalOAuthTokenService(
                 ClientType: PortalTokenClientType.Referer,
                 BindingValue: requestBinding,
                 ExpiresAt: expiresAt,
-                RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement),
+                RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement,
+                TenantRequiresClaimsMappingEntitlement: principal.TenantRequiresClaimsMappingEntitlement),
             cancellationToken).ConfigureAwait(false);
 
         string? refreshToken = null;

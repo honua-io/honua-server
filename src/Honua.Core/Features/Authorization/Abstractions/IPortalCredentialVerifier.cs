@@ -43,9 +43,18 @@ public interface IPortalCredentialVerifier
 /// this flag is what lets the restore revalidate them against the LIVE entitlement instead of
 /// honouring a snapshot taken while the license was valid (honua-server#2997 review).
 /// </param>
+/// <param name="TenantRequiresClaimsMappingEntitlement">
+/// True when <paramref name="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and
+/// therefore also depends on the Enterprise <c>identity.claims-mapping</c> entitlement. Roles
+/// are not the only authorization claim a mapping can produce: a mapping targeting
+/// <c>tenant_id</c> selects the tenant scope, so without this the restore dropped
+/// mapping-derived roles while a mapping-derived tenant kept granting cross-tenant access
+/// (honua-server#2997 review).
+/// </param>
 public sealed record PortalCredentialPrincipal(
     string PrincipalId,
     string? DisplayName,
     string? TenantId,
     IReadOnlyList<string> Roles,
-    bool RolesRequireClaimsMappingEntitlement = false);
+    bool RolesRequireClaimsMappingEntitlement = false,
+    bool TenantRequiresClaimsMappingEntitlement = false);

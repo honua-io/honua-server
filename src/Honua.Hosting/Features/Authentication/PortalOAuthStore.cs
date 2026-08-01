@@ -547,6 +547,15 @@ internal sealed class PortalOAuthPrincipal
     /// </remarks>
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
+    /// <summary>
+    /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
+    /// also depends on <c>identity.claims-mapping</c>. Nullable on exactly the same terms as
+    /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means unknown, and unknown
+    /// fails closed, so a legacy cached code cannot launder a mapping-derived tenant through a
+    /// refresh (honua-server#2997 review).
+    /// </summary>
+    public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
+
     /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)
         => new()
@@ -556,6 +565,8 @@ internal sealed class PortalOAuthPrincipal
             TenantId = principal.TenantId,
             Roles = principal.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = principal.RolesRequireClaimsMappingEntitlement,
+            TenantRequiresClaimsMappingEntitlement =
+                principal.TenantId is not null && principal.TenantRequiresClaimsMappingEntitlement,
         };
 }
 

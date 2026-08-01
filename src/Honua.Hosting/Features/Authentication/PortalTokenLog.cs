@@ -51,4 +51,16 @@ internal static partial class PortalTokenLog
                   "POST with a form-encoded body is preferred to avoid credential exposure " +
                   "in HTTP-layer logs.")]
     public static partial void CredentialsFromQueryString(ILogger logger);
+
+    /// <summary>
+    /// Emitted when an otherwise-valid token is refused because its tenant was synthesized by
+    /// a claims-mapping entry whose Enterprise entitlement is no longer active. Distinct from
+    /// <see cref="BindingMismatch"/> on purpose: this is a licensing/provenance refusal, not a
+    /// referer/IP mismatch, and conflating them sends an operator diagnosing a sudden 401 wave
+    /// after a licence lapse to entirely the wrong place (honua-server#2997 review).
+    /// </summary>
+    [LoggerMessage(EventId = 7008, Level = LogLevel.Warning,
+        Message = "Portal token {TokenHash} refused: its tenant was derived from claims mapping " +
+                  "and the identity.claims-mapping entitlement is no longer active.")]
+    public static partial void ClaimsMappingTenantNoLongerEntitled(ILogger logger, string tokenHash);
 }

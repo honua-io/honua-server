@@ -118,6 +118,13 @@ public sealed record PortalTokenIntrospection(
 /// touched claims mapping (honua-server#2997 review).
 /// </para>
 /// </param>
+/// <param name="TenantRequiresClaimsMappingEntitlement">
+/// Whether <paramref name="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
+/// also depends on the entitlement. A token whose tenant can no longer be validated is refused
+/// outright on restore rather than degraded, because silently dropping the tenant would
+/// re-evaluate the caller against whatever scope an absent tenant resolves to
+/// (honua-server#2997 review). Nullable on the same terms as the roles flag.
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -126,7 +133,8 @@ public sealed record PortalTokenIssueRequest(
     PortalTokenClientType ClientType,
     string BindingValue,
     DateTimeOffset ExpiresAt,
-    bool? RolesRequireClaimsMappingEntitlement = false);
+    bool? RolesRequireClaimsMappingEntitlement = false,
+    bool? TenantRequiresClaimsMappingEntitlement = false);
 
 /// <summary>
 /// Token issuance result.

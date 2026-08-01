@@ -53,6 +53,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantId = request.TenantId,
             Roles = request.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = request.RolesRequireClaimsMappingEntitlement,
+            TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
             ExpiresAt = request.ExpiresAt
@@ -98,6 +99,16 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
+        if (!ClaimsMappingTenantAllowed(record))
+        {
+            // The tenant itself can no longer be validated, so the token is refused rather than
+            // degraded. Dropping just the tenant would re-evaluate the caller against whatever
+            // scope an absent tenant resolves to, which is not reliably narrower than the one
+            // it was issued for (honua-server#2997 review).
+            PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
         var principal = ProjectPrincipal(record, ClaimsMappingRolesAllowed(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
@@ -123,6 +134,13 @@ internal sealed partial class PortalTokenIssuer(
             cancellationToken).ConfigureAwait(false);
 
         if (record is null)
+        {
+            return null;
+        }
+
+        // Introspection must agree with ValidateAsync: a token that would be refused there is
+        // not active here either (honua-server#2997 review).
+        if (!ClaimsMappingTenantAllowed(record))
         {
             return null;
         }
@@ -233,6 +251,28 @@ internal sealed partial class PortalTokenIssuer(
         // unknown) both require the live entitlement. Treating null as "not mapping-derived"
         // would let a pre-upgrade token keep its custom-mapped roles forever
         // (honua-server#2997 review).
+        return _serviceProvider is not null
+            && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+    }
+
+    /// <summary>
+    /// Whether a mapping-derived tenant on <paramref name="record"/> is still backed by the live
+    /// <c>identity.claims-mapping</c> entitlement.
+    /// </summary>
+    /// <remarks>
+    /// A token with no tenant has nothing to revalidate. Otherwise the flag is read exactly like
+    /// the roles one: explicit <see langword="false"/> means the tenant came from the provider
+    /// directly and is entitlement-independent; <see langword="true"/> or absent (a record
+    /// written before the field existed) both require the live entitlement.
+    /// </remarks>
+    private bool ClaimsMappingTenantAllowed(PortalTokenRecord record)
+    {
+        if (string.IsNullOrWhiteSpace(record.TenantId) ||
+            record.TenantRequiresClaimsMappingEntitlement == false)
+        {
+            return true;
+        }
+
         return _serviceProvider is not null
             && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
     }
@@ -412,6 +452,14 @@ internal sealed class PortalTokenRecord
     /// expiry. Absent means UNKNOWN, and unknown fails closed.
     /// </remarks>
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
+    /// also depends on <c>identity.claims-mapping</c>. Nullable for the same reason as
+    /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means UNKNOWN, which fails
+    /// closed (honua-server#2997 review).
+    /// </summary>
+    public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
 
     public required PortalTokenClientType ClientType { get; init; }
 

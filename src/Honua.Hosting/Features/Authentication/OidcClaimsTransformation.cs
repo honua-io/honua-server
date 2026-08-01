@@ -35,6 +35,24 @@ internal sealed class OidcClaimsTransformation(
     internal const string RolesFromClaimsMappingClaimType = "honua_roles_from_claims_mapping";
 
     /// <summary>
+    /// Provenance marker for a TENANT claim synthesized by <c>ClaimsMapping:CustomMappings</c>.
+    /// Persisted alongside the roles marker so the portal-token restore can revalidate a
+    /// mapping-derived tenant against the live entitlement (honua-server#2997 review).
+    /// </summary>
+    internal const string TenantFromClaimsMappingClaimType = "honua_tenant_from_claims_mapping";
+
+    /// <summary>
+    /// Claim types a custom mapping can populate to decide the tenant scope: the canonical
+    /// <c>tenant_id</c> and the Azure <c>tid</c> that the portal credential verifier falls
+    /// back to. Kept in sync with <c>OidcPortalCredentialVerifier</c>.
+    /// </summary>
+    private static readonly HashSet<string> TenantClaimTypes = new(StringComparer.Ordinal)
+    {
+        "tenant_id",
+        "tid",
+    };
+
+    /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
     /// </summary>
     /// <param name="principal">The claims principal from authentication.</param>
@@ -137,6 +155,18 @@ internal sealed class OidcClaimsTransformation(
 
         var rolesDependOnClaimsMapping = claimsMappingEntitled
             && (roles.Count > rolesWithoutMapping.Count || customMappingEmitsRole);
+
+        // Roles are not the only authorization claim a CustomMappings entry can synthesize.
+        // A mapping may target `tenant_id` (or the Azure `tid` the verifier falls back to),
+        // which the portal exchange persists and TenantContextMiddleware later uses to select
+        // the tenant scope. Marking only role provenance meant an expired entitlement dropped
+        // the mapping-derived roles while the mapping-derived TENANT kept authorizing
+        // cross-tenant access indefinitely (honua-server#2997 review).
+        var tenantDependsOnClaimsMapping = claimsMappingEntitled
+            && _options.ClaimsMapping.CustomMappings.Any(mapping =>
+                TenantClaimTypes.Contains(mapping.Value)
+                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value)
+                && !identity.HasClaim(claim => claim.Type == mapping.Value));
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -155,6 +185,11 @@ internal sealed class OidcClaimsTransformation(
         if (hasAdminRole && !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == "admin"))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, "admin"));
+        }
+
+        if (tenantDependsOnClaimsMapping && !identity.HasClaim(c => c.Type == TenantFromClaimsMappingClaimType))
+        {
+            transformedClaims.Add(new Claim(TenantFromClaimsMappingClaimType, "1"));
         }
 
         if (rolesDependOnClaimsMapping && !identity.HasClaim(c => c.Type == RolesFromClaimsMappingClaimType))
