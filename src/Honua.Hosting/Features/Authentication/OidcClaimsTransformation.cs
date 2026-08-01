@@ -148,10 +148,17 @@ internal sealed class OidcClaimsTransformation(
         // alone missed it and the principal went unmarked. The portal exchange then persisted
         // that custom role as entitlement-independent and it kept authorizing requests after
         // identity.claims-mapping expired (honua-server#2997 review).
+        // The absence check MUST mirror the mapping loop below, which skips a mapping whose
+        // target claim type is already present. Without it, an identity that already carries a
+        // directly-issued role plus a configured `x -> ClaimTypes.Role` mapping was marked
+        // mapping-derived even though the loop emitted nothing - so an expired entitlement
+        // stripped a legitimate role that direct OIDC authentication keeps
+        // (honua-server#2997 review).
         var customMappingEmitsRole = claimsMappingEntitled
             && _options.ClaimsMapping.CustomMappings.Any(mapping =>
                 string.Equals(mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)
-                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value));
+                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value)
+                && !identity.HasClaim(claim => claim.Type == mapping.Value));
 
         var rolesDependOnClaimsMapping = claimsMappingEntitled
             && (roles.Count > rolesWithoutMapping.Count || customMappingEmitsRole);

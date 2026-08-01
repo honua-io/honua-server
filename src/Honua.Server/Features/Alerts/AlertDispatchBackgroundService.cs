@@ -13,6 +13,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private readonly Dictionary<AlertChannelType, IAlertDeliverySink> _sinks;
     private readonly AlertOptions _options;
     private readonly AlertNotificationRateLimiter _rateLimiter;
+    /// <summary>
+    /// How long a dispatch waits before re-checking a channel entitlement that is currently
+    /// inactive. Short enough that a licence renewal resumes delivery without operator action,
+    /// long enough that a genuinely downgraded edition does not spin the queue.
+    /// </summary>
+    private static readonly TimeSpan UnentitledChannelRetryDelay = TimeSpan.FromMinutes(5);
+
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
@@ -204,17 +211,23 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
         // Re-check the channel entitlement immediately before the sink call. Admission gated it
         // when the row was written, but delivery can happen much later, so an expired license
-        // would otherwise keep sending on a paid channel. Dead-lettered rather than retried:
-        // retrying cannot make an unentitled channel deliverable (honua-server#2998 review).
+        // would otherwise keep sending on a paid channel.
+        //
+        // DEFERRED, not dead-lettered. The earlier reasoning - "retrying cannot make an
+        // unentitled channel deliverable" - was wrong: entitlement is live state, and applying a
+        // renewed or replaced license changes the answer on the very next pass. Dead-lettering
+        // moved every queued dispatch permanently out of automatic processing over a lapse that
+        // may last minutes, requiring an operator to find and redrive them, and even a single
+        // dead-lettered row trips the default unhealthy threshold. Rescheduling follows the
+        // rate-limit and circuit-breaker paths, which likewise defer on conditions that clear on
+        // their own, and it does NOT consume the retry budget (honua-server#2998 review).
         if (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType))
         {
+            var entitlementRetryAt = now.Add(UnentitledChannelRetryDelay);
             await dispatchStore
-                .MarkFailedAsync(
-                    item.DispatchId, now, now, deadLetter: true,
-                    "Channel is not permitted by the active license or configured alert edition.",
-                    cancellationToken)
+                .RescheduleAsync(item.DispatchId, entitlementRetryAt, cancellationToken)
                 .ConfigureAwait(false);
-            _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            LogChannelUnentitled(_logger, item.DispatchId, item.ChannelType, entitlementRetryAt);
             return;
         }
 
@@ -328,6 +341,9 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     [LoggerMessage(EventId = 9427, Level = LogLevel.Debug, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {DeferUntil:O} because the per-channel delivery circuit breaker is open.")]
     private static partial void LogCircuitDeferred(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset deferUntil);
+
+    [LoggerMessage(EventId = 9429, Level = LogLevel.Warning, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {RetryAt:O} because the channel is not permitted by the active license or configured alert edition.")]
+    private static partial void LogChannelUnentitled(ILogger logger, Guid dispatchId, string channelType, DateTimeOffset retryAt);
 
     [LoggerMessage(EventId = 9428, Level = LogLevel.Warning, Message = "Alert delivery circuit breaker opened for channel {ChannelType} after repeated dead-letters; deliveries on this channel are deferred for {Cooldown}.")]
     private static partial void LogChannelCircuitOpened(ILogger logger, AlertChannelType channelType, TimeSpan cooldown);
