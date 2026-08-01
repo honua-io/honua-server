@@ -4,8 +4,10 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -316,6 +318,85 @@ public sealed class CatalogExecutableConformanceTests
             }
         }
     }
+
+    [UnitTest]
+    public void EveryAllowedValuesChoice_AcceptedByTheGPServerAdapterInAnyCasing_SurvivesCanonicalPlanValidation()
+    {
+        // The cross-layer agreement this pins (honua-server#3053): the GPServer
+        // adapter matches GP choice lists case-insensitively (Esri's GP framework
+        // does) and REWRITES the accepted value to its catalog spelling; canonical
+        // plan validation compares against exactly that spelling. So a choice the
+        // adapter accepted is always a choice the validator accepts.
+        //
+        // This is the whole-class guard, not an imagery.classify special case:
+        // before the fix the adapter passed the caller's spelling through, and
+        // ValidateImageryClassifySemantics — which compares ordinally, unlike the
+        // OrdinalIgnoreCase sets used for raster.spectral-index's 'index' and
+        // conversion.geometry-format's 'target' — rejected the very submission the
+        // adapter had accepted. Any future process declaring AllowedValues with an
+        // ordinally-compared canonical validator is covered here automatically.
+        foreach (var definition in _catalog.ListProcesses())
+        {
+            foreach (var parameter in definition.Parameters)
+            {
+                if (parameter.AllowedValues is not { Count: > 0 } allowed)
+                {
+                    continue;
+                }
+
+                foreach (var choice in allowed)
+                {
+                    string[] casings =
+                    [
+                        choice,
+                        choice.ToUpperInvariant(),
+                        choice.ToLowerInvariant()
+                    ];
+
+                    foreach (var casing in casings)
+                    {
+                        var translated = GPServerParameterTranslation.TranslateInbound(
+                            new Dictionary<string, string>(StringComparer.Ordinal)
+                            {
+                                [parameter.Name] = casing
+                            },
+                            definition);
+
+                        translated[parameter.Name].Should().Be(
+                            choice,
+                            $"'{definition.ProcessId}' parameter '{parameter.Name}' must normalize '{casing}' to its catalog spelling");
+
+                        var plan = SingleStepPlan(definition.ProcessId, translated);
+                        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+                        // Other parameters are deliberately absent, so unrelated
+                        // MISSING_REQUIRED_PARAMETER violations are expected; only
+                        // this parameter's own field path must stay clean.
+                        violations.Should().NotContain(
+                            v => v.FieldPath == $"steps[s1].inputs.{parameter.Name}",
+                            $"'{casing}' cleared the GPServer adapter for '{definition.ProcessId}', so canonical validation must accept it too");
+                    }
+                }
+            }
+        }
+    }
+
+    private static AnalysisPlan SingleStepPlan(string processId, IReadOnlyDictionary<string, string> inputs) =>
+        new()
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = processId,
+                    Inputs = new Dictionary<string, string>(inputs, StringComparer.Ordinal)
+                }
+            ]
+        };
 
     [UnitTest]
     public void GeometryFamily_IsFullyJobExecutable_AndMatchesTheSyncExecutionPolicy()
