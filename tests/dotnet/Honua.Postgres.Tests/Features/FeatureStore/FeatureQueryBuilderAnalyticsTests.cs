@@ -215,6 +215,49 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     }
 
     [Fact]
+    public void BuildSpatialJoinQuery_JoinContainsTarget_PutsTheJoinGeometryFirstInStContains()
+    {
+        // honua-server#3069: the canonical member name fixes the operand order, so
+        // the point-in-polygon direction must emit ST_Contains(join, target). The
+        // reversed form silently matched nothing for a point target layer.
+        var queryBuilder = CreateQueryBuilder();
+        var targetQuery = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var joinQuery = new SpatialJoinQuery
+        {
+            JoinLayerId = 7,
+            JoinLayerSrid = 4326,
+            Predicate = SpatialJoinPredicate.JoinContainsTarget,
+            MaxInputFeatures = 1_000
+        };
+
+        var result = queryBuilder.BuildSpatialJoinQuery(
+            targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Geometry);
+
+        result.Sql.Should().Contain("ST_Contains(j.geometry, t.geom)");
+        result.Sql.Should().NotContain("ST_Contains(t.geom, j.geometry)");
+    }
+
+    [Fact]
+    public void BuildSpatialJoinQuery_TargetContainsJoin_PutsTheTargetGeometryFirstInStContains()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var targetQuery = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var joinQuery = new SpatialJoinQuery
+        {
+            JoinLayerId = 7,
+            JoinLayerSrid = 4326,
+            Predicate = SpatialJoinPredicate.TargetContainsJoin,
+            MaxInputFeatures = 1_000
+        };
+
+        var result = queryBuilder.BuildSpatialJoinQuery(
+            targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Geometry);
+
+        result.Sql.Should().Contain("ST_Contains(t.geom, j.geometry)");
+        result.Sql.Should().NotContain("ST_Contains(j.geometry, t.geom)");
+    }
+
+    [Fact]
     public void BuildSpatialJoinQuery_WithCrossCrsJoinLayer_WrapsJoinOperandWithStTransform()
     {
         var queryBuilder = CreateQueryBuilder();

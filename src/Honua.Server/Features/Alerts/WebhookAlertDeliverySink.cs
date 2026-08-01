@@ -8,7 +8,6 @@ using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -18,11 +17,16 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertOptions _options;
+    private readonly AlertDestinationGuard _destinationGuard;
 
-    public WebhookAlertDeliverySink(IHttpClientFactory httpClientFactory, IOptions<AlertOptions> options)
+    public WebhookAlertDeliverySink(
+        IHttpClientFactory httpClientFactory,
+        IOptions<AlertOptions> options,
+        AlertDestinationGuard? destinationGuard = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
 
     public AlertChannelType ChannelType => AlertChannelType.Webhook;
@@ -60,21 +64,21 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 
         try
         {
-            var destinationValidation = await Honua.Core.Features.Infrastructure.Validation.OutboundHttpUrlValidator
-                .ValidateAsync(destination, cancellationToken: cancellationToken)
+            var destinationCheck = await _destinationGuard
+                .CheckAsync(destination, "Webhook destination", cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!destinationValidation.IsValid || destinationValidation.Uri is null)
+            if (!destinationCheck.IsAllowed)
             {
                 return new AlertDeliveryResult
                 {
                     Succeeded = false,
-                    Retryable = false,
-                    Error = $"Webhook destination {destinationValidation.ErrorMessage ?? "must be a valid HTTPS URL."}"
+                    Retryable = destinationCheck.Retryable,
+                    Error = destinationCheck.Error
                 };
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
+            using var request = new HttpRequestMessage(HttpMethod.Post, destinationCheck.Uri)
             {
                 Content = new StringContent(alertEvent.PayloadJson, Encoding.UTF8, "application/json")
             };

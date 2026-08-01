@@ -7,28 +7,58 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.Core.Features.SpatialAnalytics.Domain;
 
 /// <summary>
-/// Spatial predicates supported by the spatial join endpoint.
+/// Canonical spatial predicates for every spatial join in the platform — the SQL
+/// pushdown (PostGIS) and the managed (NetTopologySuite) executors both evaluate
+/// these members, so a predicate means exactly one thing everywhere.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Operand convention (honua-server#3069).</b> The containment members name
+/// <i>both</i> operands in the member name itself — <c>JoinContainsTarget</c> /
+/// <c>TargetContainsJoin</c> — instead of relying on a bare "contains" / "within"
+/// that reads differently depending on which geometry the reader assumes is the
+/// subject. Two independent enums previously used the same bare words with
+/// opposite operand orders, which silently inverted synchronous point-in-polygon
+/// enrichment; spelling the operands out removes the ambiguity structurally.
+/// </para>
+/// <para>
+/// Protocol adapters own the mapping from their wire vocabulary to these members
+/// and must state the direction they mean. The vocabularies deliberately differ:
+/// the layer-scoped spatial-join endpoints are target-subject
+/// (<c>predicate=contains</c> means the target/route layer contains the join
+/// geometry), while the enrichment API is dataset-subject
+/// (<c>method=point-in-polygon</c> means the enrichment dataset polygon contains
+/// the caller's source feature).
+/// </para>
+/// </remarks>
 public enum SpatialJoinPredicate
 {
     /// <summary>
-    /// Target geometry intersects the join geometry (<c>ST_Intersects</c>).
+    /// Target and join geometries intersect (<c>ST_Intersects</c>). Symmetric —
+    /// operand order does not change the result.
     /// </summary>
     Intersects,
 
     /// <summary>
-    /// Target geometry contains the join geometry (<c>ST_Contains</c>).
+    /// The join geometry contains the target geometry —
+    /// <c>ST_Contains(join, target)</c> / <c>join.Contains(target)</c>. This is the
+    /// classic point-in-polygon direction: a polygon on the join/reference layer
+    /// containing a point on the target layer.
     /// </summary>
-    Contains,
+    JoinContainsTarget,
 
     /// <summary>
-    /// Target geometry is within the join geometry (<c>ST_Within</c>).
+    /// The target geometry contains the join geometry —
+    /// <c>ST_Contains(target, join)</c> / <c>target.Contains(join)</c>. The inverse
+    /// of <see cref="JoinContainsTarget"/>: a polygon on the target layer
+    /// containing a point on the join/reference layer.
     /// </summary>
-    Within,
+    TargetContainsJoin,
 
     /// <summary>
     /// Target geometry is within <see cref="SpatialJoinQuery.DistanceMeters"/> of
-    /// the join geometry (<c>ST_DWithin</c> on geography).
+    /// the join geometry (<c>ST_DWithin</c> on geography). Symmetric — operand
+    /// order does not change the result.
     /// </summary>
     DWithin,
 }

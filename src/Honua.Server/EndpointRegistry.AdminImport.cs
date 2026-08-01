@@ -79,6 +79,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
         new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
 
+        // v1 admin arcpy/toolbox translation lane (#2145)
+        new("POST", "/api/v1/admin/import/toolbox/translation/validate"),
+
         // v1 admin import endpoints (Geoservices)
         new("POST", "/api/v1/admin/import/geoservices/discover"),
         new("POST", "/api/v1/admin/import/geoservices/start"),
