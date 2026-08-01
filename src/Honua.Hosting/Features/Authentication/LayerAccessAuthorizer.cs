@@ -40,6 +40,14 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
     /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     private const string TenantClaimType = "tenant_id";
 
+    /// <summary>
+    /// Azure/OIDC tenant claim the tenant middleware also accepts. Reading only
+    /// <c>tenant_id</c> left an OIDC principal that carries just <c>tid</c> looking
+    /// tenant-less here, which disabled tenant scoping on exactly the background checks this
+    /// gate exists to constrain (honua-server#3046 review).
+    /// </summary>
+    private const string AzureTenantClaimType = "tid";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IServiceScopeFactory _scopeFactory;
 
@@ -85,6 +93,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // principal's own tenant wins; the ambient scope value is the fallback for a background
         // caller that is not user-attributed (honua-server#3046 review).
         var tenantId = principal.FindFirstValue(TenantClaimType)
+            ?? principal.FindFirstValue(AzureTenantClaimType)
             ?? scope.ServiceProvider.GetService<ITenantContext>()?.TenantId;
 
         return await EvaluateAsync(
@@ -131,52 +140,42 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // jobs whose only sin was that an unrelated, restricted publication happened to share
         // the number. A collision does not make that publication an input to this plan
         // (honua-server#3046 review).
-        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>(1);
-
-        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var storageResource)
-            && !LayerValidationHelpers.IsRetired(storageResource))
+        // An id absent from the storage index is REFUSED, never resolved some other way. Falling
+        // back to the publication triple authorized whichever publication happened to share the
+        // integer, while `HonuaLayerDagSource` still passes it unchanged to StreamFeaturesAsync
+        // and the store queries by storage id — so the gate would have cleared one resource and
+        // the executor read another (honua-server#3046 review).
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var storageResource)
+            || LayerValidationHelpers.IsRetired(storageResource))
         {
-            // The publication that owns this resource supplies the service context the decision
-            // core needs; a resource with no live publication is still authorized, just without
-            // service-level policy.
-            var storagePublication = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
-                .FirstOrDefault(candidate => !LayerValidationHelpers.IsRetired(candidate));
-            var storageService = storagePublication is null
-                ? null
-                : snapshot.Index.ServicesById.GetValueOrDefault(storagePublication.ServiceId);
-
-            candidates.Add((storageResource, storageService));
+            // Unresolvable layer ids (unknown, retired, or not a storage layer at all) return the
+            // SAME denial as a permission failure so the check cannot be used to enumerate which
+            // layer ids exist.
+            return AccessDecision.Forbidden(DenialReason);
         }
-        else
-        {
-            // The id names no storage layer, so the read seam would resolve nothing for it.
-            // Fall back to the publication triple rather than denying outright: this keeps the
-            // gate resolving for any caller that addresses a layer by publication index, and
-            // the tenant scope below still applies. It is only ever reached when the storage
-            // index has no entry, so it cannot reintroduce the collision above.
-            var (publication, publicationResource, publicationService) =
-                LayerValidationHelpers.ResolveV2TripleForTenant(
-                    snapshot,
-                    layerId,
-                    requiredProtocol: null,
-                    tenantId,
-                    applyTenantScope);
 
-            if (publication is not null && publicationResource is not null &&
-                !LayerValidationHelpers.IsRetired(publication) &&
-                !LayerValidationHelpers.IsRetired(publicationResource))
-            {
-                candidates.Add((publicationResource, publicationService));
-            }
+        // A resource can be published through SEVERAL services, each with its own policy. Taking
+        // the first live publication made the decision depend on metadata array order: a caller
+        // holding a grant through service B was denied because restricted service A happened to
+        // sort first, even though the synchronous query surface would have allowed it through B.
+        // Every live publication is therefore evaluated and ANY grant admits — matching what the
+        // caller could already do interactively (honua-server#3046 review).
+        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>();
+
+        foreach (var publication in snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
+            .Where(candidate => !LayerValidationHelpers.IsRetired(candidate)))
+        {
+            candidates.Add((storageResource, snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)));
         }
 
         if (candidates.Count == 0)
         {
-            // Unresolvable layer ids (unknown, retired, or hidden from the caller's tenant)
-            // return the SAME denial as a permission failure so the check cannot be used to
-            // enumerate which layer ids exist.
-            return AccessDecision.Forbidden(DenialReason);
+            // A resource with no live publication is still authorized, just without service-level
+            // policy — the executor reads it by storage id regardless of publication state.
+            candidates.Add((storageResource, null));
         }
+
+        AccessDecision? lastDenial = null;
 
         foreach (var (candidateResource, candidateService) in candidates)
         {
@@ -190,13 +189,16 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
                 operation,
                 cancellationToken).ConfigureAwait(false);
 
-            if (!decision.IsAllowed)
+            if (decision.IsAllowed)
             {
                 return decision;
             }
+
+            lastDenial = decision;
         }
 
-        return AccessDecision.Allowed();
+        // Denied through every publication of the resource, so the caller has no route to it.
+        return lastDenial ?? AccessDecision.Forbidden(DenialReason);
     }
 
     /// <summary>

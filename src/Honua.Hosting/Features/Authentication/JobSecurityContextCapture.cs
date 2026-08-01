@@ -35,6 +35,14 @@ internal static class JobSecurityContextCapture
     private const string TenantClaimType = "tenant_id";
 
     /// <summary>
+    /// Azure/OIDC tenant claim the middleware also accepts. A principal presenting only
+    /// <c>tid</c> is tenant-scoped on the live request, so capturing nothing here would restore
+    /// a tenant-LESS identity on the deferred lanes and widen the layer gate
+    /// (honua-server#3046 review).
+    /// </summary>
+    private const string AzureTenantClaimType = "tid";
+
+    /// <summary>
     /// Authentication type stamped on a restored identity so it is distinguishable in logs and
     /// can never be confused with a live request identity.
     /// </summary>
@@ -127,7 +135,7 @@ internal static class JobSecurityContextCapture
 
         return new JobSecurityContext(
             principal.Identity?.Name,
-            principal.FindFirstValue(TenantClaimType),
+            principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType),
             captured);
     }
 
