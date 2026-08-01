@@ -5634,7 +5634,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6069,7 +6069,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -6352,7 +6352,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -19325,62 +19325,6 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/connections/tables": {
-      "get": {
-        "tags": [
-          "Connections"
-        ],
-        "summary": "Connection Tables Without Connection Id",
-        "description": "Guard route for `/connections/{id}/tables` requests that omit the connection id. It has no success path: it always responds 400 with a problem document stating that a connection ID is required. Use `GET /connections/{id}/tables` to discover tables for a specific connection.",
-        "operationId": "getConnectionTablesMissingId",
-        "responses": {
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/connections/{path}": {
-      "get": {
-        "tags": [
-          "Connections"
-        ],
-        "summary": "Connections Catch-All",
-        "description": "Catch-all fallback (registered in code as `/connections/{*path}`) for GET requests under `/connections` that no more specific route matched. It never serves connection data: an empty path or a bare `tables`/`/tables` remainder responds 400 (\"Connection ID is required\"), and anything else responds 404. Real connection routes such as `/connections/{id}` and `/connections/{id}/tables` are matched first.",
-        "operationId": "getConnectionsCatchAll",
-        "parameters": [
-          {
-            "name": "path",
-            "in": "path",
-            "required": true,
-            "description": "The unmatched remainder of the path after `/connections/`. Registered as a catch-all segment, so it may contain slashes.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
           }
         }
       }

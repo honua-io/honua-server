@@ -3,9 +3,20 @@
   "spec": "docs/developer/api-specs/admin-api.json",
   "reasons": {
     "undocumented-backlog": "Live, supported admin route that the curated bundle does not yet describe. Temporary. Zero entries as of the honua-server#3063 burn-down; the code stays so a future route can be parked here deliberately rather than silently.",
-    "non-production-fixture": "Route registered only when a Development/Test-only fixture flag is enabled. OperateObservabilityFixtureOptions fails host startup if the flag is set outside Development or Test, so a Production host never serves it. Permanent exclusion: advertising it would generate control-plane SDK methods that cannot succeed against a real deployment."
+    "non-production-fixture": "Route registered only when a Development/Test-only fixture flag is enabled. OperateObservabilityFixtureOptions fails host startup if the flag is set outside Development or Test, so a Production host never serves it. Permanent exclusion: advertising it would generate control-plane SDK methods that cannot succeed against a real deployment.",
+    "error-only-guard-route": "Route registered only to produce a deterministic error for a malformed or unmatched request shape; no input reaches a successful response. HandleGetConnectionTablesWithCatchAll returns 400 when the connection id is missing and 404 for every other unmatched path. These are routing guards in the same family as the derived 405 Method Not Allowed responders, not supported API operations. Permanent exclusion: advertising them would generate control-plane SDK methods that always fail."
   },
   "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/connections/tables",
+      "reason": "error-only-guard-route"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{path}",
+      "reason": "error-only-guard-route"
+    },
     {
       "method": "POST",
       "path": "/api/v1/admin/dev/fixtures/operate-observability/{profile}",
