@@ -181,7 +181,7 @@ internal static class SavedMapOperationEndpoints
         string mapId,
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
-        [FromServices] CollaborationCapabilities capabilities,
+        [FromServices] CollaborationCapabilitySource capabilities,
         HttpContext context,
         [FromQuery] long? since = null)
     {
@@ -198,7 +198,7 @@ internal static class SavedMapOperationEndpoints
         // state — during a scale-out or a rolling topology change two replicas could hand the same
         // client contradictory histories, each looking authoritative. Refusing is the honest
         // answer: the client falls back to the durable saved state instead of a partial log.
-        if (!capabilities.Replay)
+        if (!capabilities.Current.Replay)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,

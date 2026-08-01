@@ -171,8 +171,19 @@ internal static class SavedMapOperationPayloadValidator
             ? array.EnumerateArray()
             : Enumerable.Empty<JsonElement>();
 
-        foreach (var item in items.Where(item => item.ValueKind == JsonValueKind.Object))
+        foreach (var item in items)
         {
+            // Reject, never skip. System.Text.Json permits null elements in these reference-type
+            // collections, so a payload such as {"layers":[null]} passed this check when the
+            // entry was merely filtered out, and the layer/widget invariant loops below then
+            // dereferenced layer.Id — an unhandled NullReferenceException and a 500 for what is
+            // simply a malformed append that deserves a 400 (honua-server#2999 review).
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} must be an object.";
+                return false;
+            }
+
             if (!TryRejectUnmappedMembers(item, allowed, subject, out error))
             {
                 return false;

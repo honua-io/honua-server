@@ -42,46 +42,9 @@ internal static class CollaborationSessionServices
         // cache/jobs and must keep full live co-editing (honua-server#2999 review).
         services.TryAddSingleton<SavedMapCollaborationTopology>();
         // The advertised session capabilities must match what the endpoints will accept: when
-        // edits fail closed, the stream advertises operations/replay as unavailable.
-        services.TryAddSingleton(static sp =>
-        {
-            var topology = sp.GetRequiredService<SavedMapCollaborationTopology>();
-            var log = sp.GetRequiredService<Core.Features.Collaboration.Operations.ISavedMapOperationLogRepository>();
-            var backplane = sp.GetRequiredService<ICollaborationSessionBackplane>();
-            // Live operation delivery needs BOTH: the shared log lets a peer replica replay an
-            // operation, but SavedMapOperationAppendCoordinator.PublishOperation reaches other
-            // replicas exclusively through the backplane, so with the no-op backplane a
-            // participant on another replica never receives a committed operation even though
-            // the log is shared. Replay stays dependent on the log alone, which is the seam it
-            // actually uses (honua-server#2999 review).
-            var sharedLog = !topology.IsMultiReplica || log.SupportsReplicaSharedReplay;
-            var operationsAvailable = sharedLog && (!topology.IsMultiReplica || backplane.SupportsCrossReplicaDelivery);
-
-            // Presence (cursors/selections/follow) rides the BACKPLANE, not the operation log,
-            // so it is advertised only when one actually reaches peer replicas. MultiReplica can
-            // be declared without Redis — configuration validation does not require it for that
-            // override alone — and the no-op backplane would otherwise promise live presence
-            // that participants on other replicas never receive (honua-server#2999 review).
-            var presenceAvailable = !topology.IsMultiReplica || backplane.SupportsCrossReplicaDelivery;
-            // Checkpointing additionally needs a restart-durable log: it mints an immutable
-            // version and must not claim completeness it cannot prove. It proves that from the
-            // LOG, so it keys on the shared-log condition rather than on live delivery
-            // (honua-server#2999 review).
-            var checkpointsAvailable = sharedLog && log.SupportsRestartDurableReplay;
-            var capabilities = CollaborationCapabilities.Default with
-            {
-                Checkpoints = checkpointsAvailable,
-                Cursors = presenceAvailable,
-                Selections = presenceAvailable,
-                Follow = presenceAvailable,
-            };
-
-            return capabilities with
-            {
-                Operations = operationsAvailable,
-                Replay = sharedLog,
-            };
-        });
+        // edits fail closed, the stream advertises operations/replay as unavailable. Computed on
+        // demand rather than snapshotted at construction — see CollaborationCapabilitySource.
+        services.TryAddSingleton<CollaborationCapabilitySource>();
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
         // The background sweep keeps the singleton presence/outbox state bounded when
         // participants stop polling or a socket dies without a close frame.

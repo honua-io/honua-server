@@ -30,13 +30,13 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
     private readonly ICollaborationSessionBackplane _backplane;
-    private readonly CollaborationCapabilities _capabilities;
+    private readonly CollaborationCapabilitySource? _capabilities;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
         ICollaborationSessionBackplane? backplane = null,
-        CollaborationCapabilities? capabilities = null)
+        CollaborationCapabilitySource? capabilities = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
@@ -44,7 +44,7 @@ internal sealed class InMemoryCollaborationSessionService
         // Advertised capabilities must match what the endpoints will actually accept: when the
         // deployment fails edits closed, the stream must not claim operations are available
         // (honua-server#2999 review).
-        _capabilities = capabilities ?? CollaborationCapabilities.Default;
+        _capabilities = capabilities;
     }
 
     /// <summary>
@@ -53,7 +53,13 @@ internal sealed class InMemoryCollaborationSessionService
     /// than one that refuses it, because the client cannot tell the answer is untrustworthy
     /// (honua-server#2999 review).
     /// </summary>
-    public CollaborationCapabilities Capabilities => _capabilities;
+    /// <remarks>
+    /// Read through the source on every access rather than captured at construction: this
+    /// service is resolved by the Redis backplane's own <c>StartAsync</c>, BEFORE that method
+    /// marks the backplane active, so a captured value pinned the pre-activation answer for the
+    /// life of the process (honua-server#2999 review).
+    /// </remarks>
+    public CollaborationCapabilities Capabilities => _capabilities?.Current ?? CollaborationCapabilities.Default;
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
         string mapId,
@@ -130,7 +136,7 @@ internal sealed class InMemoryCollaborationSessionService
                 MapId = mapId,
                 SessionId = sessionId,
                 ParticipantId = participant.ParticipantId,
-                Capabilities = _capabilities,
+                Capabilities = Capabilities,
                 Participant = CollaborationParticipantWire.FromPresence(participant),
                 Snapshot = snapshot
             }
@@ -149,7 +155,7 @@ internal sealed class InMemoryCollaborationSessionService
             {
                 MapId = mapId,
                 Sequence = 0,
-                Capabilities = _capabilities
+                Capabilities = Capabilities
             };
         }
 
@@ -796,7 +802,7 @@ internal sealed class InMemoryCollaborationSessionService
         {
             MapId = channel.MapId,
             Sequence = channel.LastSequence,
-            Capabilities = _capabilities,
+            Capabilities = Capabilities,
             Participants = ordered.Select(CollaborationParticipantWire.FromPresence).ToArray(),
             Cursors = cursors,
             Selections = selections,

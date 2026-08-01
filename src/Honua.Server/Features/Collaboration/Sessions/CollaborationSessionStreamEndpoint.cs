@@ -562,6 +562,15 @@ internal static partial class CollaborationSessionStreamEndpoint
             return;
         }
 
+        // Presence frames are gated on the SAME flags the handshake advertised. Processing them
+        // anyway fanned the update out to same-replica participants only, so an older or
+        // nonconforming client saw topology-dependent partial presence — local collaborators
+        // moving, remote ones frozen — rather than the disabled behaviour it was told to expect.
+        // Partial presence is worse than none: it looks like the feature working
+        // (honua-server#2999 review). Heartbeat stays ungated; it is session liveness, not
+        // presence, and dropping it would expire live sessions.
+        var capabilities = sessions.Capabilities;
+
         try
         {
             switch (frame.Type.Trim().ToLowerInvariant())
@@ -571,21 +580,25 @@ internal static partial class CollaborationSessionStreamEndpoint
                     sessions.Heartbeat(sessionId);
                     break;
                 case "cursor":
-                    if (frame.Cursor is not null)
+                    if (frame.Cursor is not null && capabilities.Cursors)
                     {
                         sessions.UpdateCursor(sessionId, frame.Cursor);
                     }
 
                     break;
                 case "selection":
-                    if (frame.Selection is not null)
+                    if (frame.Selection is not null && capabilities.Selections)
                     {
                         sessions.UpdateSelection(sessionId, frame.Selection);
                     }
 
                     break;
                 case "follow":
-                    ApplyFollowFrame(sessions, sessionId, frame.Follow);
+                    if (capabilities.Follow)
+                    {
+                        ApplyFollowFrame(sessions, sessionId, frame.Follow);
+                    }
+
                     break;
                 default:
                     // Unknown control type — ignore to stay forward-compatible with SDK clients.
