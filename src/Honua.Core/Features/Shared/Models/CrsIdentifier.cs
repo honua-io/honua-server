@@ -141,10 +141,12 @@ public static partial class CrsIdentifier
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex Crs84AliasPattern();
 
-    // "urn:ogc:def:crs:OGC:1.3:CRS84", "urn:ogc:def:crs:OGC::CRS84", and the
-    // WFS 2.0 default "urn:ogc:def:crs:OGC:2:84".
+    // "urn:ogc:def:crs:OGC:1.3:CRS84", the empty-version "urn:ogc:def:crs:OGC::CRS84",
+    // the omitted-version compatibility spelling "urn:ogc:def:crs:OGC:CRS84" (which
+    // SpatialReferenceHelpers also accepts, so the two agree), and the WFS 2.0
+    // default "urn:ogc:def:crs:OGC:2:84".
     [GeneratedRegex(
-        @"^urn:(?:x-)?ogc:def:crs:OGC:(?:(?:[0-9]+(?:\.[0-9]+)*)?:CRS84|2:84)$",
+        @"^urn:(?:x-)?ogc:def:crs:OGC:(?:(?:(?:[0-9]+(?:\.[0-9]+)*)?:)?CRS84|2:84)$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex Crs84UrnPattern();
 

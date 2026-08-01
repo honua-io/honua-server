@@ -29,6 +29,12 @@ public sealed class CrsIdentifierTests
         "https://www.opengis.net/def/crs/EPSG/0/4326",
         "urn:ogc:def:crs:OGC:1.3:CRS84",
         "urn:ogc:def:crs:OGC::CRS84",
+        // The omitted-version compatibility spelling. SpatialReferenceHelpers
+        // accepts it, and the previous substring guard did too, so refusing it
+        // here would be a compatibility regression and a cross-layer
+        // inconsistency in CRS handling.
+        "urn:ogc:def:crs:OGC:CRS84",
+        "urn:x-ogc:def:crs:OGC:CRS84",
         "urn:ogc:def:crs:OGC:2:84",
         "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
         "CRS84",
