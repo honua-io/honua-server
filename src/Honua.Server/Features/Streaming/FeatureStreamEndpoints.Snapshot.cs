@@ -402,6 +402,30 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        // Revalidate the replay window AFTER the scan. The baseline read is not
+        // transactional, so a scan slow enough to be overtaken by more than MaxRetainedEvents
+        // mutations has its own successor events trimmed out from under it. Two things then go
+        // wrong together and neither is individually visible: a feature read early in the scan
+        // can be stale, and the delta replay silently starts at the NEW oldest cursor instead
+        // of failing — so the client converges on a baseline that is missing changes while
+        // snapshot-end tells it complete: true. Re-reading the retained floor here is the only
+        // point where the gap is observable (honua-server#3038 review).
+        //
+        // Reported as incomplete rather than raised: the callers already treat an incomplete
+        // baseline as non-resumable and end the stream so the client reconnects and takes a
+        // fresh snapshot, which is exactly the required recovery.
+        if (complete)
+        {
+            var oldestRetained = await deps.EventStore
+                .GetOldestRetainedCursorAsync(cancellationToken).ConfigureAwait(false);
+            if (oldestRetained > baselineCursor + 1)
+            {
+                complete = false;
+                FeatureStreamLog.SnapshotReplayWindowTrimmed(
+                    logger, sessionId, subscriptionId, baselineCursor, oldestRetained);
+            }
+        }
+
         await sink.WriteEndAsync(
             new FeatureStreamSnapshotEndFrame
             {

@@ -16,6 +16,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -555,6 +556,68 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_ReplayWindowTrimmedPastBaseline_MarksBaselineIncomplete()
+    {
+        // The baseline read is not transactional. A scan overtaken by more than
+        // MaxRetainedEvents mutations has its OWN successor events trimmed away, and the two
+        // resulting faults hid each other: a feature read early in the scan can be stale, and
+        // the delta replay silently restarts at the new oldest cursor instead of failing — so
+        // the client converged on a baseline missing changes while snapshot-end said
+        // complete: true. Re-reading the retained floor after the scan is the only point where
+        // that gap is observable (#3038 review).
+        //
+        // The store is decorated to report a floor far above the baseline, which is exactly the
+        // state a mid-scan trim leaves behind, without having to win a race against the scan.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureServices(services =>
+            {
+                var original = services.Last(d => d.ServiceType == typeof(IFeatureChangeEventStore));
+                services.Remove(original);
+                services.Add(ServiceDescriptor.Describe(
+                    typeof(IFeatureChangeEventStore),
+                    sp => new TrimmedWindowEventStore(CreateInner(sp, original), oldestRetained: long.MaxValue),
+                    original.Lifetime));
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeFalse(
+                "the events immediately after the baseline cursor are gone, so no gapless delta "
+                + "replay can follow this baseline");
+
+            // Same reasoning as a truncated baseline: it must not become a resumable checkpoint,
+            // or the client resumes from a cursor whose deltas no longer exist.
+            baseline.EventIds.Should().OnlyContain(id => id == null,
+                "no frame of an incomplete snapshot may publish a resumable SSE id");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static IFeatureChangeEventStore CreateInner(IServiceProvider sp, ServiceDescriptor descriptor)
+            => descriptor.ImplementationInstance as IFeatureChangeEventStore
+                ?? (descriptor.ImplementationFactory is { } factory
+                    ? (IFeatureChangeEventStore)factory(sp)
+                    : (IFeatureChangeEventStore)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete()
     {
         // The cap is set equal to the page size, so it is reached exactly when a page ends and
@@ -646,6 +709,31 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration(
                 (_, configBuilder) => configBuilder.AddInMemoryCollection(settings)));
+
+    /// <summary>
+    /// Wraps the real event store so <see cref="IFeatureChangeEventStore.GetOldestRetainedCursorAsync"/>
+    /// reports a retained floor ABOVE the snapshot's baseline cursor — the state the store is
+    /// left in when more than <c>MaxRetainedEvents</c> mutations land while a snapshot scan is
+    /// in flight. Everything else delegates, so only the retention answer is synthetic.
+    /// </summary>
+    private sealed class TrimmedWindowEventStore(IFeatureChangeEventStore inner, long oldestRetained)
+        : IFeatureChangeEventStore
+    {
+        public Task<FeatureChangeEvent> AppendAsync(
+            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(request, cancellationToken);
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => inner.GetCurrentCursorAsync(cancellationToken);
+
+        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(oldestRetained);
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            CancellationToken cancellationToken = default)
+            => inner.QueryAsync(cursor, from, to, limit, cancellationToken);
+    }
 
     private static HttpRequestMessage BuildSseRequest(string url)
     {

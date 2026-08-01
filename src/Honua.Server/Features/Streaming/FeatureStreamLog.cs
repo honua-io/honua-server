@@ -102,4 +102,13 @@ internal static partial class FeatureStreamLog
         long featureCount,
         long baselineCursor,
         bool complete);
+
+    [LoggerMessage(EventId = 5023, Level = LogLevel.Warning,
+        Message = "Feature stream baseline snapshot for session {SessionId} subscription {SubscriptionId} was overtaken by retention: baselineCursor={BaselineCursor} is no longer followed by a retained event (oldestRetained={OldestRetained}). Reporting the baseline as incomplete so the client resnapshots.")]
+    public static partial void SnapshotReplayWindowTrimmed(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        long baselineCursor,
+        long oldestRetained);
 }
