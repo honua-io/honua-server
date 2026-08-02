@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Postgres.Features.Raster;
 
@@ -50,6 +53,15 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresCogStore>>(),
                 schemaName));
+
+        services.AddScoped<IRasterOutputRegistry>(provider =>
+            new PostgresRasterOutputRegistry(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IRasterOutputObjectStore>(),
+                provider.GetRequiredService<IOptions<CloudStorageOptions>>(),
+                provider.GetRequiredService<IOptions<RasterOutputPublicationOptions>>(),
+                schemaName));
+        services.AddScoped<RasterOutputPublisher>();
 
         // Register multidimensional coverage catalog store (cloud-optimized HDF5 / NetCDF4)
         services.AddScoped<IMultidimensionalCoverageStore>(provider =>

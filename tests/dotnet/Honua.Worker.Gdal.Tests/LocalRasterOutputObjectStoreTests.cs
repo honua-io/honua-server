@@ -244,6 +244,15 @@ public sealed class LocalRasterOutputObjectStoreTests : IDisposable
 
         public Dictionary<string, RasterOutputDescriptor> Registrations { get; } = new(StringComparer.Ordinal);
 
+        public ValueTask<IAsyncDisposable> AcquireObjectLeaseAsync(
+            string storeReference,
+            string objectKey,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<IAsyncDisposable>(NoopAsyncDisposable.Instance);
+        }
+
         public Task<RasterOutputRegistrationResult> RegisterAtomicallyAsync(
             RasterOutputRegistrationCommand command,
             CancellationToken cancellationToken = default)
@@ -275,6 +284,13 @@ public sealed class LocalRasterOutputObjectStoreTests : IDisposable
                 output => string.Equals(output.StoreReference, storeReference, StringComparison.Ordinal)
                     && string.Equals(output.ObjectKey, objectKey, StringComparison.Ordinal)));
         }
+    }
+
+    private sealed class NoopAsyncDisposable : IAsyncDisposable
+    {
+        public static NoopAsyncDisposable Instance { get; } = new();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private static DateTimeOffset CreatedAt { get; } = new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);

@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
@@ -102,6 +103,13 @@ internal static class GeoprocessingResultPackageFactory
             var reference = job.ArtifactReferences[index];
             var kind = index < outputKinds.Length ? outputKinds[index] : ArtifactKind.File;
 
+            if (RasterOutputArtifactReference.TryParseOutput(reference, out var rasterOutput)
+                && rasterOutput is not null)
+            {
+                artifacts[index] = BuildRasterArtifact(rasterOutput);
+                continue;
+            }
+
             // Positional slot assignment assumes one published artifact per declared
             // output. A process that advertises ALTERNATIVE output shapes — e.g.
             // imagery.classify declares [Raster, FeatureLayer] because the backend
@@ -148,6 +156,40 @@ internal static class GeoprocessingResultPackageFactory
         }
 
         return artifacts;
+    }
+
+    private static ArtifactRef BuildRasterArtifact(RasterOutputDescriptor output)
+    {
+        var checksum = output.Content.Checksum!;
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["rasterOutputDescriptor"] = RasterOutputJson.Serialize(output),
+            ["sizeBytes"] = output.Content.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["checksum"] = checksum.Algorithm + ":" + checksum.Value,
+            ["mediaType"] = output.Content.MediaType,
+            ["crs"] = output.Grid.Crs,
+            ["width"] = output.Grid.Width.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["height"] = output.Grid.Height.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["bandCount"] = output.Grid.BandCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["geoTransform"] = string.Join(",", output.Grid.GeoTransform.Select(value =>
+                value.ToString("R", System.Globalization.CultureInfo.InvariantCulture))),
+            ["engine"] = output.Engine.Name,
+            ["engineVersion"] = output.Engine.Version,
+            ["jobId"] = output.Lineage.JobId,
+            ["attempt"] = output.Lineage.Attempt.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["processId"] = output.Lineage.ProcessId,
+            ["sourceArtifactIds"] = string.Join(",", output.Lineage.SourceArtifactIds)
+        };
+
+        return new ArtifactRef
+        {
+            ArtifactId = output.ArtifactId,
+            Kind = ArtifactKind.Raster,
+            Label = output.OutputName,
+            Uri = "urn:honua:raster:" + output.ArtifactId,
+            ContentType = output.Content.MediaType,
+            Metadata = metadata
+        };
     }
 
     private static ProvenanceRecord BuildProvenance(

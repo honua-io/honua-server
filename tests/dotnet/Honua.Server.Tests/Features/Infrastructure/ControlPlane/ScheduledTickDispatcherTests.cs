@@ -46,6 +46,7 @@ public sealed class ScheduledTickDispatcherTests
     [InlineData(ScheduledTickKind.TileCacheEviction)]
     [InlineData(ScheduledTickKind.WorkspaceCleanup)]
     [InlineData(ScheduledTickKind.FileStorageCleanup)]
+    [InlineData(ScheduledTickKind.RasterOutputReconciliation)]
     [InlineData(ScheduledTickKind.TemporaryFileCleanup)]
     [InlineData(ScheduledTickKind.DigestFlush)]
     public async Task RunTickAsync_RoutesToTheMatchingHandlerOnly(ScheduledTickKind kind)

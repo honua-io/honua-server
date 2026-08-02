@@ -1,41 +1,46 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.Options;
 
-namespace Honua.Worker.Gdal.Execution;
+namespace Honua.FileStorage;
 
-/// <summary>
-/// Worker-only local object-store adapter used for local execution and integration tests. Raster
-/// bytes are streamed through a bounded pooled buffer and atomically renamed on one filesystem;
-/// this type is deliberately absent from the serving/AOT project graph.
-/// </summary>
+/// <summary>Shared-filesystem raster output store for local/on-prem worker deployments.</summary>
 internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, IRasterOutputManifestStore
 {
     private const int BufferSize = 64 * 1024;
+    private const int MaximumManifestBytes = 256 * 1024;
     private readonly string _root;
     private readonly string _rootPrefix;
     private readonly string _storeReference;
 
-    public LocalRasterOutputObjectStore(string root, string storeReference)
+    public LocalRasterOutputObjectStore(
+        IOptions<CloudStorageOptions> storageOptions,
+        IOptions<RasterOutputPublicationOptions> publicationOptions)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(root);
-        ArgumentException.ThrowIfNullOrWhiteSpace(storeReference);
-        if (storeReference.Length > 128 || storeReference.Any(character =>
-                !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_' and not '.'))
-        {
-            throw new ArgumentException("Store reference must be a bounded logical identifier.", nameof(storeReference));
-        }
-
-        _root = Path.GetFullPath(root);
+        var local = storageOptions?.Value?.LocalStorage
+            ?? throw new InvalidOperationException("Local file storage is not configured for raster outputs.");
+        _root = Path.GetFullPath(local.BasePath);
         _rootPrefix = _root.EndsWith(Path.DirectorySeparatorChar)
             ? _root
             : _root + Path.DirectorySeparatorChar;
-        _storeReference = storeReference;
-        Directory.CreateDirectory(_root);
+        var storeReference = publicationOptions?.Value?.StoreReference;
+        if (!RasterOutputWorkerContract.IsLogicalStoreReference(storeReference))
+        {
+            throw new InvalidOperationException("Raster output store reference is invalid.");
+        }
+
+        _storeReference = storeReference!;
+
+        if (local.CreateDirectoryIfNotExists)
+        {
+            Directory.CreateDirectory(_root);
+        }
     }
 
     public async Task<RasterStoredObject> StageAsync(
@@ -45,25 +50,11 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(content);
-        if (!content.CanRead)
-        {
-            throw new ArgumentException("Raster staging content must be readable.", nameof(content));
-        }
-
         EnsureStore(descriptor.StoreReference);
         var validation = RasterOutputDescriptorValidator.Validate(descriptor);
         if (!validation.IsValid)
         {
             throw new ArgumentException("Staged raster output metadata is invalid.", nameof(descriptor));
-        }
-
-        var expectedKey = RasterOutputWorkerContract.BuildStagingObjectKey(
-            descriptor.JobId,
-            descriptor.Attempt,
-            descriptor.OutputName);
-        if (!string.Equals(descriptor.ObjectKey, expectedKey, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Staging key does not match the owning job, attempt, and output.", nameof(descriptor));
         }
 
         var destination = ResolvePath(descriptor.ObjectKey);
@@ -79,15 +70,9 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
                 BufferSize,
                 FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                var identity = await CopyAndHashAsync(
-                    content,
-                    output,
-                    descriptor.Content.Checksum!.Algorithm,
-                    descriptor.Content.SizeBytes,
-                    cancellationToken).ConfigureAwait(false);
-                EnsureContentIdentity(descriptor.Content, identity);
+                await CopyAndVerifyAsync(content, output, descriptor.Content, cancellationToken)
+                    .ConfigureAwait(false);
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
-                output.Flush(flushToDisk: true);
             }
 
             if (File.Exists(destination))
@@ -97,15 +82,7 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             }
             else
             {
-                try
-                {
-                    File.Move(temporary, destination);
-                }
-                catch (IOException) when (File.Exists(destination))
-                {
-                    await VerifyFileAsync(destination, descriptor.Content, cancellationToken).ConfigureAwait(false);
-                    File.Delete(temporary);
-                }
+                File.Move(temporary, destination);
             }
 
             return Stored(descriptor, descriptor.ObjectKey, RasterStoredObjectState.Staged, descriptor.CreatedAt);
@@ -131,7 +108,7 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             return null;
         }
 
-        var identity = await HashFileAsync(path, "sha256", cancellationToken).ConfigureAwait(false);
+        var identity = await HashAsync(path, cancellationToken).ConfigureAwait(false);
         return new RasterStoredObject
         {
             StoreReference = _storeReference,
@@ -139,11 +116,13 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             ObjectVersion = "sha256:" + identity.Checksum,
             Content = new RasterContentIdentity
             {
-                SizeBytes = identity.SizeBytes,
+                SizeBytes = identity.Size,
                 MediaType = InferMediaType(objectKey),
                 Checksum = new RasterChecksum("sha256", identity.Checksum)
             },
-            State = StateFor(objectKey),
+            State = objectKey.StartsWith("raster/published/", StringComparison.Ordinal)
+                ? RasterStoredObjectState.Published
+                : RasterStoredObjectState.Staged,
             LastModifiedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero)
         };
     }
@@ -174,10 +153,9 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
     {
         ArgumentNullException.ThrowIfNull(request);
         EnsureStore(request.Stage.StoreReference);
-        if (!RasterOutputDescriptorValidator.IsSafeObjectKey(request.DestinationObjectKey)
-            || !request.DestinationObjectKey.StartsWith("raster/published/", StringComparison.Ordinal))
+        if (!request.DestinationObjectKey.StartsWith("raster/published/", StringComparison.Ordinal))
         {
-            throw new ArgumentException("Published raster key is not a safe stable key.", nameof(request));
+            throw new ArgumentException("Published raster key is outside the immutable prefix.", nameof(request));
         }
 
         var source = ResolvePath(request.Stage.ObjectKey);
@@ -189,31 +167,27 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             {
                 File.Delete(source);
             }
-
-            return Stored(
-                request.Stage,
-                request.DestinationObjectKey,
-                RasterStoredObjectState.Published,
-                request.PublishedAt);
         }
-
-        if (!File.Exists(source))
+        else
         {
-            throw new FileNotFoundException("Staged raster output was not found.", request.Stage.ObjectKey);
-        }
-
-        await VerifyFileAsync(source, request.Stage.Content, cancellationToken).ConfigureAwait(false);
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        try
-        {
-            File.Move(source, destination);
-        }
-        catch (IOException) when (File.Exists(destination))
-        {
-            await VerifyFileAsync(destination, request.Stage.Content, cancellationToken).ConfigureAwait(false);
-            if (File.Exists(source))
+            if (!File.Exists(source))
             {
-                File.Delete(source);
+                throw new FileNotFoundException("Staged local raster output was not found.", request.Stage.ObjectKey);
+            }
+
+            await VerifyFileAsync(source, request.Stage.Content, cancellationToken).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            try
+            {
+                File.Move(source, destination);
+            }
+            catch (IOException) when (File.Exists(destination))
+            {
+                await VerifyFileAsync(destination, request.Stage.Content, cancellationToken).ConfigureAwait(false);
+                if (File.Exists(source))
+                {
+                    File.Delete(source);
+                }
             }
         }
 
@@ -282,16 +256,9 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
         CancellationToken cancellationToken = default)
     {
         EnsureStore(storeReference);
-        EnsureManifestIdentity(manifestObjectKey, manifest);
-        var validation = RasterOutputDescriptorValidator.Validate(manifest, cancellationToken: cancellationToken);
-        if (!validation.IsValid)
-        {
-            throw new ArgumentException("Raster output publication manifest is invalid.", nameof(manifest));
-        }
-
-        var json = RasterOutputJson.SerializeManifest(manifest);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        if (bytes.Length > 256 * 1024)
+        EnsureManifest(manifestObjectKey, manifest);
+        var bytes = Encoding.UTF8.GetBytes(RasterOutputJson.SerializeManifest(manifest));
+        if (bytes.Length > MaximumManifestBytes)
         {
             throw new InvalidDataException("Raster output publication manifest exceeds 256 KiB.");
         }
@@ -325,22 +292,81 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             return null;
         }
 
-        var info = new FileInfo(path);
-        if (info.Length > 256 * 1024)
+        if (new FileInfo(path).Length > MaximumManifestBytes)
         {
             throw new InvalidDataException("Raster output publication manifest exceeds 256 KiB.");
         }
 
-        var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        var manifest = RasterOutputJson.DeserializeManifest(json);
-        EnsureManifestIdentity(manifestObjectKey, manifest);
-        var validation = RasterOutputDescriptorValidator.Validate(manifest, cancellationToken: cancellationToken);
-        if (!validation.IsValid)
+        var manifest = RasterOutputJson.DeserializeManifest(
+            await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false));
+        EnsureManifest(manifestObjectKey, manifest);
+        return manifest;
+    }
+
+    private static async Task CopyAndVerifyAsync(
+        Stream source,
+        Stream destination,
+        RasterContentIdentity expected,
+        CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[BufferSize];
+        long size = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
         {
-            throw new InvalidDataException("Raster output publication manifest is invalid.");
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            hash.AppendData(buffer, 0, read);
+            size = checked(size + read);
+            if (size > expected.SizeBytes)
+            {
+                throw new InvalidDataException("Raster output exceeds its declared size.");
+            }
         }
 
-        return manifest;
+        var checksum = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        if (size != expected.SizeBytes
+            || !string.Equals(checksum, expected.Checksum!.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Raster output bytes do not match their declared identity.");
+        }
+    }
+
+    private static async Task VerifyFileAsync(
+        string path,
+        RasterContentIdentity expected,
+        CancellationToken cancellationToken)
+    {
+        var actual = await HashAsync(path, cancellationToken).ConfigureAwait(false);
+        if (actual.Size != expected.SizeBytes
+            || !string.Equals(actual.Checksum, expected.Checksum!.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Raster output bytes do not match their declared identity.");
+        }
+    }
+
+    private static async Task<(long Size, string Checksum)> HashAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            BufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[BufferSize];
+        long size = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            hash.AppendData(buffer, 0, read);
+            size = checked(size + read);
+        }
+
+        return (size, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
 
     private static RasterStoredObject Stored(
@@ -351,110 +377,17 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
         {
             StoreReference = stage.StoreReference,
             ObjectKey = key,
-            ObjectVersion = stage.Content.Checksum!.Algorithm + ":" + stage.Content.Checksum.Value.ToLowerInvariant(),
+            ObjectVersion = "sha256:" + stage.Content.Checksum!.Value.ToLowerInvariant(),
             Content = stage.Content,
             State = state,
             LastModifiedAt = lastModifiedAt
         };
 
-    private static async Task<FileIdentity> CopyAndHashAsync(
-        Stream source,
-        Stream destination,
-        string algorithm,
-        long maximumBytes,
-        CancellationToken cancellationToken)
-    {
-        using var hasher = IncrementalHash.CreateHash(ToHashAlgorithm(algorithm));
-        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        long size = 0;
-        try
-        {
-            int read;
-            while ((read = await source.ReadAsync(buffer.AsMemory(0, BufferSize), cancellationToken)
-                       .ConfigureAwait(false)) > 0)
-            {
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                hasher.AppendData(buffer, 0, read);
-                size = checked(size + read);
-                if (size > maximumBytes)
-                {
-                    throw new InvalidDataException(
-                        "Raster output bytes exceed their declared content size.");
-                }
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
-        }
-
-        return new FileIdentity(size, Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant());
-    }
-
-    private static async Task<FileIdentity> HashFileAsync(
-        string path,
-        string algorithm,
-        CancellationToken cancellationToken)
-    {
-        await using var source = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            BufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await CopyAndHashAsync(
-            source,
-            Stream.Null,
-            algorithm,
-            long.MaxValue,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task VerifyFileAsync(
-        string path,
-        RasterContentIdentity expected,
-        CancellationToken cancellationToken)
-    {
-        var actual = await HashFileAsync(path, expected.Checksum!.Algorithm, cancellationToken).ConfigureAwait(false);
-        EnsureContentIdentity(expected, actual);
-    }
-
-    private static void EnsureContentIdentity(RasterContentIdentity expected, FileIdentity actual)
-    {
-        var checksum = expected.Checksum!;
-        if (expected.SizeBytes != actual.SizeBytes
-            || !string.Equals(checksum.Value, actual.Checksum, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("Raster output bytes do not match declared size/checksum metadata.");
-        }
-    }
-
-    private static HashAlgorithmName ToHashAlgorithm(string algorithm) => algorithm switch
-    {
-        "sha256" => HashAlgorithmName.SHA256,
-        "sha512" => HashAlgorithmName.SHA512,
-        _ => throw new InvalidDataException("Raster output checksum algorithm is unsupported.")
-    };
-
-    private static string InferMediaType(string objectKey) => Path.GetExtension(objectKey).ToLowerInvariant() switch
-    {
-        ".tif" or ".tiff" => "image/tiff",
-        ".zarr" => "application/vnd+zarr",
-        ".json" => "application/json",
-        _ => "application/octet-stream"
-    };
-
-    private static RasterStoredObjectState StateFor(string objectKey) =>
-        objectKey.StartsWith("raster/published/", StringComparison.Ordinal)
-            ? RasterStoredObjectState.Published
-            : RasterStoredObjectState.Staged;
-
     private void EnsureStore(string storeReference)
     {
         if (!string.Equals(storeReference, _storeReference, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Raster output references an unconfigured object store.");
+            throw new InvalidOperationException("Raster output references an unconfigured local store.");
         }
     }
 
@@ -470,24 +403,32 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             objectKey.Replace('/', Path.DirectorySeparatorChar)));
         if (!path.StartsWith(_rootPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException("Raster output object key escapes the configured root.", nameof(objectKey));
+            throw new ArgumentException("Raster output object key escapes its configured root.", nameof(objectKey));
         }
 
         return path;
     }
 
-    private static void EnsureManifestIdentity(
-        string manifestObjectKey,
-        RasterOutputPublicationManifest manifest)
+    private static void EnsureManifest(string key, RasterOutputPublicationManifest manifest)
     {
         var expected = RasterOutputWorkerContract.BuildManifestObjectKey(manifest.JobId, manifest.Attempt);
-        if (!string.Equals(manifestObjectKey, expected, StringComparison.Ordinal))
+        if (!string.Equals(key, expected, StringComparison.Ordinal))
         {
-            throw new ArgumentException(
-                "Raster output manifest key does not match its owning job attempt.",
-                nameof(manifestObjectKey));
+            throw new ArgumentException("Raster publication manifest key does not match its job attempt.", nameof(key));
+        }
+
+        var validation = RasterOutputDescriptorValidator.Validate(manifest);
+        if (!validation.IsValid)
+        {
+            throw new ArgumentException("Raster publication manifest is invalid.", nameof(manifest));
         }
     }
 
-    private sealed record FileIdentity(long SizeBytes, string Checksum);
+    private static string InferMediaType(string objectKey) => Path.GetExtension(objectKey).ToLowerInvariant() switch
+    {
+        ".tif" or ".tiff" => "image/tiff",
+        ".zarr" => "application/vnd+zarr",
+        ".json" => "application/json",
+        _ => "application/octet-stream"
+    };
 }

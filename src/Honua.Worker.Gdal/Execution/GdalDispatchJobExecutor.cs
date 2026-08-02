@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
@@ -28,6 +29,9 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
 
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GdalDispatchJobExecutor> _logger;
+    private readonly IRasterOutputObjectStore? _rasterObjectStore;
+    private readonly IRasterOutputManifestStore? _rasterManifestStore;
+    private readonly IGdalCommandRunner? _runner;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered GDAL-backed executors
@@ -41,12 +45,29 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     public GdalDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
         ILogger<GdalDispatchJobExecutor> logger)
+        : this(executors, logger, null, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Production composition path with direct raster-object staging. The two-argument overload is
+    /// retained for the Redis-free dev/test executor seam.
+    /// </summary>
+    public GdalDispatchJobExecutor(
+        IEnumerable<IProcessExecutor> executors,
+        ILogger<GdalDispatchJobExecutor> logger,
+        IRasterOutputObjectStore? rasterObjectStore,
+        IRasterOutputManifestStore? rasterManifestStore,
+        IGdalCommandRunner? runner)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
+        _rasterObjectStore = rasterObjectStore;
+        _rasterManifestStore = rasterManifestStore;
+        _runner = runner;
     }
 
     /// <inheritdoc />
@@ -59,7 +80,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     public IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;
 
     /// <inheritdoc />
-    public Task<JobExecutionResult> ExecuteAsync(
+    public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
         CancellationToken cancellationToken)
@@ -73,12 +94,34 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         {
             var supported = string.Join(", ", _handlers.Keys.OrderBy(id => id, StringComparer.Ordinal));
             Log.UnsupportedProcessId(_logger, job.OperationId, processId ?? "<none>");
-            return Task.FromResult(JobExecutionResult.Failed(
+            return JobExecutionResult.Failed(
                 $"Process id '{processId ?? "<none>"}' is not supported by the GDAL worker runtime. " +
-                $"Supported ids: {supported}."));
+                $"Supported ids: {supported}.");
         }
 
-        return handler.ExecuteAsync(job, context, cancellationToken);
+        if (job.Spec.ContractVersion >= RasterOutputContract.JobContractVersion
+            && job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.StoreReferenceParameter,
+                out var storeReference))
+        {
+            if (_rasterObjectStore is null || _rasterManifestStore is null || _runner is null)
+            {
+                return JobExecutionResult.Failed(
+                    "Raster output publication storage is unavailable in this worker deployment.");
+            }
+
+            await using var stagingContext = new RasterStagingJobExecutionContext(
+                job,
+                context,
+                _rasterObjectStore,
+                _rasterManifestStore,
+                _runner,
+                _logger,
+                storeReference);
+            return await handler.ExecuteAsync(job, stagingContext, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await handler.ExecuteAsync(job, context, cancellationToken).ConfigureAwait(false);
     }
 
     private static partial class Log

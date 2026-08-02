@@ -63,6 +63,20 @@ public sealed class RasterOutputPublisherTests
     }
 
     [Fact]
+    public async Task PublishAsync_RegistryReplayWithDifferentObjectVersionIsRejected()
+    {
+        var stage = RasterOutputContractTests.Stage();
+        var store = new RecordingObjectStore(stage);
+        var registry = new RecordingRegistry { MutateObjectVersion = true };
+        var publisher = new RasterOutputPublisher(store, registry);
+
+        var action = () => publisher.PublishAsync(Request(stage));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(action);
+        Assert.Contains("immutable storage identity", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PublishAsync_PostgisTargetRejectsObjectOnlyRegistration()
     {
         var stage = RasterOutputContractTests.Stage();
@@ -147,6 +161,39 @@ public sealed class RasterOutputPublisherTests
         Assert.DoesNotContain("raster/published/bb/visible.tif", store.DeletedKeys);
     }
 
+    [Fact]
+    public async Task SweepOrphansAsync_DeletionFenceSerializesConcurrentPublication()
+    {
+        var stage = RasterOutputContractTests.Stage();
+        var store = new RecordingObjectStore(stage);
+        var registry = new RecordingRegistry();
+        var publisher = new RasterOutputPublisher(store, registry);
+        var artifactId = RasterOutputIdentity.CreateArtifactId(
+            stage.JobId,
+            stage.OutputName,
+            stage.Content.Checksum!);
+        var destinationKey = $"raster/published/{artifactId.AsSpan(5, 2)}/{artifactId}.tif";
+        store.Orphans.Add(Candidate(destinationKey, RasterStoredObjectState.Published));
+        store.BlockDeleteKey = destinationKey;
+
+        var sweep = publisher.SweepOrphansAsync(
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture),
+            10);
+        await store.DeleteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var publication = publisher.PublishAsync(Request(stage));
+        await registry.LeaseContended.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, registry.RegisterCalls);
+
+        store.AllowDelete.TrySetResult();
+        await sweep;
+        var result = await publication;
+
+        Assert.Equal(RasterOutputPublicationState.Published, result.State);
+        Assert.Contains(destinationKey, store.PublishedKeys);
+        Assert.Contains(destinationKey, registry.VisibleKeys);
+    }
+
     private static RasterOutputPublicationRequest Request(StagedRasterOutputDescriptor stage) => new()
     {
         Stage = stage,
@@ -178,6 +225,14 @@ public sealed class RasterOutputPublisherTests
 
         public List<RasterStoredObject> Orphans { get; } = [];
 
+        public string? BlockDeleteKey { get; set; }
+
+        public TaskCompletionSource DeleteStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowDelete { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public Task<RasterStoredObject> StageAsync(
             StagedRasterOutputDescriptor descriptor,
             Stream content,
@@ -203,6 +258,11 @@ public sealed class RasterOutputPublisherTests
 
             return Task.FromResult<RasterStoredObject?>(null);
         }
+
+        public Task<Stream?> OpenReadAsync(
+            string storeReference,
+            string objectKey,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<RasterStoredObject> PublishAsync(
             RasterObjectPublicationRequest request,
@@ -234,13 +294,19 @@ public sealed class RasterOutputPublisherTests
             }
         }
 
-        public Task DeleteAsync(
+        public async Task DeleteAsync(
             string storeReference,
             string objectKey,
             CancellationToken cancellationToken = default)
         {
+            if (string.Equals(objectKey, BlockDeleteKey, StringComparison.Ordinal))
+            {
+                DeleteStarted.TrySetResult();
+                await AllowDelete.Task.WaitAsync(cancellationToken);
+            }
+
             DeletedKeys.Add(objectKey);
-            return Task.CompletedTask;
+            PublishedKeys.Remove(objectKey);
         }
     }
 
@@ -250,11 +316,43 @@ public sealed class RasterOutputPublisherTests
 
         public bool RehydrateRegistration { get; set; }
 
+        public bool MutateObjectVersion { get; set; }
+
         public int RegisterCalls { get; private set; }
 
         public Dictionary<string, RasterOutputDescriptor> Registrations { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> VisibleKeys { get; } = new(StringComparer.Ordinal);
+
+        public TaskCompletionSource LeaseContended { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private Dictionary<string, SemaphoreSlim> ObjectLeases { get; } = new(StringComparer.Ordinal);
+
+        public async ValueTask<IAsyncDisposable> AcquireObjectLeaseAsync(
+            string storeReference,
+            string objectKey,
+            CancellationToken cancellationToken = default)
+        {
+            SemaphoreSlim semaphore;
+            lock (ObjectLeases)
+            {
+                var leaseKey = storeReference + "\0" + objectKey;
+                if (!ObjectLeases.TryGetValue(leaseKey, out semaphore!))
+                {
+                    semaphore = new SemaphoreSlim(1, 1);
+                    ObjectLeases.Add(leaseKey, semaphore);
+                }
+            }
+
+            if (!semaphore.Wait(0))
+            {
+                LeaseContended.TrySetResult();
+                await semaphore.WaitAsync(cancellationToken);
+            }
+
+            return new SemaphoreLease(semaphore);
+        }
 
         public Task<RasterOutputRegistrationResult> RegisterAtomicallyAsync(
             RasterOutputRegistrationCommand command,
@@ -285,6 +383,11 @@ public sealed class RasterOutputPublisherTests
                     }
                 }
                 : command.PublishedObject;
+            if (MutateObjectVersion)
+            {
+                registered = registered with { ObjectVersion = "etag:different" };
+            }
+
             Registrations.Add(command.IdempotencyKey, registered);
             VisibleKeys.Add(command.PublishedObject.ObjectKey);
             return Task.FromResult<RasterOutputRegistrationResult>(
@@ -296,5 +399,14 @@ public sealed class RasterOutputPublisherTests
             string objectKey,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(VisibleKeys.Contains(objectKey));
+    }
+
+    private sealed class SemaphoreLease(SemaphoreSlim semaphore) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            semaphore.Release();
+            return ValueTask.CompletedTask;
+        }
     }
 }

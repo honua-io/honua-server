@@ -312,6 +312,42 @@ public static class RasterOutputWorkerContract
     public static string BuildManifestObjectKey(string jobId, int attempt)
         => BuildStagingPrefix(jobId, attempt) + "_honua/publication-manifest.json";
 
+    /// <summary>Parses an exact attempt manifest key without accepting sibling or traversal keys.</summary>
+    public static bool TryParseManifestObjectKey(
+        string? objectKey,
+        out string jobId,
+        out int attempt)
+    {
+        jobId = string.Empty;
+        attempt = -1;
+        if (!RasterOutputDescriptorValidator.IsSafeObjectKey(objectKey))
+        {
+            return false;
+        }
+
+        var segments = objectKey!.Split('/');
+        if (segments.Length != 6
+            || !string.Equals(segments[0], "raster", StringComparison.Ordinal)
+            || !string.Equals(segments[1], "staging", StringComparison.Ordinal)
+            || !segments[3].StartsWith("attempt-", StringComparison.Ordinal)
+            || !string.Equals(segments[4], "_honua", StringComparison.Ordinal)
+            || !string.Equals(segments[5], "publication-manifest.json", StringComparison.Ordinal)
+            || !int.TryParse(
+                segments[3].AsSpan("attempt-".Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out attempt)
+            || attempt < 0
+            || !IsLogicalStoreReference(segments[2]))
+        {
+            attempt = -1;
+            return false;
+        }
+
+        jobId = segments[2];
+        return string.Equals(objectKey, BuildManifestObjectKey(jobId, attempt), StringComparison.Ordinal);
+    }
+
     private static void ValidateSegment(string value, string parameterName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);

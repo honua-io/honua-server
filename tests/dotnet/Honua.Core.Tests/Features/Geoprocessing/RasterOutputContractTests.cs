@@ -104,6 +104,27 @@ public sealed class RasterOutputContractTests
     }
 
     [Fact]
+    public void ManifestKeyParser_AcceptsOnlyExactDerivedAttemptKeys()
+    {
+        var key = RasterOutputWorkerContract.BuildManifestObjectKey("job-42", 12);
+
+        Assert.True(RasterOutputWorkerContract.TryParseManifestObjectKey(
+            key,
+            out var jobId,
+            out var attempt));
+        Assert.Equal("job-42", jobId);
+        Assert.Equal(12, attempt);
+        Assert.False(RasterOutputWorkerContract.TryParseManifestObjectKey(
+            "raster/staging/job-42/attempt-12/result.tif",
+            out _,
+            out _));
+        Assert.False(RasterOutputWorkerContract.TryParseManifestObjectKey(
+            "raster/staging/other/attempt-12/_honua/publication-manifest.json/extra",
+            out _,
+            out _));
+    }
+
+    [Fact]
     public void StageValidator_RequiresStrongContentAndMatchingLineage()
     {
         var stage = Stage() with

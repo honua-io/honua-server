@@ -3,8 +3,13 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.ControlPlane;
+#if !HONUA_EXCLUDE_AWS || !HONUA_EXCLUDE_AZURE
+using Honua.FileStorage;
+#endif
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -83,6 +88,7 @@ public static class GdalWorkerServiceCollectionExtensions
         // builds its routing table by enumerating IProcessExecutor instead of a
         // hand-maintained ctor. Shared with the Redis-free AddGdalProcessExecutors seam.
         services.AddGdalProcessExecutors(configuration);
+        services.AddGdalRasterOutputStorage(configuration);
 
         // Register the native dispatcher as the single IJobExecutor for the
         // Geoprocessing kind in this host. It declares AcceptedRuntimeProfiles =
@@ -92,6 +98,87 @@ public static class GdalWorkerServiceCollectionExtensions
             ServiceDescriptor.Singleton<IJobExecutor, GdalDispatchJobExecutor>());
 
         return services;
+    }
+
+    /// <summary>
+    /// Selects the object-store data plane used by the production worker to stage raster results.
+    /// Cloud SDKs remain in their provider satellites; the local path is worker-only.
+    /// </summary>
+    private static void AddGdalRasterOutputStorage(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var storageSection = configuration.GetSection("FileStorage");
+        services
+            .AddOptions<CloudStorageOptions>()
+            .Bind(storageSection)
+            .Validate(
+                options => options.Provider != CloudStorageProvider.Local
+                    || options.LocalStorage is { BasePath.Length: > 0 },
+                "Local raster output storage requires FileStorage:LocalStorage:BasePath.")
+            .ValidateOnStart();
+        services
+            .AddOptions<RasterOutputPublicationOptions>()
+            .Bind(configuration.GetSection(RasterOutputPublicationOptions.SectionName))
+            .Validate(
+                options => RasterOutputWorkerContract.IsLogicalStoreReference(options.StoreReference),
+                "Raster output StoreReference must be a bounded logical identifier.")
+            .ValidateOnStart();
+
+        var providerName = storageSection.GetValue<string>("Provider")
+            ?? Environment.GetEnvironmentVariable("HONUA_STORAGE_PROVIDER")
+            ?? nameof(CloudStorageProvider.Local);
+        if (!Enum.TryParse<CloudStorageProvider>(providerName, ignoreCase: true, out var provider))
+        {
+            throw new InvalidOperationException($"Unknown raster output storage provider: {providerName}.");
+        }
+
+        switch (provider)
+        {
+            case CloudStorageProvider.Local:
+                if (string.IsNullOrWhiteSpace(storageSection["LocalStorage:BasePath"]))
+                {
+                    var defaultRoot = Path.Join(Path.GetTempPath(), "honua-gdal-raster-outputs");
+                    services.PostConfigure<CloudStorageOptions>(options =>
+                    {
+                        options.LocalStorage ??= new LocalStorageOptions();
+                        options.LocalStorage.BasePath = defaultRoot;
+                    });
+                }
+
+                services.TryAddSingleton<LocalRasterOutputObjectStore>(serviceProvider =>
+                    new LocalRasterOutputObjectStore(
+                        serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<CloudStorageOptions>>()
+                            .Value.LocalStorage!.BasePath,
+                        serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<RasterOutputPublicationOptions>>()
+                            .Value.StoreReference));
+                services.TryAddSingleton<IRasterOutputObjectStore>(serviceProvider =>
+                    serviceProvider.GetRequiredService<LocalRasterOutputObjectStore>());
+                services.TryAddSingleton<IRasterOutputManifestStore>(serviceProvider =>
+                    serviceProvider.GetRequiredService<LocalRasterOutputObjectStore>());
+                break;
+
+            case CloudStorageProvider.AwsS3:
+#if HONUA_EXCLUDE_AWS
+                throw new InvalidOperationException(
+                    "AWS S3 raster output storage is unavailable in this no-cloud build profile.");
+#else
+                services.AddAwsRasterOutputStorage();
+                break;
+#endif
+
+            case CloudStorageProvider.AzureBlob:
+#if HONUA_EXCLUDE_AZURE
+                throw new InvalidOperationException(
+                    "Azure Blob raster output storage is unavailable in this no-cloud build profile.");
+#else
+                services.AddAzureRasterOutputStorage();
+                break;
+#endif
+
+            default:
+                throw new InvalidOperationException($"Unknown raster output storage provider: {provider}.");
+        }
     }
 
     /// <summary>

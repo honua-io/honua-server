@@ -56,6 +56,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly GeoprocessingJobArtifactService _artifacts;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
+    private readonly RasterOutputPublicationOptions _rasterOutputOptions;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -73,7 +74,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IOptions<RasterOutputPublicationOptions>? rasterOutputOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -85,6 +87,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _logger = logger;
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
+        _rasterOutputOptions = rasterOutputOptions?.Value ?? new RasterOutputPublicationOptions();
         _jobStore = jobStore;
     }
 
@@ -436,6 +439,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
+        var declaredOutputKinds = plan.Outputs.Count > 0 ? plan.Outputs : DeriveArtifactKinds(plan);
+        var publishesRasterOutput = declaredOutputKinds.Contains(ArtifactKind.Raster);
+        if (publishesRasterOutput)
+        {
+            specParams[RasterOutputWorkerContract.StoreReferenceParameter] =
+                _rasterOutputOptions.StoreReference;
+        }
 
         // Phase 0/1 auth spine: pin the submitter's owner snapshot when the job
         // declares a custom-code resource scope. The declared scope is validated to
@@ -494,7 +504,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
         // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
         var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
-        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
+        var spec = BuildSpec(
+            plan,
+            specParams,
+            workload,
+            requiredRuntimeProfile,
+            resourceProfile,
+            publishesRasterOutput ? RasterOutputContract.JobContractVersion : 1);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -1186,7 +1202,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile,
-        GpResourceProfile resourceProfile)
+        GpResourceProfile resourceProfile,
+        int minimumContractVersion)
     {
         if (workload == null)
         {
@@ -1196,7 +1213,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // plan (issue #2180). The per-job resource profile is NOT projected here: the
             // batch.* sizing keys are meaningless to the local/Kubernetes baseline and would
             // break the local-runner spec-parity invariant.
-            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
+            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(
+                plan,
+                specParams,
+                requiredRuntimeProfile,
+                minimumContractVersion);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
@@ -1229,7 +1250,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
             ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
                 plan,
-                workload.ContractVersion),
+                Math.Max(workload.ContractVersion, minimumContractVersion)),
             Parameters = specParams
         };
     }

@@ -9,6 +9,7 @@ using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
@@ -57,6 +58,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         try
         {
             AnalysisResultPackage? package = null;
+            job = await PublishRasterOutputsAsync(job, cancellationToken).ConfigureAwait(false);
             var hasAnalysisContentSource = HasAnalysisContentSource(job);
             if (resultPackageStore != null || hasAnalysisContentSource)
             {
@@ -162,6 +164,126 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             // logged, not thrown.
             Log.ProgressSyncFailed(logger, job.OperationId, ex);
         }
+    }
+
+    private async Task<ExecutionJobRecord> PublishRasterOutputsAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        if (!job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.StoreReferenceParameter,
+                out var configuredStoreReference))
+        {
+            return job;
+        }
+
+        if (job.Spec.ContractVersion < RasterOutputContract.JobContractVersion
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(configuredStoreReference))
+        {
+            throw new InvalidDataException("Terminal raster output job has an invalid worker contract.");
+        }
+
+        var manifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(
+            job.OperationId,
+            job.AttemptCount);
+        foreach (var reference in job.ArtifactReferences)
+        {
+            if (RasterOutputArtifactReference.TryParseManifest(
+                    reference,
+                    out var markerStore,
+                    out var markerKey)
+                && (!string.Equals(markerStore, configuredStoreReference, StringComparison.Ordinal)
+                    || !RasterOutputWorkerContract.TryParseManifestObjectKey(
+                        markerKey,
+                        out var markerJobId,
+                        out var markerAttempt)
+                    || !string.Equals(markerJobId, job.OperationId, StringComparison.Ordinal)
+                    || markerAttempt > job.AttemptCount))
+            {
+                throw new InvalidDataException("Raster output manifest marker does not belong to this job's attempts.");
+            }
+        }
+
+        using var scope = serviceScopeFactory.CreateScope();
+        var manifestStore = scope.ServiceProvider.GetRequiredService<IRasterOutputManifestStore>();
+        var objectStore = scope.ServiceProvider.GetRequiredService<IRasterOutputObjectStore>();
+        var publisher = scope.ServiceProvider.GetRequiredService<RasterOutputPublisher>();
+        var publicationOptions = scope.ServiceProvider
+            .GetRequiredService<IOptionsMonitor<RasterOutputPublicationOptions>>()
+            .CurrentValue;
+        var manifest = await manifestStore.ReadManifestAsync(
+            configuredStoreReference,
+            manifestKey,
+            cancellationToken).ConfigureAwait(false);
+        if (manifest is null)
+        {
+            if (job.Status == ExecutionJobStatus.Succeeded)
+            {
+                throw new InvalidDataException("Succeeded raster output job did not publish its attempt manifest.");
+            }
+
+            return job;
+        }
+
+        if (!string.Equals(manifest.JobId, job.OperationId, StringComparison.Ordinal)
+            || manifest.Attempt != job.AttemptCount)
+        {
+            throw new InvalidDataException("Raster output manifest does not belong to the terminal job attempt.");
+        }
+
+        var completionState = job.Status switch
+        {
+            ExecutionJobStatus.Succeeded => RasterOutputCompletionState.Succeeded,
+            ExecutionJobStatus.Failed => RasterOutputCompletionState.Failed,
+            ExecutionJobStatus.Cancelled => RasterOutputCompletionState.Cancelled,
+            _ => throw new InvalidOperationException("Raster outputs can only be projected for terminal jobs.")
+        };
+        var publishedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
+        var outputReferences = new List<string>(manifest.Outputs.Count);
+        foreach (var stage in manifest.Outputs)
+        {
+            var result = await publisher.PublishAsync(new RasterOutputPublicationRequest
+            {
+                Stage = stage,
+                CompletionState = completionState,
+                RegistrationTarget = new RasterOutputRegistrationTarget(
+                    publicationOptions.RegistrationKind,
+                    publicationOptions.RegistrationTarget),
+                PublishedAt = publishedAt,
+                RetainUntil = publishedAt.Add(ProgressRetention)
+            }, cancellationToken).ConfigureAwait(false);
+            if (result.Output is not null)
+            {
+                outputReferences.Add(RasterOutputArtifactReference.CreateOutput(result.Output));
+            }
+        }
+
+        try
+        {
+            await objectStore.DeleteAsync(
+                configuredStoreReference,
+                manifestKey,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // The output registration is already committed. Manifest cleanup is deliberately
+            // best-effort; the bounded orphan sweeper owns recovery and a delete outage must not
+            // turn a durable successful result back into a failed projection.
+            Log.ManifestCleanupDeferred(logger, job.OperationId, exception);
+        }
+
+        if (completionState != RasterOutputCompletionState.Succeeded)
+        {
+            return job;
+        }
+
+        var retainedReferences = job.ArtifactReferences.Where(reference =>
+            !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
+        return job with
+        {
+            ArtifactReferences = retainedReferences.Concat(outputReferences).ToArray()
+        };
     }
 
     private async Task TryRevokeCustomCodeTokenAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
@@ -315,5 +437,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8023, LogLevel.Warning, "Failed to revoke custom-code scoped job token for terminal job {OperationId}; it will expire at its absolute TTL")]
         public static partial void CustomCodeTokenRevokeFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8024, LogLevel.Warning, "Raster output manifest cleanup was deferred for terminal job {OperationId}; orphan reconciliation will retry")]
+        public static partial void ManifestCleanupDeferred(ILogger logger, string operationId, Exception exception);
     }
 }

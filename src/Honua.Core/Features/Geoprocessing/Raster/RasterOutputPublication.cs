@@ -100,6 +100,32 @@ public sealed record RasterObjectPublicationRequest
     public required DateTimeOffset PublishedAt { get; init; }
 }
 
+/// <summary>Configuration for referenced raster output publication and reconciliation.</summary>
+public sealed record RasterOutputPublicationOptions
+{
+    /// <summary>Configuration section name.</summary>
+    public const string SectionName = "Geoprocessing:RasterOutputs";
+
+    /// <summary>Logical storage registration projected into versioned worker contracts.</summary>
+    public string StoreReference { get; set; } = "gp-results";
+
+    /// <summary>Default durable registration performed for raster outputs.</summary>
+    public RasterOutputRegistrationKind RegistrationKind { get; set; } =
+        RasterOutputRegistrationKind.ResultArtifact;
+
+    /// <summary>Logical registration target; layer targets use <c>layer.&lt;id&gt;</c>.</summary>
+    public string RegistrationTarget { get; set; } = "result-artifact";
+
+    /// <summary>Minimum age before an unregistered object is eligible for cleanup.</summary>
+    public TimeSpan OrphanGracePeriod { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>Interval between bounded reconciliation sweeps.</summary>
+    public TimeSpan ReconciliationInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>Maximum candidates inspected in one sweep.</summary>
+    public int MaximumSweepCount { get; set; } = 100;
+}
+
 /// <summary>
 /// Object-store operations used by worker-side output publication. Implementations must stream
 /// content, validate declared size/media/checksum, isolate attempts, and make same-store promotion
@@ -119,6 +145,12 @@ public interface IRasterOutputObjectStore
         string objectKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Opens an exact object as a forward-only stream without materializing its bytes.</summary>
+    Task<Stream?> OpenReadAsync(
+        string storeReference,
+        string objectKey,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Atomically promotes staged bytes to a deterministic immutable key.</summary>
     Task<RasterStoredObject> PublishAsync(
         RasterObjectPublicationRequest request,
@@ -134,6 +166,23 @@ public interface IRasterOutputObjectStore
     Task DeleteAsync(
         string storeReference,
         string objectKey,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Metadata-only manifest I/O for one raster-producing job attempt.</summary>
+public interface IRasterOutputManifestStore
+{
+    /// <summary>Writes or idempotently replaces the bounded manifest at its derived attempt key.</summary>
+    Task WriteManifestAsync(
+        string storeReference,
+        string manifestObjectKey,
+        RasterOutputPublicationManifest manifest,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads a bounded manifest without resolving raster content.</summary>
+    Task<RasterOutputPublicationManifest?> ReadManifestAsync(
+        string storeReference,
+        string manifestObjectKey,
         CancellationToken cancellationToken = default);
 }
 
@@ -164,6 +213,17 @@ public sealed record RasterOutputRegistrationResult(
 /// </summary>
 public interface IRasterOutputRegistry
 {
+    /// <summary>
+    /// Acquires an exclusive, cross-process lease for one physical object identity. Publication
+    /// holds the lease across promotion and registration; cleanup holds the same lease across its
+    /// visibility check and delete. Implementations must release abandoned leases when the owning
+    /// process or database session ends.
+    /// </summary>
+    ValueTask<IAsyncDisposable> AcquireObjectLeaseAsync(
+        string storeReference,
+        string objectKey,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Creates or replays an atomic, idempotent output registration.</summary>
     Task<RasterOutputRegistrationResult> RegisterAtomicallyAsync(
         RasterOutputRegistrationCommand command,
@@ -244,6 +304,10 @@ public sealed class RasterOutputPublisher
             {
                 if (!cleanupDeferred)
                 {
+                    await using var cleanupLease = await _registry.AcquireObjectLeaseAsync(
+                        request.Stage.StoreReference,
+                        request.Stage.ObjectKey,
+                        cancellationToken).ConfigureAwait(false);
                     await _objectStore.DeleteAsync(
                         request.Stage.StoreReference,
                         request.Stage.ObjectKey,
@@ -270,6 +334,18 @@ public sealed class RasterOutputPublisher
             request.Stage.OutputName,
             checksum);
         var destinationKey = BuildPublishedObjectKey(artifactId, request.Stage.Encoding);
+
+        // Hold both identities while promoting and registering. The staging-key lease keeps an
+        // orphan sweep from removing the source mid-copy. The destination-key lease closes the
+        // visibility-check/delete race for retries and reconciliation.
+        await using var stageLease = await _registry.AcquireObjectLeaseAsync(
+            request.Stage.StoreReference,
+            request.Stage.ObjectKey,
+            cancellationToken).ConfigureAwait(false);
+        await using var destinationLease = await _registry.AcquireObjectLeaseAsync(
+            request.Stage.StoreReference,
+            destinationKey,
+            cancellationToken).ConfigureAwait(false);
         var stored = await _objectStore.PublishAsync(
             new RasterObjectPublicationRequest
             {
@@ -328,6 +404,10 @@ public sealed class RasterOutputPublisher
             cancellationToken).ConfigureAwait(false))
         {
             inspected++;
+            await using var cleanupLease = await _registry.AcquireObjectLeaseAsync(
+                candidate.StoreReference,
+                candidate.ObjectKey,
+                cancellationToken).ConfigureAwait(false);
             if (candidate.State == RasterStoredObjectState.Published
                 && await _registry.IsVisibleAsync(
                     candidate.StoreReference,
@@ -408,6 +488,16 @@ public sealed class RasterOutputPublisher
         if (!validation.IsValid)
         {
             throw new InvalidOperationException("Registry returned an invalid raster output descriptor.");
+        }
+
+        if (actual is ObjectStoreRasterOutputDescriptor objectOutput
+            && (!string.Equals(expected.StoreReference, objectOutput.StoreReference, StringComparison.Ordinal)
+                || !string.Equals(expected.ObjectKey, objectOutput.ObjectKey, StringComparison.Ordinal)
+                || !string.Equals(expected.ObjectVersion, objectOutput.ObjectVersion, StringComparison.Ordinal)
+                || expected.Encoding != objectOutput.Encoding))
+        {
+            throw new InvalidOperationException(
+                "Registry returned an object raster with a different immutable storage identity.");
         }
 
         if (registrationKind == RasterOutputRegistrationKind.PostgisRaster

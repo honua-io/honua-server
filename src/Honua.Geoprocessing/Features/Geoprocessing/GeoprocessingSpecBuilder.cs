@@ -132,10 +132,14 @@ internal static class GeoprocessingSpecBuilder
     /// The data-driven runtime profile (<c>native</c> for a gdal.* step; <c>null</c>
     /// leaves the job managed/default). Drives the claim fence to the right worker.
     /// </param>
+    /// <param name="baselineContractVersion">
+    /// Minimum serving-to-worker contract required by output capabilities not represented in step inputs.
+    /// </param>
     public static ExecutionJobSpec BuildNoWorkloadSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
-        string? requiredRuntimeProfile)
+        string? requiredRuntimeProfile,
+        int baselineContractVersion = 1)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(specParams);
@@ -153,7 +157,7 @@ internal static class GeoprocessingSpecBuilder
             // claim fence routes the job to the GDAL worker and away from the lean
             // dispatcher. Null leaves the job managed/default.
             RuntimeProfile = requiredRuntimeProfile,
-            ContractVersion = ResolveRequiredContractVersion(plan),
+            ContractVersion = ResolveRequiredContractVersion(plan, baselineContractVersion),
             Parameters = specParams,
         };
     }
@@ -165,8 +169,12 @@ internal static class GeoprocessingSpecBuilder
     public static int ResolveRequiredContractVersion(AnalysisPlan plan, int baselineVersion = 1)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.Steps.Any(step => step.RasterSources.Count > 0)
-            ? Math.Max(baselineVersion, RasterSourceContract.JobContractVersion)
+        var requiresRasterContract = plan.Steps.Any(step => step.RasterSources.Count > 0)
+            || plan.Outputs.Contains(ArtifactKind.Raster);
+        return requiresRasterContract
+            ? Math.Max(
+                baselineVersion,
+                Math.Max(RasterSourceContract.JobContractVersion, RasterOutputContract.JobContractVersion))
             : baselineVersion;
     }
 

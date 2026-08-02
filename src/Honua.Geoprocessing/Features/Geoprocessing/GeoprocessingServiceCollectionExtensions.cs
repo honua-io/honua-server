@@ -4,6 +4,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
@@ -146,6 +147,16 @@ internal static class GeoprocessingServiceCollectionExtensions
             .AddOptions<GeoprocessingExecutorOptions>()
             .Bind(configuration.GetSection(GeoprocessingExecutorOptions.SectionName))
             .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services
+            .AddOptions<RasterOutputPublicationOptions>()
+            .Bind(configuration.GetSection(RasterOutputPublicationOptions.SectionName))
+            .Validate(
+                options => RasterOutputWorkerContract.IsLogicalStoreReference(options.StoreReference),
+                "Raster output StoreReference must be a bounded logical identifier.")
+            .Validate(
+                options => RasterOutputWorkerContract.IsLogicalStoreReference(options.RegistrationTarget),
+                "Raster output RegistrationTarget must be a bounded logical identifier.")
             .ValidateOnStart();
 
         // Built-in production executors (ticket #1031; GP Devkit authoring
