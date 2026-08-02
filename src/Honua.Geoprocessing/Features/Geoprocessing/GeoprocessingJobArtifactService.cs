@@ -59,18 +59,10 @@ internal sealed class GeoprocessingJobArtifactService
     public void ValidateRasterSources(AnalysisPlan plan, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        var options = new RasterSourceValidationOptions
+        var contractFailures = GetRasterSourceValidationFailures(plan, cancellationToken);
+        if (contractFailures.Count > 0)
         {
-            MaxInlineBytes = _executorOptions.CurrentValue.MaxInlineRasterSourceBytes,
-            MaxSourcesPerPlan = _executorOptions.CurrentValue.MaxRasterSourcesPerPlan,
-            MaxParameterNameLength = _executorOptions.CurrentValue.MaxRasterSourceParameterNameLength,
-            MaxSerializedBytesPerPlan = _executorOptions.CurrentValue.MaxRasterSourceSerializedBytesPerPlan,
-        };
-
-        var planValidation = RasterSourcePlanValidator.Validate(plan, options, cancellationToken);
-        if (!planValidation.IsValid)
-        {
-            var failure = planValidation.Errors[0];
+            var failure = contractFailures[0];
             throw new GeoprocessingValidationException(
                 $"Raster source plan is invalid ({failure.Code}): {failure.Message}");
         }
@@ -102,6 +94,38 @@ internal sealed class GeoprocessingJobArtifactService
             }
         }
     }
+
+    /// <summary>
+    /// Returns the configured typed-raster contract failures used by submission so read-only
+    /// plan preflight can report the same bounded, field-specific diagnostics.
+    /// </summary>
+    public IReadOnlyList<GeoprocessingValidationFailure> GetRasterSourceValidationFailures(
+        AnalysisPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        var validation = RasterSourcePlanValidator.Validate(
+            plan,
+            CreateRasterSourceValidationOptions(),
+            cancellationToken);
+
+        return validation.Errors
+            .Select(error => new GeoprocessingValidationFailure
+            {
+                Code = error.Code,
+                Message = error.Message,
+                FieldPath = error.Field,
+            })
+            .ToArray();
+    }
+
+    private RasterSourceValidationOptions CreateRasterSourceValidationOptions() => new()
+    {
+        MaxInlineBytes = _executorOptions.CurrentValue.MaxInlineRasterSourceBytes,
+        MaxSourcesPerPlan = _executorOptions.CurrentValue.MaxRasterSourcesPerPlan,
+        MaxParameterNameLength = _executorOptions.CurrentValue.MaxRasterSourceParameterNameLength,
+        MaxSerializedBytesPerPlan = _executorOptions.CurrentValue.MaxRasterSourceSerializedBytesPerPlan,
+    };
 
     /// <summary>
     /// Refuses typed raster execution until the v2 worker admission/resolution path from #3090

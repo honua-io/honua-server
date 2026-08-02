@@ -212,6 +212,25 @@ public sealed class GeoprocessingJobServiceTests
             && violation.FieldPath == "rasterSources");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.UnsafeLocator
+            && violation.FieldPath == "objectKey");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------
@@ -241,6 +260,21 @@ public sealed class GeoprocessingJobServiceTests
 
         act.Should().Throw<GeoprocessingValidationException>()
             .WithMessage($"*{GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var act = () => _sut.DryRunPlan(plan, CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{RasterSourceValidationCodes.UnsafeLocator}*");
     }
 
     // -----------------------------------------------------------------------
@@ -3467,7 +3501,9 @@ public sealed class GeoprocessingJobServiceTests
         Steps = [BufferStep("step-1")]
     };
 
-    private static AnalysisPlan CreateTypedRasterPlan(string parameterName) => new()
+    private static AnalysisPlan CreateTypedRasterPlan(
+        string parameterName,
+        ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
     {
         PlanId = "plan-typed-raster",
         IntentId = "intent-typed-raster",
@@ -3481,26 +3517,28 @@ public sealed class GeoprocessingJobServiceTests
                 Inputs = new Dictionary<string, string> { ["targetSrid"] = "3857" },
                 RasterSources = new Dictionary<string, RasterSourceDescriptor>
                 {
-                    [parameterName] = new ObjectStoreCogRasterSourceDescriptor
-                    {
-                        Version = "object-v1",
-                        StoreReference = "imagery-prod",
-                        ObjectKey = "tenant/source.tif",
-                        Content = new RasterContentIdentity
-                        {
-                            SizeBytes = 4096,
-                            MediaType = "image/tiff",
-                            Checksum = new RasterChecksum("sha256", new string('a', 64)),
-                        },
-                        SecurityContext = new RasterSecurityContextReference
-                        {
-                            TenantId = "tenant-a",
-                            AuthorizationSnapshotReference = "untrusted-caller-hint",
-                        },
-                    },
+                    [parameterName] = descriptor ?? CreateObjectStoreRasterSource(),
                 },
             },
         ],
+    };
+
+    private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
+    {
+        Version = "object-v1",
+        StoreReference = "imagery-prod",
+        ObjectKey = "tenant/source.tif",
+        Content = new RasterContentIdentity
+        {
+            SizeBytes = 4096,
+            MediaType = "image/tiff",
+            Checksum = new RasterChecksum("sha256", new string('a', 64)),
+        },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant-a",
+            AuthorizationSnapshotReference = "untrusted-caller-hint",
+        },
     };
 
     private static AnalysisPlanStep BufferStep(string stepId) => new()
