@@ -61,73 +61,54 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void ReleaseWorkflow_ShouldVerifyAotImageBeforeRegistryPublication()
-    {
-        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy.yml"))
-            .ReplaceLineEndings("\n");
-
-        const string localBuildStep = "- name: Build native-AOT image for boundary verification";
-        const string verificationStep = "- name: Verify native-AOT image before registry publication";
-        const string publicationStep = "- name: Build and push";
-
-        var localBuildIndex = workflow.IndexOf(localBuildStep, StringComparison.Ordinal);
-        var verificationIndex = workflow.IndexOf(verificationStep, StringComparison.Ordinal);
-        var publicationIndex = workflow.IndexOf(publicationStep, StringComparison.Ordinal);
-
-        localBuildIndex.Should().BeGreaterThan(-1);
-        verificationIndex.Should().BeGreaterThan(localBuildIndex,
-            "the locally loaded AOT image must exist before it is inspected");
-        publicationIndex.Should().BeGreaterThan(verificationIndex,
-            "no release registry tag may be published before the AOT boundary check passes");
-
-        var localBuild = workflow[localBuildIndex..verificationIndex];
-        localBuild.Should().Contain("load: true");
-        localBuild.Should().Contain("tags: honua-release-boundary:");
-        localBuild.Should().NotContain("push: true");
-        localBuild.Should().NotContain("steps.arch_tags.outputs.tags");
-        workflow[verificationIndex..publicationIndex].Should().Contain(VerifierCommand);
-    }
-
-    [ArchitectureTest]
-    public void AllOtherPublishers_ShouldVerifyAotImagesBeforeRegistryPublication()
+    public void Publishers_ShouldPromoteTheExactVerifiedAotDigest()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var expectations = new[]
         {
             (
+                Path: ".github/workflows/deploy.yml",
+                Candidate: "- name: Build native-AOT candidate by digest",
+                Verification: "- name: Verify native-AOT candidate before registry publication",
+                Publication: "- name: Publish verified native-AOT architecture tags",
+                Digest: "steps.aot_candidate.outputs.digest"),
+            (
                 Path: ".github/workflows/deploy-platform-images.yml",
-                LocalBuild: "- name: Build local native-AOT platform image for boundary verification",
-                Verification: "- name: Verify native-AOT platform image before registry publication",
-                Publication: "- name: Build and push"),
+                Candidate: "- name: Build native-AOT platform candidate by digest",
+                Verification: "- name: Verify native-AOT platform candidate before registry publication",
+                Publication: "- name: Publish verified native-AOT platform architecture tags",
+                Digest: "steps.aot_candidate.outputs.digest"),
             (
                 Path: ".github/workflows/nightly-container-build.yml",
-                LocalBuild: "- name: Build local nightly AOT image for boundary verification",
-                Verification: "- name: Verify nightly AOT image before registry publication",
-                Publication: "- name: Build and push"),
+                Candidate: "- name: Build nightly AOT candidate by digest",
+                Verification: "- name: Verify nightly AOT candidate before registry publication",
+                Publication: "- name: Publish verified nightly AOT architecture tags",
+                Digest: "steps.build.outputs.digest"),
             (
                 Path: ".github/workflows/nightly-container-build.yml",
-                LocalBuild: "- name: Build local nightly Lambda AOT image for boundary verification",
-                Verification: "- name: Verify nightly Lambda AOT image before registry publication",
-                Publication: "- name: Build and push"),
+                Candidate: "- name: Build nightly Lambda AOT candidate by digest",
+                Verification: "- name: Verify nightly Lambda AOT candidate before registry publication",
+                Publication: "- name: Publish verified nightly Lambda AOT architecture tags",
+                Digest: "steps.build.outputs.digest"),
             (
                 Path: ".github/workflows/release-bundle.yml",
-                LocalBuild: "- name: Build local RC AOT image for boundary verification",
-                Verification: "- name: Verify RC AOT image before registry publication",
-                Publication: "- name: Build & push Native AOT image (immutable RC tag)")
+                Candidate: "- name: Build RC AOT candidate by digest",
+                Verification: "- name: Verify RC AOT candidate before registry publication",
+                Publication: "- name: Publish verified RC AOT tag",
+                Digest: "steps.build.outputs.digest")
         };
 
         foreach (var expectation in expectations)
         {
             var workflow = File.ReadAllText(Path.Join(repositoryRoot, expectation.Path))
                 .ReplaceLineEndings("\n");
-            var localBuildIndex = workflow.IndexOf(expectation.LocalBuild, StringComparison.Ordinal);
-            localBuildIndex.Should().BeGreaterThan(-1, expectation.Path);
+            var candidateIndex = workflow.IndexOf(expectation.Candidate, StringComparison.Ordinal);
+            candidateIndex.Should().BeGreaterThan(-1, expectation.Path);
             var verificationIndex = workflow.IndexOf(
                 expectation.Verification,
-                localBuildIndex,
+                candidateIndex,
                 StringComparison.Ordinal);
-            verificationIndex.Should().BeGreaterThan(localBuildIndex, expectation.Path);
+            verificationIndex.Should().BeGreaterThan(candidateIndex, expectation.Path);
             var publicationIndex = workflow.IndexOf(
                 expectation.Publication,
                 verificationIndex,
@@ -135,14 +116,32 @@ public sealed class ServingImageBoundaryTests
             publicationIndex.Should().BeGreaterThan(verificationIndex,
                 $"{expectation.Path} must enforce the AOT boundary before publishing registry tags");
 
-            var localBuild = workflow[localBuildIndex..verificationIndex];
-            localBuild.Should().Contain("load: true", expectation.Path);
-            localBuild.Should().Contain("tags: honua-", expectation.Path);
-            localBuild.Should().NotContain("push: true", expectation.Path);
-            localBuild.Should().NotContain("steps.meta.outputs.tags", expectation.Path);
-            localBuild.Should().NotContain("steps.arch_tags.outputs.tags", expectation.Path);
-            localBuild.Should().NotContain("steps.ref.outputs.image_ref", expectation.Path);
-            workflow[verificationIndex..publicationIndex].Should().Contain(VerifierCommand, expectation.Path);
+            var nextStepIndex = workflow.IndexOf(
+                "\n      - name:",
+                publicationIndex + expectation.Publication.Length,
+                StringComparison.Ordinal);
+            var publicationEnd = nextStepIndex >= 0 ? nextStepIndex : workflow.Length;
+            var candidate = workflow[candidateIndex..verificationIndex];
+            var verification = workflow[verificationIndex..publicationIndex];
+            var publication = workflow[publicationIndex..publicationEnd];
+
+            candidate.Should().Contain("push-by-digest=true", expectation.Path);
+            candidate.Should().Contain("name-canonical=true", expectation.Path);
+            candidate.Should().NotContain("tags:", expectation.Path);
+            candidate.Should().NotContain("steps.meta.outputs.tags", expectation.Path);
+            candidate.Should().NotContain("steps.arch_tags.outputs.tags", expectation.Path);
+            candidate.Should().NotContain("steps.ref.outputs.image_ref", expectation.Path);
+            workflow[candidateIndex..publicationIndex].Should().Contain(
+                "docker/build-push-action",
+                Exactly.Once(),
+                $"{expectation.Path} must not rebuild between candidate creation and verification");
+            verification.Should().Contain(VerifierCommand, expectation.Path);
+            verification.Should().Contain(expectation.Digest, expectation.Path);
+            publication.Should().Contain("docker buildx imagetools create", expectation.Path);
+            publication.Should().Contain("--prefer-index=false",
+                $"{expectation.Path} must preserve the verified candidate manifest rather than wrap it");
+            publication.Should().Contain(expectation.Digest,
+                $"{expectation.Path} must promote the digest that passed verification");
         }
     }
 
@@ -161,7 +160,7 @@ public sealed class ServingImageBoundaryTests
             "--tag \"${REGISTRY_GHCR}/${IMAGE_NAME}:latest\"",
             StringComparison.Ordinal);
         var publicationIndex = workflow.IndexOf(
-            "docker buildx imagetools create \"${targets[@]}\"",
+            "docker buildx imagetools create --prefer-index=false \"${targets[@]}\"",
             StringComparison.Ordinal);
 
         channelTagsIndex.Should().BeGreaterThan(-1,

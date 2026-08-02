@@ -261,30 +261,50 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build local native-AOT platform image for boundary verification
+      - name: Build native-AOT platform candidate by digest
+        id: aot_candidate
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          load: true
-          tags: honua-platform-boundary:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
+          outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
-          provenance: false
-          sbom: false
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          provenance: ${{ matrix.provenance }}
+          sbom: ${{ matrix.sbom }}
 
-      - name: Verify native-AOT platform image before registry publication
+      - name: Verify native-AOT platform candidate before registry publication
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-platform-boundary:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}"
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
 
-      - name: Build and push
+      - name: Publish verified native-AOT platform architecture tags
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
+          done <<< "$TAGS"
+
+      - name: Build and push JIT platform image
         id: build
-        if: ${{ env.PUBLISH_IMAGES == 'true' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -323,7 +343,7 @@ jobs:
         shell: bash
         env:
           PUBLISH_IMAGES: ${{ env.PUBLISH_IMAGES }}
-          SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ contains(matrix.image_key, 'aot') && steps.aot_candidate.outputs.digest || steps.build.outputs.digest }}
           SCAN_LOCAL: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail

@@ -144,29 +144,7 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
-      - name: Build local nightly AOT image for boundary verification
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.aot
-          build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-alpine
-            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-alpine
-          platforms: ${{ matrix.platform }}
-          load: true
-          tags: honua-nightly-boundary:aot-${{ matrix.arch }}-${{ github.sha }}
-          labels: ${{ steps.meta.outputs.labels }}
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
-          provenance: false
-          sbom: false
-
-      - name: Verify nightly AOT image before registry publication
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-nightly-boundary:aot-${{ matrix.arch }}-${{ github.sha }}"
-
-      - name: Build and push
+      - name: Build nightly AOT candidate by digest
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
@@ -176,8 +154,7 @@ jobs:
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-alpine
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-alpine
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -185,11 +162,32 @@ jobs:
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
-          # not fail an otherwise-successful build+push. The cache is a build
-          # accelerator, not a release artifact.
+          # not fail an otherwise-successful build. The cache is an accelerator,
+          # not a release artifact.
           cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
+
+      - name: Verify nightly AOT candidate before registry publication
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified nightly AOT architecture tags
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
+          done <<< "$TAGS"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
@@ -243,29 +241,7 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
-      - name: Build local nightly Lambda AOT image for boundary verification
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.lambda.aot
-          build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
-            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
-          platforms: ${{ matrix.platform }}
-          load: true
-          tags: honua-nightly-boundary:lambda-aot-${{ matrix.arch }}-${{ github.sha }}
-          labels: ${{ steps.meta.outputs.labels }}
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
-          provenance: false
-          sbom: false
-
-      - name: Verify nightly Lambda AOT image before registry publication
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-nightly-boundary:lambda-aot-${{ matrix.arch }}-${{ github.sha }}"
-
-      - name: Build and push
+      - name: Build nightly Lambda AOT candidate by digest
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
@@ -275,8 +251,7 @@ jobs:
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -284,11 +259,32 @@ jobs:
           cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
-          # not fail an otherwise-successful build+push. The cache is a build
-          # accelerator, not a release artifact.
+          # not fail an otherwise-successful build. The cache is an accelerator,
+          # not a release artifact.
           cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
           provenance: false
           sbom: false
+
+      - name: Verify nightly Lambda AOT candidate before registry publication
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified nightly Lambda AOT architecture tags
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
+          done <<< "$TAGS"
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests

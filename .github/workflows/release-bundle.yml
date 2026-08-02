@@ -97,37 +97,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build local RC AOT image for boundary verification
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-release-bundle-boundary:${{ steps.ref.outputs.server_sha }}
-          provenance: false
-          sbom: false
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify RC AOT image before registry publication
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-release-bundle-boundary:${{ steps.ref.outputs.server_sha }}"
-
-      - name: Build & push Native AOT image (immutable RC tag)
+      - name: Build RC AOT candidate by digest
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
           file: docker/Dockerfile.aot
           platforms: linux/amd64
-          push: true
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           provenance: true
           sbom: true
-          tags: ${{ steps.ref.outputs.image_ref }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify RC AOT candidate before registry publication
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified RC AOT tag
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
+        run: docker buildx imagetools create --prefer-index=false --tag "$IMAGE_REF" "$CANDIDATE"
 
       - name: Record image digest
         run: |
@@ -355,4 +353,4 @@ jobs:
               --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest-aot"
             )
           fi
-          docker buildx imagetools create "${targets[@]}" "${ref}@${digest}"
+          docker buildx imagetools create --prefer-index=false "${targets[@]}" "${ref}@${digest}"

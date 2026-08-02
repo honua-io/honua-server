@@ -188,6 +188,7 @@ jobs:
               printf '%s\n' "${ACR_LOGIN_SERVER}/${acr_repo}"
             fi
             echo "EOF"
+            echo "staging_image=${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
@@ -221,29 +222,50 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build native-AOT image for boundary verification
+      - name: Build native-AOT candidate by digest
+        id: aot_candidate
         if: matrix.image_key == 'aot'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          load: true
-          tags: honua-release-boundary:${{ matrix.arch }}-${{ github.sha }}
+          outputs: type=image,name=${{ steps.targets.outputs.staging_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
-          provenance: false
-          sbom: false
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          provenance: true
+          sbom: true
 
-      - name: Verify native-AOT image before registry publication
+      - name: Verify native-AOT candidate before registry publication
         if: matrix.image_key == 'aot'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-release-boundary:${{ matrix.arch }}-${{ github.sha }}"
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
 
-      - name: Build and push
+      - name: Publish verified native-AOT architecture tags
+        if: matrix.image_key == 'aot'
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
+          done <<< "$TAGS"
+
+      - name: Build and push JIT image
         id: build
+        if: matrix.image_key == 'jit'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -264,7 +286,7 @@ jobs:
         id: scan_prep
         shell: bash
         env:
-          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ matrix.image_key == 'aot' && steps.aot_candidate.outputs.digest || steps.build.outputs.digest }}
           SCAN_LOCAL: honua-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail
