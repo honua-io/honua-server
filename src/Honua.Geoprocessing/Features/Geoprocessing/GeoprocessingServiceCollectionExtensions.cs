@@ -4,6 +4,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
@@ -78,6 +79,10 @@ internal static class GeoprocessingServiceCollectionExtensions
                 services.AddHostedService(sp => sp.GetRequiredService<WorkspaceCleanupService>());
             }
         }
+
+        // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
+        // catalog so catalog definitions project the exact same immutable descriptor instances.
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry, RasterEngineCapabilityRegistry>();
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();

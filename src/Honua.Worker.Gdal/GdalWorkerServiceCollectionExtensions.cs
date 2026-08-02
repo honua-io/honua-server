@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
@@ -137,6 +138,10 @@ public static class GdalWorkerServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+
+        // Shared provider-neutral engine roster (#3091). The native dispatcher validates its
+        // advertised GdalNative entries against the actual IProcessExecutor route table.
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry, RasterEngineCapabilityRegistry>();
 
         services
             .AddOptions<GdalWorkerOptions>()

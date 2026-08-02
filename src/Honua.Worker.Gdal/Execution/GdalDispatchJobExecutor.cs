@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
@@ -40,13 +41,19 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     /// </summary>
     public GdalDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
-        ILogger<GdalDispatchJobExecutor> logger)
+        ILogger<GdalDispatchJobExecutor> logger,
+        IRasterEngineCapabilityRegistry? rasterEngineCapabilities = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
+
+        RasterEngineExecutorCoverageValidator.Validate(
+            rasterEngineCapabilities ?? new RasterEngineCapabilityRegistry(),
+            RasterEngine.GdalNative,
+            _handlers.Keys.ToHashSet(StringComparer.Ordinal));
     }
 
     /// <inheritdoc />
