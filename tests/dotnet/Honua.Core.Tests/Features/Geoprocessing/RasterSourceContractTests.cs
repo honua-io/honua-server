@@ -50,6 +50,17 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Deserialize_SourceTypeAfterDescriptorProperties_IsAccepted()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        MoveSourceTypeToEnd(document);
+
+        var descriptor = RasterSourceJson.Deserialize(document.ToJsonString());
+
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
+    }
+
+    [Fact]
     public void Validate_FutureContractVersion_IsRejectedForRollingUpgradeSafety()
     {
         var descriptor = Cog() with
@@ -265,6 +276,25 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void AnalysisContentJsonContext_SourceTypeAfterDescriptorProperties_IsAccepted()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor> { ["source"] = Cog() }),
+        };
+        var document = JsonNode.Parse(
+            JsonSerializer.Serialize(package, AnalysisContentJsonContext.Default.AnalysisPackageContent))!;
+        var source = document["plan"]!["steps"]![0]!["rasterSources"]!["source"]!.AsObject();
+        MoveSourceTypeToEnd(source);
+
+        var roundTrip = JsonSerializer.Deserialize(
+            document.ToJsonString(), AnalysisContentJsonContext.Default.AnalysisPackageContent);
+
+        var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
+    }
+
+    [Fact]
     public void AnalysisContentPersistencePolicy_InlineRaster_IsRejected()
     {
         var package = new AnalysisPackageContent
@@ -420,6 +450,13 @@ public sealed class RasterSourceContractTests
         Content = Content() with { SizeBytes = payload.Length },
         SecurityContext = Security(),
     };
+
+    private static void MoveSourceTypeToEnd(JsonObject source)
+    {
+        var sourceType = source["sourceType"]!.GetValue<string>();
+        Assert.True(source.Remove("sourceType"));
+        source["sourceType"] = sourceType;
+    }
 
     private static AnalysisPlan Plan(IReadOnlyDictionary<string, RasterSourceDescriptor> rasterSources) => new()
     {
