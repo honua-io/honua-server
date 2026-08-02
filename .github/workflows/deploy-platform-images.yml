@@ -345,12 +345,10 @@ jobs:
       #      has not shipped a fix stays fully recorded here, and moves into pass 1
       #      (and therefore onto the Security tab) the moment upstream publishes one.
       #
-      # Only pass 1 honours `.trivyignore`. That file is reserved for advisories that
-      # are unactionable for a reason other than "unfixed upstream" and carries a
-      # written justification per entry -- but those are exactly the records the
-      # inventory exists to retain, so applying it there would drop them from the one
-      # artifact meant to be complete, and keep them missing after a fix shipped until
-      # someone un-ignored them by hand. Pass 2 therefore filters on severity alone.
+      # Neither pass honours `.trivyignore`. That file includes advisories suppressed
+      # because no upstream fix exists: applying it to pass 1 would keep those findings
+      # hidden after a fix ships, while applying it to pass 2 would make the inventory
+      # incomplete. Both passes must therefore rely only on their explicit filters.
       - name: Run Trivy vulnerability scanner (actionable, fixed only)
         shell: bash
         env:
@@ -369,16 +367,13 @@ jobs:
             --skip-version-check \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --ignorefile /work/.trivyignore \
             --format sarif \
             --output "/work/$SARIF_OUTPUT" \
             "$SCAN_LOCAL"
 
-      # Deliberately NO --ignorefile here. Trivy excludes anything the ignore file names, and
-      # .trivyignore carries entries precisely BECAUSE they have no upstream fix — so applying
-      # it to the inventory pass would drop the very advisories this pass exists to retain, and
-      # they would stay invisible after a fix shipped until someone un-ignored them by hand.
-      # The actionable pass above keeps the ignore file; this one is the complete record.
+      # Deliberately NO --ignorefile in either pass. Trivy excludes anything the ignore file
+      # names, including after a fix ships, so applying it here would make the inventory
+      # incomplete and applying it above would defeat the automatic move into actionable SARIF.
       - name: Run Trivy vulnerability scanner (full inventory, including unfixed)
         if: always() && steps.scan_prep.outcome == 'success'
         shell: bash

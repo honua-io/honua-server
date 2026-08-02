@@ -348,16 +348,13 @@ were being conflated.
    upstream publishes a fix. That is a strictly better "tell me when the fix
    lands" signal than an alert that is already open and already ignored.
 
-Only the actionable pass honours `.trivyignore`. The inventory pass filters on
-severity alone, because a risk-accepted advisory is precisely the kind of record
-the inventory artifact is meant to preserve -- suppressing it there would hide it
-from the complete register and keep it hidden after upstream shipped a fix. Read
-the inventory artifact expecting risk-accepted advisories to be PRESENT.
-
-`.trivyignore` stays reserved for advisories that are
-unactionable for some reason *other* than "unfixed upstream", with a written
-justification per entry. No CVE was added to `.trivyignore` for this change and
-no alert was dismissed in the UI.
+Neither pass honours `.trivyignore`. The repository-wide file currently carries
+an advisory precisely because no patched version exists. Applying it to the
+actionable pass would keep that advisory suppressed after a fix ships, defeating
+the automatic transition promised above; applying it to the inventory pass would
+make the complete register incomplete. The file remains in use by the separate,
+out-of-scope gates listed below. No CVE was added to `.trivyignore` for this
+change and no alert was dismissed in the UI.
 
 Deliberately out of scope: the gating Trivy steps in `security-nightly.yml` and
 `ci.yml` are untouched (changing a gate's pass criteria is a different decision
