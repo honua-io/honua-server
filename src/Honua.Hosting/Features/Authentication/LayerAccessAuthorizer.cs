@@ -223,6 +223,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         }
 
         AccessDecision? lastDenial = null;
+        var requestCache = new Dictionary<object, object?>();
 
         foreach (var (candidateResource, candidateService) in candidates)
         {
@@ -234,7 +235,8 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
                 candidateResource,
                 candidateService,
                 operation,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                requestCache).ConfigureAwait(false);
 
             if (decision.IsAllowed)
             {
