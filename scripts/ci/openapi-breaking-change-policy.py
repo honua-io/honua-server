@@ -19,8 +19,12 @@ APPROVAL_MARKER = "OPENAPI_BREAKING_CHANGE_APPROVED"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 APPROVAL_PATTERN = re.compile(
-    rf"^\s*-\s*\[[xX]\]\s*`{re.escape(APPROVAL_MARKER)}`(?:\s*(?:-|—).*)?$",
+    rf"^[ ]{{0,3}}-\s*\[[xX]\]\s*`{re.escape(APPROVAL_MARKER)}`(?:\s*(?:-|—).*)?$",
     re.MULTILINE,
+)
+HTML_COMMENT_PATTERN = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
+FENCE_START_PATTERN = re.compile(
+    r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
 )
 
 
@@ -47,9 +51,43 @@ def parse_repository_override(raw_value: str) -> bool:
 
 
 def pr_body_acknowledges_breaking_change(pr_body: str) -> bool:
-    """Return whether the PR body contains the exact checked approval marker."""
+    """Return whether rendered PR Markdown contains the checked approval marker."""
 
-    return APPROVAL_PATTERN.search(pr_body) is not None
+    visible_markdown = _remove_non_rendered_markdown(pr_body)
+    return APPROVAL_PATTERN.search(visible_markdown) is not None
+
+
+def _remove_non_rendered_markdown(markdown: str) -> str:
+    """Remove HTML comments and fenced code before policy-marker matching."""
+
+    uncommented = HTML_COMMENT_PATTERN.sub("", markdown)
+    visible_lines: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+
+    for line in uncommented.splitlines():
+        if fence_character is not None:
+            closing_fence = re.fullmatch(
+                rf"[ ]{{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*",
+                line,
+            )
+            if closing_fence is not None:
+                fence_character = None
+                fence_length = 0
+            continue
+
+        opening_fence = FENCE_START_PATTERN.fullmatch(line)
+        if opening_fence is not None:
+            fence = opening_fence.group("fence")
+            info = opening_fence.group("info")
+            if not (fence[0] == "`" and "`" in info):
+                fence_character = fence[0]
+                fence_length = len(fence)
+                continue
+
+        visible_lines.append(line)
+
+    return "\n".join(visible_lines)
 
 
 def resolve_policy(repository_override: str, pr_body: str) -> PolicyDecision:

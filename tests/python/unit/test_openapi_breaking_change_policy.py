@@ -51,6 +51,40 @@ class ResolvePolicyTests(unittest.TestCase):
 
         self.assertFalse(decision.allow_breaking_changes)
 
+    def test_ResolvePolicy_MarkerInNonRenderedMarkdown_DoesNotAllowBreakingChanges(self):
+        marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - example only"
+        bodies = {
+            "backtick fence": f"```markdown\n{marker}\n```",
+            "tilde fence": f"~~~markdown\n{marker}\n~~~",
+            "unclosed fence": f"```markdown\n{marker}",
+            "single-line HTML comment": f"<!-- {marker} -->",
+            "multiline HTML comment": f"<!--\n{marker}\n-->",
+            "unclosed HTML comment": f"<!--\n{marker}",
+            "indented code": f"    {marker}",
+        }
+
+        for scenario, body in bodies.items():
+            with self.subTest(scenario=scenario):
+                decision = POLICY.resolve_policy("false", body)
+
+                self.assertFalse(decision.allow_breaking_changes)
+
+    def test_ResolvePolicy_RenderedMarkerAfterNonRenderedExample_AllowsBreakingChanges(self):
+        decision = POLICY.resolve_policy(
+            "false",
+            "```markdown\n"
+            "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - example only\n"
+            "```\n"
+            "<!-- another non-approval example -->\n"
+            "   - [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval",
+        )
+
+        self.assertTrue(decision.allow_breaking_changes)
+        self.assertEqual(
+            decision.source,
+            "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
+        )
+
     def test_ResolvePolicy_PrePublicationRepositoryOverride_TakesPrecedence(self):
         decision = POLICY.resolve_policy(
             "true",
