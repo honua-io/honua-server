@@ -356,7 +356,42 @@ public sealed class ToolboxTranslationValidatorTests
 
         var issue = report.Tools.Single().Issues.Single();
         issue.Code.Should().Be(ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
-        issue.Message.Should().Contain("Every other admissible value executes");
+        issue.Message.Should().Contain("At least one admissible branch is not covered");
+    }
+
+    [Fact]
+    public void Validate_PartialCollectiveCoverage_DoesNotClaimEveryOtherValueExecutes()
+    {
+        // NDBI is executable, but NDVI/SAVI/EVI all fail for red and NDWI fails for green.
+        // Each per-parameter issue must describe the collective uncovered branch rather than
+        // claim every value outside that individual parameter's list executes (#3048 review).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "SpectralLikeTool",
+                "test.partial-branching",
+                Mapping("in_layer", "input"),
+                Mapping("formula", "index"),
+                Mapping("nir_band", "nir"),
+                Mapping("swir_band", "swir"),
+                Mapping("blue_band", "blue"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "index"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("index=ndvi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=savi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=evi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=ndwi", "green", "Step is missing 'green'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Issues.Should().HaveCount(2);
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("At least one admissible branch is not covered"));
+        tool.Issues.Should().NotContain(issue =>
+            issue.Message.Contains("Every other admissible value executes"));
     }
 
     [Fact]
@@ -542,16 +577,41 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
+        private static readonly ProcessDefinition PartialBranching = new()
+        {
+            ProcessId = "test.partial-branching",
+            Title = "Partial Branching",
+            Description = "Test process whose reported gaps leave one discriminator branch executable.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "index",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["ndbi", "ndwi", "ndvi", "savi", "evi"]),
+                Parameter("nir", ProcessParameterValueType.Text, required: false),
+                Parameter("swir", ProcessParameterValueType.Text, required: false),
+                Parameter("blue", ProcessParameterValueType.Text, required: false),
+                Parameter("red", ProcessParameterValueType.Text, required: false),
+                Parameter("green", ProcessParameterValueType.Text, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
         public ProcessDefinition? GetProcess(string processId) => processId switch
         {
             "test.buffer" => Buffer,
             "test.simplify" => Simplify,
             "test.optional-only" => OptionalOnly,
             "test.branching" => Branching,
+            "test.partial-branching" => PartialBranching,
             _ => null
         };
 
-        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify, OptionalOnly, Branching];
+        public IReadOnlyList<ProcessDefinition> ListProcesses() =>
+            [Buffer, Simplify, OptionalOnly, Branching, PartialBranching];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) =>
             ListProcesses().Where(definition => definition.Category == category).ToArray();

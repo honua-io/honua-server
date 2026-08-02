@@ -309,7 +309,7 @@ public static class ToolboxTranslationValidator
         IReadOnlyList<ProcessBranchRequirement> requirements)
     {
         const string MapOrConstrain =
-            "Every other admissible value executes, so map it (or constrain the source value) to certify this tool.";
+            "At least one admissible branch is not covered by these gaps, so map it (or constrain the source to an uncovered branch) to certify this tool.";
         const string MapOnly =
             "Every admissible value of the discriminator has an unmapped requirement, so constraining the source value cannot certify this tool - the parameter must be mapped or defaulted.";
         const string MapUnqualified =
