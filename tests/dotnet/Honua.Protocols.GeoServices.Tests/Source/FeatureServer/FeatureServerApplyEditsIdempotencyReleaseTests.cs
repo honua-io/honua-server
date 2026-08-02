@@ -118,6 +118,109 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
 }
 
 /// <summary>
+/// Proves that cancellation of an all-or-nothing edit releases its reservation. Unlike the
+/// default partial-commit path, rollback-on-failure cannot leave a committed prefix behind.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.FeatureServer)]
+public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsyncLifetime
+{
+    private readonly CancelFirstTransactionalFeatureWriter _writer = new();
+    private readonly WebAppFixture _fixture;
+
+    public FeatureServerApplyEditsTransactionalCancellationTests()
+    {
+        _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IFeatureWriter>(_writer);
+    }
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterTransactionalCancellation_DoesNotConflict()
+    {
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?> { ["name"] = $"Cancelled-{idempotencyKey}" },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            ],
+            RollbackOnFailure = true
+        };
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        using var cancellation = new CancellationTokenSource();
+        var first = PostApplyEditsAsync(json, idempotencyKey, cancellation.Token);
+        await _writer.FirstDispatch.WaitAsync(TimeSpan.FromSeconds(10));
+        await cancellation.CancelAsync();
+        await FluentActions.Awaiting(async () => await first).Should().ThrowAsync<OperationCanceledException>();
+
+        var retry = await PostApplyEditsAsync(json, idempotencyKey, CancellationToken.None);
+        retry.Be200Ok();
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().NotBe(
+            409,
+            "the cancelled all-or-nothing transaction could not commit, so its reservation must be released");
+    }
+
+    private async Task<HttpResponseMessage> PostApplyEditsAsync(
+        string json,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/rest/services/test/FeatureServer/0/applyEdits")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        message.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await _fixture.Client.SendAsync(message, cancellationToken);
+    }
+
+    private sealed class CancelFirstTransactionalFeatureWriter : IFeatureWriter
+    {
+        private int _dispatchCount;
+        private readonly TaskCompletionSource _firstDispatch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task FirstDispatch => _firstDispatch.Task;
+
+        public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
+            => Task.FromResult(feature);
+
+        public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
+            => Task.FromResult(feature);
+
+        public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public async Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _dispatchCount) == 1)
+            {
+                _firstDispatch.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            return FeatureEditResult.Success(0, 0, 0);
+        }
+    }
+}
+
+/// <summary>
 /// Proves that a read-only exception outside the provider dispatch cannot release a reservation
 /// after the writer has reported committed rows.
 /// </summary>

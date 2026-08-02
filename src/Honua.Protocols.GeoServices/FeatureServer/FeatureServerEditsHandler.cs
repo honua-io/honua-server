@@ -868,6 +868,16 @@ internal sealed class FeatureServerEditsHandler(
         {
             editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (editBatch.RollbackOnFailure && cancellationToken.IsCancellationRequested)
+        {
+            // rollbackOnFailure is the canonical all-or-nothing provider contract. The caller
+            // cancelled before a result was returned, and transactional providers either never
+            // reached COMMIT or roll the open transaction back during unwind. Commit-time failures
+            // are returned explicitly as an unknown outcome, so this cancellation proves no row
+            // committed and the request may release its idempotency reservation.
+            writeOutcome.MayHaveCommitted = false;
+            throw;
+        }
         catch (ReadOnlyFeatureWriteException)
         {
             // This exception is safe to classify only at the provider dispatch boundary. Catching

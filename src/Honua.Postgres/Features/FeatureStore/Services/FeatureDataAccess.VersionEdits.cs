@@ -122,7 +122,7 @@ internal sealed partial class FeatureDataAccess
                     createResults.ToImmutable(), updateResults.ToImmutable(), deleteResults.ToImmutable());
             }
 
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
 
             var immutableCreateResults = createResults.ToImmutable();
             var immutableUpdateResults = updateResults.ToImmutable();
@@ -149,8 +149,14 @@ internal sealed partial class FeatureDataAccess
             // report every operation as failed.
             Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
             await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
-            var (c, u, d) = CreateFailedOperationResults(editBatch, "Versioned edit batch failed.");
-            return FeatureEditResult.Rollback(c, u, d);
+            var commitOutcomeUnknown = ex is FeatureEditCommitOutcomeUnknownException;
+            var errorMessage = commitOutcomeUnknown
+                ? "Versioned transaction commit outcome is unknown."
+                : "Versioned edit batch failed.";
+            var (c, u, d) = CreateFailedOperationResults(editBatch, errorMessage, commitOutcomeUnknown);
+            return commitOutcomeUnknown
+                ? FeatureEditResult.FailureWithUnknownCommitOutcome(c, u, d)
+                : FeatureEditResult.Rollback(c, u, d);
         }
     }
 

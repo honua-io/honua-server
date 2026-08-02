@@ -626,8 +626,7 @@ internal sealed partial class FeatureDataAccess
                     // rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        createResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                            GetSafeEditOperationError(ex, "Create")));
+                        createResults.Add(CreateFailedOperationResult(ex, "Create"));
                         return false;
                     }
                 }
@@ -674,9 +673,7 @@ internal sealed partial class FeatureDataAccess
                     // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        updateResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                            GetSafeEditOperationError(ex, "Update"),
-                            objectId: feature.Id));
+                        updateResults.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
                         return false;
                     }
                 }
@@ -730,9 +727,7 @@ internal sealed partial class FeatureDataAccess
                     // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        deleteResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                            GetSafeEditOperationError(ex, "Delete"),
-                            objectId: objectId));
+                        deleteResults.Add(CreateFailedOperationResult(ex, "Delete", objectId));
                         return false;
                     }
                 }
@@ -1085,10 +1080,7 @@ internal sealed partial class FeatureDataAccess
                     // GetSafeEditOperationError and let the remaining features in the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        return (
-                            null,
-                            EditOperationResult.FailureWithUnknownCommitOutcome(
-                                GetSafeEditOperationError(ex, "Create")));
+                        return (null, CreateFailedOperationResult(ex, "Create"));
                     }
                 },
                 (feature, createdId) => EditOperationResult.Success(
@@ -1131,8 +1123,7 @@ internal sealed partial class FeatureDataAccess
             // via GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                    GetSafeEditOperationError(ex, "Create")));
+                results.Add(CreateFailedOperationResult(ex, "Create"));
             }
         }
 
@@ -1356,9 +1347,7 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                    GetSafeEditOperationError(ex, "Update"),
-                    objectId: feature.Id));
+                results.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
             }
         }
 
@@ -1436,9 +1425,7 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
-                    GetSafeEditOperationError(ex, "Delete"),
-                    objectId: featureId));
+                results.Add(CreateFailedOperationResult(ex, "Delete", featureId));
             }
         }
 
@@ -1539,4 +1526,29 @@ internal sealed partial class FeatureDataAccess
             _ => $"{operation} failed."
         };
     }
+
+    /// <summary>
+    /// Creates a sanitized row failure while distinguishing a server-rejected statement from a
+    /// transport or acknowledgement failure. PostgreSQL error responses and local validation
+    /// failures prove that the row did not commit; other provider failures remain unknown.
+    /// </summary>
+    internal static EditOperationResult CreateFailedOperationResult(
+        Exception exception,
+        string operation,
+        long? objectId = null)
+    {
+        var errorMessage = GetSafeEditOperationError(exception, operation);
+        return IsKnownNonCommitFailure(exception)
+            ? EditOperationResult.Failure(errorMessage, objectId: objectId)
+            : EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId);
+    }
+
+    private static bool IsKnownNonCommitFailure(Exception exception)
+        => exception is PostgresException
+            or ResourceNotFoundException
+            or FeatureEditPreconditionFailedException
+            or ResourceConflictException
+            or GeometryRequiredForCreateException
+            or ValidationException
+            or ArgumentException;
 }
