@@ -170,6 +170,11 @@ public sealed class ServingImageBoundaryTests
             "mutable latest tags must only be collected inside the GA guard");
         publicationIndex.Should().BeGreaterThan(latestTagIndex);
         workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-aot\"");
+
+        var documentation = File.ReadAllText(
+            Path.Join(repositoryRoot, "docs/internal/contributor/release-bundle.md"));
+        documentation.Should().Contain("It advances `latest` and `latest-aot` only");
+        documentation.Should().Contain("preview and RC promotions do not move the stable tags");
     }
 
     [ArchitectureTest]
