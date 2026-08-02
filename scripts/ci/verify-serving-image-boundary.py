@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 import tarfile
+import time
+import uuid
 from pathlib import PurePosixPath
 from typing import BinaryIO, Iterable
 
@@ -175,13 +177,79 @@ def verify_serving_image(image: str) -> list[str]:
     return sorted(set(violations))
 
 
-def verify_worker_image(image: str) -> list[str]:
+def _smoke_worker_entrypoint(image: str, redis_connection: str) -> list[str]:
+    """Start the image's real entrypoint and wait for the durable worker loop."""
+    container_name = f"honua-worker-boundary-{uuid.uuid4().hex[:12]}"
+    started = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--detach",
+            "--name",
+            container_name,
+            "--network",
+            "host",
+            "--env",
+            f"ConnectionStrings__redis={redis_connection}",
+            image,
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if started.returncode != 0:
+        detail = (started.stderr or started.stdout).strip()
+        return [f"GDAL worker entrypoint failed to start: {detail or 'unknown error'}"]
+
+    try:
+        deadline = time.monotonic() + 30
+        last_logs = ""
+        while time.monotonic() < deadline:
+            logs = subprocess.run(
+                ["docker", "logs", container_name],
+                text=True,
+                capture_output=True,
+            )
+            last_logs = f"{logs.stdout}\n{logs.stderr}".strip()
+            if "Job execution worker started:" in last_logs:
+                return []
+
+            state = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", container_name],
+                text=True,
+                capture_output=True,
+            )
+            if state.returncode != 0 or state.stdout.strip() != "true":
+                return [
+                    "GDAL worker entrypoint exited before the durable worker loop started: "
+                    + (last_logs or "no container logs")
+                ]
+            time.sleep(1)
+
+        return [
+            "GDAL worker entrypoint did not report a started durable worker loop within 30 seconds: "
+            + (last_logs or "no container logs")
+        ]
+    finally:
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+
+def verify_worker_image(image: str, redis_connection: str | None = None) -> list[str]:
     inspect = _docker("image", "inspect", image, capture=True)
     metadata = json.loads(inspect.stdout)[0]
-    labels = metadata.get("Config", {}).get("Labels") or {}
+    config = metadata.get("Config", {})
+    labels = config.get("Labels") or {}
     violations: list[str] = []
     if labels.get("honua.runtime.profile") != "native":
         violations.append("worker label honua.runtime.profile must be 'native'")
+    if config.get("Entrypoint") != ["dotnet", "Honua.Worker.Gdal.dll"]:
+        violations.append(
+            "worker image entrypoint must be ['dotnet', 'Honua.Worker.Gdal.dll']"
+        )
 
     command = """
 set -eu
@@ -192,6 +260,9 @@ command -v ogr2ogr >/dev/null
 gdalinfo --formats | grep -qi netCDF
 gdalinfo --formats | grep -qi GRIB
 python3 -c 'from osgeo import gdal'
+command -v pdal >/dev/null
+pdal --drivers | grep -qi readers.las
+pdal --drivers | grep -qi filters.reprojection
 """.strip()
     result = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "/bin/sh", image, "-c", command],
@@ -201,6 +272,8 @@ python3 -c 'from osgeo import gdal'
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         violations.append(f"GDAL worker capability probe failed: {detail or 'unknown error'}")
+    if redis_connection:
+        violations.extend(_smoke_worker_entrypoint(image, redis_connection))
     return violations
 
 
@@ -221,7 +294,15 @@ def main() -> int:
     group.add_argument("--worker-image", metavar="IMAGE")
     group.add_argument("--rootfs-tar", metavar="PATH")
     parser.add_argument("--entrypoint", default="/app/Honua.Server")
+    parser.add_argument(
+        "--worker-redis",
+        metavar="HOST:PORT",
+        help="Redis endpoint used to smoke the worker image's real entrypoint",
+    )
     args = parser.parse_args()
+
+    if args.worker_redis and not args.worker_image:
+        parser.error("--worker-redis requires --worker-image")
 
     if args.serving_image:
         return _write_result(
@@ -229,9 +310,15 @@ def main() -> int:
             f"Serving image {args.serving_image} is native AOT and GDAL/PROJ/GEOS-free.",
         )
     if args.worker_image:
+        success = f"Worker image {args.worker_image} exposes the required native tools and drivers."
+        if args.worker_redis:
+            success = (
+                f"Worker image {args.worker_image} exposes the required native tools "
+                "and starts its worker loop."
+            )
         return _write_result(
-            verify_worker_image(args.worker_image),
-            f"Worker image {args.worker_image} exposes the required GDAL tools and drivers.",
+            verify_worker_image(args.worker_image, args.worker_redis),
+            success,
         )
 
     with open(args.rootfs_tar, "rb") as stream:

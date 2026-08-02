@@ -16,7 +16,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 # eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
 # Directory.Build.props imports it with an Exists() guard, so omitting it
 # makes restore and publish evaluate DIFFERENT project graphs: restore sees

@@ -8,6 +8,8 @@ import io
 import sys
 import tarfile
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "verify-serving-image-boundary.py"
@@ -60,5 +62,37 @@ assert_rejected(
 )
 assert_rejected(base | {"/usr/lib/libgeos_c.so.1": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/app/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
+
+# The positive worker smoke must exercise the image's configured ENTRYPOINT. A
+# command-only probe with --entrypoint can pass even when the managed worker host
+# is absent or crashes before joining the durable Redis-backed execution loop.
+worker_runs: list[list[str]] = []
+
+
+def fake_worker_run(arguments: list[str], **_: object) -> CompletedProcess[str]:
+    worker_runs.append(arguments)
+    if arguments[1] == "run":
+        return CompletedProcess(arguments, 0, stdout="container-id\n", stderr="")
+    if arguments[1] == "logs":
+        return CompletedProcess(
+            arguments,
+            0,
+            stdout="Job execution worker started: worker-fixture\n",
+            stderr="",
+        )
+    if arguments[1:3] == ["rm", "-f"]:
+        return CompletedProcess(arguments, 0, stdout="", stderr="")
+    raise AssertionError(f"unexpected worker smoke command: {arguments}")
+
+
+with patch.object(MODULE.subprocess, "run", side_effect=fake_worker_run):
+    smoke_violations = MODULE._smoke_worker_entrypoint("worker:fixture", "127.0.0.1:6379")
+
+if smoke_violations:
+    raise AssertionError(f"expected clean worker entrypoint smoke, got {smoke_violations}")
+if "--entrypoint" in worker_runs[0]:
+    raise AssertionError(f"worker smoke overrode the image entrypoint: {worker_runs[0]}")
+if worker_runs[0][-1] != "worker:fixture":
+    raise AssertionError(f"worker smoke did not launch the requested image: {worker_runs[0]}")
 
 print("Serving-image boundary fixtures passed.")

@@ -96,7 +96,7 @@ jobs:
     # waits forever). See #2865.
     name: PR Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
 
@@ -133,25 +133,61 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "affected=true" >> "$GITHUB_OUTPUT"
+            echo "generic=true" >> "$GITHUB_OUTPUT"
+            echo "lambda=true" >> "$GITHUB_OUTPUT"
+            echo "functions=true" >> "$GITHUB_OUTPUT"
+            echo "any=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           printf '%s\n' "$changed"
-          if grep -Eq '^(docker/Dockerfile\.aot|\.dockerignore|global\.json|src/.+\.(csproj|props|targets)|Directory\.(Build|Packages)\.props|NuGet\.config|eng/|scripts/ci/(verify-serving-image-boundary\.py|fixtures/validate-serving-image-boundary\.py)|\.github/workflows/(pr-gate|release-bundle|deploy|deploy-platform-images)\.yml)$' <<< "$changed"; then
-            echo "affected=true" >> "$GITHUB_OUTPUT"
+          generic=false
+          lambda=false
+          functions=false
+
+          # Common transitive image inputs (GitHub-glob equivalents):
+          # src/**, eng/**, docs/gis/data/feature-catalog.json,
+          # docs/developer/api-specs/admin-api.json, tests/fixtures/ai-builder/**,
+          # Directory.Build.props, Directory.Build.targets,
+          # Directory.Packages.props, scripts/docker/restore-dotnet-with-github-packages.sh,
+          # and .dockerignore. Ordinary source changes must rebuild every production
+          # AOT variant because each one publishes the same Honua.Server graph.
+          while IFS= read -r path; do
+            case "$path" in
+              src/*|eng/*|samples/Honua.StacOpsDemo/*|docs/gis/data/feature-catalog.json|docs/developer/api-specs/admin-api.json|tests/fixtures/ai-builder/*|Honua.sln|global.json|Directory.Build.props|Directory.Build.targets|Directory.Packages.props|NuGet.config|.editorconfig|.dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/pr-gate.yml|.github/workflows/release-bundle.yml|.github/workflows/deploy.yml|.github/workflows/deploy-platform-images.yml|.github/workflows/nightly-container-build.yml)
+                generic=true
+                lambda=true
+                functions=true
+                ;;
+              docker/Dockerfile.aot)
+                generic=true
+                ;;
+              docker/Dockerfile.lambda.aot)
+                lambda=true
+                ;;
+              docker/Dockerfile.functions.aot|docker/cloud/azure-functions/*)
+                functions=true
+                ;;
+            esac
+          done <<< "$changed"
+
+          echo "generic=$generic" >> "$GITHUB_OUTPUT"
+          echo "lambda=$lambda" >> "$GITHUB_OUTPUT"
+          echo "functions=$functions" >> "$GITHUB_OUTPUT"
+          if [[ "$generic" == true || "$lambda" == true || "$functions" == true ]]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
           else
-            echo "affected=false" >> "$GITHUB_OUTPUT"
+            echo "any=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Docker Buildx for serving-image boundary
-        if: steps.raster_boundary.outputs.affected == 'true'
+        if: steps.raster_boundary.outputs.any == 'true'
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Build canonical native-AOT serving image
-        if: steps.raster_boundary.outputs.affected == 'true'
+        if: steps.raster_boundary.outputs.generic == 'true'
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -168,11 +204,53 @@ jobs:
           sbom: false
 
       - name: Verify canonical serving-image contents
-        if: steps.raster_boundary.outputs.affected == 'true'
+        if: steps.raster_boundary.outputs.generic == 'true'
         run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:aot-boundary
 
+      - name: Build Lambda native-AOT serving image
+        if: steps.raster_boundary.outputs.lambda == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.lambda.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:lambda-aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-lambda-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-lambda-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify Lambda serving-image contents
+        if: steps.raster_boundary.outputs.lambda == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:lambda-aot-boundary
+
+      - name: Build Azure Functions native-AOT serving image
+        if: steps.raster_boundary.outputs.functions == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.functions.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:functions-aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-functions-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-functions-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify Azure Functions serving-image contents
+        if: steps.raster_boundary.outputs.functions == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:functions-aot-boundary
+
       - name: Smoke-test canonical serving image
-        if: steps.raster_boundary.outputs.affected == 'true'
+        if: steps.raster_boundary.outputs.generic == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -198,5 +276,5 @@ jobs:
           exit 1
 
       - name: Clean up serving-image smoke container
-        if: always() && steps.raster_boundary.outputs.affected == 'true'
+        if: always() && steps.raster_boundary.outputs.generic == 'true'
         run: docker rm -f honua-aot-boundary || true

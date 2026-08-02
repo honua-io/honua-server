@@ -28,6 +28,11 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
 ARG DOTNET_RUNTIME_VERSION=10.0
+# Ubuntu Noble does not publish PDAL in its standard archive. UbuntuGIS publishes
+# the Noble build used here; pin both the package and repository signing key so a
+# mutable PPA cannot silently change the worker's point-cloud runtime.
+ARG PDAL_VERSION=2.6.2+ds-1~noble2
+ARG UBUNTUGIS_KEY_FINGERPRINT=2EC86B48E6A9F326623CD22FFF0E7BBEC491C6A1
 
 # ---------------------------------------------------------------------------
 # Build stage: restore + publish the worker (framework-dependent, no AOT).
@@ -39,18 +44,19 @@ WORKDIR /src
 COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
+COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
 COPY src/Honua.Core/*.csproj src/Honua.Core/
-COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
-COPY src/Honua.MySql/*.csproj src/Honua.MySql/
-COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
-COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
+COPY src/Honua.Geometry/*.csproj src/Honua.Geometry/
+COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
+COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
-COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.Worker.Gdal/*.csproj src/Honua.Worker.Gdal/
+COPY eng/ eng/
 
-# Restore the worker project (pulls Honua.Server + Honua.Core transitively).
+# Restore the worker project and keep the NuGet cache mounted for publish.
 # The worker is framework-dependent and NOT AOT, so no RuntimeIdentifier is set.
-RUN --mount=type=secret,id=github_actor \
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     sh scripts/docker/restore-dotnet-with-github-packages.sh \
       src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
@@ -74,9 +80,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
 # ---------------------------------------------------------------------------
-FROM ${GDAL_BASE_IMAGE} AS runtime
+FROM ${GDAL_BASE_IMAGE} AS native-tools
 
 ARG DOTNET_RUNTIME_VERSION
+ARG PDAL_VERSION
+ARG UBUNTUGIS_KEY_FINGERPRINT
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -93,13 +101,26 @@ ARG DOTNET_RUNTIME_VERSION
 # uses SciPy's exact distance transform (nearest-feature index return) plus the
 # GDAL Python bindings (shipped in the ubuntu-full base) since stock
 # gdal_proximity has no nearest-source allocation mode.
+# Noble has no PDAL package in the Ubuntu archive. Install the exact UbuntuGIS
+# Noble build through a dedicated signed-by keyring, after checking the complete
+# key fingerprint. Removing the source/key after installation prevents later
+# layers from accidentally upgrading the native stack from the PPA.
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl libicu-dev pdal python3-scipy \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg libicu-dev python3-scipy \
+ && curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${UBUNTUGIS_KEY_FINGERPRINT}" -o /tmp/ubuntugis.asc \
+ && test "$(gpg --batch --show-keys --with-colons /tmp/ubuntugis.asc | awk -F: '$1 == "fpr" { print $10; exit }')" = "${UBUNTUGIS_KEY_FINGERPRINT}" \
+ && gpg --batch --dearmor --output /usr/share/keyrings/ubuntugis-archive-keyring.gpg /tmp/ubuntugis.asc \
+ && echo "deb [signed-by=/usr/share/keyrings/ubuntugis-archive-keyring.gpg] https://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu noble main" > /etc/apt/sources.list.d/ubuntugis.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libpdal-plugins="${PDAL_VERSION}" \
+      pdal="${PDAL_VERSION}" \
  && rm -rf /var/lib/apt/lists/* \
+ && rm -f /etc/apt/sources.list.d/ubuntugis.list /usr/share/keyrings/ubuntugis-archive-keyring.gpg /tmp/ubuntugis.asc \
  && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && chmod +x /tmp/dotnet-install.sh \
- && /tmp/dotnet-install.sh --channel "${DOTNET_RUNTIME_VERSION}" --runtime dotnet --install-dir /usr/share/dotnet \
+ && /tmp/dotnet-install.sh --channel "${DOTNET_RUNTIME_VERSION}" --runtime aspnetcore --install-dir /usr/share/dotnet \
  && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
  && rm -f /tmp/dotnet-install.sh
 
@@ -140,6 +161,10 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  # OGR import-reader (source.ogr) format breadth the managed readers cannot serve.
  && ogr2ogr --formats | grep -qi OpenFileGDB \
  && ogr2ogr --formats | grep -qi GML
+
+# Keep the independently testable native-tools stage free of application bits;
+# the final worker stage adds only the published managed host and runtime user.
+FROM native-tools AS runtime
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
