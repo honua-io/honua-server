@@ -90,6 +90,63 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void AllOtherPublishers_ShouldVerifyAotImagesBeforeRegistryPublication()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var expectations = new[]
+        {
+            (
+                Path: ".github/workflows/deploy-platform-images.yml",
+                LocalBuild: "- name: Build local native-AOT platform image for boundary verification",
+                Verification: "- name: Verify native-AOT platform image before registry publication",
+                Publication: "- name: Build and push"),
+            (
+                Path: ".github/workflows/nightly-container-build.yml",
+                LocalBuild: "- name: Build local nightly AOT image for boundary verification",
+                Verification: "- name: Verify nightly AOT image before registry publication",
+                Publication: "- name: Build and push"),
+            (
+                Path: ".github/workflows/nightly-container-build.yml",
+                LocalBuild: "- name: Build local nightly Lambda AOT image for boundary verification",
+                Verification: "- name: Verify nightly Lambda AOT image before registry publication",
+                Publication: "- name: Build and push"),
+            (
+                Path: ".github/workflows/release-bundle.yml",
+                LocalBuild: "- name: Build local RC AOT image for boundary verification",
+                Verification: "- name: Verify RC AOT image before registry publication",
+                Publication: "- name: Build & push Native AOT image (immutable RC tag)")
+        };
+
+        foreach (var expectation in expectations)
+        {
+            var workflow = File.ReadAllText(Path.Join(repositoryRoot, expectation.Path))
+                .ReplaceLineEndings("\n");
+            var localBuildIndex = workflow.IndexOf(expectation.LocalBuild, StringComparison.Ordinal);
+            localBuildIndex.Should().BeGreaterThan(-1, expectation.Path);
+            var verificationIndex = workflow.IndexOf(
+                expectation.Verification,
+                localBuildIndex,
+                StringComparison.Ordinal);
+            verificationIndex.Should().BeGreaterThan(localBuildIndex, expectation.Path);
+            var publicationIndex = workflow.IndexOf(
+                expectation.Publication,
+                verificationIndex,
+                StringComparison.Ordinal);
+            publicationIndex.Should().BeGreaterThan(verificationIndex,
+                $"{expectation.Path} must enforce the AOT boundary before publishing registry tags");
+
+            var localBuild = workflow[localBuildIndex..verificationIndex];
+            localBuild.Should().Contain("load: true", expectation.Path);
+            localBuild.Should().Contain("tags: honua-", expectation.Path);
+            localBuild.Should().NotContain("push: true", expectation.Path);
+            localBuild.Should().NotContain("steps.meta.outputs.tags", expectation.Path);
+            localBuild.Should().NotContain("steps.arch_tags.outputs.tags", expectation.Path);
+            localBuild.Should().NotContain("steps.ref.outputs.image_ref", expectation.Path);
+            workflow[verificationIndex..publicationIndex].Should().Contain(VerifierCommand, expectation.Path);
+        }
+    }
+
+    [ArchitectureTest]
     public void AuxiliaryJitDockerfiles_ShouldDeclareNonProductionProfile()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

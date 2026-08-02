@@ -97,6 +97,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build local RC AOT image for boundary verification
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-release-bundle-boundary:${{ steps.ref.outputs.server_sha }}
+          provenance: false
+          sbom: false
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify RC AOT image before registry publication
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-release-bundle-boundary:${{ steps.ref.outputs.server_sha }}"
+
       - name: Build & push Native AOT image (immutable RC tag)
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
@@ -116,14 +133,6 @@ jobs:
         run: |
           echo "RC image: ${{ steps.ref.outputs.image_ref }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Digest:   ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Enforce native-AOT serving-image boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          image="${{ steps.ref.outputs.image_ref }}@${{ steps.build.outputs.digest }}"
-          docker pull "$image"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$image"
 
   integration:
     name: Integration & conformance evidence

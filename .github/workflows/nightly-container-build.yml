@@ -144,6 +144,28 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
+      - name: Build local nightly AOT image for boundary verification
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          build-args: |
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-alpine
+            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-alpine
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: honua-nightly-boundary:aot-${{ matrix.arch }}-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
+          provenance: false
+          sbom: false
+
+      - name: Verify nightly AOT image before registry publication
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-nightly-boundary:aot-${{ matrix.arch }}-${{ github.sha }}"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
@@ -168,15 +190,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
-
-      - name: Enforce native-AOT serving-image boundary
-        shell: bash
-        env:
-          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          docker pull "$IMAGE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$IMAGE"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
@@ -230,6 +243,28 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
+      - name: Build local nightly Lambda AOT image for boundary verification
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.lambda.aot
+          build-args: |
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
+            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: honua-nightly-boundary:lambda-aot-${{ matrix.arch }}-${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
+          provenance: false
+          sbom: false
+
+      - name: Verify nightly Lambda AOT image before registry publication
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "honua-nightly-boundary:lambda-aot-${{ matrix.arch }}-${{ github.sha }}"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
@@ -254,15 +289,6 @@ jobs:
           cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
           provenance: false
           sbom: false
-
-      - name: Enforce Lambda native-AOT serving-image boundary
-        shell: bash
-        env:
-          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          docker pull "$IMAGE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$IMAGE"
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
