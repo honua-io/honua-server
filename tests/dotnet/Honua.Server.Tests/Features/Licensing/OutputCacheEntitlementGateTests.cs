@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -89,6 +90,40 @@ public sealed class OutputCacheEntitlementGateTests
     }
 
     [UnitTest]
+    public void OutputCacheKey_SameEditionWithDifferentEntitlements_UsesDifferentFingerprint()
+    {
+        var first = BuildStatusContext(new LicenseStatus(
+            HonuaEdition.Pro,
+            IsValid: true,
+            ExpiresAt: null,
+            LicensedTo: "test",
+            ValidationState: LicenseValidationState.Valid,
+            Entitlements:
+            [
+                new Entitlement { Key = FeatureCatalog.OutputCacheKey, Name = "Output cache", IsActive = true },
+                new Entitlement { Key = "metadata.extended", Name = "Extended metadata", IsActive = true },
+            ]));
+        var second = BuildStatusContext(new LicenseStatus(
+            HonuaEdition.Pro,
+            IsValid: true,
+            ExpiresAt: null,
+            LicensedTo: "test",
+            ValidationState: LicenseValidationState.Valid,
+            Entitlements:
+            [
+                new Entitlement { Key = FeatureCatalog.OutputCacheKey, Name = "Output cache", IsActive = true },
+            ]));
+
+        var firstKey = ObservabilityServiceCollectionExtensions.ResolveLicenseOutputCacheKey(first);
+        var secondKey = ObservabilityServiceCollectionExtensions.ResolveLicenseOutputCacheKey(second);
+
+        firstKey.Key.Should().Be("license");
+        firstKey.Value.Should().NotBe(
+            secondKey.Value,
+            "same-edition licenses with different metadata entitlements cannot share cached responses");
+    }
+
+    [UnitTest]
     public void Program_WiresOutputCache_BehindTheLiveEntitlementPredicate()
     {
         // The runtime-change behaviour above is only real if Program actually consults the live
@@ -147,6 +182,27 @@ public sealed class OutputCacheEntitlementGateTests
         {
             RequestServices = services.BuildServiceProvider()
         };
+    }
+
+    private static DefaultHttpContext BuildStatusContext(LicenseStatus status)
+    {
+        var provider = new StaticLicenseStatusProvider(status);
+        var services = new ServiceCollection();
+        services.AddSingleton<ILicenseStatusProvider>(provider);
+        return new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider()
+        };
+    }
+
+    private sealed class StaticLicenseStatusProvider(LicenseStatus status) : ILicenseStatusProvider
+    {
+        public LicenseStatus GetCurrentStatus() => status;
+
+        public Task<LicenseUploadResult> UploadLicenseAsync(
+            Stream licenseStream,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new LicenseUploadResult(false, "Static test provider does not support uploads."));
     }
 
     /// <summary>

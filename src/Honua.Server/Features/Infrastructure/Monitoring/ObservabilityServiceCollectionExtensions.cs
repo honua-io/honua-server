@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -645,12 +648,12 @@ internal static class ObservabilityServiceCollectionExtensions
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
 
     /// <summary>
-    /// Resolves a license fingerprint (edition + validation state) for the output
+    /// Resolves a license fingerprint (edition + validation state + active entitlements) for the output
     /// cache vary-by so license-tier-filtered metadata responses never share a cache
     /// entry across editions (#1983). Falls back to a stable sentinel when the license
     /// provider is unavailable so caching still functions in minimal hosts.
     /// </summary>
-    private static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
+    internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
     {
         var provider = context.RequestServices.GetService<ILicenseStatusProvider>();
         if (provider is null)
@@ -661,9 +664,10 @@ internal static class ObservabilityServiceCollectionExtensions
         try
         {
             var status = provider.GetCurrentStatus();
+            var entitlementFingerprint = ComputeActiveEntitlementFingerprint(status.Entitlements);
             return new KeyValuePair<string, string>(
                 "license",
-                $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}");
+                $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}:{entitlementFingerprint}");
         }
         // Intentional catch-all: this is a per-request output-cache-key resolver invoked
         // on the request-handling path. Never let cache-key resolution fault a request;
@@ -672,6 +676,21 @@ internal static class ObservabilityServiceCollectionExtensions
         {
             return new KeyValuePair<string, string>("license", "<unknown>");
         }
+    }
+
+    private static string ComputeActiveEntitlementFingerprint(IReadOnlyList<Entitlement>? entitlements)
+    {
+        var canonicalKeys = entitlements is null
+            ? string.Empty
+            : string.Join(
+                '\n',
+                entitlements
+                    .Where(static entitlement => entitlement.IsActive)
+                    .Select(static entitlement => entitlement.Key.Trim())
+                    .Where(static key => key.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalKeys)));
     }
     // Test isolation (#1851): fold the per-test schema header into the output cache key so the
     // schema-routed integration server cannot replay one test's (or license-tier fixture's)

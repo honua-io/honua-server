@@ -53,6 +53,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantId = request.TenantId,
             Roles = request.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = request.RolesRequireClaimsMappingEntitlement,
+            RolesWithoutClaimsMapping = request.RolesWithoutClaimsMapping?.ToArray(),
             TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
@@ -109,7 +110,7 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
-        var principal = ProjectPrincipal(record, ClaimsMappingRolesAllowed(record));
+        var principal = ProjectPrincipal(record, ResolveRoles(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
 
@@ -147,7 +148,7 @@ internal sealed partial class PortalTokenIssuer(
 
         return new PortalTokenIntrospection(
             record.PrincipalId,
-            ClaimsMappingRolesAllowed(record) ? record.Roles : [],
+            ResolveRoles(record),
             record.TenantId,
             record.ExpiresAt);
     }
@@ -239,20 +240,23 @@ internal sealed partial class PortalTokenIssuer(
     /// claims transformation that applies the gate (honua-server#2997 review). Records with no
     /// mapping provenance are unaffected.
     /// </remarks>
-    private bool ClaimsMappingRolesAllowed(PortalTokenRecord record)
+    private string[] ResolveRoles(PortalTokenRecord record)
     {
         // false — this issuer stamped it and the roles owe nothing to claims mapping.
         if (record.RolesRequireClaimsMappingEntitlement == false)
         {
-            return true;
+            return record.Roles;
         }
 
         // true (mapping-derived) or null (persisted before the field existed, so provenance is
         // unknown) both require the live entitlement. Treating null as "not mapping-derived"
         // would let a pre-upgrade token keep its custom-mapped roles forever
         // (honua-server#2997 review).
-        return _serviceProvider is not null
+        var mappingEntitled = _serviceProvider is not null
             && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+        return mappingEntitled
+            ? record.Roles
+            : record.RolesWithoutClaimsMapping ?? [];
     }
 
     /// <summary>
@@ -277,7 +281,9 @@ internal sealed partial class PortalTokenIssuer(
             && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
     }
 
-    private static ClaimsPrincipal ProjectPrincipal(PortalTokenRecord record, bool includeRoles)
+    private static ClaimsPrincipal ProjectPrincipal(
+        PortalTokenRecord record,
+        string[] roles)
     {
         var claims = new List<Claim>
         {
@@ -297,12 +303,9 @@ internal sealed partial class PortalTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        if (includeRoles)
+        foreach (var role in roles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            foreach (var role in record.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
-            {
-                claims.Add(new Claim(ClaimTypes.Role, role));
-            }
+            claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
         var identity = new ClaimsIdentity(
@@ -452,6 +455,12 @@ internal sealed class PortalTokenRecord
     /// expiry. Absent means UNKNOWN, and unknown fails closed.
     /// </remarks>
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
+
+    /// <summary>
+    /// Exact roles that remain valid without <c>identity.claims-mapping</c>. Null means unknown
+    /// legacy provenance and fails closed; an empty array is a known empty fallback.
+    /// </summary>
+    public string[]? RolesWithoutClaimsMapping { get; init; }
 
     /// <summary>
     /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so

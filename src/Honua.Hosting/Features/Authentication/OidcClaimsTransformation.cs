@@ -35,6 +35,14 @@ internal sealed class OidcClaimsTransformation(
     internal const string RolesFromClaimsMappingClaimType = "honua_roles_from_claims_mapping";
 
     /// <summary>
+    /// Repeated marker claim carrying each role that remains valid when
+    /// <c>identity.claims-mapping</c> is inactive. Emitted only when the full role set depends
+    /// on claims mapping, so portal-token persistence can soft-degrade mixed direct/mapped role
+    /// sets instead of dropping every role together.
+    /// </summary>
+    internal const string RolesWithoutClaimsMappingClaimType = "honua_roles_without_claims_mapping";
+
+    /// <summary>
     /// Provenance marker for a TENANT claim synthesized by <c>ClaimsMapping:CustomMappings</c>.
     /// Persisted alongside the roles marker so the portal-token restore can revalidate a
     /// mapping-derived tenant against the live entitlement (honua-server#2997 review).
@@ -46,11 +54,7 @@ internal sealed class OidcClaimsTransformation(
     /// <c>tenant_id</c> and the Azure <c>tid</c> that the portal credential verifier falls
     /// back to. Kept in sync with <c>OidcPortalCredentialVerifier</c>.
     /// </summary>
-    private static readonly HashSet<string> TenantClaimTypes = new(StringComparer.Ordinal)
-    {
-        "tenant_id",
-        "tid",
-    };
+    private static readonly string[] TenantClaimTypes = ["tenant_id", "tid"];
 
     /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
@@ -136,6 +140,26 @@ internal sealed class OidcClaimsTransformation(
         // Map roles from provider-specific claims
         var rolesWithoutMapping = GetRoleClaims(identity, claimsMappingEntitled: false);
         var roles = GetRoleClaims(identity, claimsMappingEntitled);
+        var fallbackRoles = BuildEffectiveRoles(identity, rolesWithoutMapping);
+        var fullRoles = BuildEffectiveRoles(identity, roles);
+
+        // A CustomMappings entry targeting ClaimTypes.Role runs after the gathered-role and
+        // admin passes below. Include any value it will actually emit in the full persisted set
+        // without changing the existing transformation order.
+        if (claimsMappingEntitled && !identity.HasClaim(claim => claim.Type == ClaimTypes.Role))
+        {
+            foreach (var mapping in _options.ClaimsMapping.CustomMappings.Where(
+                         static mapping => string.Equals(
+                             mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)))
+            {
+                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                if (!string.IsNullOrEmpty(sourceValue) &&
+                    !fullRoles.Contains(sourceValue, StringComparer.OrdinalIgnoreCase))
+                {
+                    fullRoles.Add(sourceValue);
+                }
+            }
+        }
 
         // Provenance for anything that PERSISTS these roles. A portal token exchange copies the
         // transformed ClaimTypes.Role values into a durable record, and restoring them later
@@ -154,14 +178,9 @@ internal sealed class OidcClaimsTransformation(
         // mapping-derived even though the loop emitted nothing - so an expired entitlement
         // stripped a legitimate role that direct OIDC authentication keeps
         // (honua-server#2997 review).
-        var customMappingEmitsRole = claimsMappingEntitled
-            && _options.ClaimsMapping.CustomMappings.Any(mapping =>
-                string.Equals(mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)
-                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value)
-                && !identity.HasClaim(claim => claim.Type == mapping.Value));
-
         var rolesDependOnClaimsMapping = claimsMappingEntitled
-            && (roles.Count > rolesWithoutMapping.Count || customMappingEmitsRole);
+            && !new HashSet<string>(fullRoles, StringComparer.OrdinalIgnoreCase)
+                .SetEquals(fallbackRoles);
 
         // Roles are not the only authorization claim a CustomMappings entry can synthesize.
         // A mapping may target `tenant_id` (or the Azure `tid` the verifier falls back to),
@@ -169,11 +188,7 @@ internal sealed class OidcClaimsTransformation(
         // the tenant scope. Marking only role provenance meant an expired entitlement dropped
         // the mapping-derived roles while the mapping-derived TENANT kept authorizing
         // cross-tenant access indefinitely (honua-server#2997 review).
-        var tenantDependsOnClaimsMapping = claimsMappingEntitled
-            && _options.ClaimsMapping.CustomMappings.Any(mapping =>
-                TenantClaimTypes.Contains(mapping.Value)
-                && !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value)
-                && !identity.HasClaim(claim => claim.Type == mapping.Value));
+        var mappedTenantClaimType = ResolveMappedTenantClaimType(identity, claimsMappingEntitled);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -194,14 +209,20 @@ internal sealed class OidcClaimsTransformation(
             transformedClaims.Add(new Claim(ClaimTypes.Role, "admin"));
         }
 
-        if (tenantDependsOnClaimsMapping && !identity.HasClaim(c => c.Type == TenantFromClaimsMappingClaimType))
+        if (mappedTenantClaimType is not null &&
+            !identity.HasClaim(c => c.Type == TenantFromClaimsMappingClaimType))
         {
-            transformedClaims.Add(new Claim(TenantFromClaimsMappingClaimType, "1"));
+            transformedClaims.Add(new Claim(TenantFromClaimsMappingClaimType, mappedTenantClaimType));
         }
 
         if (rolesDependOnClaimsMapping && !identity.HasClaim(c => c.Type == RolesFromClaimsMappingClaimType))
         {
             transformedClaims.Add(new Claim(RolesFromClaimsMappingClaimType, "1"));
+            transformedClaims.AddRange(fallbackRoles
+                .Where(role => !identity.HasClaim(
+                    claim => claim.Type == RolesWithoutClaimsMappingClaimType &&
+                        string.Equals(claim.Value, role, StringComparison.OrdinalIgnoreCase)))
+                .Select(role => new Claim(RolesWithoutClaimsMappingClaimType, role)));
         }
 
         // Add auth_type claim if not present
@@ -296,5 +317,59 @@ internal sealed class OidcClaimsTransformation(
         }
 
         return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private List<string> BuildEffectiveRoles(ClaimsIdentity identity, List<string> gatheredRoles)
+    {
+        var effectiveRoles = new List<string>(gatheredRoles);
+        if (effectiveRoles.Count == 0 && !identity.HasClaim(claim => claim.Type == ClaimTypes.Role))
+        {
+            effectiveRoles.Add(_options.DefaultRole);
+        }
+
+        var hasAdminRole = _options.AdminRoles.Any(adminRole =>
+            effectiveRoles.Contains(adminRole, StringComparer.OrdinalIgnoreCase));
+        if (hasAdminRole &&
+            !identity.HasClaim(claim =>
+                claim.Type == ClaimTypes.Role &&
+                string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase)) &&
+            !effectiveRoles.Contains("admin", StringComparer.OrdinalIgnoreCase))
+        {
+            effectiveRoles.Add("admin");
+        }
+
+        return effectiveRoles;
+    }
+
+    private string? ResolveMappedTenantClaimType(
+        ClaimsIdentity identity,
+        bool claimsMappingEntitled)
+    {
+        if (!claimsMappingEntitled)
+        {
+            return null;
+        }
+
+        // The verifier selects tenant_id before tid. Stop at the first claim type that will be
+        // present after this transformation and report provenance only when that winning claim
+        // is emitted by a custom mapping. A mapped fallback must not taint a higher-precedence
+        // tenant issued directly by the provider.
+        foreach (var claimType in TenantClaimTypes)
+        {
+            if (identity.HasClaim(claim => claim.Type == claimType))
+            {
+                return null;
+            }
+
+            var mappingEmitsClaim = _options.ClaimsMapping.CustomMappings.Any(mapping =>
+                string.Equals(mapping.Value, claimType, StringComparison.Ordinal) &&
+                !string.IsNullOrEmpty(identity.FindFirst(mapping.Key)?.Value));
+            if (mappingEmitsClaim)
+            {
+                return claimType;
+            }
+        }
+
+        return null;
     }
 }

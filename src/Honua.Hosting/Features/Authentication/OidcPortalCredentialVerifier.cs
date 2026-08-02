@@ -162,8 +162,9 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             ?? principal.FindFirstValue("name")
             ?? principal.FindFirstValue("preferred_username");
 
-        var tenantId = principal.FindFirstValue(TenantIdClaimType)
-            ?? principal.FindFirstValue(AzureTenantClaimType);
+        var tenantClaim = principal.FindFirst(TenantIdClaimType)
+            ?? principal.FindFirst(AzureTenantClaimType);
+        var tenantId = tenantClaim?.Value;
 
         var roles = principal.FindAll(ClaimTypes.Role)
             .Select(static c => c.Value)
@@ -175,16 +176,27 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         // roles depend on an entitlement that can expire (honua-server#2997 review).
         var rolesRequireClaimsMapping = principal.HasClaim(
             static claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
+        var rolesWithoutClaimsMapping = rolesRequireClaimsMapping
+            ? principal.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType)
+                .Select(static claim => claim.Value)
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : null;
 
         // Same provenance question for the tenant: a CustomMappings entry can synthesize it,
         // and a mapping-derived tenant that outlives the entitlement authorizes another
         // tenant's data (honua-server#2997 review).
-        var tenantRequiresClaimsMapping = principal.HasClaim(
-            static claim => claim.Type == OidcClaimsTransformation.TenantFromClaimsMappingClaimType);
+        var tenantMappingMarker = principal.FindFirst(
+            OidcClaimsTransformation.TenantFromClaimsMappingClaimType);
+        var markerNamesKnownClaimType = tenantMappingMarker?.Value is TenantIdClaimType or AzureTenantClaimType;
+        var tenantRequiresClaimsMapping = tenantMappingMarker is not null &&
+            (!markerNamesKnownClaimType || tenantClaim is null ||
+                string.Equals(tenantMappingMarker.Value, tenantClaim.Type, StringComparison.Ordinal));
 
         return new PortalCredentialPrincipal(
             principalId, displayName, tenantId, roles, rolesRequireClaimsMapping,
-            tenantRequiresClaimsMapping);
+            tenantRequiresClaimsMapping, rolesWithoutClaimsMapping);
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(CancellationToken cancellationToken)

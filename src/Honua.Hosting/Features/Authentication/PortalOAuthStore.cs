@@ -548,6 +548,12 @@ internal sealed class PortalOAuthPrincipal
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
     /// <summary>
+    /// Exact entitlement-independent fallback roles. Null on legacy cached principals means
+    /// unknown and remains fail-closed; an empty array is a known empty fallback.
+    /// </summary>
+    public string[]? RolesWithoutClaimsMapping { get; init; }
+
+    /// <summary>
     /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
     /// also depends on <c>identity.claims-mapping</c>. Nullable on exactly the same terms as
     /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means unknown, and unknown
@@ -565,6 +571,7 @@ internal sealed class PortalOAuthPrincipal
             TenantId = principal.TenantId,
             Roles = principal.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = principal.RolesRequireClaimsMappingEntitlement,
+            RolesWithoutClaimsMapping = principal.RolesWithoutClaimsMapping?.ToArray(),
             TenantRequiresClaimsMappingEntitlement =
                 principal.TenantId is not null && principal.TenantRequiresClaimsMappingEntitlement,
         };

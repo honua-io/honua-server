@@ -125,6 +125,11 @@ public sealed record PortalTokenIntrospection(
 /// re-evaluate the caller against whatever scope an absent tenant resolves to
 /// (honua-server#2997 review). Nullable on the same terms as the roles flag.
 /// </param>
+/// <param name="RolesWithoutClaimsMapping">
+/// Exact fallback roles to restore when <c>identity.claims-mapping</c> is inactive. Null means
+/// the fallback is unknown (legacy persisted provenance) and therefore fails closed; an empty
+/// list is a known role-free fallback.
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -134,7 +139,8 @@ public sealed record PortalTokenIssueRequest(
     string BindingValue,
     DateTimeOffset ExpiresAt,
     bool? RolesRequireClaimsMappingEntitlement = false,
-    bool? TenantRequiresClaimsMappingEntitlement = false);
+    bool? TenantRequiresClaimsMappingEntitlement = false,
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);
 
 /// <summary>
 /// Token issuance result.

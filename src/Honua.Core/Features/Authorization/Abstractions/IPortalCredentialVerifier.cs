@@ -51,10 +51,16 @@ public interface IPortalCredentialVerifier
 /// mapping-derived roles while a mapping-derived tenant kept granting cross-tenant access
 /// (honua-server#2997 review).
 /// </param>
+/// <param name="RolesWithoutClaimsMapping">
+/// Exact fallback roles that remain valid without <c>identity.claims-mapping</c>, or
+/// <see langword="null"/> when the full role set is entitlement-independent. An empty list is
+/// a known empty fallback; null provenance on a persisted legacy record remains fail-closed.
+/// </param>
 public sealed record PortalCredentialPrincipal(
     string PrincipalId,
     string? DisplayName,
     string? TenantId,
     IReadOnlyList<string> Roles,
     bool RolesRequireClaimsMappingEntitlement = false,
-    bool TenantRequiresClaimsMappingEntitlement = false);
+    bool TenantRequiresClaimsMappingEntitlement = false,
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);

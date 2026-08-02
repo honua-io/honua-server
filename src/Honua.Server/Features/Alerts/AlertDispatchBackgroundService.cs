@@ -9,10 +9,6 @@ namespace Honua.Alerts;
 
 internal sealed partial class AlertDispatchBackgroundService : BackgroundService, IAlertDispatchHealth
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly Dictionary<AlertChannelType, IAlertDeliverySink> _sinks;
-    private readonly AlertOptions _options;
-    private readonly AlertNotificationRateLimiter _rateLimiter;
     /// <summary>
     /// How long a dispatch waits before re-checking a channel entitlement that is currently
     /// inactive. Short enough that a licence renewal resumes delivery without operator action,
@@ -20,6 +16,10 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     /// </summary>
     private static readonly TimeSpan UnentitledChannelRetryDelay = TimeSpan.FromMinutes(5);
 
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly Dictionary<AlertChannelType, IAlertDeliverySink> _sinks;
+    private readonly AlertOptions _options;
+    private readonly AlertNotificationRateLimiter _rateLimiter;
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
@@ -343,7 +343,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private static partial void LogCircuitDeferred(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset deferUntil);
 
     [LoggerMessage(EventId = 9429, Level = LogLevel.Warning, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {RetryAt:O} because the channel is not permitted by the active license or configured alert edition.")]
-    private static partial void LogChannelUnentitled(ILogger logger, Guid dispatchId, string channelType, DateTimeOffset retryAt);
+    private static partial void LogChannelUnentitled(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset retryAt);
 
     [LoggerMessage(EventId = 9428, Level = LogLevel.Warning, Message = "Alert delivery circuit breaker opened for channel {ChannelType} after repeated dead-letters; deliveries on this channel are deferred for {Cooldown}.")]
     private static partial void LogChannelCircuitOpened(ILogger logger, AlertChannelType channelType, TimeSpan cooldown);

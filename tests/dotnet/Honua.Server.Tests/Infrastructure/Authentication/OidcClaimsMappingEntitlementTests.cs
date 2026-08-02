@@ -174,6 +174,13 @@ public sealed class OidcClaimsMappingEntitlementTests
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 
         Assert.NotNull(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+        Assert.Equal(
+            ["user"],
+            result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType)
+                .Select(static claim => claim.Value));
+        Assert.DoesNotContain(
+            result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType),
+            claim => string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
@@ -186,6 +193,37 @@ public sealed class OidcClaimsMappingEntitlementTests
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 
         Assert.Null(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_MixedDirectAndMappedRoles_RecordsOnlyDirectFallbackRoles()
+    {
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["groups"],
+            },
+        });
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, "viewer"), new Claim("groups", "editor")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("viewer"));
+        Assert.True(result.IsInRole("editor"));
+        Assert.NotNull(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+        Assert.Equal(
+            ["viewer"],
+            result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType)
+                .Select(static claim => claim.Value));
     }
 
     [UnitTest]
@@ -217,6 +255,71 @@ public sealed class OidcClaimsMappingEntitlementTests
     }
 
     [UnitTest]
+    public async Task TransformAsync_DirectRoleAndSkippedRoleMapping_DoesNotMarkRoleAsMappingDerived()
+    {
+        // The custom-mapping loop skips a target claim type that is already present. Provenance
+        // must make the same decision; otherwise a directly issued role is later stripped when
+        // the claims-mapping entitlement expires even though the mapping emitted nothing.
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                CustomMappings = new Dictionary<string, string>
+                {
+                    ["department"] = ClaimTypes.Role,
+                },
+            },
+        });
+
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("department", "cartography"), new Claim(ClaimTypes.Role, "viewer")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("viewer"));
+        Assert.False(result.IsInRole("cartography"));
+        Assert.Null(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_DirectTenantIdAndMappedTid_MarksSelectedTenantIndependent()
+    {
+        var transformation = CreateTenantMappingTransformation("tid");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("tenant_id", "tenant-direct"), new Claim("department", "tenant-mapped")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.Equal("tenant-direct", result.FindFirst("tenant_id")?.Value);
+        Assert.Equal("tenant-mapped", result.FindFirst("tid")?.Value);
+        Assert.Null(result.FindFirst(OidcClaimsTransformation.TenantFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_DirectTidAndMappedTenantId_MarksSelectedTenantDerived()
+    {
+        var transformation = CreateTenantMappingTransformation("tenant_id");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("tid", "tenant-direct"), new Claim("department", "tenant-mapped")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.Equal("tenant-mapped", result.FindFirst("tenant_id")?.Value);
+        Assert.Equal(
+            "tenant_id",
+            result.FindFirst(OidcClaimsTransformation.TenantFromClaimsMappingClaimType)?.Value);
+    }
+
+    [UnitTest]
     public async Task TransformAsync_WithClaimsMappingEntitlement_AppliesCustomMappings()
     {
         var transformation = CreateTransformation(HonuaEdition.Enterprise);
@@ -245,5 +348,24 @@ public sealed class OidcClaimsMappingEntitlementTests
 
         Assert.Equal("user-123", result.FindFirst(ClaimTypes.NameIdentifier)?.Value);
         Assert.True(result.IsInRole("user"));
+    }
+
+    private static OidcClaimsTransformation CreateTenantMappingTransformation(string targetClaimType)
+    {
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                CustomMappings = new Dictionary<string, string>
+                {
+                    ["department"] = targetClaimType,
+                },
+            },
+        });
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        return new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
     }
 }

@@ -277,7 +277,8 @@ public static class SharingRestEndpoints
                 // provenance. When it supplied none and the ambient tenant rail is used
                 // instead, that value never touched claims mapping.
                 TenantRequiresClaimsMappingEntitlement:
-                    verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement),
+                    verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
+                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping),
             context.RequestAborted).ConfigureAwait(false);
 
         if (logger.IsEnabled(LogLevel.Information))
