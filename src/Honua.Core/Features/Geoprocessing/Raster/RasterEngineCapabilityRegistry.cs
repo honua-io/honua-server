@@ -45,6 +45,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         ArgumentNullException.ThrowIfNull(capabilities);
 
         var ordered = capabilities
+            .Select(SnapshotCapability)
             .OrderBy(capability => capability.ProcessId, StringComparer.Ordinal)
             .ToArray();
         ValidateCapabilities(ordered);
@@ -354,6 +355,34 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                         nameof(capabilities));
                 }
 
+                if (!Enum.IsDefined(engine.DefaultPreference))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' declares "
+                        + $"undefined default preference value '{(int)engine.DefaultPreference}'.",
+                        nameof(capabilities));
+                }
+
+                var undefinedResidency = engine.InputResidencies
+                    .FirstOrDefault(residency => !Enum.IsDefined(residency));
+                if (!Enum.IsDefined(undefinedResidency))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' declares "
+                        + $"undefined input residency value '{(int)undefinedResidency}'.",
+                        nameof(capabilities));
+                }
+
+                var undefinedSink = engine.OutputSinks
+                    .FirstOrDefault(sink => !Enum.IsDefined(sink));
+                if (!Enum.IsDefined(undefinedSink))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' declares "
+                        + $"undefined output sink value '{(int)undefinedSink}'.",
+                        nameof(capabilities));
+                }
+
                 if (string.IsNullOrWhiteSpace(engine.ImplementationVersion)
                     || engine.RequiredCapabilities.Count == 0
                     || engine.Formats.InputMediaTypes.Count == 0
@@ -382,6 +411,31 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     nameof(capabilities));
             }
         }
+    }
+
+    private static RasterProcessCapability SnapshotCapability(RasterProcessCapability capability)
+    {
+        ArgumentNullException.ThrowIfNull(capability);
+        return capability with
+        {
+            Engines = ReadOnly(capability.Engines.Select(SnapshotEngine).ToArray()),
+        };
+    }
+
+    private static RasterEngineCapability SnapshotEngine(RasterEngineCapability capability)
+    {
+        ArgumentNullException.ThrowIfNull(capability);
+        return capability with
+        {
+            RequiredCapabilities = ReadOnly(capability.RequiredCapabilities.ToArray()),
+            Formats = capability.Formats with
+            {
+                InputMediaTypes = ReadOnly(capability.Formats.InputMediaTypes.ToArray()),
+                OutputMediaTypes = ReadOnly(capability.Formats.OutputMediaTypes.ToArray()),
+            },
+            InputResidencies = ReadOnly(capability.InputResidencies.ToArray()),
+            OutputSinks = ReadOnly(capability.OutputSinks.ToArray()),
+        };
     }
 
     private static long Normalize(long? value, string name, List<string> unknown)

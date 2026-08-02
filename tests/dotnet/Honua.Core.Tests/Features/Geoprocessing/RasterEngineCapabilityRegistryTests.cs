@@ -121,6 +121,84 @@ public sealed class RasterEngineCapabilityRegistryTests
         Assert.Contains("undefined engine value", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("defaultPreference")]
+    [InlineData("inputResidency")]
+    [InlineData("outputSink")]
+    public void Constructor_UndefinedNestedEnumValues_AreRejected(string field)
+    {
+        var template = new RasterEngineCapabilityRegistry().Processes[0];
+        var engine = template.Engines[0];
+        var malformedEngine = field switch
+        {
+            "defaultPreference" => engine with
+            {
+                DefaultPreference = (RasterEngineDefaultPreference)100,
+            },
+            "inputResidency" => engine with
+            {
+                InputResidencies = [(RasterInputResidency)100],
+            },
+            "outputSink" => engine with
+            {
+                OutputSinks = [(RasterOutputSink)100],
+            },
+            _ => throw new InvalidOperationException($"Unknown test field '{field}'."),
+        };
+        var malformed = template with
+        {
+            Engines = [malformedEngine, template.Engines[1]],
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new RasterEngineCapabilityRegistry([malformed]));
+
+        Assert.Equal("capabilities", exception.ParamName);
+        Assert.Contains("undefined", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Constructor_SnapshotsTheFullDescriptorGraph()
+    {
+        var template = new RasterEngineCapabilityRegistry().Processes[0];
+        var requiredCapabilities = template.Engines[0].RequiredCapabilities.ToArray();
+        var inputMediaTypes = template.Engines[0].Formats.InputMediaTypes.ToArray();
+        var outputMediaTypes = template.Engines[0].Formats.OutputMediaTypes.ToArray();
+        var inputResidencies = template.Engines[0].InputResidencies.ToArray();
+        var outputSinks = template.Engines[0].OutputSinks.ToArray();
+        var engines = template.Engines.ToArray();
+        engines[0] = engines[0] with
+        {
+            RequiredCapabilities = requiredCapabilities,
+            Formats = engines[0].Formats with
+            {
+                InputMediaTypes = inputMediaTypes,
+                OutputMediaTypes = outputMediaTypes,
+            },
+            InputResidencies = inputResidencies,
+            OutputSinks = outputSinks,
+        };
+        var source = new[] { template with { Engines = engines } };
+        var registry = new RasterEngineCapabilityRegistry(source);
+
+        source[0] = source[0] with { ProcessId = "mutated.process" };
+        engines[0] = engines[0] with { ImplementationVersion = "mutated" };
+        requiredCapabilities[0] = "mutated.capability";
+        inputMediaTypes[0] = "application/mutated-input";
+        outputMediaTypes[0] = "application/mutated-output";
+        inputResidencies[0] = RasterInputResidency.Inline;
+        outputSinks[0] = RasterOutputSink.ObjectStore;
+
+        var snapshot = Assert.Single(registry.Processes);
+        Assert.Equal(template.ProcessId, snapshot.ProcessId);
+        Assert.Equal(template.Engines[0].ImplementationVersion, snapshot.Engines[0].ImplementationVersion);
+        Assert.Equal(template.Engines[0].RequiredCapabilities, snapshot.Engines[0].RequiredCapabilities);
+        Assert.Equal(template.Engines[0].Formats.InputMediaTypes, snapshot.Engines[0].Formats.InputMediaTypes);
+        Assert.Equal(template.Engines[0].Formats.OutputMediaTypes, snapshot.Engines[0].Formats.OutputMediaTypes);
+        Assert.Equal(template.Engines[0].InputResidencies, snapshot.Engines[0].InputResidencies);
+        Assert.Equal(template.Engines[0].OutputSinks, snapshot.Engines[0].OutputSinks);
+    }
+
     [Fact]
     public void Estimate_NegativeMetric_IsRejected()
     {
