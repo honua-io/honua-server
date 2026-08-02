@@ -58,4 +58,6 @@ jobs:
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.
       - name: Test serving-image boundary detector
-        run: python3 scripts/ci/fixtures/validate-serving-image-boundary.py
+        run: |
+          python3 scripts/ci/fixtures/validate-serving-image-boundary.py
+          python3 scripts/ci/fixtures/validate-promote-verified-image.py

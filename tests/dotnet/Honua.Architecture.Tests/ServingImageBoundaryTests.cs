@@ -71,31 +71,36 @@ public sealed class ServingImageBoundaryTests
                 Candidate: "- name: Build native-AOT candidate by digest",
                 Verification: "- name: Verify native-AOT candidate before registry publication",
                 Publication: "- name: Publish verified native-AOT architecture tags",
-                Digest: "steps.aot_candidate.outputs.digest"),
+                Digest: "steps.aot_candidate.outputs.digest",
+                CrossRegistry: true),
             (
                 Path: ".github/workflows/deploy-platform-images.yml",
                 Candidate: "- name: Build native-AOT platform candidate by digest",
                 Verification: "- name: Verify native-AOT platform candidate before registry publication",
                 Publication: "- name: Publish verified native-AOT platform architecture tags",
-                Digest: "steps.aot_candidate.outputs.digest"),
+                Digest: "steps.aot_candidate.outputs.digest",
+                CrossRegistry: true),
             (
                 Path: ".github/workflows/nightly-container-build.yml",
                 Candidate: "- name: Build nightly AOT candidate by digest",
                 Verification: "- name: Verify nightly AOT candidate before registry publication",
                 Publication: "- name: Publish verified nightly AOT architecture tags",
-                Digest: "steps.build.outputs.digest"),
+                Digest: "steps.build.outputs.digest",
+                CrossRegistry: true),
             (
                 Path: ".github/workflows/nightly-container-build.yml",
                 Candidate: "- name: Build nightly Lambda AOT candidate by digest",
                 Verification: "- name: Verify nightly Lambda AOT candidate before registry publication",
                 Publication: "- name: Publish verified nightly Lambda AOT architecture tags",
-                Digest: "steps.build.outputs.digest"),
+                Digest: "steps.build.outputs.digest",
+                CrossRegistry: true),
             (
                 Path: ".github/workflows/release-bundle.yml",
                 Candidate: "- name: Build RC AOT candidate by digest",
                 Verification: "- name: Verify RC AOT candidate before registry publication",
                 Publication: "- name: Publish verified RC AOT tag",
-                Digest: "steps.build.outputs.digest")
+                Digest: "steps.build.outputs.digest",
+                CrossRegistry: false)
         };
 
         foreach (var expectation in expectations)
@@ -137,12 +142,28 @@ public sealed class ServingImageBoundaryTests
                 $"{expectation.Path} must not rebuild between candidate creation and verification");
             verification.Should().Contain(VerifierCommand, expectation.Path);
             verification.Should().Contain(expectation.Digest, expectation.Path);
-            publication.Should().Contain("docker buildx imagetools create", expectation.Path);
-            publication.Should().Contain("--prefer-index=false",
-                $"{expectation.Path} must preserve the verified candidate manifest rather than wrap it");
             publication.Should().Contain(expectation.Digest,
                 $"{expectation.Path} must promote the digest that passed verification");
+            if (expectation.CrossRegistry)
+            {
+                publication.Should().Contain("scripts/ci/promote-verified-image.py", expectation.Path);
+                publication.Should().Contain("--staging-tag",
+                    $"{expectation.Path} must verify every target registry before assigning public tags");
+            }
+            else
+            {
+                publication.Should().Contain("docker buildx imagetools create", expectation.Path);
+                publication.Should().Contain("--prefer-index=false",
+                    $"{expectation.Path} must preserve the verified candidate manifest rather than wrap it");
+            }
         }
+
+        var crossRegistryPromotion = File.ReadAllText(
+            Path.Join(repositoryRoot, "scripts/ci/promote-verified-image.py"));
+        crossRegistryPromotion.Should().Contain("--all");
+        crossRegistryPromotion.Should().Contain("--preserve-digests");
+        crossRegistryPromotion.Should().Contain("client.raw_manifest(staged)");
+        crossRegistryPromotion.Should().Contain("actual_digest != expected_digest");
     }
 
     [ArchitectureTest]
@@ -222,6 +243,7 @@ public sealed class ServingImageBoundaryTests
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
 
         workflow.Should().Contain("validate-serving-image-boundary.py");
+        workflow.Should().Contain("validate-promote-verified-image.py");
         workflow.Should().NotContain("docker/build-push-action");
         workflow.Should().NotContain("docker run -d");
     }

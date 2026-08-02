@@ -184,10 +184,12 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
-          done <<< "$TAGS"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
@@ -281,10 +283,12 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            docker buildx imagetools create --prefer-index=false --tag "$tag" "$CANDIDATE"
-          done <<< "$TAGS"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
