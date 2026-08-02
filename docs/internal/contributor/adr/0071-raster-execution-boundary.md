@@ -161,8 +161,8 @@ authoritative winner and registration is an explicit, durable, idempotently
 reconciled cross-store step. A job requesting that registration retains
 canonical status `Running` with durable
 `OutputPublicationPhase.Finalizing` until the matching catalog entry is
-durable. `Finalizing` admits no new execution and excludes the job from the
-execution-heartbeat reaper. A separate durable publication lease,
+durable. `Finalizing` admits no new execution and excludes the job from both
+execution-heartbeat and execution-timeout expiry. A separate durable publication lease,
 heartbeat/deadline, and fenced output reconciler recover stalled registration;
 that recovery never requeues raster execution. The protocol does not claim
 cross-store atomicity. Creating an object does not implicitly create or
@@ -226,7 +226,7 @@ replace a layer.
   durable `OutputPublicationPhase` is `Terminalizing`, and a separate requested
   terminal status records `Cancelled` or `Failed`; no new execution is
   admitted. Like `Finalizing`, `Terminalizing` is excluded from execution
-  heartbeat expiry and requeue. Its separate durable publication lease and
+  heartbeat and timeout expiry as well as requeue. Its separate durable publication lease and
   heartbeat/deadline are recovered only by the fenced output reconciler, which
   may finish the terminal transition but never re-executes the job. This is the
   orthogonal phase mapping defined by ADR-0031, not a new

@@ -49,7 +49,7 @@ Output publication does not add values to this enum. Jobs with fenced output
 intents retain `ExecutionJobStatus.Running` while a durable, orthogonal
 `OutputPublicationPhase` is `Finalizing` or `Terminalizing`. During
 either phase the job admits no new execution and is excluded from execution
-heartbeat expiry and requeue. During terminalization the record also persists
+heartbeat and timeout expiry as well as requeue. During terminalization the record also persists
 the requested terminal status (`Failed` or `Cancelled`). The coordinator
 changes the canonical status only after every sink intent is committed or
 aborted. Jobs without output intents keep the existing direct transitions.
@@ -116,6 +116,9 @@ Millisecond timestamps break ties within a band.
 - Enforcement is dual-layered: `JobExecutionService` sets a
   `CancellationTokenSource` timeout for in-process detection, while
   `JobReconciliationService` catches workers that crash without cancelling.
+- `Finalizing` and `Terminalizing` are not executing phases and are excluded
+  from `MaxDuration` expiry. Their separate publication deadline and fenced
+  output reconciler exclusively govern stalled publication or terminalization.
 - Jobs that exceed their timeout are **not** retried. A job without fenced
   output intents is marked Failed directly. A job with such intents first
   records requested status `Failed` plus output phase `Terminalizing`, revokes
