@@ -153,9 +153,12 @@ ceiling for protocol compatibility. The inline path is never an automatic
 fallback for a reference the selected worker cannot resolve.
 
 Outputs are first published to an attempt-scoped staging location. Successful
-completion promotes the artifact and optionally registers it in the catalog or
-PostGIS atomically. Registration is a separate explicit output-sink decision;
-creating an object does not implicitly create or replace a layer.
+completion promotes the artifact and, for same-database sinks such as PostGIS,
+registers it atomically with the sink-local commit record. Cross-store catalog
+registration follows an authoritative object marker through idempotent
+reconciliation and is deliberately eventual. Registration is a separate
+explicit output-sink decision; creating an object does not implicitly create
+or replace a layer.
 
 ### Failure, fallback, retry, and idempotency
 
@@ -203,8 +206,17 @@ creating an object does not implicitly create or replace a layer.
 - Repeating commit with the same current token and idempotency key returns the
   existing result. A different or stale token cannot replace it. Losing
   attempt-scoped artifacts remain uncommitted for policy-driven cleanup.
-- Cancellation stops new work, propagates to the selected executor, and cleans
-  uncommitted staging artifacts without deleting a previously committed result.
+- Cancellation and terminal timeout or failure use the same sink-local commit
+  record as publication. Before the job enters a terminal state, the
+  coordinator conditionally changes every current uncommitted intent to
+  `Aborted` using its expected token and record version. Publication and abort
+  are competing compare-and-set transitions from the same state: if abort wins,
+  a late or unresponsive worker cannot commit; if commit already won, the
+  coordinator preserves that immutable winner and follows completion or
+  reconciliation policy instead of reporting that terminalization preceded the
+  output. The durable job transition completes only after every output intent is
+  observed as committed or fenced as aborted. Executor cancellation and cleanup
+  follow the durable fence and never delete a previously committed result.
 
 These rules prevent a timeout in one engine from producing a second,
 numerically different result or duplicating a partially committed output in
