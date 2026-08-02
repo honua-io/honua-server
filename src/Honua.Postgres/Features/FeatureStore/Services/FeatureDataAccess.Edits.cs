@@ -400,19 +400,19 @@ internal sealed partial class FeatureDataAccess
             // rows, creating duplicates.
             var tailCreateFailures = editBatch.Creates.Length > partialCreateResults.Length
                 ? System.Linq.Enumerable
-                    .Repeat(EditOperationResult.Failure("Edit batch failed."), editBatch.Creates.Length - partialCreateResults.Length)
+                    .Repeat(EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed."), editBatch.Creates.Length - partialCreateResults.Length)
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailUpdateFailures = editBatch.Updates.Length > partialUpdateResults.Length
                 ? editBatch.Updates
                     .Skip(partialUpdateResults.Length)
-                    .Select(f => EditOperationResult.Failure("Edit batch failed.", objectId: f.Id))
+                    .Select(f => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: f.Id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailDeleteFailures = editBatch.Deletes.Length > partialDeleteResults.Length
                 ? editBatch.Deletes
                     .Skip(partialDeleteResults.Length)
-                    .Select(id => EditOperationResult.Failure("Edit batch failed.", objectId: id))
+                    .Select(id => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
 
@@ -611,7 +611,8 @@ internal sealed partial class FeatureDataAccess
                     // rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+                        createResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                            GetSafeEditOperationError(ex, "Create")));
                         return false;
                     }
                 }
@@ -658,7 +659,7 @@ internal sealed partial class FeatureDataAccess
                     // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        updateResults.Add(EditOperationResult.Failure(
+                        updateResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
                             GetSafeEditOperationError(ex, "Update"),
                             objectId: feature.Id));
                         return false;
@@ -714,7 +715,7 @@ internal sealed partial class FeatureDataAccess
                     // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        deleteResults.Add(EditOperationResult.Failure(
+                        deleteResults.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
                             GetSafeEditOperationError(ex, "Delete"),
                             objectId: objectId));
                         return false;
@@ -1034,7 +1035,8 @@ internal sealed partial class FeatureDataAccess
                     {
                         return (
                             null,
-                            EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+                            EditOperationResult.FailureWithUnknownCommitOutcome(
+                                GetSafeEditOperationError(ex, "Create")));
                     }
                 },
                 (feature, createdId) => EditOperationResult.Success(
@@ -1077,7 +1079,8 @@ internal sealed partial class FeatureDataAccess
             // via GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                    GetSafeEditOperationError(ex, "Create")));
             }
         }
 
@@ -1301,7 +1304,9 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
+                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                    GetSafeEditOperationError(ex, "Update"),
+                    objectId: feature.Id));
             }
         }
 
@@ -1379,7 +1384,9 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: featureId));
+                results.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                    GetSafeEditOperationError(ex, "Delete"),
+                    objectId: featureId));
             }
         }
 

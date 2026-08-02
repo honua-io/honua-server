@@ -243,6 +243,17 @@ public readonly record struct FeatureEditResult
     public bool WasRolledBack { get; init; }
 
     /// <summary>
+    /// Gets whether this result represents rows that committed or an operation whose commit
+    /// outcome is unknown. A zero success count is not sufficient proof that no write occurred:
+    /// an auto-commit statement may commit before its acknowledgement is lost.
+    /// </summary>
+    public bool MayHaveCommitted => !WasRolledBack &&
+        (CreatedCount + UpdatedCount + DeletedCount > 0 ||
+         CreateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
+         UpdateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
+         DeleteResults.Any(static result => result.IsCommitOutcomeUnknown));
+
+    /// <summary>
     /// Creates a successful edit result
     /// </summary>
     /// <param name="createdCount">Number of features created</param>
@@ -384,6 +395,13 @@ public readonly record struct EditOperationResult
     public bool IsPreconditionFailure { get; init; }
 
     /// <summary>
+    /// Whether the provider could not determine if this failed operation committed before the
+    /// failure was observed. Callers that enforce at-most-once behavior must retain their
+    /// idempotency reservation while this is <see langword="true"/>.
+    /// </summary>
+    public bool IsCommitOutcomeUnknown { get; init; }
+
+    /// <summary>
     /// Initializes a new EditOperationResult with default values
     /// </summary>
     public EditOperationResult()
@@ -418,6 +436,26 @@ public readonly record struct EditOperationResult
             IsSuccess = false,
             ErrorMessage = errorMessage,
             ErrorCode = errorCode
+        };
+
+    /// <summary>
+    /// Creates a failed operation result whose database commit outcome is unknown.
+    /// </summary>
+    /// <param name="errorMessage">Error message</param>
+    /// <param name="errorCode">Error code</param>
+    /// <param name="objectId">Object ID if known</param>
+    /// <returns>Operation result flagged with an unknown commit outcome</returns>
+    public static EditOperationResult FailureWithUnknownCommitOutcome(
+        string errorMessage,
+        int errorCode = 1000,
+        long? objectId = null)
+        => new()
+        {
+            ObjectId = objectId,
+            IsSuccess = false,
+            ErrorMessage = errorMessage,
+            ErrorCode = errorCode,
+            IsCommitOutcomeUnknown = true
         };
 
     /// <summary>

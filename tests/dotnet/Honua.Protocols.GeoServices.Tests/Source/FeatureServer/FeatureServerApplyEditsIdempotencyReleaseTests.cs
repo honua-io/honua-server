@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -113,6 +114,105 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
                && error.TryGetProperty("code", out var code)
             ? code.GetInt32()
             : -1;
+    }
+}
+
+/// <summary>
+/// Proves that a read-only exception outside the provider dispatch cannot release a reservation
+/// after the writer has reported committed rows.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.FeatureServer)]
+public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ReplaceService<IFeatureWriter>(new SuccessfulFeatureWriter())
+        .ReplaceService<IPluginEditPipeline>(new ThrowingAfterHookPipeline());
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_ReadOnlyExceptionAfterCommit_RetainsReservation()
+    {
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?> { ["name"] = "post-commit" },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            ]
+        };
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var first = await PostApplyEditsAsync(json, idempotencyKey);
+        first.Be200Ok();
+        var firstBody = await first.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(firstBody).Should().Be(405, firstBody);
+
+        var retry = await PostApplyEditsAsync(json, idempotencyKey);
+        retry.Be200Ok();
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().Be(
+            409,
+            "a post-commit exception must not be mistaken for the provider's read-only rejection");
+    }
+
+    private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/rest/services/test/FeatureServer/0/applyEdits")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        message.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await _fixture.Client.SendAsync(message);
+    }
+
+    private sealed class SuccessfulFeatureWriter : IFeatureWriter
+    {
+        public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
+            => Task.FromResult(feature);
+
+        public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
+            => Task.FromResult(feature);
+
+        public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(FeatureEditResult.Success(
+                1,
+                0,
+                0,
+                createdIds: [42],
+                createResults: [EditOperationResult.Success(42)]));
+    }
+
+    private sealed class ThrowingAfterHookPipeline : IPluginEditPipeline
+    {
+        public bool HasPlugins => true;
+
+        public ValueTask<PluginEditOutcome> ValidateAndRunBeforeHooksAsync(
+            EditHookContext context,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(PluginEditOutcome.Allowed);
+
+        public ValueTask RunAfterHooksAsync(EditHookContext context, CancellationToken cancellationToken)
+            => ValueTask.FromException(
+                new ReadOnlyFeatureWriteException("Post-commit hook surfaced a read-only error."));
     }
 }
 
@@ -226,6 +326,45 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             $"reservation must remain held: {retryBody}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterAmbiguousZeroCountResult_ReportsConflict()
+    {
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = $"AmbiguousResult-{idempotencyKey}"
+                    },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            ]
+        };
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var first = await PostApplyEditsAsync(json, idempotencyKey);
+        first.Be200Ok();
+        var firstBody = await first.Content.ReadAsStringAsync();
+        var firstResponse = JsonSerializer.Deserialize(
+            firstBody,
+            FeatureServerJsonContext.Default.ApplyEditsResponse);
+        firstResponse.Should().NotBeNull();
+        firstResponse!.Success.Should().BeFalse(firstBody);
+
+        var retry = await PostApplyEditsAsync(json, idempotencyKey);
+        retry.Be200Ok();
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().Be(
+            409,
+            "a zero-count provider result with an unknown commit outcome must retain the reservation");
+    }
+
     private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)
     {
         using var message = new HttpRequestMessage(
@@ -256,6 +395,22 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
 
         public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
         {
+            if (editBatch.Creates.Any(static feature =>
+                    feature.Attributes.TryGetValue("name", out var name) &&
+                    name is string text &&
+                    text.StartsWith("AmbiguousResult-", StringComparison.Ordinal)))
+            {
+                return Task.FromResult(FeatureEditResult.Success(
+                    0,
+                    0,
+                    0,
+                    createResults:
+                    [
+                        EditOperationResult.FailureWithUnknownCommitOutcome(
+                            "Create acknowledgement was lost.")
+                    ]));
+            }
+
             if (editBatch.Creates.Any(static feature =>
                     feature.Attributes.TryGetValue("name", out var name) &&
                     name is string text &&

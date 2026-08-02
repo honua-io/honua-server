@@ -96,7 +96,7 @@ internal sealed class FeatureServerEditsHandler(
         // Tracks the idempotency reservation this request owns (#3052) and the token that proves
         // ownership. Set the moment TryReserveAsync wins; the finally block below releases it
         // unless the write may have committed rows, so no post-reservation exit — rejection,
-        // rollback, cancellation before the write, or a committed-zero-row response — can leave the
+        // rollback, cancellation before dispatch, or a confirmed zero-row response — can leave the
         // key pinned and turn a genuine client retry into an idempotency conflict.
         ApplyEditsIdempotencyScope? heldReservation = null;
         string? heldReservationToken = null;
@@ -302,9 +302,10 @@ internal sealed class FeatureServerEditsHandler(
             var editCommittedRows = !editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0;
 
-            // The writer returned, so its counts are authoritative: lower the flag when they prove
-            // nothing landed, keep it raised when rows did.
-            writeOutcome.MayHaveCommitted = editCommittedRows;
+            // A returned zero count is not proof that nothing landed: a provider can convert an
+            // ambiguous auto-commit/acknowledgement failure into a failed per-row result. Use the
+            // provider's explicit commit-outcome signal as well as successful counts.
+            writeOutcome.MayHaveCommitted = editResult.MayHaveCommitted;
 
             if (editCommittedRows)
             {
@@ -355,13 +356,6 @@ internal sealed class FeatureServerEditsHandler(
         // transaction handlers already do (honua-server#2983).
         catch (NotSupportedException ex)
         {
-            // Only this explicit read-only rejection proves the provider refused the batch before
-            // touching a row. A general NotSupportedException after dispatch is ambiguous and must
-            // keep the reservation just like any other write-path fault.
-            if (ex is ReadOnlyFeatureWriteException)
-            {
-                writeOutcome.MayHaveCommitted = false;
-            }
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateFromException(httpContext, ex);
@@ -380,7 +374,7 @@ internal sealed class FeatureServerEditsHandler(
             // (#3052). That covers every post-reservation exit that recorded no replay value and
             // committed nothing: a rejection or cancellation before the write was dispatched, the
             // read-only provider's blanket NotSupportedException, the rollbackOnFailure validation
-            // response, a rolled-back batch, and the committed-but-zero-row response (which
+            // response, a rolled-back batch, and a confirmed zero-row response (which
             // deliberately does not record so a genuine retry is re-attempted — the retry it must
             // not then block with a conflict).
             //
@@ -867,9 +861,21 @@ internal sealed class FeatureServerEditsHandler(
         // ApplyEditsAsync — a cancellation between rows, a transport fault mid-batch — can unwind
         // with rows already committed and no result to inspect. Raise the flag BEFORE dispatching so
         // the handler's finally keeps the idempotency reservation in exactly that case (#3052); the
-        // caller lowers it again once the returned counts prove nothing landed.
+        // caller lowers it again only when the returned result proves nothing landed.
         writeOutcome.MayHaveCommitted = true;
-        var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        FeatureEditResult editResult;
+        try
+        {
+            editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ReadOnlyFeatureWriteException)
+        {
+            // This exception is safe to classify only at the provider dispatch boundary. Catching
+            // it at the outer request boundary would also match a post-commit invalidator or plugin
+            // hook and could release a reservation after rows were already committed.
+            writeOutcome.MayHaveCommitted = false;
+            throw;
+        }
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults, FeatureEditOperationKind.Create);
         ApplyCreateResponseObjectIds(context);
@@ -1283,9 +1289,10 @@ internal sealed class FeatureServerEditsHandler(
     {
         /// <summary>
         /// <see langword="true"/> from the moment a write is dispatched to the provider until
-        /// something proves nothing was committed — the writer returning counts of zero, or a
-        /// read-only provider's blanket rejection. While it is <see langword="true"/> the handler
-        /// keeps the idempotency reservation rather than freeing a key whose rows may exist.
+        /// something proves nothing was committed — a provider result with no successful or
+        /// ambiguous operations, or a read-only rejection at dispatch. While it is
+        /// <see langword="true"/> the handler keeps the idempotency reservation rather than freeing
+        /// a key whose rows may exist.
         /// </summary>
         public bool MayHaveCommitted { get; set; }
     }
