@@ -84,6 +84,8 @@ internal static class PlanLayerReferences
                 continue;
             }
 
+            var usesInlineRasterSource = GeoprocessingRasterSourceResolution.UsesInlineSource(step, definition);
+
             foreach (var parameter in definition.Parameters)
             {
                 // ProcessLayerAccess.None marks a reserved placeholder the executor never
@@ -91,6 +93,15 @@ internal static class PlanLayerReferences
                 // the process never touches (honua-server#3046 review).
                 if (parameter.ValueType != ProcessParameterValueType.LayerId
                     || parameter.LayerAccess == ProcessLayerAccess.None)
+                {
+                    continue;
+                }
+
+                // Native raster selectors are alternatives. When an inline source is present,
+                // resolution and the worker both ignore layerId/rasterId, so authorizing the
+                // unused layer would turn a harmless stale selector into a false 403.
+                if (usesInlineRasterSource
+                    && string.Equals(parameter.Name, "layerId", StringComparison.Ordinal))
                 {
                     continue;
                 }

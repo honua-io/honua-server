@@ -42,7 +42,12 @@ public sealed record JobSecurityClaim(string Type, string Value);
 /// <param name="PrincipalId">Stable identifier of the submitting principal, when known.</param>
 /// <param name="TenantId">Tenant the submitter belonged to, or <see langword="null"/> for the tenant-less default.</param>
 /// <param name="Claims">The submitter's captured claims, role claims first.</param>
+/// <param name="RoleClaimType">
+/// Claim type the submitting identity used for <c>IsInRole</c>; absent on older snapshots,
+/// which restore with the standard role claim type.
+/// </param>
 public sealed record JobSecurityContext(
     string? PrincipalId,
     string? TenantId,
-    IReadOnlyList<JobSecurityClaim> Claims);
+    IReadOnlyList<JobSecurityClaim> Claims,
+    string? RoleClaimType = null);

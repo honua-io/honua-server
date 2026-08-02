@@ -73,10 +73,17 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext is not null)
         {
+            // Deferred approval execution can run inside the APPROVER's request while
+            // authorizing the restored SUBMITTER. The supplied principal owns the resource
+            // decision, so its captured tenant must win over the ambient request tenant.
+            var tenantId = ResolveAuthorizationTenantId(
+                principal,
+                TenantScopeHelpers.ResolveRequestTenantId(httpContext));
+
             return await EvaluateAsync(
                 httpContext.RequestServices,
                 principal,
-                TenantScopeHelpers.ResolveRequestTenantId(httpContext),
+                tenantId,
                 applyTenantScope: true,
                 layerId,
                 operation,
@@ -92,9 +99,9 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // executor would then read that foreign layer through its global storage address. The
         // principal's own tenant wins; the ambient scope value is the fallback for a background
         // caller that is not user-attributed (honua-server#3046 review).
-        var tenantId = principal.FindFirstValue(TenantClaimType)
-            ?? principal.FindFirstValue(AzureTenantClaimType)
-            ?? scope.ServiceProvider.GetService<ITenantContext>()?.TenantId;
+        var tenantId = ResolveAuthorizationTenantId(
+            principal,
+            scope.ServiceProvider.GetService<ITenantContext>()?.TenantId);
 
         return await EvaluateAsync(
             scope.ServiceProvider,
@@ -106,6 +113,21 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             layerId,
             operation,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the tenant for the principal being authorized. The ambient tenant is only a
+    /// fallback for a tenant-less principal; it may belong to an approver or orchestrator.
+    /// </summary>
+    internal static string? ResolveAuthorizationTenantId(
+        ClaimsPrincipal principal,
+        string? ambientTenantId)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        return principal.FindFirstValue(TenantClaimType)
+            ?? principal.FindFirstValue(AzureTenantClaimType)
+            ?? ambientTenantId;
     }
 
     private static async Task<AccessDecision> EvaluateAsync(

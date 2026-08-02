@@ -146,7 +146,11 @@ internal static class JobSecurityContextCapture
             ? principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType)
             : tenantContext.TenantId;
 
-        return new JobSecurityContext(principal.Identity?.Name, tenantId, captured);
+        return new JobSecurityContext(
+            principal.Identity?.Name,
+            tenantId,
+            captured,
+            options.EffectiveRoleClaimType);
     }
 
     /// <summary>
@@ -191,7 +195,15 @@ internal static class JobSecurityContextCapture
             claims.Add(new Claim(AzureTenantClaimType, context.TenantId));
         }
 
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, RestoredAuthenticationType, ClaimTypes.Name, ClaimTypes.Role));
+        var roleClaimType = string.IsNullOrWhiteSpace(context.RoleClaimType)
+            ? ClaimTypes.Role
+            : context.RoleClaimType;
+
+        return new ClaimsPrincipal(new ClaimsIdentity(
+            claims,
+            RestoredAuthenticationType,
+            ClaimTypes.Name,
+            roleClaimType));
     }
 
     private static void AppendClaims(

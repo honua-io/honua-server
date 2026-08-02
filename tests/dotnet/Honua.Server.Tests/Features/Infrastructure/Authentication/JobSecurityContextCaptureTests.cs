@@ -115,6 +115,41 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_ThenRestore_PreservesConfiguredRoleClaimTypeForIsInRole()
+    {
+        const string customRoleClaimType = "honua_roles";
+        var options = new RbacOptions { RoleClaimType = customRoleClaimType };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(customRoleClaimType, "workflow-approver")],
+            "Test",
+            ClaimTypes.Name,
+            customRoleClaimType));
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(principal, options));
+
+        restored.Identity.Should().BeOfType<ClaimsIdentity>()
+            .Which.RoleClaimType.Should().Be(customRoleClaimType);
+        restored.IsInRole("workflow-approver").Should().BeTrue(
+            "deferred coarse-role authorization must match the submitting identity");
+    }
+
+    [UnitTest]
+    public void Restore_LegacySnapshot_UsesStandardRoleClaimType()
+    {
+        var legacySnapshot = new JobSecurityContext(
+            "subject-123",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "workflow-approver")]);
+
+        var restored = JobSecurityContextCapture.Restore(legacySnapshot);
+
+        restored.Identity.Should().BeOfType<ClaimsIdentity>()
+            .Which.RoleClaimType.Should().Be(ClaimTypes.Role);
+        restored.IsInRole("workflow-approver").Should().BeTrue();
+    }
+
+    [UnitTest]
     public void Capture_ScopeGovernanceClaims_SurviveTheBudget()
     {
         // The mirror image of the role exemption. OperatorScopeCatalog.IsScopeGoverned decides
@@ -191,6 +226,21 @@ public sealed class JobSecurityContextCaptureTests
 
         restored.FindFirst("tenant_id").Should().BeNull();
         restored.FindFirst("tid").Should().BeNull();
+    }
+
+    [UnitTest]
+    public void LayerAuthorization_RestoredPrincipalTenantWinsOverAmbientApproverTenant()
+    {
+        var restoredSubmitter = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("tenant_id", "submitter-tenant")],
+            "HonuaJobSecurityContext"));
+
+        var tenantId = LayerAccessAuthorizer.ResolveAuthorizationTenantId(
+            restoredSubmitter,
+            ambientTenantId: "approver-tenant");
+
+        tenantId.Should().Be("submitter-tenant",
+            "the ambient request can belong to a cross-tenant approver");
     }
 
     [UnitTest]

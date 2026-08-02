@@ -164,7 +164,7 @@ internal static class GeoprocessingRasterSourceResolution
         }
 
         // Inline source wins; nothing to resolve.
-        if (step.Inputs.TryGetValue(SourceInput, out var source) && !string.IsNullOrWhiteSpace(source))
+        if (UsesInlineSource(step, definition))
         {
             return false;
         }
@@ -194,6 +194,22 @@ internal static class GeoprocessingRasterSourceResolution
 
         reference = new RasterSourceReference(layerId, rasterId);
         return true;
+    }
+
+    /// <summary>
+    /// Returns whether this native raster step will consume its inline source instead of
+    /// either catalog selector. The same precedence must govern both source resolution and
+    /// submit-time layer authorization so an unused stale selector cannot deny an otherwise
+    /// valid inline job (honua-server#3046 review).
+    /// </summary>
+    internal static bool UsesInlineSource(AnalysisPlanStep step, ProcessDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        ArgumentNullException.ThrowIfNull(definition);
+
+        return DeclaresNativeRasterSource(definition)
+            && step.Inputs.TryGetValue(SourceInput, out var source)
+            && !string.IsNullOrWhiteSpace(source);
     }
 
     private static bool DeclaresNativeRasterSource(ProcessDefinition definition)

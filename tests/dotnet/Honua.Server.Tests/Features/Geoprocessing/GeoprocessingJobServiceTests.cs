@@ -472,6 +472,35 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitJob_InlineRasterSource_DoesNotAuthorizeUnusedLayerSelector()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<int>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+        var inlineSource = Convert.ToBase64String([1, 2, 3]);
+
+        var job = await sut.SubmitJobAsync(
+            CreateInlineRasterSourcePlan(inlineSource, layerId: 42), null, CreatePrincipal());
+
+        job.Spec.Parameters["honua.geoprocessing.step.0.source"].Should().Be(inlineSource);
+        await layerAuthorizer.DidNotReceive().AuthorizeLayerAsync(
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<int>(), Arg.Any<AuthorizationOperation>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveLayerIdAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_IdempotentReplayWithStableSubject_ReturnsExistingJob()
@@ -3861,6 +3890,33 @@ public sealed class GeoprocessingJobServiceTests
             },
         ],
     };
+    private static AnalysisPlan CreateInlineRasterSourcePlan(string source, int? layerId = null)
+    {
+        var inputs = new Dictionary<string, string>
+        {
+            ["source"] = source,
+        };
+        if (layerId is { } value)
+        {
+            inputs["layerId"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new AnalysisPlan
+        {
+            PlanId = "plan-inline-raster-source",
+            IntentId = "intent-inline-raster-source",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-inline-raster-source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = inputs,
+                },
+            ],
+        };
+    }
 
     private static AnalysisPlan CreateLayerSourcePlan(int layerId) => new()
     {

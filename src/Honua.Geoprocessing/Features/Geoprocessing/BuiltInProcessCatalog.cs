@@ -1819,10 +1819,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     // The native GDAL worker reads a base64 GeoTIFF directly from 'source'. As of
     // #2264 the submit path also resolves a registered catalog raster from
     // `layerId`/`rasterId` and materializes it onto `source` before dispatch, so a
-    // plan must supply EXACTLY ONE of: an inline `source`, a `layerId`, or a
-    // `rasterId`. `source` is therefore declared OPTIONAL and the "supply one of"
-    // rule is enforced by ValidateSharedRasterSourceSemantics so a plan that omits
-    // all three is rejected at submit time rather than failing in the worker.
+    // plan must supply at least one of: an inline `source`, a `layerId`, or a
+    // `rasterId`. Inline `source` takes precedence when callers also retain a catalog
+    // selector; otherwise rasterId is authoritative and layerId is its consistency hint.
+    // `source` is therefore declared OPTIONAL and the "supply one" floor is enforced by
+    // ValidateSharedRasterSourceSemantics so a plan that omits all three is rejected at
+    // submit time rather than failing in the worker.
     private static readonly ProcessParameterSpec[] NativeRasterSourceParameters =
     [
         Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text, acceptsRasterSource: true),
