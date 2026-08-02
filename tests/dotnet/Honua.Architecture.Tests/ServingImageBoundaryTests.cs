@@ -147,6 +147,33 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void ReleaseBundle_ShouldReserveLatestTagsForGaPromotion()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/release-bundle.yml"))
+            .ReplaceLineEndings("\n");
+
+        var channelTagsIndex = workflow.IndexOf(
+            "--tag \"${REGISTRY_GHCR}/${IMAGE_NAME}:${channel}\"",
+            StringComparison.Ordinal);
+        var gaGuardIndex = workflow.IndexOf("if [[ \"$channel\" == \"ga\" ]]; then", StringComparison.Ordinal);
+        var latestTagIndex = workflow.IndexOf(
+            "--tag \"${REGISTRY_GHCR}/${IMAGE_NAME}:latest\"",
+            StringComparison.Ordinal);
+        var publicationIndex = workflow.IndexOf(
+            "docker buildx imagetools create \"${targets[@]}\"",
+            StringComparison.Ordinal);
+
+        channelTagsIndex.Should().BeGreaterThan(-1,
+            "preview, RC, and GA promotions must retain their channel-specific tags");
+        gaGuardIndex.Should().BeGreaterThan(channelTagsIndex);
+        latestTagIndex.Should().BeGreaterThan(gaGuardIndex,
+            "mutable latest tags must only be collected inside the GA guard");
+        publicationIndex.Should().BeGreaterThan(latestTagIndex);
+        workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-aot\"");
+    }
+
+    [ArchitectureTest]
     public void AuxiliaryJitDockerfiles_ShouldDeclareNonProductionProfile()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

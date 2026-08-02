@@ -344,9 +344,15 @@ jobs:
           # retain the explicit -aot compatibility aliases.
           ref='${{ needs.rc-image.outputs.image_ref }}'
           digest='${{ needs.rc-image.outputs.image_digest }}'
-          docker buildx imagetools create \
-            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${{ github.event.inputs.channel }}" \
-            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${{ github.event.inputs.channel }}-aot" \
-            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest" \
-            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest-aot" \
-            "${ref}@${digest}"
+          channel='${{ github.event.inputs.channel }}'
+          targets=(
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${channel}"
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${channel}-aot"
+          )
+          if [[ "$channel" == "ga" ]]; then
+            targets+=(
+              --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest"
+              --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest-aot"
+            )
+          fi
+          docker buildx imagetools create "${targets[@]}" "${ref}@${digest}"

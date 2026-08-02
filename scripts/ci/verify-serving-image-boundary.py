@@ -87,10 +87,13 @@ PROJ_GEOS_UTILITY_NAMES = {
     "cs2cs",
     "geod",
     "geos-config",
+    "geosop",
+    "gie",
     "invgeod",
     "invproj",
     "proj",
     "projinfo",
+    "projsync",
 }
 FORBIDDEN_EXECUTABLES = GDAL_UTILITY_NAMES | PROJ_GEOS_UTILITY_NAMES
 APP_MANIFEST_SUFFIXES = (".deps.json", ".nuspec")
