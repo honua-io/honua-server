@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
@@ -49,7 +50,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
         });
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
@@ -495,6 +497,32 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
         env["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
 
+        if (parameters.TryGetValue(
+            RasterOutputWorkerContract.StoreReferenceParameter,
+            out var rasterOutputStoreReference))
+        {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing
+                || job.Spec.ContractVersion < RasterOutputContract.JobContractVersion)
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a versioned geoprocessing worker contract.");
+            }
+
+            if (!RasterOutputWorkerContract.IsLogicalStoreReference(rasterOutputStoreReference))
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a bounded logical store reference, not a URL or credential.");
+            }
+
+            env[RasterOutputWorkerContract.ContractVersionEnvironmentVariable] =
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture);
+            env[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] = rasterOutputStoreReference;
+            env[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, job.AttemptCount);
+            env[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, job.AttemptCount);
+        }
+
         return env;
     }
 
@@ -511,7 +539,9 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             }
 
             var name = key[prefix.Length..];
-            if (!string.IsNullOrWhiteSpace(name))
+            if (!string.IsNullOrWhiteSpace(name)
+                && !string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal)
+                && !RasterOutputWorkerContract.IsReservedEnvironmentVariable(name))
             {
                 environmentVariables[name] = value;
             }

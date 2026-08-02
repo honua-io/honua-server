@@ -6,6 +6,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +39,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterOutputContract.JobContractVersion);
     }
 
     [Fact]
@@ -112,6 +114,81 @@ public sealed class KubernetesJobBatchComputeBackendTests
             Arg.Is<KubernetesJobManifest>(m =>
                 m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterContractMetadataIsSafeAndAttemptScoped()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "job-uid-raster-output" }
+            });
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-raster-output", image: "honua/worker:1.0.0");
+        job = job with
+        {
+            AttemptCount = 4,
+            Spec = job.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+                    ["env." + RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] =
+                        "https://attacker.example/signed?secret=yes",
+                    ["env." + RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] =
+                        "raster/staging/wrong/attempt-0/",
+                    ["k8s.env." + RasterOutputWorkerContract.ManifestKeyEnvironmentVariable] = "credential=leak",
+                    ["k8s.env." + RasterOutputWorkerContract.ContractVersionEnvironmentVariable] = "999"
+                }
+            }
+        };
+
+        await backend.StartAsync(job);
+
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(manifest =>
+                manifest.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "2"
+                && manifest.EnvironmentVariables[RasterOutputWorkerContract.ContractVersionEnvironmentVariable] == "1"
+                && manifest.EnvironmentVariables[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] == "gp-results"
+                && manifest.EnvironmentVariables[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable]
+                    == RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 4)
+                && manifest.EnvironmentVariables[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable]
+                    == RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 4)
+                && !manifest.EnvironmentVariables.Values.Any(value =>
+                    value.Contains("attacker", StringComparison.OrdinalIgnoreCase)
+                    || value.Contains("credential", StringComparison.OrdinalIgnoreCase)
+                    || value.Contains("secret", StringComparison.OrdinalIgnoreCase))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterContractRejectsUrlStoreReference()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(client);
+        var initial = CreateJob("job-raster-output-invalid", image: "honua/worker:1.0.0");
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] =
+                        "https://bucket.example/signed?token=secret"
+                }
+            }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*logical store reference*");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!, default);
     }
 
     [Fact]
