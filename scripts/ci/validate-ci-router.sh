@@ -533,7 +533,13 @@ assert_exact_shards \
 assert_exact_shards \
   "network-dataset-admin-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs" \
-  '["Server Features Admin and Console"]'
+  '["Server Features Admin Network and Jobs"]'
+assert_descriptor \
+  "network-dataset-admin-source-owner" \
+  "src/Honua.Server/Features/Admin/NetworkDatasetAdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Network and Jobs"
 assert_exact_shards \
   "pgrouting-fixture-owner" \
   "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs" \
@@ -554,7 +560,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Core","GeoServices GPServer and NAServer","Server Features Admin and Console"]'
+  '["Core","GeoServices GPServer and NAServer","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
@@ -583,7 +589,15 @@ assert_excludes_shard \
 assert_excludes_shard \
   "zarr-server-source-excludes-collaboration-content" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  "Server Features Collaboration and Content"
+  "Server Features Collaboration Mobile and Identity"
+assert_excludes_shard \
+  "zarr-server-source-excludes-studio-feature-store" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Studio and Feature Store"
+assert_excludes_shard \
+  "zarr-server-source-excludes-analytics-export-reporting" \
+  "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
+  "Server Features Analytics Export and Reporting"
 assert_excludes_shard \
   "zarr-server-source-excludes-spec-printing-staticmap" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
@@ -614,7 +628,35 @@ assert_descriptor \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
   "targeted" \
   "false" \
-  "Server Features Collaboration and Content"
+  "Server Features Collaboration Mobile and Identity"
+assert_excludes_shard \
+  "collaboration-source-excludes-studio-child" \
+  "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
+  "Server Features Studio and Feature Store"
+assert_excludes_shard \
+  "collaboration-source-excludes-analytics-child" \
+  "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
+  "Server Features Analytics Export and Reporting"
+assert_descriptor \
+  "studio-source-retains-owner" \
+  "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio and Feature Store"
+assert_excludes_shard \
+  "studio-source-excludes-collaboration-child" \
+  "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
+  "Server Features Collaboration Mobile and Identity"
+assert_descriptor \
+  "reporting-source-retains-owner" \
+  "src/Honua.Server/Features/Reporting/AnalysisReportEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Analytics Export and Reporting"
+assert_excludes_shard \
+  "reporting-source-excludes-studio-child" \
+  "src/Honua.Server/Features/Reporting/AnalysisReportEndpoints.cs" \
+  "Server Features Studio and Feature Store"
 assert_descriptor \
   "spec-source-retains-owner" \
   "src/Honua.Server/Features/Spec/HonuaSpecService.cs" \
@@ -772,7 +814,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
-  "Server Features Admin Platform and Governance"
+  "Server Features Admin Catalog and Configuration"
 assert_excludes_shard \
   "core-capability-registry-excludes-unrelated-admin-operations" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
@@ -834,7 +876,7 @@ assert_descriptor \
 # the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
 # the Hosting/Features/Authentication override routes to the auth/security
 # shards. The combined PR is targeted, NOT run_all, and runs its own tests'
-# shards (Server Features Admin and Console for OAuthClientEndpointsTests).
+# shards (Server Features Admin Authentication for OAuthClientEndpointsTests).
 assert_descriptor \
   "oauth-sharing-source-targeted" \
   "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
@@ -846,7 +888,59 @@ assert_descriptor \
   "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Admin and Console"
+  "Server Features Admin Authentication"
+assert_excludes_shard \
+  "oauth-admin-excludes-credentials-child" \
+  "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
+  "Server Features Admin Credentials"
+assert_descriptor \
+  "admin-api-key-targeted" \
+  "src/Honua.Server/Features/Admin/AdminApiKeyEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Credentials"
+assert_descriptor \
+  "tenant-admin-targeted" \
+  "src/Honua.Server/Features/Admin/TenantAdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Authorization"
+assert_descriptor \
+  "deploy-control-targeted" \
+  "src/Honua.Server/Features/Admin/DeployControlEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Release Control"
+assert_descriptor \
+  "secure-connection-targeted" \
+  "src/Honua.Server/Features/Admin/SecureConnectionEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Platform and Connections"
+assert_descriptor \
+  "federation-admin-targeted" \
+  "src/Honua.Server/Features/Admin/Federation/FederationEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Governance and Sharing"
+assert_descriptor \
+  "console-session-targeted" \
+  "src/Honua.Server/Features/Console/ConsoleSessionEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Console and Alerts"
+assert_descriptor \
+  "feature-overview-targeted" \
+  "src/Honua.Server/Features/Admin/FeatureOverviewEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Catalog and Configuration"
+assert_descriptor \
+  "alert-admin-targeted" \
+  "src/Honua.Server/Features/Admin/AlertAdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
 # maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —

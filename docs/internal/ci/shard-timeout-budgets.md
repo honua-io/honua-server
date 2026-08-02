@@ -109,16 +109,16 @@ changed.
 | Shard | Runs | Timeouts | p50 | p90 | Old cap | p90/old | New cap | New job cap | p90/new |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | OData Core | 20 | 7 | 19.0 | 19.5 | 20 | 98% | **29** | **39** | 67% |
-| Server Features Admin and Console | 19 | 5 | 47.6 | 49.1 | 50 | 98% | **72** | **82** | 68% |
+| Server Features Admin and Console (pre-#3059) | 19 | 5 | 47.6 | 49.1 | 50 | 98% | **72** | **82** | 68% |
 | OData Query and Spatial | 20 | 0 | 29.1 | 30.6 | 32 | 96% | **44** | **54** | 70% |
 | GeoServices ImageServer | 20 | 1 | 22.6 | 23.1 | 24 | 96% | **35** | **45** | 66% |
-| Server Features Collaboration and Content | 24 | 0 | 41.6 | 46.1 | 48 | 96% | **66** | **76** | 70% |
+| Server Features Collaboration and Content (pre-#3059) | 24 | 0 | 41.6 | 46.1 | 48 | 96% | **66** | **76** | 70% |
 | GeoServices MapServer | 20 | 5 | 18.5 | 19.0 | 20 | 95% | **29** | **39** | 66% |
 | Infra and Security | 20 | 0 | 25.6 | 26.6 | 30 | 89% | **39** | **49** | 68% |
 | Migration | 22 | 2 | 16.5 | 17.0 | 20 | 85% | **29** | **39** | 59% |
-| Server Features Admin Auth and Identity | 19 | 0 | 35.1 | 37.1 | 45 | 82% | **54** | **64** | 69% |
+| Server Features Admin Auth and Identity (pre-#3059) | 19 | 0 | 35.1 | 37.1 | 45 | 82% | **54** | **64** | 69% |
 | Admin & Infrastructure | 20 | 0 | 22.6 | 23.6 | 32 | 74% | 32 | 42 | 74% |
-| Server Features Admin Platform and Governance | 19 | 0 | 32.5 | 33.5 | 45 | 74% | 45 | 55 | 74% |
+| Server Features Admin Platform and Governance (pre-#3059) | 19 | 0 | 32.5 | 33.5 | 45 | 74% | 45 | 55 | 74% |
 | Operator Eval Harness | 23 | 0 | 13.1 | 14.1 | 20 | 70% | 20 | 30 | 70% |
 | Scene | 20 | 0 | 18.5 | 20.0 | 30 | 67% | 30 | 40 | 67% |
 | STAC Protocol | 20 | 0 | 9.0 | 10.0 | 15 | 67% | 15 | 25 | 67% |
@@ -163,6 +163,50 @@ changed.
 | Performance | 20 | 0 | 0.5 | 0.5 | 15 | 3% | 15 | 25 | 3% |
 | FeatureServer Services | 20 | 0 | 0.5 | 0.5 | 20 | 2% | 20 | 30 | 2% |
 
+## #3059 split baseline and follow-up measurement
+
+#3059 replaces the four oversized rows marked above with 13 semantic children.
+Every child uses a 22-minute inner cap and a 32-minute job cap, which are no
+larger than the pre-split matrix medians. The 70% headroom line is therefore
+15.4 minutes for every child.
+
+| Historical parent | Historical p90 | Children | Required child p90 |
+|---|---:|---:|---:|
+| Server Features Admin and Console | 49.1 min | 4 | <=15.4 min |
+| Server Features Collaboration and Content | 46.1 min | 3 | <=15.4 min |
+| Server Features Admin Auth and Identity | 37.1 min | 3 | <=15.4 min |
+| Server Features Admin Platform and Governance | 33.5 min | 3 | <=15.4 min |
+
+The child groups are:
+
+* `Server Features Console and Alerts`, `Server Features Admin Network and
+  Jobs`, `Server Features Admin Catalog and Configuration`, and `Server
+  Features Admin Integrations and Automation`;
+* `Server Features Studio and Feature Store`, `Server Features Analytics
+  Export and Reporting`, and `Server Features Collaboration Mobile and
+  Identity`;
+* `Server Features Admin Authentication`, `Server Features Admin Credentials`,
+  and `Server Features Admin Authorization`; and
+* `Server Features Admin Release Control`, `Server Features Admin Platform and
+  Connections`, and `Server Features Admin Governance and Sharing`.
+
+Four recent successful batch TRX profiles were used to balance class placement.
+Those artifacts predate the split, so they cannot supply observed child
+wall-clock percentiles or prove the new batch critical path. After the split
+lands, download at least 20 successful batch artifacts and regenerate this
+audit with the new artifact suffixes:
+
+```bash
+gh run download <run-id> --dir /tmp/honua-shard-audit
+scripts/ci/audit-shard-headroom.py /tmp/honua-shard-audit \
+  --config .github/ci-shards.json
+```
+
+Replace the required values above with observed child p50/p90 values, and record
+the batch `server-tests` critical path before closing #3059. Each child must be
+at or below 15.4 minutes p90, and the batch critical path must be lower than the
+49.1-minute historical parent p90.
+
 ### Findings
 
 * **Nine shards were at or above 75% of their inner cap**, five of which had
@@ -175,25 +219,24 @@ changed.
   `GP Devkit CLI`; 16 of them were not otherwise re-capped), so an inner timeout
   there could have been pre-empted by the runner cancelling the job — losing the
   log, TRX and timing artifacts and surfacing as an unattributable cancellation.
-  All 54 shards are now at gap >= 10.
-* **Watchlist**, unchanged for now but closest to the warn line:
-  `Admin & Infrastructure` (74%), `Server Features Admin Platform and
-  Governance` (74%), `Operator Eval Harness` (70%). The `HONUA_SHARD_LOW_HEADROOM`
-  warning will fire on these before they start failing.
+  All 63 configured shards are now at gap >= 10.
+* **Watchlist.** Of the unchanged shards, `Admin & Infrastructure` (74%) and
+  `Operator Eval Harness` (70%) remain closest to the warn line. The 13 #3059
+  children need fresh batch samples before they can be ranked. The
+  `HONUA_SHARD_LOW_HEADROOM` warning will fire before a sampled shard starts
+  failing.
 * **Raising a cap costs nothing on the healthy path.** These are caps, not
   durations: a shard that finishes in 17 minutes still finishes in 17 minutes.
   The only case that gets more expensive is a genuine hang, which now also
-  self-identifies as `HONUA_SHARD_HANG_SUSPECTED`. The largest new job cap (82
-  min, `Server Features Admin and Console`) still fits the merge train's
+  self-identifies as `HONUA_SHARD_HANG_SUSPECTED`. Before #3059, the largest
+  job cap (82 min, `Server Features Admin and Console`) still fit the merge train's
   6600-second (110 min) CI wait: shards start roughly 13 minutes into a batch
   run (`Build & Format Check` p50 ~12.4 min at ~0.7 min offset), so the
   worst-case hung batch lands near 96 minutes. That margin is another reason to
   split the largest shards rather than keep raising their budgets.
-* **Split candidates.** Raising a cap is the right fix for a shard whose total
-  work is reasonable. Four shards are large enough that they should be
-  re-partitioned rather than kept on an ever-growing budget — `Server Features
-  Admin and Console` (p50 47.6 min), `Server Features Collaboration and Content`
-  (41.6), `Server Features Admin Auth and Identity` (35.1) and `Server Features
-  Admin Platform and Governance` (32.5). Splitting them changes shard filters and
-  the capability-impact attribution, so it is tracked separately in
-  [#3059](https://github.com/honua-io/honua-server/issues/3059).
+* **Oversized shard split.** #3059 replaces the four historical parent entries
+  with 13 children capped at the former matrix median (22 inner / 32 job).
+  `.github/ci-shards.json` retains each removed parent filter as an exact
+  partition contract, and the coverage guard fails if a child creates a gap,
+  overlap, or leak. Observed child p90 values and the new batch critical path
+  remain a post-landing measurement as described above.

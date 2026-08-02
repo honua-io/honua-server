@@ -222,8 +222,9 @@ SensorThings module, etc.). The fix: convert class-name-keyed filters to
 namespace-prefix form where they were the gap (OData Core, Migration), add
 catch-all shards (`Server Features Misc` for any `Features.*` namespace not
 owned by a specific shard; `GeoServices Geometry VectorTile and Versioning` as
-the GeoServices-assembly catch-all), add `Server Features Admin and Console`
-and a `SensorThings` shard, and route `Features.Providers` to the AI shard. The
+the GeoServices-assembly catch-all), add the partitioned Server Features Admin
+family (with its legacy coverage contract retained in `shard_partitions`) and a
+`SensorThings` shard, and route `Features.Providers` to the AI shard. The
 anti-regression guard is `scripts/ci/check-server-test-shard-coverage.py`: it
 enumerates every test class across the server-test assemblies, evaluates each
 shard's `filter` (the `dotnet test --filter` mini-grammar) **per target
@@ -233,6 +234,15 @@ test class in an unmapped namespace fails the PR instead of silently never
 running. A tiny, justified exemption list covers namespaces deliberately routed
 to a non-PR lane (currently `Honua.Server.Tests.Scale`, the `Category=Scale`
 nightly stack).
+
+**Exact split invariant (#3059).** When an oversized shard is replaced, its
+removed parent filter is retained in `.github/ci-shards.json` under
+`shard_partitions` together with the names of its children. The coverage guard
+evaluates that parent and every child per discovered test class. It fails if a
+parent class is claimed by zero or multiple children, if a child claims a class
+outside the parent, if the parent remains active, or if a child is missing or
+reused. This makes the four #3059 Server Features splits mechanically exact
+while allowing their paths and runtime budgets to be independently narrowed.
 
 The `targeted-shards` job then projects the selected shard names into a
 `matrix_include` JSON array by joining against the rich shard records in

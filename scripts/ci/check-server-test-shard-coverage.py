@@ -21,6 +21,9 @@ This script:
      over FullyQualifiedName) against each class FQN.
   4. FAILS (exit 1) if any class is claimed by ZERO shards, or (optionally)
      reports classes claimed by MORE than one shard.
+  5. Verifies every legacy parent declared in `shard_partitions` is replaced by
+     an exact class-level partition: each class selected by the parent filter is
+     selected by exactly one child, and no child leaks outside the parent.
 
 Run locally / in CI:
   python3 scripts/ci/check-server-test-shard-coverage.py
@@ -80,7 +83,7 @@ EXEMPT_NAMESPACE_PREFIXES = [
     # Quarantined (#1962): RoleEndpointsTests fails when run — built-in roles
     # return NotFound and CreateRole 500s (likely the test fixture does not apply
     # src/Honua.Server/Migrations/041_CreateRbacRoleStore.sql). Excluded from the
-    # 'Server Features Admin and Console' shard filter via !~RoleEndpointsTests
+    # Admin shard-family filters via !~RoleEndpointsTests
     # and exempted here so the coverage guard stays green. Remove BOTH when #1962
     # is fixed (un-quarantining then requires the class to be claimed + green).
     "Honua.Server.Tests.Features.Admin.RoleEndpointsTests",
@@ -327,6 +330,61 @@ def main() -> int:
             return 2
         shard_csproj[shard["name"]] = shard.get("csproj") or DEFAULT_CSPROJ
 
+    parsed_partitions = []
+    partition_children: set[str] = set()
+    for partition in config.get("shard_partitions", []):
+        name = partition.get("name", "")
+        children = partition.get("children", [])
+        if not name or not isinstance(children, list) or not children:
+            print(
+                f"::error::invalid shard partition {partition!r}: name and children are required",
+                file=sys.stderr,
+            )
+            return 2
+        if name in parsed:
+            print(
+                f"::error::partitioned parent shard {name!r} must be removed from the active matrix",
+                file=sys.stderr,
+            )
+            return 2
+        if len(children) != len(set(children)):
+            print(f"::error::partition {name!r} repeats a child shard", file=sys.stderr)
+            return 2
+        missing = [child for child in children if child not in parsed]
+        if missing:
+            print(
+                f"::error::partition {name!r} references missing child shard(s): "
+                f"{', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return 2
+        repeated = [child for child in children if child in partition_children]
+        if repeated:
+            print(
+                f"::error::partition child shard(s) appear under more than one parent: "
+                f"{', '.join(repeated)}",
+                file=sys.stderr,
+            )
+            return 2
+        child_projects = {shard_csproj[child] for child in children}
+        if len(child_projects) != 1:
+            print(
+                f"::error::partition {name!r} spans multiple test projects: "
+                f"{', '.join(sorted(child_projects))}",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            parent_filter = _FilterParser(partition["filter"]).parse()
+        except (KeyError, ValueError) as exc:
+            print(
+                f"::error::partition {name!r} has an invalid parent filter: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        partition_children.update(children)
+        parsed_partitions.append((name, parent_filter, children))
+
     for fqn, csproj, shard_name in args.assert_owner or []:
         if shard_name not in parsed:
             print(f"::error::asserted owner shard {shard_name!r} does not exist", file=sys.stderr)
@@ -354,6 +412,7 @@ def main() -> int:
 
     orphans: list[str] = []
     multi: list[tuple[str, list[str]]] = []
+    partition_errors: list[str] = []
     claim_map: dict[str, list[str]] = {}
     for fqn in sorted(classes):
         if is_exempt(fqn):
@@ -371,11 +430,26 @@ def main() -> int:
         elif len(claiming) > 1:
             multi.append((fqn, claiming))
 
+        for parent_name, parent_filter, children in parsed_partitions:
+            parent_claims = _eval(parent_filter, fqn)
+            child_claims = [child for child in children if child in claiming]
+            if parent_claims and len(child_claims) != 1:
+                partition_errors.append(
+                    f"{parent_name}: {fqn} expected exactly one child, got "
+                    f"{', '.join(child_claims) or '(none)'}"
+                )
+            elif not parent_claims and child_claims:
+                partition_errors.append(
+                    f"{parent_name}: {fqn} leaks outside parent via "
+                    f"{', '.join(child_claims)}"
+                )
+
     if args.report:
         for fqn in sorted(claim_map):
             print(f"{fqn}\n    -> {', '.join(claim_map[fqn]) or '(ORPHAN)'}")
         print(f"\nTotal classes: {len(claim_map)}  "
-              f"orphans: {len(orphans)}  multi-claimed: {len(multi)}")
+              f"orphans: {len(orphans)}  multi-claimed: {len(multi)}  "
+              f"partition-errors: {len(partition_errors)}")
 
     if args.report_multi and multi:
         print("\nClasses claimed by more than one shard (allowed but noted):")
@@ -392,11 +466,23 @@ def main() -> int:
             src = entry.get("src", [])
             print(f"  - {fqn}  ({src[0] if src else '?'}  "
                   f"[{entry.get('csproj', '?')}])", file=sys.stderr)
+    if partition_errors:
+        print(
+            f"::error::{len(partition_errors)} shard partition invariant(s) failed; "
+            "each legacy parent class must be claimed by exactly one child and "
+            "no child may claim a class outside its parent:",
+            file=sys.stderr,
+        )
+        for error in partition_errors:
+            print(f"  - {error}", file=sys.stderr)
+
+    if orphans or partition_errors:
         return 1
 
     print(f"OK: all {len(claim_map)} Honua.Server.Tests classes are claimed by "
           f"at least one shard filter "
-          f"({len(EXEMPT_NAMESPACE_PREFIXES)} exempt namespace prefix(es)).")
+          f"({len(EXEMPT_NAMESPACE_PREFIXES)} exempt namespace prefix(es)); "
+          f"{len(parsed_partitions)} declared shard partition(s) are exact.")
     return 0
 
 
