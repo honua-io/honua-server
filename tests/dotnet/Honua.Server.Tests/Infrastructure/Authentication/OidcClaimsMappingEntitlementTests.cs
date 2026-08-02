@@ -227,6 +227,47 @@ public sealed class OidcClaimsMappingEntitlementTests
     }
 
     [UnitTest]
+    public async Task TransformAsync_ProviderSuppliedProvenanceClaims_AreReplacedWithComputedFallback()
+    {
+        var options = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["groups"],
+            },
+        });
+        var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            options, NullLogger<OidcClaimsTransformation>.Instance, services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Role, "viewer"),
+                new Claim("groups", "editor"),
+                new Claim(OidcClaimsTransformation.RolesFromClaimsMappingClaimType, "1"),
+                new Claim(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType, "admin"),
+                new Claim(OidcClaimsTransformation.TenantFromClaimsMappingClaimType, "tenant_id"),
+            ],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("viewer"));
+        Assert.True(result.IsInRole("editor"));
+        Assert.NotNull(result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+        Assert.Equal(
+            ["viewer"],
+            result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType)
+                .Select(static claim => claim.Value));
+        Assert.DoesNotContain(
+            result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType),
+            claim => string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase));
+        Assert.Null(result.FindFirst(OidcClaimsTransformation.TenantFromClaimsMappingClaimType));
+    }
+
+    [UnitTest]
     public async Task TransformAsync_DefaultRolesOnly_IsNotMarkedAsClaimsMappingDerived()
     {
         // An Enterprise principal whose roles come from the ungated default claim owes nothing

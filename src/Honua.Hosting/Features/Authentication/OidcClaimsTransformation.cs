@@ -56,6 +56,13 @@ internal sealed class OidcClaimsTransformation(
     /// </summary>
     private static readonly string[] TenantClaimTypes = ["tenant_id", "tid"];
 
+    private static readonly HashSet<string> ReservedProvenanceClaimTypes =
+    [
+        RolesFromClaimsMappingClaimType,
+        RolesWithoutClaimsMappingClaimType,
+        TenantFromClaimsMappingClaimType,
+    ];
+
     /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
     /// </summary>
@@ -67,6 +74,13 @@ internal sealed class OidcClaimsTransformation(
         {
             return Task.FromResult(principal);
         }
+
+        // These markers are framework-owned authorization provenance, not issuer claims. An
+        // OIDC provider must not be able to choose the fallback roles restored after the live
+        // claims-mapping entitlement expires. Remove every externally supplied copy (including
+        // copies on secondary identities), then recompute the exact markers below. Re-running
+        // this transformation is safe because previously computed markers are recomputed too.
+        RemoveReservedProvenanceClaims(principal);
 
         // Skip transformation for API key authenticated users (including
         // layer-scoped write keys, #1637, which must not be granted a default
@@ -285,6 +299,19 @@ internal sealed class OidcClaimsTransformation(
             .Select(identity.FindFirst)
             .FirstOrDefault(claim => claim != null && !string.IsNullOrEmpty(claim.Value))
             ?.Value;
+    }
+
+    private static void RemoveReservedProvenanceClaims(ClaimsPrincipal principal)
+    {
+        foreach (var claimsIdentity in principal.Identities)
+        {
+            foreach (var claim in claimsIdentity.Claims
+                         .Where(claim => ReservedProvenanceClaimTypes.Contains(claim.Type))
+                         .ToArray())
+            {
+                claimsIdentity.TryRemoveClaim(claim);
+            }
+        }
     }
 
     private List<string> GetRoleClaims(ClaimsIdentity identity, bool claimsMappingEntitled)
