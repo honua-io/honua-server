@@ -3,10 +3,12 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -118,6 +120,53 @@ public sealed class BootstrapSecuritySecretResolutionTests
         configuration[AdminKey].Should().Be(reference);
     }
 
+    [UnitTest]
+    public async Task AdminPortalCredentialVerifier_RejectsWeakRotatedProductionPassword()
+    {
+        const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = "weak-password" });
+        var verifier = BuildPortalVerifier(reference, resolver);
+
+        var result = await verifier.VerifyAsync("admin", "weak-password", CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task AdminPortalCredentialVerifier_AcceptsValidRotatedProductionPassword()
+    {
+        const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
+        const string rotatedPassword = "Rotated-Production-Admin-Aa1!";
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = rotatedPassword });
+        var verifier = BuildPortalVerifier(reference, resolver);
+
+        var result = await verifier.VerifyAsync("admin", rotatedPassword, CancellationToken.None);
+
+        result.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public async Task AdminPortalCredentialVerifier_FailsClosedWhenSecretRefreshThrows()
+    {
+        const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
+        var verifier = BuildPortalVerifier(reference, new ThrowingSecretResolver());
+
+        var result = await verifier.VerifyAsync("admin", "any-password", CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    private static AdminPortalCredentialVerifier BuildPortalVerifier(
+        string configuredPassword,
+        IConnectionSecretResolver resolver) =>
+        new(
+            Options.Create(new ApiKeyAuthenticationOptions
+            {
+                AdminPassword = configuredPassword,
+                EnvironmentName = "Production"
+            }),
+            resolver);
+
     private static ConfigurationManager BuildConfiguration(Dictionary<string, string?> values)
     {
         var configuration = new ConfigurationManager();
@@ -147,5 +196,22 @@ public sealed class BootstrapSecuritySecretResolutionTests
             CancellationToken cancellationToken = default) =>
             await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false)
                 ?? connectionStringTemplate;
+    }
+
+    private sealed class ThrowingSecretResolver : IConnectionSecretResolver
+    {
+        public string ProviderName => "throwing-test";
+
+        public bool CanResolve(string secretKey) => true;
+
+        public Task<string?> ResolveSecretAsync(
+            string secretKey,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<string?>(new InvalidOperationException("secret provider unavailable"));
+
+        public Task<string> ResolveConnectionStringAsync(
+            string connectionStringTemplate,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<string>(new InvalidOperationException("secret provider unavailable"));
     }
 }

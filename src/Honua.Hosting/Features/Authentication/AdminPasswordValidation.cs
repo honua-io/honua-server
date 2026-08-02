@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Startup;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
-/// Shared production validation for both directly configured and secret-backed admin passwords.
+/// Shared production validation for directly configured, bootstrap-resolved, and refreshed admin passwords.
 /// </summary>
 internal static class AdminPasswordValidation
 {
@@ -30,4 +30,13 @@ internal static class AdminPasswordValidation
 
     public static bool IsAwsSecretsManagerReference(string? value) =>
         value?.StartsWith("aws:secretsmanager:", StringComparison.OrdinalIgnoreCase) == true;
+
+    public static void ValidateRefreshedPassword(string? adminPassword, string? environmentName)
+    {
+        if (!string.IsNullOrEmpty(adminPassword) &&
+            string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateProductionPassword(adminPassword);
+        }
+    }
 }
