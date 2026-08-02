@@ -73,13 +73,14 @@ internal static class StartupConfigurationHelpers
     }
 
     /// <summary>
-    /// Resolves security values that are consumed directly from configuration rather than through
-    /// the post-build connection-secret resolver. The AWS serverless module deliberately injects
-    /// the admin password and connection-encryption master key as Secrets Manager references; the
-    /// authentication and encryption services require the secret values themselves.
+    /// Validates or resolves security values that are consumed directly from configuration. The AWS
+    /// serverless module deliberately injects the admin password and connection-encryption master key
+    /// as Secrets Manager references. Authentication retains its reference for per-request refresh,
+    /// while connection encryption requires a stable process-lifetime key snapshot.
     /// </summary>
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
+        bool isProduction,
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
@@ -111,7 +112,7 @@ internal static class StartupConfigurationHelpers
             metadataClient,
             loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
 
-        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, cancellationToken)
+        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -119,6 +120,7 @@ internal static class StartupConfigurationHelpers
         ConfigurationManager configuration,
         Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
         IEnumerable<string> keys,
+        bool isProduction,
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
@@ -153,6 +155,21 @@ internal static class StartupConfigurationHelpers
             {
                 throw new InvalidOperationException(
                     $"AWS Secrets Manager returned an empty value for the security setting '{key}'.");
+            }
+
+            // Authentication handlers deliberately keep the reference and resolve it on each
+            // request so a warm process observes secret rotation. Resolve once here only to fail
+            // startup on an inaccessible or weak production credential. The connection-encryption
+            // master key is different: changing it while a process is live would make existing
+            // ciphertext unreadable, so that key remains a process-lifetime snapshot.
+            if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isProduction)
+                {
+                    AdminPasswordValidation.ValidateProductionPassword(resolved);
+                }
+
+                continue;
             }
 
             configuration[key] = resolved;

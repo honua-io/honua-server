@@ -18,7 +18,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
     private const string MasterKey = "Security:ConnectionEncryption:MasterKey";
 
     [UnitTest]
-    public async Task ResolveSecuritySecretReferences_ResolvesEverySecretBackedDirectConsumer()
+    public async Task ResolveSecuritySecretReferences_PreservesRefreshableAdminReferenceAndSnapshotsMasterKey()
     {
         const string adminReference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
         const string masterKeyReference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:master";
@@ -36,9 +36,10 @@ public sealed class BootstrapSecuritySecretResolutionTests
         await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
             configuration,
             resolver,
-            [AdminKey, MasterKey]);
+            [AdminKey, MasterKey],
+            isProduction: true);
 
-        configuration[AdminKey].Should().Be("Production-Admin-Aa1!Resolved");
+        configuration[AdminKey].Should().Be(adminReference);
         configuration[MasterKey].Should().Be("Production-Master-Key-Aa1!Resolved-00000000");
         resolver.ResolvedReferences.Should().BeEquivalentTo([adminReference, masterKeyReference]);
     }
@@ -56,7 +57,8 @@ public sealed class BootstrapSecuritySecretResolutionTests
         await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
             configuration,
             resolver,
-            [AdminKey, MasterKey]);
+            [AdminKey, MasterKey],
+            isProduction: true);
 
         configuration[AdminKey].Should().Be("Production-Admin-Aa1!Plain");
         configuration[MasterKey].Should().Be("Production-Master-Key-Aa1!Plain-0000000000");
@@ -73,7 +75,8 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
             configuration,
             resolver,
-            [AdminKey]);
+            [AdminKey],
+            isProduction: true);
 
         await action.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage($"*{AdminKey}*");
@@ -89,10 +92,29 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
             configuration,
             resolver,
-            [AdminKey]);
+            [AdminKey],
+            isProduction: true);
 
         await action.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage($"*{AdminKey}*invalid or cannot be resolved*");
+        configuration[AdminKey].Should().Be(reference);
+    }
+
+    [UnitTest]
+    public async Task ResolveSecuritySecretReferences_RejectsWeakResolvedAdminPasswordInProduction()
+    {
+        const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [AdminKey] = reference });
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = "weak-password" });
+
+        var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration,
+            resolver,
+            [AdminKey],
+            isProduction: true);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Admin password must be at least 16 characters in production environment");
         configuration[AdminKey].Should().Be(reference);
     }
 
