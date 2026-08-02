@@ -183,15 +183,40 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // Every live publication is therefore evaluated and ANY grant admits — matching what the
         // caller could already do interactively (honua-server#3046 review).
         var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>();
+        var hasLivePublication = false;
 
         foreach (var publication in snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
             .Where(candidate => !LayerValidationHelpers.IsRetired(candidate)))
         {
-            candidates.Add((storageResource, snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)));
+            hasLivePublication = true;
+            var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);
+
+            // Publication ownership is part of the tenant boundary too. Evaluating only
+            // the resource and service let an unscoped pair admit a globally addressed
+            // storage layer through a publication owned by another tenant.
+            if (applyTenantScope
+                && !MetadataV2TenantVisibility.IsVisibleToTenant(
+                    publication,
+                    storageResource,
+                    service,
+                    tenantId))
+            {
+                continue;
+            }
+
+            candidates.Add((storageResource, service));
         }
 
         if (candidates.Count == 0)
         {
+            if (hasLivePublication)
+            {
+                // Live publications exist but none are visible to this tenant. Do not
+                // reinterpret that as an unpublished resource and fall back to its coarse
+                // policy, which would erase the publication-level tenant boundary.
+                return AccessDecision.Forbidden(DenialReason);
+            }
+
             // A resource with no live publication is still authorized, just without service-level
             // policy — the executor reads it by storage id regardless of publication state.
             candidates.Add((storageResource, null));
