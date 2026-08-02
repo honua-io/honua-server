@@ -684,12 +684,8 @@ internal static partial class ProcessPlanValidator
     // enrichment.enrich (#2283) allow-lists mirror the EnrichmentJobExecutor body
     // so the validator rejects the same method/predicate/aggregate spellings the
     // executor refuses at runtime.
-    private static readonly HashSet<string> EnrichmentMethodValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "point-in-polygon", "point_in_polygon", "pip", "contains", "within",
-        "within-distance", "within_distance", "dwithin",
-        "nearest-neighbor", "nearest_neighbor", "nearest"
-    };
+    private static readonly HashSet<string> EnrichmentMethodValues =
+        new(ProcessValueDomains.EnrichmentMethod, StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> EnrichmentDistanceMethodValues = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -712,10 +708,8 @@ internal static partial class ProcessPlanValidator
     // deliberately similar SpatialFilterPredicateValues elsewhere in this file is the
     // transform.spatial-filter set (intersects/within only) and is NOT applicable
     // here (#3043 review).
-    private static readonly HashSet<string> EnrichmentPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "contains", "within", "dwithin"
-    };
+    private static readonly HashSet<string> EnrichmentPredicateValues =
+        new(ProcessValueDomains.EnrichmentPredicate, StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> EnrichmentAggregateStatValues = new(StringComparer.OrdinalIgnoreCase)
     {

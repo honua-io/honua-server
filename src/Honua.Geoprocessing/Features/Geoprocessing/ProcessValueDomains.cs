@@ -52,6 +52,27 @@ internal static class ProcessValueDomains
         ["intersects", "contains", "within"];
 
     /// <summary>
+    /// Method vocabulary accepted by <c>enrichment.enrich</c>. Includes every alias the
+    /// executor normalizes so protocol adapters do not reject a value the canonical plan
+    /// validator accepts. The distance spellings make <c>distance</c> required, while the
+    /// nearest spellings prohibit aggregate requests.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> EnrichmentMethod =
+    [
+        "intersects", "point-in-polygon", "point_in_polygon", "pip", "contains", "within",
+        "within-distance", "within_distance", "dwithin",
+        "nearest-neighbor", "nearest_neighbor", "nearest"
+    ];
+
+    /// <summary>
+    /// Raw predicate overrides accepted by <c>enrichment.enrich</c> when no method is supplied.
+    /// This is an independent contract from <see cref="SpatialJoinPredicate"/> even though the
+    /// two domains currently contain the same tokens.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> EnrichmentPredicate =
+        ["intersects", "contains", "within", "dwithin"];
+
+    /// <summary>
     /// Aggregate statistics accepted inside <c>analytics.spatial-join-managed</c>'s
     /// <c>statistics</c> spec. NOT published as <c>AllowedValues</c>: the parameter carries a
     /// semicolon-separated list of <c>field:stat</c> pairs rather than a single token, so a
