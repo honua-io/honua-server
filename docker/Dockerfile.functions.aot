@@ -139,4 +139,8 @@ ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
+LABEL honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/home/site/wwwroot/app/Honua.Server"
+
 EXPOSE 80 8080

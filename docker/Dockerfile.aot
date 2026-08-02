@@ -188,7 +188,10 @@ LABEL security.non-root="true" \
       description="Honua Geospatial Feature Server" \
       org.opencontainers.image.source="https://github.com/honua/honua-server" \
       org.opencontainers.image.description="Production-ready geospatial feature server" \
-      org.opencontainers.image.licenses="Elastic-2.0"
+      org.opencontainers.image.licenses="Elastic-2.0" \
+      honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/app/Honua.Server"
 
 # Security: Minimal environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \

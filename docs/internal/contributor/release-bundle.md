@@ -41,7 +41,8 @@ The run produces the `release-train-evidence` artifact: the refreshed
 (per-surface pass/fail + the owning follow-up issue for every gap). Promotion
 (`promote: true`) is a separate, protected-environment step that only proceeds
 when the validator verdict is `pass`: it publishes the SDKs for real and retags
-the immutable RC image to the channel + `latest-aot`.
+the immutable RC native-AOT image to the unsuffixed channel + `latest` tags,
+with matching `-aot` compatibility aliases.
 
 ### Required secret
 

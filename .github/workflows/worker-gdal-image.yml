@@ -1,0 +1,77 @@
+name: GDAL Worker Image
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'docker/worker-gdal/**'
+      - 'src/Honua.Worker.Gdal/**'
+      - 'src/Honua.Geoprocessing/**'
+      - 'src/Honua.Jobs/**'
+      - 'src/Honua.Core/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'scripts/ci/verify-serving-image-boundary.py'
+      - '.github/workflows/worker-gdal-image.yml'
+  schedule:
+    - cron: '45 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: worker-gdal-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-scan:
+    name: Build, verify, and scan GDAL worker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Build isolated native worker
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/worker-gdal/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: honua-worker-gdal:boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=worker-gdal-boundary
+          cache-to: type=gha,mode=max,scope=worker-gdal-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify GDAL tools, bindings, and multidimensional drivers
+        run: python3 scripts/ci/verify-serving-image-boundary.py --worker-image honua-worker-gdal:boundary
+
+      - name: Scan worker vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: honua-worker-gdal:boundary
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: sarif
+          output: trivy-worker-gdal.sarif
+          vuln-type: os,library
+
+      - name: Upload worker scan results
+        if: always() && hashFiles('trivy-worker-gdal.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-worker-gdal.sarif
+          category: worker-gdal

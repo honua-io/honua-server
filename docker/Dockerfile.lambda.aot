@@ -184,6 +184,10 @@ ENV PORT=8080 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
+LABEL honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/var/task/Honua.Server"
+
 EXPOSE 8080
 
 ENTRYPOINT ["/var/task/Honua.Server"]

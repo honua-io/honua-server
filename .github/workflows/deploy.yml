@@ -30,9 +30,9 @@ jobs:
       matrix:
         include:
           - image_key: jit
-            image_name: Container Image
+            image_name: Development JIT Image
             dockerfile: Dockerfile
-            tag_suffix: ""
+            tag_suffix: -jit
             cache_scope: release-jit
             sarif_output: trivy-results
             sarif_category: trivy
@@ -40,9 +40,9 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: jit
-            image_name: Container Image
+            image_name: Development JIT Image
             dockerfile: Dockerfile
-            tag_suffix: ""
+            tag_suffix: -jit
             cache_scope: release-jit
             sarif_output: trivy-results
             sarif_category: trivy
@@ -50,9 +50,9 @@ jobs:
             platform: linux/arm64
             runner: ubuntu-24.04-arm
           - image_key: aot
-            image_name: AOT Container Image
+            image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: -aot
+            tag_suffix: ""
             cache_scope: release-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -60,9 +60,9 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: aot
-            image_name: AOT Container Image
+            image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: -aot
+            tag_suffix: ""
             cache_scope: release-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -251,6 +251,10 @@ jobs:
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
 
+      - name: Enforce native-AOT serving-image boundary
+        if: matrix.image_key == 'aot'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "${{ steps.scan_prep.outputs.scan_local }}"
+
       - name: Run Trivy vulnerability scanner
         shell: bash
         env:
@@ -287,10 +291,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: Container Image
+          - image_name: Development JIT Image
+            tag_suffix: -jit
+            compatibility_alias: ""
+          - image_name: Production Native-AOT Image
             tag_suffix: ""
-          - image_name: AOT Container Image
-            tag_suffix: -aot
+            compatibility_alias: -aot
     permissions:
       contents: read
       packages: write
@@ -424,12 +430,16 @@ jobs:
         shell: bash
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          COMPATIBILITY_ALIAS: ${{ matrix.compatibility_alias }}
         run: |
           set -euo pipefail
           for tag in $TAGS; do
-            docker buildx imagetools create -t "$tag" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
+            targets=(-t "$tag")
+            if [ -n "$COMPATIBILITY_ALIAS" ]; then
+              targets+=(-t "${tag}${COMPATIBILITY_ALIAS}")
+            fi
+            docker buildx imagetools create "${targets[@]}" \
+              "${tag}-amd64" "${tag}-arm64"
           done
 
   dispatch-geobench:

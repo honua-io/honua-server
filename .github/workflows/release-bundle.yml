@@ -117,6 +117,14 @@ jobs:
           echo "RC image: ${{ steps.ref.outputs.image_ref }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Digest:   ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Enforce native-AOT serving-image boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ steps.ref.outputs.image_ref }}@${{ steps.build.outputs.digest }}"
+          docker pull "$image"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$image"
+
   integration:
     name: Integration & conformance evidence
     needs: rc-image
@@ -323,10 +331,13 @@ jobs:
                 exit 1 ;;
             esac
           done
-          # Retag the immutable RC image to the channel + latest-aot.
+          # Promote the verified AOT image to canonical unsuffixed tags and
+          # retain the explicit -aot compatibility aliases.
           ref='${{ needs.rc-image.outputs.image_ref }}'
           digest='${{ needs.rc-image.outputs.image_digest }}'
           docker buildx imagetools create \
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${{ github.event.inputs.channel }}" \
             --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:${{ github.event.inputs.channel }}-aot" \
+            --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest" \
             --tag "${REGISTRY_GHCR}/${IMAGE_NAME}:latest-aot" \
             "${ref}@${digest}"

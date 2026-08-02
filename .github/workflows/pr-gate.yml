@@ -96,7 +96,7 @@ jobs:
     # waits forever). See #2865.
     name: PR Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
@@ -120,3 +120,83 @@ jobs:
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
+
+      - name: Test serving-image boundary detector
+        run: python3 scripts/ci/fixtures/validate-serving-image-boundary.py
+
+      - name: Detect serving-image boundary impact
+        id: raster_boundary
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          if grep -Eq '^(docker/Dockerfile\.aot|\.dockerignore|global\.json|src/.+\.(csproj|props|targets)|Directory\.(Build|Packages)\.props|NuGet\.config|eng/|scripts/ci/(verify-serving-image-boundary\.py|fixtures/validate-serving-image-boundary\.py)|\.github/workflows/(pr-gate|release-bundle|deploy|deploy-platform-images)\.yml)$' <<< "$changed"; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "affected=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx for serving-image boundary
+        if: steps.raster_boundary.outputs.affected == 'true'
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Build canonical native-AOT serving image
+        if: steps.raster_boundary.outputs.affected == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify canonical serving-image contents
+        if: steps.raster_boundary.outputs.affected == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:aot-boundary
+
+      - name: Smoke-test canonical serving image
+        if: steps.raster_boundary.outputs.affected == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d \
+            --name honua-aot-boundary \
+            --network host \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e HONUA_SKIP_MIGRATIONS=true \
+            -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
+            -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
+            -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
+            honua-server:aot-boundary
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8080/healthz/live >/dev/null; then
+              echo "Native-AOT serving container passed its liveness probe."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs honua-aot-boundary
+          exit 1
+
+      - name: Clean up serving-image smoke container
+        if: always() && steps.raster_boundary.outputs.affected == 'true'
+        run: docker rm -f honua-aot-boundary || true

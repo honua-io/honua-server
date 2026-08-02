@@ -135,4 +135,8 @@ ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
+LABEL honua.runtime.profile="web-debug" \
+      honua.runtime.compilation="jit" \
+      honua.runtime.distribution="non-production"
+
 EXPOSE 80 8080

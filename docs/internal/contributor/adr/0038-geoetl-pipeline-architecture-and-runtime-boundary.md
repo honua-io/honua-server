@@ -273,8 +273,12 @@ This is a strictly additive substrate change with a null-default
 backward compatibility path. It does not mutate any non-ETL job
 kind's claim semantics.
 
-- **Default image (`honua-server`)** stays lean. No GDAL, no PROJ, no
-  GEOS native libraries. It hosts the substrate's `JobExecutionService`
+- **Default image (`honua-server`)** is the native-AOT artifact built by
+  `docker/Dockerfile.aot` and stays lean. No GDAL/OGR CLI, GDAL binding,
+  or GDAL/PROJ/GEOS native library is present in the web filesystem. The
+  database is a separate boundary: a PostGIS deployment may include and use
+  its own GDAL support without adding GDAL to the web image. The web image
+  hosts the substrate's `JobExecutionService`
   (the worker-side polling loop) and registers a **managed-profile**
   `PipelineJobExecutor : IJobExecutor` that runs Phase 1 connectors —
   pure-managed wrappers over the existing
@@ -315,10 +319,14 @@ kind's claim semantics.
   executes; only the sink is replaced with the null preview).
   Dry-run submission is itself an `ExtractTransformLoad` job, so it
   honors the same execution-submission gate and claim-filter guards.
-- **CI image scan** asserts that GDAL bytes do not appear in the
-  default `honua-server` image artifact. The scan is wired in the
-  child ticket that introduces `honua-worker-etl` (Child Ticket F) and
-  is merge-blocking from that point on.
+- **CI image boundary gate** exports and inspects the final native-AOT
+  `honua-server` filesystem. It fails on GDAL/OGR executables, native
+  GDAL/PROJ/GEOS libraries, GDAL language bindings, or matching installed
+  packages. Injection fixtures exercise every rejected class. The required PR
+  gate rebuilds and smoke-starts the image whenever dependencies or container
+  layers change; release and deployment publishers inspect the exact image
+  they publish. `honua-worker-etl` has the inverse positive check for required
+  GDAL tools and drivers plus its own vulnerability scan.
 
 ### Baseline runtime requirements
 

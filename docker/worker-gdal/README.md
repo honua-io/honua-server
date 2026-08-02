@@ -2,7 +2,9 @@
 
 This is the **optional, native-profile** worker image described by
 [ADR-0038](../../docs/internal/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md).
-It is the GDAL-equipped counterpart to the lean serving image (`/Dockerfile`).
+It is the GDAL-equipped counterpart to the canonical native-AOT serving image
+(`docker/Dockerfile.aot`). The root `Dockerfile` is an auxiliary JIT image for
+development and compatibility testing; it is not a production distribution.
 
 ## What it is
 

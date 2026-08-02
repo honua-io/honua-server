@@ -137,14 +137,15 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-aot
-            type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-aot-
-            type=raw,value=trunk-aot
+            type=raw,value=nightly
+            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-
+            type=raw,value=trunk
           flavor: |
             suffix=-${{ matrix.arch }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -167,6 +168,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
+
+      - name: Enforce native-AOT serving-image boundary
+        shell: bash
+        env:
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$IMAGE"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
@@ -338,10 +348,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-
-            type=raw,value=trunk
+            type=raw,value=nightly-jit
+            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-jit-
+            type=raw,value=trunk-jit
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -402,10 +412,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-aot
-            type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-aot-
-            type=raw,value=trunk-aot
+            type=raw,value=nightly
+            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-
+            type=raw,value=trunk
 
       - name: Create and push multi-arch manifests
         env:
@@ -413,9 +423,8 @@ jobs:
         run: |
           set -euo pipefail
           for tag in $TAGS; do
-            docker buildx imagetools create -t "$tag" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
+            docker buildx imagetools create -t "$tag" -t "${tag}-aot" \
+              "${tag}-amd64" "${tag}-arm64"
           done
 
   manifest-jit:
@@ -451,10 +460,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-
-            type=raw,value=trunk
+            type=raw,value=nightly-jit
+            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-jit-
+            type=raw,value=trunk-jit
 
       - name: Create and push multi-arch manifests
         env:
