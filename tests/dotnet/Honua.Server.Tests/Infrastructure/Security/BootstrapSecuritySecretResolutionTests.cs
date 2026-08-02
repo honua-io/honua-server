@@ -79,6 +79,23 @@ public sealed class BootstrapSecuritySecretResolutionTests
             .WithMessage($"*{AdminKey}*");
     }
 
+    [UnitTest]
+    public async Task ResolveSecuritySecretReferences_RejectsUnresolvableAwsReference()
+    {
+        const string reference = "aws:secretsmanager:missing-region-secret-name";
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [AdminKey] = reference });
+        var resolver = new StubSecretResolver(new Dictionary<string, string>());
+
+        var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration,
+            resolver,
+            [AdminKey]);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{AdminKey}*invalid or cannot be resolved*");
+        configuration[AdminKey].Should().Be(reference);
+    }
+
     private static ConfigurationManager BuildConfiguration(Dictionary<string, string?> values)
     {
         var configuration = new ConfigurationManager();
@@ -92,8 +109,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         public string ProviderName => "aws";
         public List<string> ResolvedReferences { get; } = [];
 
-        public bool CanResolve(string secretKey) =>
-            secretKey.StartsWith("aws:secretsmanager:", StringComparison.OrdinalIgnoreCase);
+        public bool CanResolve(string secretKey) => values.ContainsKey(secretKey);
 
         public Task<string?> ResolveSecretAsync(
             string secretKey,

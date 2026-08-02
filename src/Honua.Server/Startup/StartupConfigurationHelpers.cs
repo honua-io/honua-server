@@ -121,12 +121,20 @@ internal static class StartupConfigurationHelpers
         IEnumerable<string> keys,
         CancellationToken cancellationToken = default)
     {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
         foreach (var key in keys)
         {
             var reference = configuration[key];
-            if (string.IsNullOrWhiteSpace(reference) || !resolver.CanResolve(reference))
+            if (string.IsNullOrWhiteSpace(reference) ||
+                !reference.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
+            }
+
+            if (!resolver.CanResolve(reference))
+            {
+                throw new InvalidOperationException(
+                    $"The AWS Secrets Manager reference configured for security setting '{key}' is invalid or cannot be resolved.");
             }
 
             string? resolved;
