@@ -22,12 +22,11 @@ namespace Honua.Server.Features.Collaboration.Operations;
 /// stripe only contend, never interleave incorrectly.
 /// </para>
 /// <para>
-/// This is an IN-PROCESS ordering point. It is sufficient because the append surface already
-/// fails closed (503) in a declared multi-replica deployment whenever the op log is not
-/// replica-shared, so every append for a map is accepted by exactly one process. A
-/// replica-shared log implementation must move this ordering point into the shared store (for
-/// example by publishing from the same transaction/stream that assigns the cursor) — a
-/// process-local gate cannot order appends accepted on different nodes.
+/// This is an IN-PROCESS ordering point. In a declared multi-replica deployment the append
+/// surface therefore fails closed unless the operation log is replica-shared and the backplane
+/// explicitly advertises a distributed ordering point (for example, publication from the same
+/// transaction or stream that assigns the cursor). Pub/sub fan-out alone cannot order appends
+/// accepted on different nodes.
 /// </para>
 /// <para>
 /// The stripe gates are owned for the coordinator's lifetime, so the type is
@@ -42,17 +41,20 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
     private readonly ISavedMapOperationLogRepository _repository;
     private readonly InMemoryCollaborationSessionService _sessions;
     private readonly SavedMapCollaborationTopology _topology;
+    private readonly ICollaborationSessionBackplane _backplane;
     private readonly SemaphoreSlim[] _stripes;
     private bool _disposed;
 
     public SavedMapOperationAppendCoordinator(
         ISavedMapOperationLogRepository repository,
         InMemoryCollaborationSessionService sessions,
-        SavedMapCollaborationTopology topology)
+        SavedMapCollaborationTopology topology,
+        ICollaborationSessionBackplane? backplane = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _topology = topology ?? throw new ArgumentNullException(nameof(topology));
+        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
         _stripes = new SemaphoreSlim[StripeCount];
         for (var i = 0; i < StripeCount; i++)
         {
@@ -62,10 +64,13 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
 
     /// <summary>
     /// Whether this deployment can assign authoritative operation cursors. False when the
-    /// deployment is declared multi-replica but the op log is process-local: two replicas would
-    /// each run an independent per-map cursor sequence and could both accept "cursor 1".
+    /// deployment is declared multi-replica but either the op log is process-local or live
+    /// publication does not share a distributed ordering point with cursor assignment.
     /// </summary>
-    public bool CanAcceptEdits => !_topology.IsMultiReplica || _repository.SupportsReplicaSharedReplay;
+    public bool CanAcceptEdits => !_topology.IsMultiReplica ||
+        _repository.SupportsReplicaSharedReplay &&
+        _backplane.SupportsCrossReplicaDelivery &&
+        _backplane.SupportsOrderedOperationDelivery;
 
     /// <summary>
     /// Appends an operation and, when it is newly accepted, publishes it to the live session

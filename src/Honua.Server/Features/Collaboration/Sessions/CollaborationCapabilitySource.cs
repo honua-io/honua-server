@@ -21,11 +21,10 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 /// That method resolves <see cref="InMemoryCollaborationSessionService"/> to close a
 /// constructor dependency cycle, so a capabilities value captured at construction time was
 /// computed while the backplane still read as inactive — and then kept that value for the
-/// lifetime of the process. Every declared multi-replica Redis deployment therefore advertised
-/// operations, cursors, selections and follow as UNAVAILABLE even after the subscription
-/// succeeded, disabling live co-editing in exactly the topology it exists for.
-/// Recomputing per read removes the ordering dependency entirely instead of relying on a
-/// startup sequence staying correct (honua-server#2999 review).
+/// lifetime of the process. Recomputing per read removes that ordering dependency. Activation
+/// alone is deliberately not enough to advertise a live feature: the backplane must also report
+/// the distributed ordering or retained-presence guarantee that feature consumes
+/// (honua-server#2999 review).
 /// </para>
 /// </remarks>
 internal sealed class CollaborationCapabilitySource
@@ -39,7 +38,7 @@ internal sealed class CollaborationCapabilitySource
     /// </summary>
     /// <param name="topology">Declared deployment topology.</param>
     /// <param name="log">Operation log whose replay guarantees gate replay and checkpoints.</param>
-    /// <param name="backplane">Backplane whose activation gates live delivery.</param>
+    /// <param name="backplane">Backplane whose activation and guarantees gate live delivery.</param>
     public CollaborationCapabilitySource(
         SavedMapCollaborationTopology topology,
         ISavedMapOperationLogRepository log,
@@ -65,6 +64,10 @@ internal sealed class CollaborationCapabilitySource
             // actually uses (honua-server#2999 review).
             var sharedLog = !_topology.IsMultiReplica || _log.SupportsReplicaSharedReplay;
             var crossReplica = !_topology.IsMultiReplica || _backplane.SupportsCrossReplicaDelivery;
+            var orderedOperations = !_topology.IsMultiReplica ||
+                crossReplica && _backplane.SupportsOrderedOperationDelivery;
+            var replicaWidePresence = !_topology.IsMultiReplica ||
+                crossReplica && _backplane.SupportsReplicaWidePresence;
 
             // Presence (cursors/selections/follow) rides the BACKPLANE, not the operation log,
             // so it is advertised only when one actually reaches peer replicas. MultiReplica can
@@ -77,12 +80,12 @@ internal sealed class CollaborationCapabilitySource
             // LOG, so it keys on the shared-log condition rather than on live delivery.
             return CollaborationCapabilities.Default with
             {
-                Operations = sharedLog && crossReplica,
+                Operations = sharedLog && orderedOperations,
                 Replay = sharedLog,
                 Checkpoints = sharedLog && _log.SupportsRestartDurableReplay,
-                Cursors = crossReplica,
-                Selections = crossReplica,
-                Follow = crossReplica,
+                Cursors = replicaWidePresence,
+                Selections = replicaWidePresence,
+                Follow = replicaWidePresence,
             };
         }
     }

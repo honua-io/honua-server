@@ -8,6 +8,7 @@ using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Operations;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Collaboration.OperationLog;
 
@@ -96,19 +97,56 @@ public sealed class SavedMapOperationAppendCoordinatorTests
             .Which.Event.Type.Should().Be(CollaborationSessionEventTypes.OperationAppended);
     }
 
+    [UnitTest]
+    public void CanAcceptEdits_MultiReplicaSharedLogWithoutDistributedOrdering_IsFalse()
+    {
+        var repository = Substitute.For<ISavedMapOperationLogRepository>();
+        repository.SupportsReplicaSharedReplay.Returns(true);
+        var backplane = Substitute.For<ICollaborationSessionBackplane>();
+        backplane.SupportsCrossReplicaDelivery.Returns(true);
+
+        using var coordinator = new SavedMapOperationAppendCoordinator(
+            repository,
+            CreateSessionService(),
+            SavedMapCollaborationTopology.ForMultiReplica(true),
+            backplane);
+
+        coordinator.CanAcceptEdits.Should().BeFalse(
+            "pub/sub delivery cannot order cursor assignment and publication across replicas");
+    }
+
+    [UnitTest]
+    public void CanAcceptEdits_MultiReplicaWithDistributedOrdering_IsTrue()
+    {
+        var repository = Substitute.For<ISavedMapOperationLogRepository>();
+        repository.SupportsReplicaSharedReplay.Returns(true);
+        var backplane = Substitute.For<ICollaborationSessionBackplane>();
+        backplane.SupportsCrossReplicaDelivery.Returns(true);
+        backplane.SupportsOrderedOperationDelivery.Returns(true);
+
+        using var coordinator = new SavedMapOperationAppendCoordinator(
+            repository,
+            CreateSessionService(),
+            SavedMapCollaborationTopology.ForMultiReplica(true),
+            backplane);
+
+        coordinator.CanAcceptEdits.Should().BeTrue();
+    }
+
     private static SavedMapOperationAppendCoordinator CreateCoordinator() => CreateCoordinator(out _);
 
     private static SavedMapOperationAppendCoordinator CreateCoordinator(
         out InMemoryCollaborationSessionService sessions)
     {
-        sessions = new InMemoryCollaborationSessionService(
-            new AllowSavedMapCollaborationAuthorizer(),
-            new SystemCollaborationSessionClockDouble());
+        sessions = CreateSessionService();
         return new SavedMapOperationAppendCoordinator(
             new InMemorySavedMapOperationLogRepository(),
             sessions,
             SavedMapCollaborationTopology.ForMultiReplica(false));
     }
+
+    private static InMemoryCollaborationSessionService CreateSessionService() =>
+        new(new AllowSavedMapCollaborationAuthorizer(), new SystemCollaborationSessionClockDouble());
 
     private static ClaimsPrincipal Principal(string userId) =>
         new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], authenticationType: "Test"));

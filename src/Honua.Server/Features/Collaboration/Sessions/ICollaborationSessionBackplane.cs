@@ -9,10 +9,11 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 /// participant connected to one node observes presence and cursors produced on another.
 /// </summary>
 /// <remarks>
-/// The backplane is best-effort and fire-and-forget: a transient outage degrades to
-/// local-only delivery, matching the feature-stream cluster-broadcast contract. The
-/// default registration is a no-op so single-node and Redis-less deployments work
-/// unchanged.
+/// Basic transport is best-effort and fire-and-forget: a transient outage degrades to
+/// local-only delivery. Separate guarantee flags describe whether an implementation also owns
+/// distributed ordering or retained presence state; callers must not infer those semantics from
+/// successful pub/sub activation. The default registration is a no-op so single-node and
+/// Redis-less deployments work unchanged.
 /// </remarks>
 internal interface ICollaborationSessionBackplane
 {
@@ -34,6 +35,18 @@ internal interface ICollaborationSessionBackplane
     /// promising them (honua-server#2999 review).
     /// </remarks>
     bool SupportsCrossReplicaDelivery { get; }
+
+    /// <summary>
+    /// Whether cursor assignment and live operation publication share a replica-wide ordering
+    /// point. Basic pub/sub delivery alone does not provide this guarantee.
+    /// </summary>
+    bool SupportsOrderedOperationDelivery => false;
+
+    /// <summary>
+    /// Whether joins, leaves, cursors, selections, and follow state are retained replica-wide so
+    /// a newly joining participant receives a complete cross-replica snapshot.
+    /// </summary>
+    bool SupportsReplicaWidePresence => false;
 }
 
 /// <summary>

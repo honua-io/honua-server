@@ -106,6 +106,20 @@ internal sealed partial class RedisCollaborationSessionBackplane
     public bool SupportsCrossReplicaDelivery => _enabled;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Redis pub/sub broadcasts events but does not serialize the operation-log append with
+    /// publication, so different replicas can publish adjacent cursors out of order.
+    /// </remarks>
+    public bool SupportsOrderedOperationDelivery => false;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Pub/sub has no retained participant registry. A replica that did not observe a prior join
+    /// cannot include that participant in a later snapshot or resolve it as a follow target.
+    /// </remarks>
+    public bool SupportsReplicaWidePresence => false;
+
+    /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)
     {
         var subscriber = _subscriber;

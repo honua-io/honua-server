@@ -543,6 +543,19 @@ internal static partial class CollaborationSessionStreamEndpoint
         Guid sessionId,
         string text,
         ILogger logger)
+        => ApplyControlFrame(sessions, sessionId, text, sessions.Capabilities, logger);
+
+    /// <summary>
+    /// Applies one client control frame against the capability snapshot advertised for the
+    /// session. Kept internal so each independent presence flag can be proven fail-closed
+    /// without relying on a WebSocket receive timeout (honua-server#3074).
+    /// </summary>
+    internal static void ApplyControlFrame(
+        InMemoryCollaborationSessionService sessions,
+        Guid sessionId,
+        string text,
+        CollaborationCapabilities capabilities,
+        ILogger logger)
     {
         CollaborationClientFrame? frame;
         try
@@ -567,10 +580,8 @@ internal static partial class CollaborationSessionStreamEndpoint
         // nonconforming client saw topology-dependent partial presence — local collaborators
         // moving, remote ones frozen — rather than the disabled behaviour it was told to expect.
         // Partial presence is worse than none: it looks like the feature working
-        // (honua-server#2999 review). Heartbeat stays ungated; it is session liveness, not
+        // (honua-server#2999/#3074). Heartbeat stays ungated; it is session liveness, not
         // presence, and dropping it would expire live sessions.
-        var capabilities = sessions.Capabilities;
-
         try
         {
             switch (frame.Type.Trim().ToLowerInvariant())

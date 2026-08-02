@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
@@ -134,6 +135,35 @@ public sealed class CollaborationSessionStreamEndpointTests
         await second.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
     }
 
+    [UnitTest]
+    public Task ApplyControlFrame_DisabledCursor_DoesNotFanOutToSameReplica() =>
+        AssertDisabledControlFrameDoesNotFanOutAsync(
+            """{"type":"cursor","cursor":{"x":-122.4,"y":37.7}}""",
+            CollaborationCapabilities.Default with { Cursors = false });
+
+    [UnitTest]
+    public Task ApplyControlFrame_DisabledSelection_DoesNotFanOutToSameReplica() =>
+        AssertDisabledControlFrameDoesNotFanOutAsync(
+            """{"type":"selection","selection":{"ids":["feature-1"]}}""",
+            CollaborationCapabilities.Default with { Selections = false });
+
+    [UnitTest]
+    public async Task ApplyControlFrame_DisabledFollow_DoesNotFanOutToSameReplica()
+    {
+        var (service, observer, sender) = await CreateJoinedServiceAsync();
+        var frame = $$"""{"type":"follow","follow":{"targetParticipantId":"{{observer.ParticipantId}}","following":true}}""";
+
+        CollaborationSessionStreamEndpoint.ApplyControlFrame(
+            service,
+            sender.SessionId,
+            frame,
+            CollaborationCapabilities.Default with { Follow = false },
+            NullLogger.Instance);
+
+        service.DrainEvents(observer.SessionId).Should().BeEmpty();
+        service.GetSnapshot(MapId).FollowTargets.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WithoutAuthorization_RejectsUpgrade()
@@ -199,6 +229,38 @@ public sealed class CollaborationSessionStreamEndpointTests
 
     private static Task SendJsonAsync(WebSocket ws, string json, CancellationToken cancellationToken)
         => ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, cancellationToken);
+
+    private static async Task AssertDisabledControlFrameDoesNotFanOutAsync(
+        string frame,
+        CollaborationCapabilities capabilities)
+    {
+        var (service, observer, sender) = await CreateJoinedServiceAsync();
+
+        CollaborationSessionStreamEndpoint.ApplyControlFrame(
+            service, sender.SessionId, frame, capabilities, NullLogger.Instance);
+
+        service.DrainEvents(observer.SessionId).Should().BeEmpty();
+    }
+
+    private static async Task<(
+        InMemoryCollaborationSessionService Service,
+        CollaborationJoinResponse Observer,
+        CollaborationJoinResponse Sender)> CreateJoinedServiceAsync()
+    {
+        var service = new InMemoryCollaborationSessionService(
+            new AllowSavedMapCollaborationAuthorizer(),
+            new SystemCollaborationSessionClock());
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "collaboration-control-test")],
+            authenticationType: "Test"));
+        var observer = (await service.JoinAsync(
+            MapId, new CollaborationJoinRequest { DisplayName = "Ada" }, principal)).Response!;
+        var sender = (await service.JoinAsync(
+            MapId, new CollaborationJoinRequest { DisplayName = "Bob" }, principal)).Response!;
+        _ = service.DrainEvents(observer.SessionId);
+        _ = service.DrainEvents(sender.SessionId);
+        return (service, observer, sender);
+    }
 
     private sealed class AllowSavedMapCollaborationAuthorizer : ISavedMapCollaborationAuthorizer
     {

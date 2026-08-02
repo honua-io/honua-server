@@ -78,6 +78,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":{"id":"x"}}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":["night"]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":true}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleREF":"night"}""")]
+    [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":null,"unknown":1}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """[]""")]
     // A whole-document replacement used to pass on shape alone. These three all took a permanent
     // cursor and then wedged every later checkpoint: a layer missing the required 'id' stops

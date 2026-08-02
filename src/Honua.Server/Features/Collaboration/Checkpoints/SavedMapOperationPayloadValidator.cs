@@ -127,6 +127,10 @@ internal static class SavedMapOperationPayloadValidator
     private static readonly HashSet<string> ViewMembers =
         new(StringComparer.Ordinal) { "bbox", "center", "zoom", "pitch", "bearing", "crs" };
 
+    /// <summary>Members of a style patch payload; unknown casing is a caller typo, not a clear.</summary>
+    private static readonly HashSet<string> StylePatchMembers =
+        new(StringComparer.Ordinal) { "layerId", "styleRef" };
+
     /// <summary>
     /// Refuses any member of <paramref name="element"/> the projection does not model.
     /// </summary>
@@ -362,6 +366,11 @@ internal static class SavedMapOperationPayloadValidator
     /// </remarks>
     private static bool TryValidatePatchStyle(JsonElement payload, out string error)
     {
+        if (!TryRejectUnmappedMembers(payload, StylePatchMembers, "The style payload", out error))
+        {
+            return false;
+        }
+
         if (!TryValidateRequiredString(payload, "layerId", out error))
         {
             return false;
