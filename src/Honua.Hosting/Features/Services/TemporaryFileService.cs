@@ -50,37 +50,37 @@ public sealed class TemporaryFileOptions
     /// </summary>
     // Safe Path.Combine: both segments are compile-time/runtime-fixed (Path.GetTempPath()
     // and a literal), never user input, so the second segment can never be rooted.
-    public string StorageDirectory { get; init; } = Path.Join(Path.GetTempPath(), "honua-temp");
+    public string StorageDirectory { get; set; } = Path.Join(Path.GetTempPath(), "honua-temp");
 
     /// <summary>
     /// Default expiration time for temporary files.
     /// </summary>
-    public TimeSpan DefaultExpiration { get; init; } = TimeSpan.FromHours(1);
+    public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Maximum file size in bytes.
     /// </summary>
-    public long MaxFileSizeBytes { get; init; } = 50 * 1024 * 1024; // 50 MB
+    public long MaxFileSizeBytes { get; set; } = 50 * 1024 * 1024; // 50 MB
 
     /// <summary>
     /// Maximum total temporary storage size in bytes across all active files.
     /// </summary>
-    public long MaxTotalStorageBytes { get; init; } = 500 * 1024 * 1024; // 500 MB
+    public long MaxTotalStorageBytes { get; set; } = 500 * 1024 * 1024; // 500 MB
 
     /// <summary>
     /// Maximum number of active temporary files.
     /// </summary>
-    public int MaxFileCount { get; init; } = 5000;
+    public int MaxFileCount { get; set; } = 5000;
 
     /// <summary>
     /// Suggested retry-after value (seconds) when temporary storage is saturated.
     /// </summary>
-    public int StorageFullRetryAfterSeconds { get; init; } = 60;
+    public int StorageFullRetryAfterSeconds { get; set; } = 60;
 
     /// <summary>
     /// Base URL for serving temporary files.
     /// </summary>
-    public string? BaseUrl { get; init; }
+    public string? BaseUrl { get; set; }
 }
 
 /// <summary>

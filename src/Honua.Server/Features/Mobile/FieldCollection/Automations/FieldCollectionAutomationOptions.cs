@@ -36,7 +36,7 @@ public sealed class FieldCollectionAutomationOptions
     public int MaxAttempts { get; set; } = 4;
 
     /// <summary>Gets the configured action definitions.</summary>
-    public IList<FieldCollectionAutomationActionDefinition> Actions { get; init; }
+    public IList<FieldCollectionAutomationActionDefinition> Actions { get; set; }
         = new List<FieldCollectionAutomationActionDefinition>();
 }
 
@@ -64,10 +64,10 @@ public sealed class FieldCollectionAutomationActionDefinition
     public int? LayerId { get; set; }
 
     /// <summary>Gets the operations that trigger the action; empty matches all.</summary>
-    public IList<FieldCollectionChangeOperation> Operations { get; init; }
+    public IList<FieldCollectionChangeOperation> Operations { get; set; }
         = new List<FieldCollectionChangeOperation>();
 
     /// <summary>Gets the handler-specific configuration values.</summary>
-    public IDictionary<string, string> Configuration { get; init; }
+    public IDictionary<string, string> Configuration { get; set; }
         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }

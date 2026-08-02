@@ -150,11 +150,11 @@ public sealed record SpecCostEstimatorOptions
     /// Row count assumed when no upstream provides one. Keeps downstream
     /// cost heuristics bounded rather than propagating nulls indefinitely.
     /// </summary>
-    public long DefaultRowsWhenUnknown { get; init; } = 1_000;
+    public long DefaultRowsWhenUnknown { get; set; } = 1_000;
 
     /// <summary>
     /// Output byte threshold above which the estimator emits an
     /// <c>estimated-oversize</c> warning. Defaults to 1 GiB.
     /// </summary>
-    public long OversizeThresholdBytes { get; init; } = 1L * 1024 * 1024 * 1024;
+    public long OversizeThresholdBytes { get; set; } = 1L * 1024 * 1024 * 1024;
 }

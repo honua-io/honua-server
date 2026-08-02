@@ -19,25 +19,25 @@ internal sealed class DeploymentOptions
     /// Deployment mode (SingleInstance or MultiNode).
     /// </summary>
     [Required]
-    public string Mode { get; init; } = "SingleInstance";
+    public string Mode { get; set; } = "SingleInstance";
 
     /// <summary>
     /// Whether deployment control endpoints are enabled.
     /// </summary>
-    public bool EnableDeploymentControl { get; init; }
+    public bool EnableDeploymentControl { get; set; }
 
     /// <summary>
     /// Maximum rollback history to maintain.
     /// </summary>
-    public int MaxRollbackHistory { get; init; } = 10;
+    public int MaxRollbackHistory { get; set; } = 10;
 
     /// <summary>
     /// Deployment timeout in seconds.
     /// </summary>
-    public int TimeoutSeconds { get; init; } = 300;
+    public int TimeoutSeconds { get; set; } = 300;
 
     /// <summary>
     /// Whether to enable preflight checks.
     /// </summary>
-    public bool EnablePreflightChecks { get; init; } = true;
+    public bool EnablePreflightChecks { get; set; } = true;
 }

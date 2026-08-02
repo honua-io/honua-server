@@ -10,12 +10,10 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Features.Alerts;
 
 /// <summary>
-/// Configuration-binding tests for <see cref="AlertOptions.Edition"/> (#2998). The downward-only
-/// alert-edition cap is operator-facing configuration (<c>Alerts:Edition</c> /
-/// <c>Alerts__Edition</c>), and it is a nullable enum — a shape that silently binds to null when
-/// it is not handled, which would drop the cap without any error. These tests bind the option the
-/// same way the host does (<c>AddOptions().Bind(configuration.GetSection("Alerts"))</c>) so the
-/// cap's configuration path is covered independently of the HTTP surface.
+/// Configuration-binding tests for the operator-facing alert worker switch and edition cap. These tests
+/// bind the option the same way the host does
+/// (<c>AddOptions().Bind(configuration.GetSection("Alerts"))</c>) so source-generated binding is covered
+/// independently of the HTTP surface.
 /// </summary>
 public sealed class AlertOptionsBindingTests
 {
@@ -31,17 +29,9 @@ public sealed class AlertOptionsBindingTests
         return provider.GetRequiredService<IOptions<AlertOptions>>().Value;
     }
 
-    /// <summary>
-    /// Characterizes a PRE-EXISTING gap that this change deliberately does not widen:
-    /// <see cref="AlertOptions.Enabled"/> is init-only on trunk, and the configuration binding
-    /// source generator does not assign init-only properties, so <c>Alerts:Enabled</c> does not
-    /// bind. Asserted as-is so the day it starts working this test fails loudly and the
-    /// follow-up can flip it. <see cref="AlertOptions.Edition"/> (this change's cap) is settable
-    /// for exactly this reason.
-    /// </summary>
     [UnitTest]
-    public void Bind_EnabledInitOnly_DoesNotBind_PreExistingGap()
-        => Assert.False(Bind(("Alerts:Enabled", "true")).Enabled);
+    public void Bind_EnabledTrue_SetsWorkerSwitch()
+        => Assert.True(Bind(("Alerts:Enabled", "true")).Enabled);
 
     [UnitTest]
     public void Bind_SettableProperties_AreBound()

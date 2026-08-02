@@ -20,7 +20,11 @@ public sealed class AlertOptions
     /// <summary>
     /// Enables alert processing workers.
     /// </summary>
-    public bool Enabled { get; init; }
+    /// <remarks>
+    /// This property deliberately uses a setter because the source-generated configuration binder cannot
+    /// assign init-only properties when binding an existing options instance.
+    /// </remarks>
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Optional downward-only cap on the license-derived alert edition (#2998). When null
@@ -41,18 +45,18 @@ public sealed class AlertOptions
     /// <summary>
     /// Evaluator worker settings.
     /// </summary>
-    public AlertEvaluationOptions Evaluation { get; init; } = new();
+    public AlertEvaluationOptions Evaluation { get; set; } = new();
 
     /// <summary>
     /// Dispatcher worker settings.
     /// </summary>
-    public AlertDispatchOptions Dispatch { get; init; } = new();
+    public AlertDispatchOptions Dispatch { get; set; } = new();
 
     /// <summary>
     /// Operations-notification settings (deploy/job terminal events delivered through
     /// the shared alert delivery outbox). Disabled by default.
     /// </summary>
-    public AlertOpsOptions Ops { get; init; } = new();
+    public AlertOpsOptions Ops { get; set; } = new();
 }
 
 /// <summary>
@@ -66,20 +70,20 @@ public sealed class AlertOpsOptions
     /// Enables ops notifications. Disabled by default; enabling requires the alert
     /// pipeline to also be enabled (<see cref="AlertOptions.Enabled"/>) for delivery.
     /// </summary>
-    public bool Enabled { get; init; }
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Delivery channels (canonical channel names, e.g. <c>webhook</c>, <c>slack</c>)
     /// ops notifications are dispatched to. Channels disallowed by the active edition
     /// are dropped at composition time.
     /// </summary>
-    public IReadOnlyList<string> Channels { get; init; } = [];
+    public IReadOnlyList<string> Channels { get; set; } = [];
 
     /// <summary>
     /// Minimum severity delivered. Events below this severity are dropped before
     /// enqueue. Defaults to <see cref="AlertSeverity.Info"/> (deliver everything).
     /// </summary>
-    public AlertSeverity MinSeverity { get; init; } = AlertSeverity.Info;
+    public AlertSeverity MinSeverity { get; set; } = AlertSeverity.Info;
 }
 
 /// <summary>
@@ -92,34 +96,34 @@ public sealed class AlertEvaluationOptions
     /// Worker name used for checkpoint persistence.
     /// </summary>
     [Required]
-    public string WorkerName { get; init; } = "evaluator";
+    public string WorkerName { get; set; } = "evaluator";
 
     /// <summary>
     /// Maximum number of durable changes processed per batch.
     /// </summary>
     [Range(1, 5000)]
-    public int ChangeBatchSize { get; init; } = 100;
+    public int ChangeBatchSize { get; set; } = 100;
 
     /// <summary>
     /// Interval for dwell sweep processing.
     /// </summary>
-    public TimeSpan DwellSweepInterval { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan DwellSweepInterval { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Interval to wait when no changes are available.
     /// </summary>
-    public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan IdleDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Lease duration for leader-election heartbeats.
     /// </summary>
-    public TimeSpan LeaderLeaseDuration { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan LeaderLeaseDuration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Leader election strategy identifier.
     /// </summary>
     [Required]
-    public string LeaderElectionMode { get; init; } = "postgres-advisory-lock";
+    public string LeaderElectionMode { get; set; } = "postgres-advisory-lock";
 
     /// <summary>
     /// Age at or above which the evaluation-loop health check treats the current leader's
@@ -128,7 +132,7 @@ public sealed class AlertEvaluationOptions
     /// leadership, so a heartbeat older than this threshold means the leader is wedged inside
     /// a pass rather than idle. Only meaningful on the node that currently holds leadership.
     /// </summary>
-    public TimeSpan HeartbeatStalenessThreshold { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan HeartbeatStalenessThreshold { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Duration for which every leadership-acquisition attempt must have been *failing*
@@ -138,7 +142,7 @@ public sealed class AlertEvaluationOptions
     /// evaluation halts everywhere with no leader, so each node reports it after the threshold.
     /// A healthy follower (a clean "someone else leads" result) never trips this.
     /// </summary>
-    public TimeSpan NoLeaderThreshold { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan NoLeaderThreshold { get; set; } = TimeSpan.FromMinutes(2);
 }
 
 /// <summary>
@@ -151,32 +155,32 @@ public sealed class AlertDispatchOptions
     /// Maximum number of outbox jobs claimed per dispatch cycle.
     /// </summary>
     [Range(1, 5000)]
-    public int ClaimBatchSize { get; init; } = 100;
+    public int ClaimBatchSize { get; set; } = 100;
 
     /// <summary>
     /// Base retry delay used by exponential backoff.
     /// </summary>
-    public TimeSpan InitialBackoff { get; init; } = TimeSpan.FromSeconds(1);
+    public TimeSpan InitialBackoff { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Maximum retry delay cap for exponential backoff.
     /// </summary>
-    public TimeSpan MaxBackoff { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan MaxBackoff { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Optional default webhook URL used when a dispatch row does not provide a destination.
     /// </summary>
-    public string? DefaultWebhookUrl { get; init; }
+    public string? DefaultWebhookUrl { get; set; }
 
     /// <summary>
     /// Shared HMAC secret used to sign webhook alert deliveries.
     /// </summary>
-    public string? DefaultWebhookSecret { get; init; }
+    public string? DefaultWebhookSecret { get; set; }
 
     /// <summary>
     /// Delay when no dispatch work is available.
     /// </summary>
-    public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan IdleDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Maximum outbound notifications delivered per channel per rolling minute,
@@ -194,28 +198,28 @@ public sealed class AlertDispatchOptions
     /// replica's budget and rely on downstream provider rate limits for hard caps.
     /// </remarks>
     [Range(0, 1_000_000)]
-    public int MaxNotificationsPerMinutePerChannel { get; init; } = 120;
+    public int MaxNotificationsPerMinutePerChannel { get; set; } = 120;
 
     /// <summary>
     /// Backlog size (pending + retriable rows) at or above which the dispatch-backlog
     /// health check reports Degraded.
     /// </summary>
     [Range(1, int.MaxValue)]
-    public int DegradedBacklogThreshold { get; init; } = 1_000;
+    public int DegradedBacklogThreshold { get; set; } = 1_000;
 
     /// <summary>
     /// Dead-lettered row count at or above which the dispatch-backlog health check
     /// reports Unhealthy.
     /// </summary>
     [Range(1, int.MaxValue)]
-    public int UnhealthyDeadLetterThreshold { get; init; } = 1;
+    public int UnhealthyDeadLetterThreshold { get; set; } = 1;
 
     /// <summary>
     /// Minimum interval between dispatch-backlog recomputations. The backlog count is
     /// a full aggregate over the outbox, so it is refreshed at most once per interval
     /// (and always after a non-empty claim batch) rather than on every idle poll.
     /// </summary>
-    public TimeSpan BacklogRefreshInterval { get; init; } = TimeSpan.FromSeconds(15);
+    public TimeSpan BacklogRefreshInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// Age at or above which the dispatch-backlog health check treats the dispatcher's
@@ -226,7 +230,7 @@ public sealed class AlertDispatchOptions
     /// running-flag check misses. Must comfortably exceed <see cref="IdleDelay"/> and
     /// <see cref="BacklogRefreshInterval"/> so a merely-idle dispatcher is never flagged.
     /// </summary>
-    public TimeSpan HeartbeatStalenessThreshold { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan HeartbeatStalenessThreshold { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Retention window for delivered (status = delivered) dispatch rows. A periodic
@@ -234,19 +238,19 @@ public sealed class AlertDispatchOptions
     /// unbounded and backlog counts stay cheap. Set to <see cref="TimeSpan.Zero"/> or
     /// negative to disable purging.
     /// </summary>
-    public TimeSpan DeliveredRetention { get; init; } = TimeSpan.FromHours(24);
+    public TimeSpan DeliveredRetention { get; set; } = TimeSpan.FromHours(24);
 
     /// <summary>
     /// Minimum interval between delivered-row retention sweeps.
     /// </summary>
-    public TimeSpan RetentionSweepInterval { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan RetentionSweepInterval { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Maximum delivered rows deleted per retention sweep pass (bounded delete to avoid
     /// long-running transactions).
     /// </summary>
     [Range(1, 1_000_000)]
-    public int RetentionBatchSize { get; init; } = 1_000;
+    public int RetentionBatchSize { get; set; } = 1_000;
 
     /// <summary>
     /// Number of consecutive dead-lettered deliveries on a single channel that trips the
@@ -259,18 +263,18 @@ public sealed class AlertDispatchOptions
     /// disable circuit breaking. Defaults to 5.
     /// </summary>
     [Range(0, 1_000_000)]
-    public int CircuitBreakerThreshold { get; init; } = 5;
+    public int CircuitBreakerThreshold { get; set; } = 5;
 
     /// <summary>
     /// How long a tripped per-channel delivery circuit breaker stays open before admitting a
     /// single half-open probe. Defaults to 5 minutes.
     /// </summary>
-    public TimeSpan CircuitBreakerCooldown { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan CircuitBreakerCooldown { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Digest delivery settings.
     /// </summary>
-    public DigestAlertOptions Digest { get; init; } = new();
+    public DigestAlertOptions Digest { get; set; } = new();
 }
 
 /// <summary>
@@ -282,21 +286,21 @@ public sealed class DigestAlertOptions
     /// <summary>
     /// Webhook URL for digest delivery. If null, digest items are dead-lettered.
     /// </summary>
-    public string? WebhookUrl { get; init; }
+    public string? WebhookUrl { get; set; }
 
     /// <summary>
     /// Shared HMAC secret used to sign digest webhook deliveries.
     /// </summary>
-    public string? WebhookSecret { get; init; }
+    public string? WebhookSecret { get; set; }
 
     /// <summary>
     /// Interval between digest flushes.
     /// </summary>
-    public TimeSpan FlushInterval { get; init; } = TimeSpan.FromMinutes(15);
+    public TimeSpan FlushInterval { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Maximum events per digest batch.
     /// </summary>
     [Range(1, 10000)]
-    public int MaxBatchSize { get; init; } = 50;
+    public int MaxBatchSize { get; set; } = 50;
 }

@@ -10,98 +10,98 @@ internal sealed class AlertDeliveryOptions
 {
     public const string SectionName = AlertOptions.SectionName;
 
-    public AlertDeliveryDispatchOptions Dispatch { get; init; } = new();
+    public AlertDeliveryDispatchOptions Dispatch { get; set; } = new();
 }
 
 internal sealed class AlertDeliveryDispatchOptions
 {
-    public AwsSnsChannelOptions? AwsSns { get; init; }
+    public AwsSnsChannelOptions? AwsSns { get; set; }
 
-    public AzureEventGridChannelOptions? AzureEventGrid { get; init; }
+    public AzureEventGridChannelOptions? AzureEventGrid { get; set; }
 
-    public EmailChannelOptions? Email { get; init; }
+    public EmailChannelOptions? Email { get; set; }
 
-    public SlackChannelOptions? Slack { get; init; }
+    public SlackChannelOptions? Slack { get; set; }
 
-    public TeamsChannelOptions? Teams { get; init; }
+    public TeamsChannelOptions? Teams { get; set; }
 
-    public AwsSqsChannelOptions? AwsSqs { get; init; }
+    public AwsSqsChannelOptions? AwsSqs { get; set; }
 
-    public AzureEventHubChannelOptions? AzureEventHub { get; init; }
+    public AzureEventHubChannelOptions? AzureEventHub { get; set; }
 }
 
 internal sealed class AwsSnsChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string TopicArn { get; init; } = string.Empty;
+    public string TopicArn { get; set; } = string.Empty;
 
-    public string? Region { get; init; }
+    public string? Region { get; set; }
 }
 
 internal sealed class AzureEventGridChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string TopicEndpoint { get; init; } = string.Empty;
+    public string TopicEndpoint { get; set; } = string.Empty;
 
-    public string? TopicKey { get; init; }
+    public string? TopicKey { get; set; }
 }
 
 internal sealed class EmailChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string SmtpHost { get; init; } = "localhost";
+    public string SmtpHost { get; set; } = "localhost";
 
     [Range(1, 65535)]
-    public int SmtpPort { get; init; } = 587;
+    public int SmtpPort { get; set; } = 587;
 
     [Required]
     [MinLength(1)]
-    public string FromAddress { get; init; } = string.Empty;
+    public string FromAddress { get; set; } = string.Empty;
 
-    public string FromName { get; init; } = "Honua Alerts";
+    public string FromName { get; set; } = "Honua Alerts";
 
-    public string? DefaultRecipient { get; init; }
+    public string? DefaultRecipient { get; set; }
 
-    public string? Username { get; init; }
+    public string? Username { get; set; }
 
-    public string? Password { get; init; }
+    public string? Password { get; set; }
 
-    public bool UseSsl { get; init; } = true;
+    public bool UseSsl { get; set; } = true;
 }
 
 internal sealed class SlackChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string WebhookUrl { get; init; } = string.Empty;
+    public string WebhookUrl { get; set; } = string.Empty;
 }
 
 internal sealed class TeamsChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string WebhookUrl { get; init; } = string.Empty;
+    public string WebhookUrl { get; set; } = string.Empty;
 }
 
 internal sealed class AwsSqsChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string QueueUrl { get; init; } = string.Empty;
+    public string QueueUrl { get; set; } = string.Empty;
 
-    public string? Region { get; init; }
+    public string? Region { get; set; }
 }
 
 internal sealed class AzureEventHubChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string ConnectionString { get; init; } = string.Empty;
+    public string ConnectionString { get; set; } = string.Empty;
 
     [Required]
     [MinLength(1)]
-    public string EventHubName { get; init; } = string.Empty;
+    public string EventHubName { get; set; } = string.Empty;
 }

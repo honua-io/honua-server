@@ -22,17 +22,17 @@ public sealed class AuditChainVerificationOptions
     /// audit-chain tampering without waiting for a manual verification. Set to <c>false</c> to
     /// disable scheduling (the pull-based <c>/verify</c> endpoint remains available regardless).
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Interval between full chain-verification passes. A full replay is O(rows), so the default is
     /// deliberately infrequent (every 6 hours) to bound cost on large audit tables; the manual
     /// endpoint covers on-demand checks.
     /// </summary>
-    public TimeSpan Interval { get; init; } = TimeSpan.FromHours(6);
+    public TimeSpan Interval { get; set; } = TimeSpan.FromHours(6);
 
     /// <summary>
     /// Grace delay before the first pass so startup work (migrations, warm-up) settles first.
     /// </summary>
-    public TimeSpan InitialDelay { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan InitialDelay { get; set; } = TimeSpan.FromMinutes(2);
 }

@@ -25,6 +25,52 @@ implicitly enables the ASP.NET Core
 `Microsoft.AspNetCore.Http.RequestDelegateGenerator` for Minimal-API endpoint
 wiring; it has been incremental since its introduction in .NET 7.
 
+## Configuration-binding shape convention
+
+`Configure<T>(IConfiguration)` and `AddOptions<T>().Bind(...)` bind onto an existing
+options instance. With `EnableConfigurationBindingGenerator=true`, an `init`-only
+property in that instance's reachable object graph is not assigned; the configured
+value silently remains at its default. Every configuration type reachable from those
+registration paths must therefore use ordinary `get; set;` accessors, including nested
+objects and collection elements. `init` remains appropriate for request/domain models
+and for configuration records constructed as a new instance through `Get<T>()`.
+
+`ConfigurationBindingShapeTests` discovers the Configure/Bind roots from source,
+walks their property-type graphs, and fails on an `init` accessor. When adding a new
+configuration registration, use settable configuration DTOs all the way down rather
+than sharing an immutable domain DTO in the bound graph.
+
+The #3055 audit found the following candidates on `trunk`. "Assignment-sensitive"
+excludes initialized mutable container properties that the binder could populate
+without replacing; those were normalized too so the convention and guard stay
+mechanical.
+
+| Configure/Bind root graph | Init-only candidates | Assignment-sensitive |
+|---|---:|---:|
+| `AlertOptions` | 37 | 33 |
+| `AlertDeliveryOptions` | 26 | 25 |
+| `LimitsOptions` | 32 | 32 |
+| `TileOptions` | 11 | 10 |
+| `WorkspaceOptions` | 10 | 10 |
+| `FederationSourceOptions` | 7 | 7 |
+| `TemporaryFileOptions` | 7 | 7 |
+| `DeploymentOptions` | 5 | 5 |
+| `QueryCacheOptions` | 5 | 5 |
+| `SecureConfigurationOptions` | 5 | 4 |
+| `SceneDatasetOptions` | 4 | 4 |
+| `AuditChainVerificationOptions` | 3 | 3 |
+| `AuditExportOptions` | 3 | 3 |
+| `MigrationSafetyOptions` | 3 | 3 |
+| `FieldCollectionAutomationOptions` | 3 | 0 |
+| `SpecCostEstimatorOptions` | 2 | 2 |
+| **Total** | **163** | **153** |
+
+The scan also confirmed that similarly named immutable types were outside the
+vulnerable path: `StartupResilienceOptions` is constructed with `Get<T>()`;
+`CsvImportOptions` and `StyleSuggestionOptions` are request/domain objects; and
+`CircuitBreakerOptions` / `HttpResilienceOptions` had no configuration-binding
+registration. Do not mechanically convert such immutable, non-bound types.
+
 All five are part of the runtime / SDK and are known-good
 `IIncrementalGenerator` implementations &mdash; there is nothing in this
 repository to port.
