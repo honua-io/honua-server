@@ -173,6 +173,12 @@ if (loadHostedBlazorStaticWebAssets)
 
 // Load optional security configuration without overriding environment-specific settings.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+// The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
+// admin credential while preserving its refreshable reference, and snapshot the encryption master
+// key before its direct consumer can mistake the reference text for key material.
+await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+    builder.Configuration,
+    builder.Environment.IsProduction());
 var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
