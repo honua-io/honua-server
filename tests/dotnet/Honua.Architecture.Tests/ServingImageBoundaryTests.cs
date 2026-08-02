@@ -150,7 +150,7 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void GdalWorkerDockerfile_ShouldRestoreCompleteProjectClosureAndPinPdalSource()
+    public void GdalWorkerDockerfile_ShouldRestoreCompleteProjectClosureAndPinNativeSources()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "docker/worker-gdal/Dockerfile"));
@@ -170,10 +170,22 @@ public sealed class ServingImageBoundaryTests
         }
 
         dockerfile.Should().Contain("ARG PDAL_VERSION=");
-        dockerfile.Should().Contain("pdal=\"${PDAL_VERSION}\"");
-        dockerfile.Should().Contain("libpdal-plugins=\"${PDAL_VERSION}\"");
-        dockerfile.Should().Contain("signed-by=/usr/share/keyrings/ubuntugis-archive-keyring.gpg");
-        dockerfile.Should().Contain("--runtime aspnetcore --install-dir /usr/share/dotnet");
+        dockerfile.Should().Contain("ARG PDAL_SOURCE_SHA256=");
+        dockerfile.Should().Contain("ARG GDAL_VERSION=3.13.1");
+        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.10");
+        dockerfile.Should().Contain("ubuntu-full-3.13.1");
+        dockerfile.Should().Contain("apt-get -y --no-install-recommends upgrade");
+        dockerfile.Should().Contain("FROM ${GDAL_BASE_IMAGE} AS pdal-build");
+        dockerfile.Should().Contain("PDAL-${PDAL_VERSION}-src.tar.gz");
+        dockerfile.Should().Contain("sha256sum -c -");
+        dockerfile.Should().NotContain("ubuntugis");
+        dockerfile.Should().NotContain(" noble main");
+        dockerfile.Should().Contain("--version \"${DOTNET_RUNTIME_VERSION}\" --runtime aspnetcore");
+        dockerfile.Should().Contain("gdalinfo --version | grep -F \"GDAL ${GDAL_VERSION}\"");
+        dockerfile.Should().Contain("pdal --version | grep -F \"pdal ${PDAL_VERSION}\"");
+        dockerfile.Should().Contain("ldd \"$(command -v pdal)\"");
+        dockerfile.Should().Contain("honua.native.gdal.version=\"${GDAL_VERSION}\"");
+        dockerfile.Should().Contain("honua.native.pdal.version=\"${PDAL_VERSION}\"");
         dockerfile.Split("--mount=type=cache,target=/root/.nuget/packages")
             .Should().HaveCount(3, "restore and publish must share the BuildKit NuGet cache");
     }

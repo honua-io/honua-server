@@ -8,9 +8,16 @@ development and compatibility testing; it is not a production distribution.
 
 ## What it is
 
-- Built on a **GDAL base image** (`ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`, pinned)
+- Built on a **GDAL base image** (`ghcr.io/osgeo/gdal:ubuntu-full-3.13.1`, pinned by
+  OCI digest)
   with the .NET runtime layered on. The GDAL CLI tools (`gdalwarp`, `ogr2ogr`, …)
   and PROJ (datum-shift grids) are on `PATH`.
+- Builds PDAL 2.10.2 from the upstream release archive, pinned by its published
+  SHA-256 checksum, against the same Ubuntu 26.04/GDAL 3.13.1 toolchain. This
+  avoids mixing packages from the older Noble UbuntuGIS repository into the
+  worker while retaining `readers.las` and `filters.reprojection`.
+- Pins the ASP.NET Core runtime to 10.0.10 and checks the resolved GDAL, PDAL,
+  .NET, and native link closure while assembling the image.
 - Runs the **same** durable job-execution loop (`JobExecutionService` /
   `JobReconciliationService` / `RedisJobQueue`) that the serving image hosts —
   it does **not** fork a parallel runtime. The entrypoint is

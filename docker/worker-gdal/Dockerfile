@@ -25,14 +25,16 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 # GRIB / HDF — is reproducible across builds. PROJ ships with this base; the
 # native vector reproject (transform.reproject on the native profile) and the OGR
 # import reader (source.ogr) depend on its transformation pipelines.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
+ARG GDAL_VERSION=3.13.1
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
-ARG DOTNET_RUNTIME_VERSION=10.0
-# Ubuntu Noble does not publish PDAL in its standard archive. UbuntuGIS publishes
-# the Noble build used here; pin both the package and repository signing key so a
-# mutable PPA cannot silently change the worker's point-cloud runtime.
-ARG PDAL_VERSION=2.6.2+ds-1~noble2
-ARG UBUNTUGIS_KEY_FINGERPRINT=2EC86B48E6A9F326623CD22FFF0E7BBEC491C6A1
+ARG DOTNET_RUNTIME_VERSION=10.0.10
+# PDAL is built from its upstream release archive against the SAME GDAL/Ubuntu
+# toolchain as the runtime. Ubuntu 26.04 does not publish PDAL, and cross-release
+# UbuntuGIS packages are intentionally forbidden. Pin both release and upstream
+# checksum so the native point-cloud supply chain is reproducible.
+ARG PDAL_VERSION=2.10.2
+ARG PDAL_SOURCE_SHA256=1fa8156b0394136e891462507466fb8ee9f6fac98d3fe07f17e1fcdb53dbefd1
 
 # ---------------------------------------------------------------------------
 # Build stage: restore + publish the worker (framework-dependent, no AOT).
@@ -78,13 +80,59 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
  && find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # ---------------------------------------------------------------------------
+# PDAL build stage: compile the pinned upstream source against the exact GDAL
+# 3.13.1 / Ubuntu 26.04 toolchain used by the runtime stage. No Noble packages,
+# third-party distro repositories, or mutable source branches cross this seam.
+# ---------------------------------------------------------------------------
+FROM ${GDAL_BASE_IMAGE} AS pdal-build
+
+ARG PDAL_VERSION
+ARG PDAL_SOURCE_SHA256
+
+# hadolint ignore=DL3008,DL3015
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      cmake \
+      curl \
+      libboost-dev \
+      libcurl4-openssl-dev \
+      libeigen3-dev \
+      libgeotiff-dev \
+      libjsoncpp-dev \
+      libtbb-dev \
+      libxml2-dev \
+      ninja-build \
+ && curl -fsSL \
+      "https://github.com/PDAL/PDAL/releases/download/${PDAL_VERSION}/PDAL-${PDAL_VERSION}-src.tar.gz" \
+      -o /tmp/pdal.tar.gz \
+ && echo "${PDAL_SOURCE_SHA256}  /tmp/pdal.tar.gz" | sha256sum -c - \
+ && mkdir /tmp/pdal-source \
+ && tar -xzf /tmp/pdal.tar.gz -C /tmp/pdal-source --strip-components=1 \
+ && cmake -S /tmp/pdal-source -B /tmp/pdal-build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/opt/pdal \
+      -DCMAKE_INSTALL_RPATH=/opt/pdal/lib \
+      -DWITH_TESTS=OFF \
+      -DWITH_GCS=OFF \
+      -DWITH_BACKTRACE=OFF \
+      -DBUILD_DOCS=OFF \
+      -DBUILD_TOOLS_LASDUMP=OFF \
+ && cmake --build /tmp/pdal-build --parallel 2 \
+ && cmake --install /tmp/pdal-build \
+ && test -x /opt/pdal/bin/pdal \
+ && rm -rf /tmp/pdal.tar.gz /tmp/pdal-source /tmp/pdal-build /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
 # ---------------------------------------------------------------------------
 FROM ${GDAL_BASE_IMAGE} AS native-tools
 
+ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
-ARG UBUNTUGIS_KEY_FINGERPRINT
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -101,28 +149,30 @@ ARG UBUNTUGIS_KEY_FINGERPRINT
 # uses SciPy's exact distance transform (nearest-feature index return) plus the
 # GDAL Python bindings (shipped in the ubuntu-full base) since stock
 # gdal_proximity has no nearest-source allocation mode.
-# Noble has no PDAL package in the Ubuntu archive. Install the exact UbuntuGIS
-# Noble build through a dedicated signed-by keyring, after checking the complete
-# key fingerprint. Removing the source/key after installation prevents later
-# layers from accidentally upgrading the native stack from the PPA.
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gnupg libicu-dev python3-scipy \
- && curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${UBUNTUGIS_KEY_FINGERPRINT}" -o /tmp/ubuntugis.asc \
- && test "$(gpg --batch --show-keys --with-colons /tmp/ubuntugis.asc | awk -F: '$1 == "fpr" { print $10; exit }')" = "${UBUNTUGIS_KEY_FINGERPRINT}" \
- && gpg --batch --dearmor --output /usr/share/keyrings/ubuntugis-archive-keyring.gpg /tmp/ubuntugis.asc \
- && echo "deb [signed-by=/usr/share/keyrings/ubuntugis-archive-keyring.gpg] https://ppa.launchpadcontent.net/ubuntugis/ubuntugis-unstable/ubuntu noble main" > /etc/apt/sources.list.d/ubuntugis.list \
- && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
  && apt-get install -y --no-install-recommends \
-      libpdal-plugins="${PDAL_VERSION}" \
-      pdal="${PDAL_VERSION}" \
+      ca-certificates \
+      curl \
+      libcurl4t64 \
+      libgeotiff5 \
+      libicu-dev \
+      libjsoncpp26 \
+      libtbb12 \
+      libxml2-16 \
+      python3-scipy \
  && rm -rf /var/lib/apt/lists/* \
- && rm -f /etc/apt/sources.list.d/ubuntugis.list /usr/share/keyrings/ubuntugis-archive-keyring.gpg /tmp/ubuntugis.asc \
  && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && chmod +x /tmp/dotnet-install.sh \
- && /tmp/dotnet-install.sh --channel "${DOTNET_RUNTIME_VERSION}" --runtime aspnetcore --install-dir /usr/share/dotnet \
+ && /tmp/dotnet-install.sh --version "${DOTNET_RUNTIME_VERSION}" --runtime aspnetcore --install-dir /usr/share/dotnet \
  && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
  && rm -f /tmp/dotnet-install.sh
+
+COPY --from=pdal-build /opt/pdal /opt/pdal
+
+ENV PATH="/opt/pdal/bin:${PATH}" \
+    LD_LIBRARY_PATH="/opt/pdal/lib"
 
 # Sanity check: the GDAL tools the worker shells out to must be present, and the
 # NetCDF + GRIB drivers (multidimensional coverage convert-to-Zarr path) must be
@@ -130,6 +180,7 @@ RUN apt-get update \
 # `pdal` must also be on PATH with the LAS reader + reprojection filter compiled
 # in (LAZ/COPC decompress + reproject, #1854).
 RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
+ && gdalinfo --version | grep -F "GDAL ${GDAL_VERSION}" \
  # gdal_grid backs the raster IDW interpolation tool (raster.interpolate-idw, #2141);
  # gdalwarp backs raster.resample and raster.mosaic. Both ship in the ubuntu-full base.
  && command -v gdal_grid \
@@ -152,8 +203,13 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  && gdalinfo --formats | grep -qi netCDF \
  && gdalinfo --formats | grep -qi GRIB \
  && command -v pdal \
+ && pdal --version | grep -F "pdal ${PDAL_VERSION}" \
  && pdal --drivers | grep -qi readers.las \
  && pdal --drivers | grep -qi filters.reprojection \
+ && ! ldd "$(command -v pdal)" | grep -q 'not found' \
+ && ! ldd "$(readlink -f /opt/pdal/lib/libpdalcpp.so)" | grep -q 'not found' \
+ && dotnet --list-runtimes | grep -F "Microsoft.AspNetCore.App ${DOTNET_RUNTIME_VERSION}" \
+ && dotnet --list-runtimes | grep -F "Microsoft.NETCore.App ${DOTNET_RUNTIME_VERSION}" \
  # PROJ datum-shift support for native vector reproject (transform.reproject on
  # the native profile): projsync/proj.db must be present so PROJ can apply
  # datum/grid shifts (e.g. NAD 27 -> WGS 84). The full base ships PROJ.
@@ -165,6 +221,10 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
 # Keep the independently testable native-tools stage free of application bits;
 # the final worker stage adds only the published managed host and runtime user.
 FROM native-tools AS runtime
+
+ARG GDAL_VERSION
+ARG DOTNET_RUNTIME_VERSION
+ARG PDAL_VERSION
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \
@@ -188,6 +248,9 @@ LABEL org.opencontainers.image.title="honua-worker-etl" \
       org.opencontainers.image.description="Honua heavyweight GP/ETL worker (GDAL + PDAL equipped, native runtime profile)" \
       org.opencontainers.image.licenses="Elastic-2.0" \
       honua.runtime.profile="native" \
+      honua.native.gdal.version="${GDAL_VERSION}" \
+      honua.native.pdal.version="${PDAL_VERSION}" \
+      honua.runtime.dotnet.version="${DOTNET_RUNTIME_VERSION}" \
       security.non-root="true" \
       security.user="1001"
 
