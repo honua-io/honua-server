@@ -35,8 +35,11 @@ public sealed record JobSecurityClaim(string Type, string Value);
 /// because a policy whose claim has no value translates to <c>FALSE</c> (deny all rows).
 /// </para>
 /// <para>
-/// The snapshot can only attenuate: it is exactly the identity the submitter presented, so a job
-/// can never resolve broader row/field visibility than its submitter had.
+/// The snapshot records exactly the identity the submitter presented. Deferred-submission lanes
+/// replace its role claims from the configured live membership source when one can resolve the
+/// principal. Deployments whose identity source cannot answer membership queries retain the
+/// snapshot as the explicit fallback authority, so operators must republish workflows and
+/// resubmit approvals after revoking roles in that mode (honua-server#3081).
 /// </para>
 /// </remarks>
 /// <param name="PrincipalId">Stable identifier of the submitting principal, when known.</param>

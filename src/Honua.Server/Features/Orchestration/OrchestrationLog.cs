@@ -163,4 +163,28 @@ internal static partial class OrchestrationLog
 
     [LoggerMessage(8126, LogLevel.Information, "Object-store trigger fired workflow {WorkflowId} for object {ObjectKey}")]
     public static partial void ObjectStoreTriggerFired(ILogger logger, string workflowId, string objectKey);
+
+    [LoggerMessage(8127, LogLevel.Warning, "Current role membership is unavailable for workflow {WorkflowId} author {PrincipalId}; using the durable role snapshot")]
+    public static partial void AuthorMembershipSnapshotFallback(
+        ILogger logger,
+        string workflowId,
+        string principalId);
+
+    [LoggerMessage(8128, LogLevel.Information, "Revalidated changed role membership for workflow {WorkflowId} author {PrincipalId}")]
+    public static partial void AuthorMembershipRevalidated(
+        ILogger logger,
+        string workflowId,
+        string principalId);
+
+    [LoggerMessage(8129, LogLevel.Warning, "Workflow {WorkflowId} author {PrincipalId} is inactive; refusing triggered firing")]
+    public static partial void AuthorMembershipInactive(
+        ILogger logger,
+        string workflowId,
+        string principalId);
+
+    [LoggerMessage(8130, LogLevel.Warning, "Current role membership no longer authorizes workflow {WorkflowId} author {PrincipalId}; refusing triggered firing")]
+    public static partial void AuthorMembershipNoLongerAuthorizes(
+        ILogger logger,
+        string workflowId,
+        string principalId);
 }

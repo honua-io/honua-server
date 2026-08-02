@@ -12,6 +12,7 @@ Execution notes that apply across families:
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
 - **Inline FeatureCollections.** Managed `*-managed`, `overlay.*`, `proximity.near*`, `statistics.*`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
+- **Deferred role revalidation.** Approval resumes re-resolve current roles for identities managed by the configured membership source and fail closed when the submitter is inactive or lost required membership. For identity-provider modes that cannot answer membership queries, the durable submitter snapshot remains authoritative with an operator warning; resubmit pending approvals after revoking roles in that mode.
 - **Admission.** Submissions pass through admission control (`ExecutionAdmission__*` — see [environment variables](configuration/environment-variables.md#admission-and-pooling)).
 
 ## Geometry (14)

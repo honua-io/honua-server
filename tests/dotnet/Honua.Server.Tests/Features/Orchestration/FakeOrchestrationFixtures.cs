@@ -341,6 +341,12 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     public HashSet<string> DenyExecutionAuthorizationForPlanIds { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Optional role required by a plan's fake execution gate. Used to prove that live role
+    /// membership, rather than the publication snapshot, controls a triggered firing.
+    /// </summary>
+    public Dictionary<string, string> RequiredExecutionRoleForPlanIds { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Plans passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so tests
     /// can assert the requesting principal was gated before any step job was submitted.
     /// </summary>
@@ -396,6 +402,13 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         {
             throw new UnauthorizedAccessException(
                 $"Requesting principal is not authorized to execute mutating plan '{plan.PlanId}'.");
+        }
+
+        if (RequiredExecutionRoleForPlanIds.TryGetValue(plan.PlanId, out var requiredRole)
+            && !principal.IsInRole(requiredRole))
+        {
+            throw new UnauthorizedAccessException(
+                $"Requesting principal lacks current role '{requiredRole}' for plan '{plan.PlanId}'.");
         }
 
         return Task.FromResult(OnBindExecutionPlan?.Invoke(plan) ?? plan);

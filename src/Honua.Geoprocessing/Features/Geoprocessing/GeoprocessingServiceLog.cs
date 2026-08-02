@@ -220,4 +220,24 @@ internal static partial class GeoprocessingServiceLog
         int layerId,
         string stepId,
         string processId);
+
+    [LoggerMessage(8036, LogLevel.Warning, "Current role membership is unavailable for deferred submitter {PrincipalId}; using the durable role snapshot")]
+    public static partial void SubmitterMembershipSnapshotFallback(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8037, LogLevel.Information, "Revalidated changed role membership for deferred submitter {PrincipalId}")]
+    public static partial void SubmitterMembershipRevalidated(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8038, LogLevel.Warning, "Deferred submitter {PrincipalId} is inactive; refusing submission")]
+    public static partial void SubmitterMembershipInactive(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8039, LogLevel.Warning, "Current role membership no longer authorizes deferred submitter {PrincipalId}")]
+    public static partial void SubmitterMembershipNoLongerAuthorizes(
+        ILogger logger,
+        string principalId);
 }

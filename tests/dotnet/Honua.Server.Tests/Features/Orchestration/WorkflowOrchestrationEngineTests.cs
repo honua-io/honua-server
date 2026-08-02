@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -129,6 +130,36 @@ public sealed class WorkflowOrchestrationEngineTests
         // The whole point: the orchestrator's admin role is NOT what got evaluated.
         Assert.False(gated.IsInRole("admin"));
         Assert.False(gated.IsInRole("orchestrator"));
+    }
+
+    [Fact]
+    public async Task CreateRun_TriggeredFiringAfterAuthorRoleRevoked_FailsClosedWithDistinctReason()
+    {
+        var membershipSource = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: []));
+        var harness = new OrchestrationTestHarness(membershipSource);
+        harness.JobService.RequiredExecutionRoleForPlanIds["plan-a"] = "restricted-analyst";
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
+        {
+            AuthorSecurityContext = new JobSecurityContext(
+                "workflow-author",
+                TenantId: "tenant-a",
+                [new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst")]),
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var act = () => harness.Engine.CreateRunAsync(
+            definition,
+            WorkflowTriggerKind.Cron,
+            OrchestrationSystemPrincipal.Create(null));
+
+        var thrown = await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(act);
+        Assert.Contains("lost role membership", thrown.Message, StringComparison.Ordinal);
+        var gated = Assert.Single(harness.JobService.ExecutionAuthorizationPrincipals);
+        Assert.False(gated.IsInRole("restricted-analyst"));
+        Assert.Empty(harness.RunStore.Snapshot);
+        Assert.Empty(harness.JobService.Submitted);
     }
 
     [Fact]
@@ -1403,7 +1434,7 @@ public sealed class WorkflowOrchestrationEngineTests
 
     private sealed class OrchestrationTestHarness
     {
-        public OrchestrationTestHarness()
+        public OrchestrationTestHarness(IPrincipalMembershipSource? principalMembershipSource = null)
         {
             RunStore = new FakeWorkflowRunStore();
             Definitions = new FakeWorkflowDefinitionStore();
@@ -1416,7 +1447,8 @@ public sealed class WorkflowOrchestrationEngineTests
                 JobService,
                 Progress,
                 Clock,
-                NullLogger<WorkflowOrchestrationEngine>.Instance);
+                NullLogger<WorkflowOrchestrationEngine>.Instance,
+                principalMembershipSource: principalMembershipSource);
         }
 
         public FakeWorkflowRunStore RunStore { get; }
@@ -1425,6 +1457,15 @@ public sealed class WorkflowOrchestrationEngineTests
         public FakeWorkflowJobExecutor JobService { get; }
         public TestClock Clock { get; }
         public WorkflowOrchestrationEngine Engine { get; }
+    }
+
+    private sealed class FixedMembershipSource(PrincipalMembership? membership)
+        : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(membership);
     }
 }
 

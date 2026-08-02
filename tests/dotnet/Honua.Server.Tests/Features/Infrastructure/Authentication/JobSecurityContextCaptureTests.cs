@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
@@ -12,12 +13,53 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
 /// <summary>
 /// Contract tests for the durable submitter-identity snapshot that carries row-level security
-/// and field masking onto the background job worker (honua-server#3068). The snapshot is the
-/// whole mechanism: if capture or restore loses a claim, a restricted caller silently gets
-/// unrestricted job output.
+/// and field masking onto the background job worker (honua-server#3068), plus live role
+/// membership replacement on deferred authorization (honua-server#3081). If capture, restore,
+/// or membership replacement loses a restricting claim, a restricted caller can silently get
+/// broader job output.
 /// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
+    [UnitTest]
+    public async Task RevalidateRoleMembership_RoleRevoked_ReplacesOnlyRoleClaims()
+    {
+        var context = new JobSecurityContext(
+            "workflow-author",
+            TenantId: "tenant-a",
+            [
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+                new JobSecurityClaim("region", "west"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+        var restored = JobSecurityContextCapture.Restore(result.Context);
+        restored.IsInRole("restricted-analyst").Should().BeFalse();
+        restored.IsInRole("viewer").Should().BeTrue();
+        restored.FindFirst("region")?.Value.Should().Be("west");
+        restored.FindFirst("tenant_id")?.Value.Should().Be("tenant-a");
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_UnmanagedPrincipal_PreservesSnapshotExplicitly()
+    {
+        var context = new JobSecurityContext(
+            "external-author",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "external-role")]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            new FixedMembershipSource(null));
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.SnapshotFallback);
+        result.Context.Should().BeSameAs(context);
+    }
+
     [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
@@ -289,5 +331,14 @@ public sealed class JobSecurityContextCaptureTests
             reason = TenantId is null ? "no tenant context resolved" : null;
             return TenantId is not null;
         }
+    }
+
+    private sealed class FixedMembershipSource(PrincipalMembership? membership)
+        : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(membership);
     }
 }

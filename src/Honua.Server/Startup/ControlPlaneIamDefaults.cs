@@ -39,6 +39,12 @@ internal static class ControlPlaneIamDefaults
         services.TryAddSingleton<IScimGroupStore>(static sp =>
             new InMemoryScimGroupStore(sp.GetRequiredService<InMemoryUserStore>()));
 
+        // Deferred workflow and approval lanes use this provider-overridable seam to replace
+        // the role claims captured at publication/submission with the managed identity's
+        // CURRENT roles. Providers registered earlier win; identities not mirrored into the
+        // managed-user store explicitly fall back to their documented durable snapshot.
+        services.TryAddSingleton<IPrincipalMembershipSource, ManagedUserPrincipalMembershipSource>();
+
         services.TryAddSingleton<IRoleStore, InMemoryRoleStore>();
 
         return services;

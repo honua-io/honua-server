@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Infrastructure.Authentication;
@@ -24,10 +25,13 @@ namespace Honua.Infrastructure.Authentication;
 /// resolution it is also the identity the two deferred-submission lanes authorize against —
 /// an approval resume and a cron/event-triggered workflow run — because on both the ambient
 /// principal is a synthetic stand-in (name-only, or the orchestrator carrying <c>role=admin</c>)
-/// and the real submitter is reachable only through this snapshot. That is sound precisely
-/// because the snapshot can only attenuate: it is exactly the claims the submitter presented,
-/// so authorizing against it can never grant more than authorizing the submitter live would
-/// have (honua-server#3046 review).
+/// and the real submitter is reachable only through this snapshot. Before either lane uses it,
+/// <see cref="RevalidateRoleMembershipAsync"/> replaces role claims from the configured
+/// <see cref="IPrincipalMembershipSource"/> when that source manages the identity. An inactive
+/// identity fails closed, and a removed role can no longer authorize the deferred operation.
+/// Identity-provider modes that cannot answer membership queries explicitly retain snapshot
+/// authority and emit an operator warning; in that fallback mode, revoking a role does not stop
+/// an already-published workflow or queued approval (honua-server#3081).
 /// </para>
 /// </remarks>
 internal static class JobSecurityContextCapture
@@ -147,7 +151,7 @@ internal static class JobSecurityContextCapture
             : tenantContext.TenantId;
 
         return new JobSecurityContext(
-            principal.Identity?.Name,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.Identity?.Name,
             tenantId,
             captured,
             options.EffectiveRoleClaimType);
@@ -206,6 +210,84 @@ internal static class JobSecurityContextCapture
             roleClaimType));
     }
 
+    /// <summary>
+    /// Replaces a durable snapshot's role claims with current membership from the configured
+    /// identity source. Non-role claims remain pinned because live revalidation is deliberately
+    /// limited to role membership (honua-server#3081).
+    /// </summary>
+    /// <remarks>
+    /// A source that cannot resolve this principal returns the original snapshot and an explicit
+    /// fallback status. A source exception propagates so a transient identity outage cannot be
+    /// mistaken for an authoritative snapshot decision. Inactive identities are returned with
+    /// no roles and an <see cref="JobSecurityContextMembershipStatus.Inactive"/> status so the
+    /// deferred lane can fail closed before any authorization gate.
+    /// </remarks>
+    public static async Task<JobSecurityContextMembershipResult> RevalidateRoleMembershipAsync(
+        JobSecurityContext context,
+        IPrincipalMembershipSource? source,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (source is null || string.IsNullOrWhiteSpace(context.PrincipalId))
+        {
+            return new JobSecurityContextMembershipResult(
+                context,
+                JobSecurityContextMembershipStatus.SnapshotFallback);
+        }
+
+        var membership = await source
+            .ResolveMembershipAsync(context.PrincipalId, cancellationToken)
+            .ConfigureAwait(false);
+        if (membership is null)
+        {
+            return new JobSecurityContextMembershipResult(
+                context,
+                JobSecurityContextMembershipStatus.SnapshotFallback);
+        }
+
+        var roleClaimType = string.IsNullOrWhiteSpace(context.RoleClaimType)
+            ? ClaimTypes.Role
+            : context.RoleClaimType;
+        var roleClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ClaimTypes.Role,
+            roleClaimType,
+        };
+
+        var snapshotRoles = context.Claims
+            .Where(claim => roleClaimTypes.Contains(claim.Type) && !string.IsNullOrWhiteSpace(claim.Value))
+            .Select(static claim => claim.Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentRoles = membership.IsActive
+            ? membership.Roles
+                .Where(static role => !string.IsNullOrWhiteSpace(role))
+                .Select(static role => role.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+
+        if (membership.IsActive && snapshotRoles.SetEquals(currentRoles))
+        {
+            return new JobSecurityContextMembershipResult(
+                context,
+                JobSecurityContextMembershipStatus.Current);
+        }
+
+        var claims = context.Claims
+            .Where(claim => !roleClaimTypes.Contains(claim.Type))
+            .Concat(currentRoles.Select(role => new JobSecurityClaim(roleClaimType, role)))
+            .ToArray();
+        var revalidated = context with { Claims = claims, RoleClaimType = roleClaimType };
+
+        return new JobSecurityContextMembershipResult(
+            revalidated,
+            membership.IsActive
+                ? JobSecurityContextMembershipStatus.Changed
+                : JobSecurityContextMembershipStatus.Inactive,
+            HasRemovedRoles: snapshotRoles.Except(currentRoles, StringComparer.OrdinalIgnoreCase).Any());
+    }
+
     private static void AppendClaims(
         ClaimsPrincipal principal,
         List<JobSecurityClaim> captured,
@@ -240,3 +322,32 @@ internal static class JobSecurityContextCapture
         }
     }
 }
+
+/// <summary>
+/// Outcome of replacing a durable security snapshot's roles from a live membership source.
+/// </summary>
+internal enum JobSecurityContextMembershipStatus
+{
+    /// <summary>The configured source could not authoritatively resolve this principal.</summary>
+    SnapshotFallback,
+
+    /// <summary>The source resolved the same role set already present in the snapshot.</summary>
+    Current,
+
+    /// <summary>The source resolved a different active role set.</summary>
+    Changed,
+
+    /// <summary>The source resolved an inactive identity.</summary>
+    Inactive,
+}
+
+/// <summary>
+/// A revalidated durable context plus the membership decision that produced it.
+/// </summary>
+/// <param name="Context">Snapshot with current roles when resolution succeeded.</param>
+/// <param name="Status">Membership resolution outcome.</param>
+/// <param name="HasRemovedRoles">Whether at least one captured role is absent now.</param>
+internal sealed record JobSecurityContextMembershipResult(
+    JobSecurityContext Context,
+    JobSecurityContextMembershipStatus Status,
+    bool HasRemovedRoles = false);
