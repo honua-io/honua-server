@@ -25,7 +25,7 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 # GRIB / HDF — is reproducible across builds. PROJ ships with this base; the
 # native vector reproject (transform.reproject on the native profile) and the OGR
 # import reader (source.ogr) depend on its transformation pipelines.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
 ARG DOTNET_RUNTIME_VERSION=10.0
 # Ubuntu Noble does not publish PDAL in its standard archive. UbuntuGIS publishes
@@ -107,7 +107,7 @@ ARG UBUNTUGIS_KEY_FINGERPRINT
 # layers from accidentally upgrading the native stack from the PPA.
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gnupg libicu-dev python3-scipy \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg libicu-dev libssl3t64 openssl python3-scipy \
  && curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${UBUNTUGIS_KEY_FINGERPRINT}" -o /tmp/ubuntugis.asc \
  && test "$(gpg --batch --show-keys --with-colons /tmp/ubuntugis.asc | awk -F: '$1 == "fpr" { print $10; exit }')" = "${UBUNTUGIS_KEY_FINGERPRINT}" \
  && gpg --batch --dearmor --output /usr/share/keyrings/ubuntugis-archive-keyring.gpg /tmp/ubuntugis.asc \
