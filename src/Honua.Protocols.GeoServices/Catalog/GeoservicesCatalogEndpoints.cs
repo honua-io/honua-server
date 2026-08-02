@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -115,9 +116,16 @@ internal static class GeoservicesCatalogEndpoints
             // `geoprocessing` service). Other directory types remain publication-backed.
             // Evaluate the service policy before exposing this layerless entry so catalog
             // discovery matches the GPServer endpoints' own service-level authorization.
-            var advertiseLayerlessGp = visibleResources.Count == 0
-                && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal)
-                && AccessPolicyHelpers.RequireServiceAccess(context, service) is null;
+            var advertiseLayerlessGp = false;
+            if (visibleResources.Count == 0
+                && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal))
+            {
+                advertiseLayerlessGp = await AccessPolicyHelpers.RequireServiceAccessAsync(
+                    context,
+                    service,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false) is null;
+            }
             if (visibleResources.Count == 0 && !advertiseLayerlessGp)
             {
                 continue;
