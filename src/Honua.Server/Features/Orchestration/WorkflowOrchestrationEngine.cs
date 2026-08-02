@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Infrastructure.Authentication;
@@ -35,6 +36,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private readonly TimeProvider _clock;
     private readonly ILogger<WorkflowOrchestrationEngine> _logger;
     private readonly RbacOptions _rbacOptions;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public WorkflowOrchestrationEngine(
@@ -44,7 +46,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         IUniversalProgressStore progressStore,
         TimeProvider clock,
         ILogger<WorkflowOrchestrationEngine> logger,
-        IOptions<RbacOptions>? rbacOptions = null)
+        IOptions<RbacOptions>? rbacOptions = null,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _runStore = runStore;
@@ -53,6 +56,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         _progressStore = progressStore;
         _clock = clock;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <summary>
@@ -80,7 +84,9 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     {
         if (triggerKind == WorkflowTriggerKind.Manual)
         {
-            return JobSecurityContextCapture.Capture(principal, _rbacOptions);
+            var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
+                .GetService<ITenantContext>();
+            return JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext);
         }
 
         // WorkflowDefinitionValidationException, not a generic one: both trigger loops classify

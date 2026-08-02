@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -106,8 +107,16 @@ internal static class JobSecurityContextCapture
     /// </summary>
     /// <param name="principal">The submitting principal.</param>
     /// <param name="options">RBAC options declaring the configured role claim type.</param>
+    /// <param name="tenantContext">
+    /// The effective request tenant resolved by tenant middleware. When present, its value is
+    /// authoritative over raw token claims, including an accepted admin header override or a
+    /// custom configured tenant-claim type.
+    /// </param>
     /// <returns>The captured snapshot.</returns>
-    public static JobSecurityContext Capture(ClaimsPrincipal principal, RbacOptions options)
+    public static JobSecurityContext Capture(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        ITenantContext? tenantContext = null)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
@@ -133,10 +142,11 @@ internal static class JobSecurityContextCapture
             principal, captured, seen, exemptClaimTypes, includeMatching: false,
             limit: captured.Count + MaxCapturedNonRoleClaims);
 
-        return new JobSecurityContext(
-            principal.Identity?.Name,
-            principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType),
-            captured);
+        var tenantId = tenantContext is null
+            ? principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType)
+            : tenantContext.TenantId;
+
+        return new JobSecurityContext(principal.Identity?.Name, tenantId, captured);
     }
 
     /// <summary>
@@ -167,10 +177,18 @@ internal static class JobSecurityContextCapture
         // away. Restoring it from the dedicated field keeps the tenant SCOPE on the restored
         // identity, which the deferred-submission lanes authorize against; a tenant-less
         // identity would widen, not narrow (honua-server#3046 review).
-        if (!string.IsNullOrWhiteSpace(context.TenantId) &&
-            !claims.Exists(claim => string.Equals(claim.Type, TenantClaimType, StringComparison.OrdinalIgnoreCase)))
+        // The dedicated field is the effective tenant resolved by middleware, while the raw
+        // captured claims can still contain the token's original tenant. An accepted
+        // X-Honua-Tenant override must win on deferred authorization, so replace both standard
+        // aliases rather than preserving a stale token value ahead of the authoritative field.
+        claims.RemoveAll(claim =>
+            string.Equals(claim.Type, TenantClaimType, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(claim.Type, AzureTenantClaimType, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(context.TenantId))
         {
             claims.Add(new Claim(TenantClaimType, context.TenantId));
+            claims.Add(new Claim(AzureTenantClaimType, context.TenantId));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, RestoredAuthenticationType, ClaimTypes.Name, ClaimTypes.Role));

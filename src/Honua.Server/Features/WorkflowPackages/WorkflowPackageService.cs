@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
@@ -29,7 +30,8 @@ internal sealed class WorkflowPackageService(
     IWorkflowDefinitionStore? workflowDefinitionStore = null,
     WorkflowOrchestrationEngine? orchestrationEngine = null,
     IMetadataReleaseService? metadataReleaseService = null,
-    IOptions<RbacOptions>? rbacOptions = null)
+    IOptions<RbacOptions>? rbacOptions = null,
+    ITenantContext? tenantContext = null)
 {
     /// <summary>
     /// Default source environment recorded on the metadata release package emitted when a
@@ -304,7 +306,7 @@ internal sealed class WorkflowPackageService(
             definition = definition with
             {
                 AuthorSecurityContext = JobSecurityContextCapture.Capture(
-                    principal, rbacOptions?.Value ?? new RbacOptions())
+                    principal, rbacOptions?.Value ?? new RbacOptions(), tenantContext)
             };
             await workflowDefinitionStore.SetAsync(definition, cancellationToken).ConfigureAwait(false);
         }

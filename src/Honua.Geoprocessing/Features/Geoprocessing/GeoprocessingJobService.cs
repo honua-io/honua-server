@@ -17,6 +17,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
@@ -57,6 +58,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -75,7 +77,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
-        IOptions<RbacOptions>? rbacOptions = null)
+        IOptions<RbacOptions>? rbacOptions = null,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _progressStore = progressStore;
@@ -89,6 +92,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <summary>
@@ -118,7 +122,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
         IOperationGateway? operationGateway = null,
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
-        ILayerAccessAuthorizer? layerAccessAuthorizer = null)
+        ILayerAccessAuthorizer? layerAccessAuthorizer = null,
+        IHttpContextAccessor? httpContextAccessor = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -138,7 +143,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions)
+            limitsOptions,
+            httpContextAccessor: httpContextAccessor)
     {
     }
 
@@ -1068,7 +1074,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         if (!inherits)
         {
-            return JobSecurityContextCapture.Capture(principal, _rbacOptions);
+            var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
+                .GetService<ITenantContext>();
+            return JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext);
         }
 
         return inherited ?? throw new GeoprocessingAuthorizationException(

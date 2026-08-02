@@ -4,6 +4,7 @@
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Orchestration;
@@ -35,7 +36,8 @@ internal static class WorkflowPackageServiceCollectionExtensions
             sp.GetService<IWorkflowDefinitionStore>(),
             sp.GetService<WorkflowOrchestrationEngine>(),
             sp.GetService<IMetadataReleaseService>(),
-            sp.GetService<IOptions<RbacOptions>>()));
+            sp.GetService<IOptions<RbacOptions>>(),
+            sp.GetService<ITenantContext>()));
 
         return services;
     }

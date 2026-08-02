@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 
@@ -160,6 +161,39 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public void Capture_EffectiveTenantContext_OverridesTokenTenantClaims()
+    {
+        // A multi-tenant admin can select a different effective tenant through the request
+        // header. Deferred authorization must replay the middleware result, not either raw
+        // tenant alias from the original token.
+        var principal = BuildPrincipal(("tenant_id", "token-tenant"), ("tid", "token-tenant"));
+        var tenantContext = new TestTenantContext("selected-tenant", TenantContextSource.Header);
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions(), tenantContext);
+        var restored = JobSecurityContextCapture.Restore(captured);
+
+        captured.TenantId.Should().Be("selected-tenant");
+        restored.FindAll("tenant_id").Select(claim => claim.Value).Should().Equal("selected-tenant");
+        restored.FindAll("tid").Select(claim => claim.Value).Should().Equal("selected-tenant");
+    }
+
+    [UnitTest]
+    public void Capture_ResolvedTenantlessContext_DoesNotFallBackToRawClaims()
+    {
+        // When tenant middleware is registered, its null result is authoritative. Falling back
+        // to a claim the configured claim list rejected would execute the job in the wrong
+        // tenant instead of preserving the live request's effective context.
+        var principal = BuildPrincipal(("tenant_id", "ignored-tenant"), ("tid", "ignored-tenant"));
+        var tenantContext = new TestTenantContext(null, TenantContextSource.Anonymous);
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(principal, new RbacOptions(), tenantContext));
+
+        restored.FindFirst("tenant_id").Should().BeNull();
+        restored.FindFirst("tid").Should().BeNull();
+    }
+
+    [UnitTest]
     public void Capture_NonRoleClaims_AreStillBounded()
     {
         // The bloat guard the budget exists for must survive the exemption: descriptive claims
@@ -192,4 +226,18 @@ public sealed class JobSecurityContextCaptureTests
             "Test",
             ClaimTypes.Name,
             ClaimTypes.Role));
+
+    private sealed class TestTenantContext(string? tenantId, TenantContextSource source) : ITenantContext
+    {
+        public string? TenantId { get; } = tenantId;
+
+        public TenantContextSource Source { get; } = source;
+
+        public bool RequireTenantId(out string tenant, out string? reason)
+        {
+            tenant = TenantId ?? string.Empty;
+            reason = TenantId is null ? "no tenant context resolved" : null;
+            return TenantId is not null;
+        }
+    }
 }
