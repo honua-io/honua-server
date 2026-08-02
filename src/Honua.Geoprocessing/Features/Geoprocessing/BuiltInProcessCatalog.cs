@@ -388,6 +388,33 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // Data enrichment (#2283)
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "enrichment.enrich",
+            Title = "Enrich Features",
+            Description = "Asynchronous batch counterpart of the synchronous POST /api/enrich endpoint (#2283). Resolves a managed/configured enrichment dataset by datasetId and enriches the target features with the dataset's carried attributes and aggregates through the shared managed spatial-join computation (JOIN_COUNT plus carried-attribute arrays and field:stat aggregates; targets are preserved one-to-one), or annotates each target with its single nearest dataset feature (method=nearest-neighbor, NEAR_DIST in planar CRS units). Targets come from EITHER a registered catalog layer (layerId, with optional where/bbox windowing) OR a staged inline FeatureCollection (input data URI). The dataset's minimum edition tier and the shared analytics.spatial-join entitlement are enforced at execution; the published FeatureCollection artifact carries the dataset id and attribution as foreign members. Both layers are streamed in EPSG:4326 and the artifact is published in EPSG:4326, so a cross-SRID pair is never joined on incomparable ordinates and the GeoJSON output is valid WGS 84 (RFC 7946). Distances ('distance', NEAR_DIST) are therefore evaluated in degrees — geodesic conversion is not performed, matching the other managed analytics executors; the synchronous endpoint's meters semantics do not apply on this managed path.",
+            Category = "enrichment",
+            Parameters =
+            [
+                Param("datasetId", "Enrichment Dataset", "Identifier of the managed enrichment dataset (slug) or configuration key, resolved through the same merged catalog as POST /api/enrich.", ProcessParameterValueType.Text, required: true),
+                Param("layerId", "Source Layer", "Identifier of the registered source layer whose features are enriched. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.LayerId),
+                Param("input", "Staged Source Features", "Staged source FeatureCollection as a data:application/geo+json;base64 data URI. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.Text),
+                Param("method", "Method", "Enrichment method vocabulary mirroring POST /api/enrich: intersects (default), point-in-polygon (dataset feature contains the target), within (target contains the dataset feature), within-distance (requires 'distance'), nearest-neighbor (annotates the closest dataset feature with NEAR_DIST). Takes precedence over 'predicate'.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Raw spatial predicate override. Allowed values: intersects, contains, within, dwithin. Falls back to the dataset default when neither 'method' nor this is supplied.", ProcessParameterValueType.Text),
+                Param("distance", "Distance", "Within-distance threshold in the CRS units of the layer geometries. Must be a finite positive number. Required when the effective method/predicate is within-distance/dwithin; the dataset's meters-based default distance is NOT inherited on this managed path.", ProcessParameterValueType.FloatingPoint),
+                Param("outputFields", "Output Fields", "Comma-separated dataset attributes carried onto each enriched feature. Defaults to the dataset's declared attributes.", ProcessParameterValueType.Text),
+                Param("aggregates", "Aggregates", "Semicolon-separated 'field:stat' aggregates computed over the matched dataset features (join methods only). Supported stats: count (emitted as JOIN_COUNT), sum, mean, min, max, stddev on numeric dataset fields.", ProcessParameterValueType.Text),
+                Param("where", "Where", "ArcGIS SQL filter applied to the source layer. Valid ONLY with the 'layerId' source — a staged 'input' FeatureCollection is enriched verbatim, so supplying this alongside 'input' is rejected rather than silently ignored.", ProcessParameterValueType.Text),
+                Param("bbox", "BBox", "Bounding-box filter applied to the source layer, as minx,miny,maxx,maxy in EPSG:4326 (exactly four numeric ordinates). Valid ONLY with the 'layerId' source — a staged 'input' FeatureCollection is enriched verbatim, so supplying this alongside 'input' is rejected rather than silently ignored.", ProcessParameterValueType.Text),
+                Param("maxInputFeatures", "Max Input Features", "Per-layer admission cap enforced while streaming, so an oversized selection fails fast instead of exhausting worker memory. Defaults to 250000 and is clamped to an operator ceiling of 1000000 — a caller may only LOWER the cap, never disable the guard. Applies equally to a staged 'input' collection.", ProcessParameterValueType.WholeNumber, defaultValue: "250000"),
+                Param("maxCarriedMatchValues", "Max Carried Match Values", "Cumulative ceiling on carried match values across the whole join, bounding the Cartesian growth the per-layer caps cannot see. Defaults to 20000000 and may only be LOWERED by the caller.", ProcessParameterValueType.WholeNumber, defaultValue: "20000000"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
         // Layer-aware overlay operations (#2206, #2139)
         // Managed (NetTopologySuite) overlay ops operating over TWO inline
         // FeatureCollections addressed by data URI — the layer-aware counterparts

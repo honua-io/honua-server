@@ -298,6 +298,12 @@ internal sealed class WorkflowPackageService(
                 schedule!,
                 cancellationToken).ConfigureAwait(false);
 
+            // Persist the publishing human's per-layer authorization with the definition. This
+            // stamps the enrichment source/dataset pins that later dispatch must enforce
+            // (#3043 review).
+            definition = await BindRequesterLayerAuthorizationAsync(definition, principal, cancellationToken)
+                .ConfigureAwait(false);
+
             // Capture the AUTHOR's row/field security identity here, the only point at which a
             // real principal is in hand for a scheduled workflow. Cron and event ticks create
             // runs under the synthesized orchestrator identity (role=admin), so without this the
@@ -781,6 +787,53 @@ internal sealed class WorkflowPackageService(
             UpdatedAt = now,
             Metadata = BuildProvenance(version, workflowDefinitionId, WorkflowPublicationTarget.Schedule, processId: null)
         };
+    }
+
+    /// <summary>
+    /// Authorizes every compiled step plan against the PUBLISHING principal and returns the
+    /// definition carrying the bindings that authorization produced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Publication is the last point at which a real human faces the per-layer read gate for a
+    /// scheduled workflow: cron, event, and manual runs of this definition are all reconciled
+    /// by a background tick that submits each step under a synthesized orchestrator principal
+    /// carrying the wildcard-granted <c>admin</c> role. If the requester's layer binding did
+    /// not travel with the stored definition, that tick would re-authorize the step against an
+    /// effectively omnipotent identity — so an admin who re-points a managed enrichment
+    /// dataset after publication could make the workflow read a layer the publisher was never
+    /// allowed to read (#3043 review).
+    /// </para>
+    /// <para>
+    /// Persisting the bound plans pins the binding instead: the submit-time gate enforces it
+    /// on every later dispatch and fails the step when the dataset no longer resolves to the
+    /// pinned layer. This authorizes the plans that will ACTUALLY execute, which is strictly
+    /// narrower than the whole-graph compiled plan the caller also checks; both run, and the
+    /// evaluation is idempotent.
+    /// </para>
+    /// </remarks>
+    private async Task<WorkflowDefinition> BindRequesterLayerAuthorizationAsync(
+        WorkflowDefinition definition,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        WorkflowStepDefinition[]? boundSteps = null;
+        for (var index = 0; index < definition.Steps.Count; index++)
+        {
+            var step = definition.Steps[index];
+            var boundPlan = await geoprocessingJobService
+                .EnsurePlanExecutionTierAuthorizedAsync(step.Plan, principal, cancellationToken)
+                .ConfigureAwait(false);
+            if (ReferenceEquals(boundPlan, step.Plan))
+            {
+                continue;
+            }
+
+            boundSteps ??= [.. definition.Steps];
+            boundSteps[index] = step with { Plan = boundPlan };
+        }
+
+        return boundSteps is null ? definition : definition with { Steps = boundSteps };
     }
 
     private async Task<IReadOnlyList<WorkflowNodePortSchema>> ResolveOutputSchemasAsync(

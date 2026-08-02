@@ -17,7 +17,6 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
@@ -58,7 +57,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
-    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -77,8 +75,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
-        IOptions<RbacOptions>? rbacOptions = null,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IOptions<RbacOptions>? rbacOptions = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _progressStore = progressStore;
@@ -92,7 +89,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
-        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <summary>
@@ -123,7 +119,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperationGateway? operationGateway = null,
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
         ILayerAccessAuthorizer? layerAccessAuthorizer = null,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -133,6 +130,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 approvalEvaluator,
                 scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
                 layerAccessAuthorizer ?? NullLayerAccessAuthorizer.Instance,
+                // Always composed (never null): the submit-time layer read gate must not be
+                // skippable by construction path. A caller that omits BOTH the accessor and
+                // the scope factory gets a gate with no evaluable authorization context,
+                // which denies layer-sourced plans rather than waving them through.
+                new GeoprocessingLayerAccessGuard(
+                    httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
+                httpContextAccessor ?? new HttpContextAccessor(),
                 logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
@@ -143,8 +147,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions,
-            httpContextAccessor: httpContextAccessor)
+            limitsOptions)
     {
     }
 
@@ -159,7 +162,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
-    public async Task EnsurePlanExecutionTierAuthorizedAsync(
+    public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -175,13 +178,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Per-layer read access is evaluated here for the same reason the mutating tier is
-        // (#2798, #3046): the workflow reconcile loop submits each step under a synthesized
-        // orchestrator principal carrying role=admin, so the submit-path layer gate would
-        // evaluate the orchestrator rather than the operator who scheduled the run. Gating the
-        // REQUESTING principal at run creation keeps a workflow from becoming a laundering
-        // route for layers its author cannot read.
+        // Evaluate both layer gates against the REQUESTING principal before workflow dispatch
+        // switches to the synthesized orchestrator identity. The generic catalog gate covers
+        // every declared LayerId parameter and its read/write operation (#3046); the enrichment
+        // guard additionally resolves the indirect dataset layer and returns source/dataset
+        // pins that close the publication-to-dispatch TOCTOU window (#2283/#3043).
         await _authorizer.EnsurePlanLayerAccessAsync(principal, plan, _processCatalog, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The bound plan is RETURNED, not discarded. Authoring surfaces must persist it so a
+        // later admin-carrying reconcile tick enforces the requester's bindings rather than
+        // deriving new ones from the dataset's current target.
+        return await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -422,21 +430,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Per-layer READ authorization for every catalog layer the plan names (#3046).
-        // A Process.Execute grant authorizes running a process; it does NOT authorize
-        // reading an arbitrary layer's features through one. This runs BEFORE the job
-        // record is created (and before raster sources are materialized onto the spec)
-        // so a denied submission leaves no job behind.
-        //
-        // The resume lane re-evaluates rather than skipping. Proposal-time authorization is not
-        // a durable fact about the resumed job: the worker resolves the CURRENT layer bound to
-        // the stored numeric id, so a grant revoked — or an id rebound to a restricted layer —
-        // while the proposal sat pending would otherwise be honoured anyway. What the resume
-        // lane must not do is re-evaluate the name-only reconstructed principal; it evaluates
-        // the persisted submitter snapshot instead (ADR-0064, #2814, honua-server#3046 review).
+        // Generic per-layer authorization for every declared catalog-layer parameter (#3046).
+        // This runs before a durable record is created and is re-evaluated on approval resume
+        // against the restored submitter snapshot, so a revoked grant or rebound numeric id
+        // cannot inherit the proposal-time decision.
         await _authorizer
             .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, _processCatalog, cancellationToken)
             .ConfigureAwait(false);
+
+        // The enrichment-specific guard additionally resolves its indirect dataset layer and
+        // stamps source/dataset pins onto the plan (#2283/#3043). On approval resume the stored
+        // proposal already carries those live-requester bindings; the executor enforces them,
+        // while the generic gate above still rechecks every directly declared layer reference.
+        if (!resumingApproved)
+        {
+            plan = await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (!resumingApproved)
         {
@@ -1074,9 +1084,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         if (!inherits)
         {
-            var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
-                .GetService<ITenantContext>();
-            return JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext);
+            return _authorizer.CaptureSecurityContext(principal, _rbacOptions);
         }
 
         return inherited ?? throw new GeoprocessingAuthorizationException(

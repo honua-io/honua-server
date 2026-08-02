@@ -19,14 +19,23 @@ public interface IWorkflowJobExecutor
     /// <summary>
     /// Evaluates the plan-scoped authorization required to run <paramref name="plan"/>
     /// against <paramref name="principal"/>, throwing when the principal lacks the grant a
-    /// mutating (or otherwise elevated) step requires, or read access to a catalog layer the
-    /// plan reads. Workflow run creation calls this against the REQUESTING principal
-    /// <em>before</em> any step job is submitted under the synthesized orchestrator identity,
-    /// so an <c>Execute</c>-only operator cannot schedule a workflow whose compiled steps
-    /// import, mutate, or sink under an admin-bypassing system principal that never faces the
-    /// mutating-process tier (#2798), nor read a layer it is denied on (#3046).
+    /// mutating (or otherwise elevated) step requires, or read access to a catalog layer a
+    /// layer-sourced step would read. Workflow run creation calls this against the REQUESTING
+    /// principal <em>before</em> any step job is submitted under the synthesized orchestrator
+    /// identity, so an <c>Execute</c>-only operator cannot schedule a workflow whose compiled
+    /// steps import, mutate, or sink under an admin-bypassing system principal that never
+    /// faces the mutating-process tier (#2798), nor one whose steps read a layer the operator
+    /// cannot read on any protocol surface (#2283/#3043/#3046).
     /// </summary>
-    Task EnsurePlanExecutionAuthorizedAsync(
+    /// <returns>
+    /// The plan with the gate's per-layer bindings stamped on it. Callers MUST persist this
+    /// instance for dispatch rather than the plan they passed in: for a ForEach step the
+    /// concrete layer/dataset id exists only after expansion, so publication could not stamp a
+    /// pin and the stored definition carries none. Discarding the bound plan therefore left
+    /// reconciliation submitting an unpinned step, which the layer gate refuses
+    /// (honua-server#3043 review).
+    /// </returns>
+    Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);

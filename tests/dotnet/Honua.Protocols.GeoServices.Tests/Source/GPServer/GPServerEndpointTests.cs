@@ -36,6 +36,11 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 public sealed class GPServerEndpointTests : IAsyncLifetime
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    // Submit-time plan validation only requires an inline raster 'source' to be
+    // present and non-blank (the bytes are the executing worker's/backend's
+    // concern), so a placeholder is enough to exercise the choice-parameter path.
+    private const string InlineRasterSourceBase64 = "SUkqAAgAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
@@ -517,6 +522,59 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ChoiceValueInNonCatalogCasing_RemainsExecutable()
+    {
+        // Esri's GP framework matches value lists case-insensitively, so the
+        // adapter accepts 'Detection'. Before #3053 it then passed the caller's
+        // spelling through verbatim and the ordinally-comparing canonical plan
+        // validator rejected the very submission the adapter had just accepted.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["source"] = InlineRasterSourceBase64,
+            ["task"] = "Detection"
+        });
+
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/imagery.classify/submitJob", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "a choice value the adapter accepted must stay executable through canonical plan validation");
+        doc.RootElement.GetProperty("jobId").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ChoiceValueOutsideTheAllowedList_ReturnsBadRequestNamingTheAcceptedValues()
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["source"] = InlineRasterSourceBase64,
+            ["task"] = "Detektion"
+        });
+
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/imagery.classify/submitJob", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = doc.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+
+        // The rejection must tell the caller what IS accepted, and must not leak
+        // internals (type names, stack frames, provider detail).
+        var body = error.ToString();
+        body.Should().Contain("classification").And.Contain("segmentation").And.Contain("detection");
+        body.Should().NotContain("Exception").And.NotContain("Honua.");
     }
 
     [IntegrationTest]
@@ -1397,11 +1455,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1454,11 +1512,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1513,11 +1571,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1631,11 +1689,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1759,11 +1817,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -1843,11 +1901,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

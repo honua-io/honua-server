@@ -6,6 +6,8 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing;
 
@@ -24,27 +26,62 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
+    private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
-    /// the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851), and the shared per-layer access authorizer that gates the catalog
-    /// layers a submitted plan will read (honua-server#3046).
+    /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
+    /// (honua-server#2851), the generic per-layer access authorizer (#3046), and the enrichment
+    /// layer-binding guard (#2283/#3043).
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
         ILayerAccessAuthorizer layerAccessAuthorizer,
+        GeoprocessingLayerAccessGuard layerAccessGuard,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<GeoprocessingJobService> logger)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _scopeAuthorizer = scopeAuthorizer;
         _layerAccessAuthorizer = layerAccessAuthorizer;
+        _layerAccessGuard = layerAccessGuard;
+        _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Captures the submitter identity together with the effective tenant selected by request
+    /// middleware. Keeping this behind the authorization collaborator avoids adding another
+    /// cross-cutting dependency to the job lifecycle service.
+    /// </summary>
+    public JobSecurityContext CaptureSecurityContext(ClaimsPrincipal principal, RbacOptions options)
+    {
+        var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
+            .GetService<ITenantContext>();
+        return JobSecurityContextCapture.Capture(principal, options, tenantContext);
+    }
+
+    /// <summary>
+    /// Enforces read access, for the submitting principal, on every catalog layer the plan's
+    /// gated steps will read, and returns the plan with the authorized dataset-layer identity
+    /// bound to each gated step. Delegates to <see cref="GeoprocessingLayerAccessGuard"/>, which
+    /// is composed here rather than injected alongside this type so that all of the submit-time
+    /// authorization concerns reach the job service through a single collaborator.
+    /// </summary>
+    /// <param name="plan">The submitted analysis plan.</param>
+    /// <param name="principal">The submitting principal.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The plan to submit, carrying the authorized dataset-layer bindings.</returns>
+    public Task<AnalysisPlan> EnsureLayerReadAccessAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+        => _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken);
 
     /// <summary>
     /// Evaluates the caller's authorization for the specified resource/operation and throws

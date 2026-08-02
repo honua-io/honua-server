@@ -74,8 +74,14 @@ internal interface IGeoprocessingJobService
     /// workflow orchestration engine can evaluate the REQUESTING principal at run creation
     /// before step jobs are dispatched under the admin-bypassing orchestrator identity.
     /// Baseline <see cref="OperatorOperation.Execute"/> is assumed pre-checked by the caller.
+    /// <para>
+    /// Returns the plan carrying any enrichment source/dataset bindings produced by the
+    /// requester's authorization. Authoring surfaces that persist a plan for later background
+    /// dispatch MUST store this returned instance so reconciliation enforces those pins rather
+    /// than re-deriving them under the orchestrator identity (#3043 review).
+    /// </para>
     /// </summary>
-    Task EnsurePlanExecutionTierAuthorizedAsync(
+    Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);

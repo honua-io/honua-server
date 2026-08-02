@@ -101,6 +101,51 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             + "Republish the workflow to enable scheduled and event-triggered runs.");
     }
 
+    /// <summary>
+    /// Input keys whose value names a catalog object the submit-time layer gate authorizes.
+    /// Deliberately a name match rather than a catalog lookup: the check must hold for any
+    /// process, including ones added later, and over-matching only ever refuses more.
+    /// </summary>
+    private static bool IsCatalogIdentifierInput(string key)
+        => key.EndsWith("layerId", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("datasetId", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Refuses a background-triggered workflow whose catalog identifiers are supplied through a
+    /// ForEach placeholder.
+    /// </summary>
+    /// <remarks>
+    /// Permanent by construction — it is a property of the stored definition — so it throws the
+    /// exception both trigger loops treat as permanent rather than spinning the occurrence.
+    /// Manual runs are unaffected: they carry a real principal, so run-creation authorization of
+    /// the expanded plan IS the requester's decision. Lifting this needs publisher-derived
+    /// authority at expansion time, which the definition does not currently carry
+    /// (honua-server#3043 review).
+    /// </remarks>
+    private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
+    {
+        foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
+        {
+            var placeholder = step.ForEach!.ItemPlaceholder;
+            foreach (var planStep in step.Plan.Steps)
+            {
+                var dynamicInput = planStep.Inputs.FirstOrDefault(input =>
+                    IsCatalogIdentifierInput(input.Key)
+                    && input.Value.Contains(placeholder, StringComparison.Ordinal));
+
+                if (dynamicInput.Key is not null)
+                {
+                    throw new WorkflowDefinitionValidationException(
+                        $"Step '{step.StepId}' supplies the catalog identifier '{dynamicInput.Key}' from a "
+                        + "ForEach item, which a background trigger cannot authorize: publication resolves "
+                        + "the publisher's access but cannot see the item value, and authorizing it at run "
+                        + "creation would use the orchestrator's admin authority. Use a static identifier, "
+                        + "or run this workflow manually.");
+                }
+            }
+        }
+    }
+
     public async Task<WorkflowRun> CreateRunAsync(
         WorkflowDefinition definition,
         WorkflowTriggerKind triggerKind,
@@ -135,21 +180,23 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // every step execute without anyone facing the gates. The check runs before the run
         // is persisted so a denial leaves no orphaned run state.
         //
-        // A cron or event-triggered firing has no requesting principal — the scheduler and
-        // event-trigger services call in as the orchestrator, which is exactly the admin
-        // identity this gate exists to avoid evaluating. Authorizing it would make every
-        // subsequent tick pass unconditionally: the publication-time check goes stale the
-        // moment the author's layer grant is revoked or the referenced numeric id is rebound
-        // to a different layer, yet the run would still read under the author's captured
-        // row/field claims. Each firing therefore re-authorizes the AUTHOR, restored from the
-        // snapshot captured at publish (honua-server#3046 review).
+        // A background firing has no requesting human. Reject dynamic catalog identifiers that
+        // publication could not bind, then re-authorize every expanded plan against the AUTHOR
+        // restored from the durable snapshot rather than the scheduler's admin identity. Manual
+        // runs authorize the live requester and retain any pins produced after expansion.
+        if (triggerKind != WorkflowTriggerKind.Manual)
+        {
+            RejectDynamicCatalogIdentifiers(definition);
+        }
+
         var authorizationPrincipal = triggerKind == WorkflowTriggerKind.Manual
             ? principal
             : JobSecurityContextCapture.Restore(runSecurityContext);
 
+        var authorizedPlans = new Dictionary<string, AnalysisPlan>(StringComparer.Ordinal);
         foreach (var step in expanded.Steps)
         {
-            await _jobService
+            authorizedPlans[step.StepId] = await _jobService
                 .EnsurePlanExecutionAuthorizedAsync(step.Plan, authorizationPrincipal, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -162,7 +209,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 StepId = step.StepId,
                 PlanId = step.Plan.PlanId,
                 Status = WorkflowStepStatus.Pending,
-                AttemptCount = 0
+                AttemptCount = 0,
+                AuthorizedPlan = authorizedPlans.GetValueOrDefault(step.StepId)
             })
             .ToArray();
 
@@ -721,7 +769,16 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.InputBindingResolved(_logger, run.RunId, state.StepId, pair.Key, pair.Value);
         }
 
-        var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
+        // Prefer the plan the gate authorized at RUN CREATION: it carries the bindings produced
+        // for THIS run's expanded step, which is the only place a ForEach step's concrete layer
+        // and dataset ids are known. The stored definition is the fallback for runs created
+        // before that plan was persisted, where publication's binding on a static layer id is
+        // what travels (#3043). Either way the submit-time gate matches the binding against the
+        // layer the dataset resolves to NOW and refuses on a mismatch, so a dataset re-pointed
+        // between authorization and dispatch fails this step rather than being re-authorized
+        // under the orchestrator identity below.
+        var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
+        var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);
