@@ -68,6 +68,112 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:DefaultConnection");
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:redis");
         ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
+        ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
+        ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
+    }
+
+    /// <summary>
+    /// Validates or resolves security values that are consumed directly from configuration. The AWS
+    /// serverless module deliberately injects the admin password and connection-encryption master key
+    /// as Secrets Manager references. Authentication retains its reference for per-request refresh,
+    /// while connection encryption requires a stable process-lifetime key snapshot.
+    /// </summary>
+    public static async Task ResolveSecuritySecretReferencesAsync(
+        ConfigurationManager configuration,
+        bool isProduction,
+        CancellationToken cancellationToken = default)
+    {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        var keys = new[]
+        {
+            "HONUA_ADMIN_PASSWORD",
+            "Security:ConnectionEncryption:MasterKey"
+        };
+
+        // AddSecurityConfiguration can introduce either key after the initial environment-reference
+        // pass near the start of Program.cs, so normalize env: references again at the final source order.
+        foreach (var key in keys)
+        {
+            ResolveEnvironmentSecretReference(configuration, key);
+        }
+
+        if (!keys.Any(key => configuration[key]?.StartsWith(
+                awsSecretsManagerPrefix,
+                StringComparison.OrdinalIgnoreCase) == true))
+        {
+            return;
+        }
+
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var resolver = new AwsSecretsManagerResolver(
+            secretsClient,
+            metadataClient,
+            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+
+        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task ResolveSecuritySecretReferencesAsync(
+        ConfigurationManager configuration,
+        Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
+        IEnumerable<string> keys,
+        bool isProduction,
+        CancellationToken cancellationToken = default)
+    {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        foreach (var key in keys)
+        {
+            var reference = configuration[key];
+            if (string.IsNullOrWhiteSpace(reference) ||
+                !reference.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!resolver.CanResolve(reference))
+            {
+                throw new InvalidOperationException(
+                    $"The AWS Secrets Manager reference configured for security setting '{key}' is invalid or cannot be resolved.");
+            }
+
+            string? resolved;
+            try
+            {
+                resolved = await resolver.ResolveSecretAsync(reference, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.",
+                    ex);
+            }
+
+            if (string.IsNullOrEmpty(resolved))
+            {
+                throw new InvalidOperationException(
+                    $"AWS Secrets Manager returned an empty value for the security setting '{key}'.");
+            }
+
+            // Authentication handlers deliberately keep the reference and resolve it on each
+            // request so a warm process observes secret rotation. Resolve once here only to fail
+            // startup on an inaccessible or weak production credential. The connection-encryption
+            // master key is different: changing it while a process is live would make existing
+            // ciphertext unreadable, so that key remains a process-lifetime snapshot.
+            if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isProduction)
+                {
+                    AdminPasswordValidation.ValidateProductionPassword(resolved);
+                }
+
+                continue;
+            }
+
+            configuration[key] = resolved;
+        }
     }
 
     private static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
