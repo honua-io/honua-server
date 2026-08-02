@@ -158,10 +158,11 @@ PostGIS. Promotion and registration are atomic only when they share a
 transactional sink, as with PostGIS materialization and its catalog row. For an
 object artifact plus database catalog entry, the object commit marker is the
 authoritative winner and registration is an explicit, durable, idempotently
-reconciled cross-store step. A job requesting that registration remains in a
-finalizing state until the matching catalog entry is durable; it does not claim
-cross-store atomicity. Creating an object does not implicitly create or replace
-a layer.
+reconciled cross-store step. A job requesting that registration retains
+canonical status `Running` with durable
+`OutputPublicationPhase.Finalizing` until the matching catalog entry is
+durable; it does not claim cross-store atomicity. Creating an object does not
+implicitly create or replace a layer.
 
 ### Failure, fallback, retry, and idempotency
 
@@ -216,11 +217,14 @@ a layer.
   the worker's later commit fails. For object output this is an `If-Match`
   transition of the stable intent marker to an aborted state; for PostGIS it is
   a conditional update in the sink database. The durable job does not become
-  `Cancelled` or `Failed` until all intents are committed or aborted. An
-  unreachable sink leaves the job in a terminalizing state for reconciliation,
-  rather than leaving a valid publication token behind. Cancellation also
-  stops new work, propagates to the selected executor, and cleans uncommitted
-  staging artifacts without deleting a previously committed result.
+  `Cancelled` or `Failed` until all intents are committed or aborted. While
+  reconciling an unreachable sink, its canonical status remains `Running`, its
+  durable `OutputPublicationPhase` is `Terminalizing`, and a separate requested
+  terminal status records `Cancelled` or `Failed`; no new execution is
+  admitted. This is the orthogonal phase mapping defined by ADR-0031, not a new
+  `ExecutionJobStatus`. Cancellation also stops new work, propagates to the
+  selected executor, and cleans uncommitted staging artifacts without deleting
+  a previously committed result.
 
 These rules prevent a timeout in one engine from producing a second,
 numerically different result or duplicating a partially committed output in

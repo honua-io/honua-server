@@ -45,6 +45,14 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
 | Failed | Terminal: execution failed (may be retried) |
 | Cancelled | Terminal: cancelled by user or system |
 
+Output publication does not add values to this enum. Jobs with fenced output
+intents retain `ExecutionJobStatus.Running` while a durable, orthogonal
+`OutputPublicationPhase` is `Finalizing` or `Terminalizing`. During
+terminalization the record also persists the requested terminal status
+(`Failed` or `Cancelled`) and admits no new execution. The coordinator changes
+the canonical status only after every sink intent is committed or aborted. Jobs
+without output intents keep the existing direct transitions.
+
 ### Claim and Heartbeat
 
 - `IJobQueue.TryClaimAsync` atomically removes a job from the pending set and
@@ -100,7 +108,12 @@ Millisecond timestamps break ties within a band.
 - Enforcement is dual-layered: `JobExecutionService` sets a
   `CancellationTokenSource` timeout for in-process detection, while
   `JobReconciliationService` catches workers that crash without cancelling.
-- Jobs that exceed their timeout are marked Failed and are **not** retried.
+- Jobs that exceed their timeout are **not** retried. A job without fenced
+  output intents is marked Failed directly. A job with such intents first
+  records requested status `Failed` plus output phase `Terminalizing`, revokes
+  the intents as defined by ADR-0071, and then changes the canonical status to
+  Failed. This is one terminal transition with no requeue or replacement
+  attempt, not a retry state.
 
 ### Cancellation
 
@@ -113,13 +126,17 @@ Millisecond timestamps break ties within a band.
   the terminal state transition and the API returns immediately.
 - When no local notifier can reach the worker (the common case in split
   API/worker deployments), the API checks the job's claim state:
-  - **Unclaimed** (`ClaimedBy` is null): the API marks the job as Cancelled
-    directly and removes it from the queue.
+  - **Unclaimed** (`ClaimedBy` is null): the API removes the job from the queue
+    and marks it Cancelled directly when it owns no fenced output intent.
+    Otherwise it records requested status `Cancelled` and output phase
+    `Terminalizing`, aborts those intents, and then marks it Cancelled.
   - **Actively claimed**: the API persists `CancellationRequestedAt` on the
     `ExecutionJobRecord` as a durable cancellation signal. The worker observes
     this signal during its next heartbeat read and cancels locally. If the
     worker's heartbeat expires before it processes the signal, the reconciler
-    honours the request with a terminal Cancelled state instead of retrying.
+    honours the request instead of retrying. It first aborts fenced output
+    intents under `OutputPublicationPhase.Terminalizing`, when present, and
+    only then writes the terminal Cancelled status.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 - When the reconciler requeues or terminally fails a job (heartbeat or timeout
