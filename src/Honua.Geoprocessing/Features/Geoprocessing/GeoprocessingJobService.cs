@@ -233,6 +233,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 
+        var rasterExecutionViolation = GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan);
+        if (rasterExecutionViolation is not null)
+        {
+            violations.Add(rasterExecutionViolation);
+        }
+
         foreach (var v in catalogViolations.Where(v => v.Code == "UNKNOWN_PROCESS"))
         {
             GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
@@ -270,6 +276,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ValidatePlanStructure(plan);
         EnsurePlanCatalogValid(plan);
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Prefer the plan's declared outputs; when absent, derive the artifact kinds from
         // the catalog definitions of the plan's Geoprocess steps so the estimate reflects
@@ -383,6 +390,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
         _artifacts.ValidateRasterSources(plan, cancellationToken);
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no

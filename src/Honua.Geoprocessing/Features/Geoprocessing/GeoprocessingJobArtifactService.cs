@@ -22,6 +22,11 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal sealed class GeoprocessingJobArtifactService
 {
+    internal const string TypedRasterExecutionNotSupportedCode = "RASTER_SOURCE_REFERENCE_REQUIRES_RESOLUTION";
+    private const string TypedRasterExecutionNotSupportedMessage =
+        "Direct durable raster references require authenticated server-side resolution; "
+        + "use the catalog layerId/rasterId path. Bounded inline raster sources remain supported.";
+
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly IProcessCatalog _processCatalog;
@@ -97,6 +102,41 @@ internal sealed class GeoprocessingJobArtifactService
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Refuses client-supplied durable descriptors before they can run under worker credentials.
+    /// Authenticated catalog selectors are resolved to descriptors later in the submit pipeline;
+    /// bounded typed inline sources contain no ambient object-store authority and remain valid.
+    /// </summary>
+    public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
+    {
+        var violation = GetTypedRasterExecutionViolation(plan);
+        if (violation is not null)
+        {
+            throw new GeoprocessingValidationException($"{violation.Code}: {violation.Message}");
+        }
+    }
+
+    /// <summary>Returns a structured violation for a client-supplied durable raster descriptor.</summary>
+    public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(AnalysisPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        foreach (var step in plan.Steps)
+        {
+            if (step.RasterSources.Any(source => source.Value is not InlineRasterSourceDescriptor))
+            {
+                return new GeoprocessingValidationFailure
+                {
+                    Code = TypedRasterExecutionNotSupportedCode,
+                    Message = TypedRasterExecutionNotSupportedMessage,
+                    FieldPath = $"steps[{step.StepId}].raster_sources",
+                };
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

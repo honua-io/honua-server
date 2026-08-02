@@ -183,6 +183,19 @@ public sealed class GeoprocessingJobServiceTests
         result.Warnings.Should().Contain(w => w.Contains("QueryFeatures", StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_DirectDurableRasterReference_RequiresAuthenticatedResolution()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
+            && violation.FieldPath == "steps[step-raster].raster_sources");
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------
@@ -201,6 +214,17 @@ public sealed class GeoprocessingJobServiceTests
         // geometry.buffer produces a feature layer — derived from the catalog when the plan
         // declares no explicit outputs.
         result.EstimatedArtifacts.Should().Contain(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_DirectDurableRasterReference_RequiresAuthenticatedResolution()
+    {
+        var act = () => _sut.DryRunPlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode}*");
     }
 
     // -----------------------------------------------------------------------
@@ -269,19 +293,16 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_TypedRasterSource_PersistsMetadataOnlyV2Contract()
+    public async Task SubmitJob_DirectDurableRasterReference_RejectsBeforePersistence()
     {
-        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
         var plan = CreateTypedRasterPlan("source");
 
-        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
 
-        job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
-        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
-            .Should().Contain("\"sourceType\":\"cog\"")
-            .And.NotContain("payload");
-        await _jobStore.Received(1).TryCreateAsync(
+        exception.Message.Should().Contain(
+            GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
