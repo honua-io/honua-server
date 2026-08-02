@@ -198,7 +198,7 @@ audit with the new artifact suffixes:
 
 ```bash
 gh run download <run-id> --dir /tmp/honua-shard-audit
-scripts/ci/audit-shard-headroom.py /tmp/honua-shard-audit \
+scripts/ci/audit-shard-headroom.py --timings-dir /tmp/honua-shard-audit \
   --config .github/ci-shards.json
 ```
 
