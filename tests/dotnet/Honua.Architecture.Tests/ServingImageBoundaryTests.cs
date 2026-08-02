@@ -103,6 +103,18 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("http://localhost:8080/healthz/live");
         workflow.Should().Contain("validate-serving-image-boundary.py");
 
+        var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
+        foreach (var project in new[]
+                 {
+                     "Honua.Redshift",
+                     "Honua.Snowflake",
+                     "Honua.Databricks",
+                     "Honua.Protocols.SensorThings"
+                 })
+        {
+            functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
+        }
+
         foreach (var transitiveInput in new[]
                  {
                      "src/**",
