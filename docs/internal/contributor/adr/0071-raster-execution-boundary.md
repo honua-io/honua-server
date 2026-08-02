@@ -122,8 +122,9 @@ payload bytes and evaluates, in order:
 Every durable raster job owns an append-only sequence of attempt-scoped routing
 records. Before any executor attempt starts—including the initial selection, a
 same-engine retry, a pre-execution fallback, or a post-failure replan—the
-durable coordinator appends a record with an immutable attempt identifier,
-selected engine, placement, runtime/worker-image contract version, input
+durable coordinator appends a record with an immutable attempt identifier and
+current-attempt fencing token, selected engine, placement, runtime/worker-image
+contract version, input
 residency, cost estimate, output sink, decision reason, and applicable operator
 override. A new selection or retry never updates or replaces a prior record.
 The attempt identifier also scopes the executor outcome and staged artifacts so
@@ -174,8 +175,12 @@ creating an object does not implicitly create or replace a layer.
   a stable idempotency key.
 - PostGIS outputs use transaction/staging semantics where possible. Object
   outputs use attempt-scoped keys followed by atomic promotion or an equivalent
-  compare-and-set registration. Catalog registration is idempotent by job,
-  logical output, and attempt.
+  compare-and-set registration. Promotion and catalog registration atomically
+  verify the durable job's current-attempt fencing token and commit at most one
+  result per job and logical output. A worker holding a stale token may neither
+  promote nor replace that result; its attempt-scoped staging artifacts remain
+  uncommitted for policy-driven cleanup. Repeating promotion with the same
+  current token and idempotency key returns the already committed result.
 - Cancellation stops new work, propagates to the selected executor, and cleans
   uncommitted staging artifacts without deleting a previously committed result.
 

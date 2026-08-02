@@ -6,10 +6,10 @@ Date: 2026-07-04
 Raster specialization: [ADR-0071](0071-raster-execution-boundary.md) controls
 raster engine and placement within the execution/GP plane. A configured batch
 backend is an eligible placement, not a universal destination: bounded,
-data-resident raster work prefers PostGIS when it fits the database SLO budget,
-while isolated native execution protects that budget for external, bursty, or
-high-resource jobs. Large raster inputs and outputs cross the plane by typed
-artifact reference.
+data-resident raster work may prefer PostGIS only when its capabilities,
+data-locality, and database SLO budget all qualify, while native execution must
+likewise satisfy its capability, locality/staging, and worker-budget gates.
+Large raster inputs and outputs cross the plane by typed artifact reference.
 
 ## Context
 
@@ -35,8 +35,11 @@ Adopt a **two-plane, substrate-neutral operability architecture**: Honua owns th
 
 For raster jobs, the execution plane includes governed durable PostGIS work as
 well as local and remote native workers. The planner defined by ADR-0071 chooses
-among them before an attempt starts; `IBatchComputeBackend` is used only when
-the selected placement is remote native execution.
+among them before an attempt starts. `IBatchComputeBackend` is the
+substrate-neutral dispatch seam for eligible local-process-pool and remote
+native placements; governed PostGIS execution remains behind its database
+executor rather than bypassing the planner or creating a parallel native-job
+lifecycle.
 
 ### Blue/green is NOT the primitive
 Because compute is stateless, the primitive is **(statelessness) + (a Honua-owned cutover semantic: rolling replace + health-gate + keep-old-until-healthy) + (a thin executor)** — *not* AWS/K8s-native blue/green. Coupling ops to a cloud's deployment strategy breaks on-prem/air-gapped and is unnecessary given stateless compute.
