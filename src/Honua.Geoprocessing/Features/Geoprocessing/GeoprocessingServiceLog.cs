@@ -60,6 +60,14 @@ internal static partial class GeoprocessingServiceLog
         string resourceType,
         string operation);
 
+    // The layer id is deliberately NOT logged at Warning with the denial: the reason is
+    // enough to diagnose, and the client-facing denial is uniform so it cannot be used to
+    // probe which layer ids exist.
+    [LoggerMessage(8035, LogLevel.Warning, "Layer read access denied for geoprocessing submission: Reason={Reason}")]
+    public static partial void LayerReadAccessDenied(
+        ILogger logger,
+        string reason);
+
     [LoggerMessage(8008, LogLevel.Information, "Job submitted (idempotent replay): JobId={JobId}")]
     public static partial void JobSubmittedIdempotent(
         ILogger logger,

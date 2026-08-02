@@ -120,6 +120,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         // GeoprocessingJobService constructor binds them; their own optional collaborators
         // resolve to null/empty when the backing infrastructure is absent.
         services.TryAddSingleton<GeoprocessingJobAuthorizer>();
+        // Submit-time per-layer read gate (#2283 review). Prefers the ambient request to
+        // reach the shared access pipeline (grants, tenant scope, metadata snapshot), so
+        // the accessor is registered here rather than assumed from the host wiring; the
+        // IServiceScopeFactory the container always provides covers contextless
+        // (workflow/background) submissions, which are evaluated against the submitting
+        // principal over a fresh scope rather than denied outright (#3043 review).
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
@@ -308,6 +316,11 @@ internal static class GeoprocessingServiceCollectionExtensions
         // the joinLayerId through source.honua-layer and enriches each target feature
         // with matched join attributes/aggregates in one dispatched job.
         Register<LayerSpatialJoinExecutor>(services);
+        // Async batch enrichment (#2283): the job-executable counterpart of
+        // POST /api/enrich — resolves a managed enrichment dataset by id and joins
+        // a layer-backed or staged inline target set against the dataset's layer
+        // through the shared spatial-join computation.
+        Register<EnrichmentJobExecutor>(services);
         // Layer-aware overlay tool pack (#2206, #2139).
         Register<OverlayClipExecutor>(services);
         Register<OverlayIntersectExecutor>(services);

@@ -803,6 +803,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_Dismiss_UsesExistingJobLifecycleEndpoints",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesAuthorizationTests.DismissJob_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests.DismissJob_AlreadyCancelled_ReturnsOkWhenQueueRemovalFails",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests.DismissJob_CasConflictRevealsSucceeded_Returns409",
@@ -6841,6 +6842,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitPollFetchResults_ReturnsEnrichedFeatureCollectionWithProvenance",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.GeometryBufferJobExecutorIntegrationTests.BufferProcess_CompletesAndReturnsBufferedGeometry",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.AreaProcess_CompletesAndReturnsPlanarMeasure",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.CentroidProcess_CompletesAndReturnsCenterPoint",
@@ -7413,6 +7415,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_PjsonFormat_ReturnsCatalogPayload",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogSceneServerTests.GetServicesDirectory_Enterprise_ListsRegisteredSceneServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogSceneServerTests.GetServicesDirectory_OpenCore_OmitsSceneServer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_LayerlessGpService_TypedAsGpServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_MultiProtocolService_ListedOncePerEsriType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_RasterService_TypedAsImageServerNotFeatureServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_VectorService_TypedAsFeatureServer"
@@ -13019,6 +13022,7 @@
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_UnknownDataset_ReturnsNotFound",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithAggregates_ReturnsAggregateProperty",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentSyncLimitTests.Enrich_OverLimit_ReturnsPayloadTooLarge"
       ],
       "proof_ledger_surface": "data-enrichment",
@@ -16940,6 +16944,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_Dismiss_UsesExistingJobLifecycleEndpoints",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_InlineSourceWithLayerOnlyFilters_RefusesSubmissionWithoutQueueingJob",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_MalformedBbox_RefusesSubmissionWithParameterError",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitPollFetchResults_ReturnsEnrichedFeatureCollectionWithProvenance",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnDatasetLayer_RefusesSubmissionWithoutQueueingJob",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests.EnrichJob_SubmitterLacksReadOnSourceLayer_RefusesSubmissionWithoutQueueingJob",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.GeometryBufferJobExecutorIntegrationTests.BufferProcess_CompletesAndReturnsBufferedGeometry",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.AreaProcess_CompletesAndReturnsPlanarMeasure",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.CentroidProcess_CompletesAndReturnsCenterPoint",
@@ -18757,6 +18768,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobPost_WithEnvInQueryString_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_CatalogStorageUnavailable_ReturnsServiceUnavailable",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_ChoiceValueInNonCatalogCasing_RemainsExecutable",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_ChoiceValueOutsideTheAllowedList_ReturnsBadRequestNamingTheAcceptedValues",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_KnownTask_BuildsPlanAndStoresProtocolMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_ProtocolDisabledService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_UnauthenticatedWithInvalidEnvControls_Returns401BeforeBadRequest",

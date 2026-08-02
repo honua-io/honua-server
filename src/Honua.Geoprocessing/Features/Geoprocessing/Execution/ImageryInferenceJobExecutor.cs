@@ -497,7 +497,10 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     /// Rejects a legacy GeoJSON <c>crs</c> member that names anything other than
     /// WGS 84. RFC 7946 dropped the member entirely and fixes the CRS at WGS 84,
     /// so an explicit WGS 84 spelling is tolerated for compatibility while any
-    /// other declaration is refused.
+    /// other declaration is refused. Recognition runs through the shared
+    /// <see cref="CrsIdentifier"/> matcher so every legitimate spelling of
+    /// EPSG:4326 is accepted and everything else — including identifiers that
+    /// merely contain <c>4326</c> — is refused.
     /// </summary>
     private static bool TryValidateDeclaredCrs(byte[] featureJson, out string error)
     {
@@ -531,14 +534,19 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                 return false;
             }
 
-            // Accepted spellings of WGS 84 lon/lat.
-            if (name.Contains("CRS84", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("4326", StringComparison.Ordinal))
+            // Accepted spellings of WGS 84 lon/lat, matched EXACTLY through the
+            // shared identifier parser (#3053): EPSG:4326, the OGC URN and HTTP
+            // URI forms, and the CRS84 aliases. Substring probes for "4326" /
+            // "CRS84" also admitted contrived near-misses such as EPSG:43260
+            // and NOT_CRS84, which name a different CRS or none at all.
+            if (CrsIdentifier.IsWgs84(name))
             {
                 return true;
             }
 
-            error = $"the 'crs' member declares '{Truncate(name)}'";
+            error = CrsIdentifier.TryParseEpsgCode(name, out _)
+                ? $"the 'crs' member declares '{Truncate(name)}'"
+                : $"the 'crs' member declares '{Truncate(name)}', which is not a recognized EPSG or CRS84 identifier";
             return false;
         }
         catch (JsonException)

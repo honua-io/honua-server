@@ -4,7 +4,19 @@
 
 # Pin manifest digests to avoid mutable-tag noise in Trivy nightly scans.
 # Refresh cadence + remediation rationale: docs/internal/security/code-scanning-2026-Q2-remediation.md.
-ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/base:4-appservice@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9
+#
+# Base selection (honua-server#3036): the `azure-functions/base` repository is
+# abandoned — its newest published tags (`4`/`4-appservice`, host 4.636.2,
+# 2025-03-06; `4-nightly*`, host 4.637.1, 2025-04-22) are all still built from
+# EOL Debian 11 (bullseye). The Functions host itself is very much alive, but
+# Microsoft only republishes it under the language-worker repositories, and
+# those moved to Debian 12 (bookworm). `dotnet-isolated:4-dotnet-isolated9.0-appservice`
+# is the same `/azure-functions-host` with the same `/azure-functions-host/start.sh`
+# entrypoint on a supported distro, ~15 months newer (host 4.1051.300.6).
+# Custom handlers are a host feature, not a worker feature, so the bundled
+# dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
+# is set below.
+ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
 WORKDIR /src
@@ -44,6 +56,9 @@ COPY src/Honua.Server/*.csproj src/Honua.Server/
 COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
 COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
 COPY src/Honua.MySql/*.csproj src/Honua.MySql/
+COPY src/Honua.Redshift/*.csproj src/Honua.Redshift/
+COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
+COPY src/Honua.Databricks/*.csproj src/Honua.Databricks/
 COPY src/Honua.ArcGisRest/*.csproj src/Honua.ArcGisRest/
 COPY src/Honua.Oracle/*.csproj src/Honua.Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
@@ -62,6 +77,7 @@ COPY src/Honua.Protocols.Ogc.Shared/*.csproj src/Honua.Protocols.Ogc.Shared/
 COPY src/Honua.Protocols.OgcApi/*.csproj src/Honua.Protocols.OgcApi/
 COPY src/Honua.Protocols.OgcClassic/*.csproj src/Honua.Protocols.OgcClassic/
 COPY src/Honua.Protocols.Stac/*.csproj src/Honua.Protocols.Stac/
+COPY src/Honua.Protocols.SensorThings/*.csproj src/Honua.Protocols.SensorThings/
 COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
 COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
@@ -81,7 +97,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID"
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeStacOpsDemo=false
 
 COPY . .
 
@@ -99,6 +116,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --self-contained true \
       --output /out/app \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeStacOpsDemo=false \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false && \
@@ -114,18 +132,25 @@ ARG HONUA_GIT_SHA=
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-# The Functions base can lag Bullseye security updates even when its tag digest
-# is current. Patch the runtime layer, then remove compile-only headers and
-# extension bundles excluded by this app's required 4.x bundle range.
+# The Functions base can lag its distro's security updates even when its tag
+# digest is current. Patch the runtime layer, then remove compile-only headers
+# and extension bundles excluded by this app's required 4.x bundle range.
+#
+# `libc6-dev`/`linux-libc-dev` are kernel/build headers: they are only needed to
+# *compile* against glibc, never to run a published custom handler, and
+# `linux-libc-dev` alone accounted for ~570 of the HIGH/CRITICAL records Trivy
+# reported against this image (honua-server#3036). The bundle prune is matched by
+# major version rather than by hardcoded 2.x/3.x paths so it keeps holding when
+# the base image republishes with different bundle versions.
 # hadolint ignore=DL3005,DL3008
 RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 update && \
     DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -y --no-install-recommends upgrade && \
     DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 install -y --no-install-recommends libgssapi-krb5-2 libstdc++6 zlib1g && \
     apt-get purge -y libc6-dev linux-libc-dev && \
-    rm -rf \
-      /FuncExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/2.34.0 \
-      /FuncExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/3.35.0 \
-      /var/lib/apt/lists/*
+    apt-get autoremove -y && \
+    { find /FuncExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle \
+        -mindepth 1 -maxdepth 1 -type d ! -name '4.*' -exec rm -rf {} + || true; } && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/app /home/site/wwwroot/app
 COPY docker/cloud/azure-functions/ /home/site/wwwroot/
@@ -134,8 +159,16 @@ RUN chmod +x /home/site/wwwroot/handler.sh /home/site/wwwroot/app/Honua.Server
 
 # InvariantGlobalization=false requires ICU (Microsoft.Data.SqlClient/Oracle fail to
 # connect without it). The Azure Functions base image ships ICU. See honua-server#1369.
+#
+# ASPNETCORE_URLS is pinned rather than inherited: the base also sets
+# ASPNETCORE_HTTP_PORTS=8080, which is the port handler.sh binds Honua to. URLS
+# wins over HTTP_PORTS in ASP.NET Core, so the Functions host stays on :80 and
+# the custom handler owns :8080 — but relying on that precedence implicitly
+# would turn any future base reshuffle into a port collision between the host
+# and the handler it supervises.
 ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
     AzureFunctionsJobHost__Logging__Console__IsEnabled=true \
+    ASPNETCORE_URLS=http://+:80 \
     FUNCTIONS_WORKER_RUNTIME=custom \
     FUNCTIONS_CUSTOMHANDLER_PORT=8080 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
