@@ -48,10 +48,11 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
 Output publication does not add values to this enum. Jobs with fenced output
 intents retain `ExecutionJobStatus.Running` while a durable, orthogonal
 `OutputPublicationPhase` is `Finalizing` or `Terminalizing`. During
-terminalization the record also persists the requested terminal status
-(`Failed` or `Cancelled`) and admits no new execution. The coordinator changes
-the canonical status only after every sink intent is committed or aborted. Jobs
-without output intents keep the existing direct transitions.
+either phase the job admits no new execution and is excluded from execution
+heartbeat expiry and requeue. During terminalization the record also persists
+the requested terminal status (`Failed` or `Cancelled`). The coordinator
+changes the canonical status only after every sink intent is committed or
+aborted. Jobs without output intents keep the existing direct transitions.
 
 ### Claim and Heartbeat
 
@@ -62,7 +63,14 @@ without output intents keep the existing direct transitions.
   (default: 30 seconds). Each heartbeat updates `LastHeartbeatAt`.
 - `JobReconciliationService` sweeps active jobs every 30 seconds. If
   `LastHeartbeatAt` exceeds the heartbeat timeout (default: 90 seconds), the
-  job is considered abandoned.
+  job is considered abandoned only while its output publication phase is not
+  `Finalizing` or `Terminalizing`. Those phases prove that execution has ended
+  and must never be requeued by the execution-heartbeat sweeper.
+- Output reconciliation owns a separate durable lease and heartbeat/deadline
+  while the publication phase is `Finalizing` or `Terminalizing`. An expired
+  publication lease is recovered only through fenced, idempotent output
+  reconciliation. That reconciler may complete publication or terminalize the
+  job according to policy, but it never starts a new execution attempt.
 
 ### Job Kinds
 
