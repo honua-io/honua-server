@@ -322,11 +322,13 @@ kind's claim semantics.
 - **CI image boundary gate** exports and inspects the final native-AOT
   `honua-server` filesystem. It fails on GDAL/OGR executables, native
   GDAL/PROJ/GEOS libraries, GDAL language bindings, or matching installed
-  packages. Injection fixtures exercise every rejected class. The required PR
-  gate rebuilds and smoke-starts the image whenever dependencies or container
-  layers change; release and deployment publishers inspect the exact image
-  they publish. `honua-worker-etl` has the inverse positive check for required
-  GDAL tools and drivers plus its own vulnerability scan.
+  packages. Injection fixtures exercise every rejected class in the required,
+  lightweight PR gate. A separate path-filtered, non-required serving-image
+  workflow rebuilds and smoke-starts the generic, Lambda, and Azure Functions
+  AOT images for early PR feedback; release, deployment, and nightly publishers
+  inspect the exact images they publish. `honua-worker-etl` has the inverse
+  positive check for required GDAL tools and drivers plus its own vulnerability
+  scan.
 
 ### Baseline runtime requirements
 

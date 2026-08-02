@@ -50,6 +50,12 @@ public sealed class ServingImageBoundaryTests
             File.ReadAllText(Path.Join(repositoryRoot, relativePath))
                 .Should().Contain(VerifierCommand, relativePath);
         }
+
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
+        nightly.Should().Contain(VerifierCommand, Exactly.Twice(),
+            "both generic and Lambda AOT digests must be inspected before their manifests are published");
+        nightly.Should().Contain("id: build", Exactly.Twice(),
+            "both AOT builds expose the immutable digest consumed by their verifier");
     }
 
     [ArchitectureTest]

@@ -231,6 +231,7 @@ jobs:
             suffix=-${{ matrix.arch }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -253,6 +254,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
           provenance: false
           sbom: false
+
+      - name: Enforce Lambda native-AOT serving-image boundary
+        shell: bash
+        env:
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$IMAGE"
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
