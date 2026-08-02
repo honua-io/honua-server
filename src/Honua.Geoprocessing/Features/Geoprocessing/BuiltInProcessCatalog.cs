@@ -1812,7 +1812,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     // all three is rejected at submit time rather than failing in the worker.
     private static readonly ProcessParameterSpec[] NativeRasterSourceParameters =
     [
-        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text),
+        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text, acceptsRasterSource: true),
         Param("layerId", "Layer", "Catalog raster layer identifier. Resolved at submit time to the layer's registered raster (newest registration when several exist). Supply this OR an inline source / rasterId.", ProcessParameterValueType.LayerId),
         Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
@@ -1824,7 +1824,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         ProcessParameterValueType valueType,
         bool required = false,
         string? defaultValue = null,
-        IReadOnlyList<string>? allowedValues = null) => new()
+        IReadOnlyList<string>? allowedValues = null,
+        bool acceptsRasterSource = false) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1832,6 +1833,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ValueType = valueType,
             Required = required,
             DefaultValue = defaultValue,
-            AllowedValues = allowedValues
+            AllowedValues = allowedValues,
+            AcceptsRasterSource = acceptsRasterSource
         };
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
@@ -11,6 +12,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
@@ -31,6 +33,49 @@ namespace Honua.Server.Tests.Features.AnalysisContent;
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisContentServiceTests
 {
+    [UnitTest]
+    public void AnalysisContentApiJsonContext_NestedRasterDescriptor_RoundTrips()
+    {
+        var package = CreateReferenceRasterPackage();
+
+        var json = JsonSerializer.Serialize(package, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
+        var roundTrip = JsonSerializer.Deserialize(json, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
+
+        var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task CreateItemAsync_InlineRasterPackage_RejectsBeforeStorePersistence()
+    {
+        var store = Substitute.For<IAnalysisContentStore>();
+        var sut = new AnalysisContentService(
+            store,
+            Substitute.For<IMetadataV2GraphProvider>(),
+            Substitute.For<IQueryProcessor>(),
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IGeoprocessingJobService>(),
+            Array.Empty<IExecutionLogStore>(),
+            TimeProvider.System,
+            NullLogger<AnalysisContentService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
+            sut.CreateItemAsync(
+                new CreateAnalysisContentItemCommand(
+                    AnalysisContentKind.AnalysisPackage,
+                    "inline-raster",
+                    null,
+                    null,
+                    CreateInlineRasterPackage()),
+                Principal(),
+                CancellationToken.None));
+
+        Assert.Equal("analysis.content.analysisPackage.rasterSource.inlineNotPersistable", exception.Code);
+        await store.DidNotReceive().CreateItemAsync(
+            Arg.Any<AnalysisContentItem>(), Arg.Any<AnalysisContentVersion>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Operation(Operations.Create)]
     public async Task AddVersionAsync_WhenStoreConflicts_RereadsLatestAndCreatesNextVersion()
@@ -277,6 +322,44 @@ public sealed class AnalysisContentServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
+    public async Task InMemoryStore_DirectInlineRasterWrite_IsRejectedAtPersistenceBoundary()
+    {
+        var services = new ServiceCollection();
+        services.AddAnalysisContent(new ConfigurationBuilder().Build());
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAnalysisContentStore>();
+        var now = DateTimeOffset.UtcNow;
+        var item = new AnalysisContentItem
+        {
+            ItemId = "analysis-content-inline-direct",
+            Kind = AnalysisContentKind.AnalysisPackage,
+            Name = "inline-direct",
+            CurrentVersion = 1,
+            CurrentVersionId = "analysis-content-inline-direct:v1",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var version = new AnalysisContentVersion
+        {
+            VersionId = item.CurrentVersionId,
+            ItemId = item.ItemId,
+            Version = 1,
+            Kind = item.Kind,
+            AnalysisPackage = CreateInlineRasterPackage(),
+            ContentHash = "not-persisted",
+            CreatedAt = now,
+        };
+
+        var exception = await Assert.ThrowsAsync<AnalysisContentStoreValidationException>(() =>
+            store.CreateItemAsync(item, version, CancellationToken.None));
+
+        Assert.Equal(RasterSourceValidationCodes.InlinePersistenceDenied, exception.Code);
+        Assert.Null(await store.GetItemAsync(item.ItemId, CancellationToken.None));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
     public async Task SubmitAnalysisPackageAsync_WhenCallerNotAuthorized_RejectedByCentralSubmitGate()
     {
         // The AnalysisContent run path delegates straight to the shared
@@ -405,6 +488,76 @@ public sealed class AnalysisContentServiceTests
             LayerId = 0,
             NaturalLanguageQuery = query
         };
+
+    private static AnalysisPackageContent CreateInlineRasterPackage()
+        => new()
+        {
+            Plan = new AnalysisPlan
+            {
+                PlanId = "plan-inline-raster",
+                IntentId = "intent-inline-raster",
+                Steps =
+                [
+                    new AnalysisPlanStep
+                    {
+                        StepId = "step-1",
+                        Kind = AnalysisPlanStepKind.Geoprocess,
+                        ProcessId = "raster.reproject",
+                        Inputs = new Dictionary<string, string> { ["targetSrid"] = "3857" },
+                        RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                        {
+                            ["source"] = new InlineRasterSourceDescriptor
+                            {
+                                Version = "inline-v1",
+                                Payload = [1, 2, 3, 4],
+                                Content = new RasterContentIdentity
+                                {
+                                    SizeBytes = 4,
+                                    MediaType = "image/tiff",
+                                    Checksum = new RasterChecksum(
+                                        "sha256",
+                                        "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"),
+                                },
+                                SecurityContext = new RasterSecurityContextReference
+                                {
+                                    TenantId = "tenant-a",
+                                    AuthorizationSnapshotReference = "caller-auth-hint",
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+    private static AnalysisPackageContent CreateReferenceRasterPackage()
+    {
+        var package = CreateInlineRasterPackage();
+        var step = package.Plan.Steps[0] with
+        {
+            RasterSources = new Dictionary<string, RasterSourceDescriptor>
+            {
+                ["source"] = new ObjectStoreCogRasterSourceDescriptor
+                {
+                    Version = "object-v1",
+                    StoreReference = "imagery-prod",
+                    ObjectKey = "tenant/source.tif",
+                    Content = new RasterContentIdentity
+                    {
+                        SizeBytes = 4096,
+                        MediaType = "image/tiff",
+                        Checksum = new RasterChecksum("sha256", new string('a', 64)),
+                    },
+                    SecurityContext = new RasterSecurityContextReference
+                    {
+                        TenantId = "tenant-a",
+                        AuthorizationSnapshotReference = "caller-auth-hint",
+                    },
+                },
+            },
+        };
+        return package with { Plan = package.Plan with { Steps = [step] } };
+    }
 
     private sealed class ConflictOnceAnalysisContentStore : IAnalysisContentStore
     {

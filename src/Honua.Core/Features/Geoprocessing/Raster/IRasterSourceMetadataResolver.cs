@@ -4,13 +4,15 @@
 namespace Honua.Core.Features.Geoprocessing.Raster;
 
 /// <summary>
-/// Resolves raster source metadata without downloading raster content. Implementations exchange the
-/// descriptor's opaque security-context reference for scoped access inside the execution boundary.
+/// Resolves raster source metadata without downloading raster content. Implementations must ignore
+/// the caller-authored security-context hint for authorization and credential acquisition. Access
+/// comes only from the authenticated server execution context; #3068 will define minting and
+/// revalidation of a worker-owned context.
 /// </summary>
 public interface IRasterSourceMetadataResolver
 {
     /// <summary>Resolves pinned identity metadata without reading the raster payload.</summary>
-    /// <param name="descriptor">Validated provider-neutral source descriptor.</param>
+    /// <param name="descriptor">Validated provider-neutral source descriptor whose security-context reference remains untrusted.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Availability and immutable metadata, or a caller-safe failure status.</returns>
     Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
@@ -122,7 +124,7 @@ public static class RasterSourceMetadataAdmission
         }
 
         var metadata = resolution.Metadata;
-        if (metadata is null)
+        if (metadata?.Content is null)
         {
             return RasterSourceMetadataResolution.Failure(
                 RasterSourceMetadataStatus.Invalid,
@@ -137,7 +139,8 @@ public static class RasterSourceMetadataAdmission
                 "source_version_changed");
         }
 
-        if (descriptor.Content.ETag is { } expectedETag
+        var descriptorContent = descriptor.Content;
+        if (descriptorContent.ETag is { } expectedETag
             && !string.Equals(expectedETag, metadata.Content.ETag, StringComparison.Ordinal))
         {
             return RasterSourceMetadataResolution.Failure(
@@ -145,8 +148,8 @@ public static class RasterSourceMetadataAdmission
                 "source_etag_changed");
         }
 
-        if (descriptor.Content.SizeBytes != metadata.Content.SizeBytes
-            || !ChecksumMatches(descriptor.Content.Checksum, metadata.Content.Checksum))
+        if (descriptorContent.SizeBytes != metadata.Content.SizeBytes
+            || !ChecksumMatches(descriptorContent.Checksum, metadata.Content.Checksum))
         {
             return RasterSourceMetadataResolution.Failure(
                 RasterSourceMetadataStatus.IntegrityMismatch,

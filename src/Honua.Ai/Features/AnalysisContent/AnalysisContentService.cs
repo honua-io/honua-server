@@ -15,6 +15,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Query;
@@ -774,6 +775,24 @@ internal sealed partial class AnalysisContentService(
                 if (analysisPackage is null || savedQuery is not null)
                 {
                     throw new AnalysisContentValidationException("Analysis-package content requires an analysisPackage payload only.", "analysis.content.analysisPackage.exclusive", "/analysisPackage");
+                }
+
+                if (analysisPackage.Plan is null)
+                {
+                    throw new AnalysisContentValidationException("Analysis package plan is required.", "analysis.content.analysisPackage.plan.required", "/analysisPackage/plan");
+                }
+
+                var rasterValidation = AnalysisContentRasterSourcePolicy.ValidateForPersistence(analysisPackage);
+                if (!rasterValidation.IsValid)
+                {
+                    var failure = rasterValidation.Errors[0];
+                    var code = failure.Code == RasterSourceValidationCodes.InlinePersistenceDenied
+                        ? "analysis.content.analysisPackage.rasterSource.inlineNotPersistable"
+                        : $"analysis.content.analysisPackage.rasterSource.{failure.Code}";
+                    throw new AnalysisContentValidationException(
+                        failure.Message,
+                        code,
+                        $"/analysisPackage/plan/{failure.Field}");
                 }
 
                 if (analysisPackage.Plan.Steps.Count == 0)

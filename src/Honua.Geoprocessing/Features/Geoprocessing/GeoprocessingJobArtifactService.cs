@@ -57,19 +57,24 @@ internal sealed class GeoprocessingJobArtifactService
         var options = new RasterSourceValidationOptions
         {
             MaxInlineBytes = _executorOptions.CurrentValue.MaxInlineRasterSourceBytes,
+            MaxSourcesPerPlan = _executorOptions.CurrentValue.MaxRasterSourcesPerPlan,
+            MaxParameterNameLength = _executorOptions.CurrentValue.MaxRasterSourceParameterNameLength,
+            MaxSerializedBytesPerPlan = _executorOptions.CurrentValue.MaxRasterSourceSerializedBytesPerPlan,
         };
+
+        var planValidation = RasterSourcePlanValidator.Validate(plan, options, cancellationToken);
+        if (!planValidation.IsValid)
+        {
+            var failure = planValidation.Errors[0];
+            throw new GeoprocessingValidationException(
+                $"Raster source plan is invalid ({failure.Code}): {failure.Message}");
+        }
 
         foreach (var step in plan.Steps)
         {
             foreach (var source in step.RasterSources)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(source.Key))
-                {
-                    throw new GeoprocessingValidationException(
-                        $"Step '{step.StepId}' contains a raster source with an empty parameter name.");
-                }
-
                 if (step.Inputs.TryGetValue(source.Key, out var legacyValue)
                     && !string.IsNullOrWhiteSpace(legacyValue))
                 {
@@ -78,18 +83,32 @@ internal sealed class GeoprocessingJobArtifactService
                         + "and a legacy string input. Supply exactly one source representation.");
                 }
 
-                var validation = RasterSourceDescriptorValidator.Validate(
-                    source.Value,
-                    options,
-                    cancellationToken);
-                if (!validation.IsValid)
+                var definition = string.IsNullOrWhiteSpace(step.ProcessId)
+                    ? null
+                    : _processCatalog.GetProcess(step.ProcessId);
+                var parameter = definition?.Parameters.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Name, source.Key, StringComparison.Ordinal));
+                if (definition is not null && parameter?.AcceptsRasterSource != true)
                 {
-                    var failure = validation.Errors[0];
                     throw new GeoprocessingValidationException(
                         $"Step '{step.StepId}' raster source '{source.Key}' is invalid "
-                        + $"({failure.Code}): {failure.Message}");
+                        + $"({RasterSourceValidationCodes.InvalidParameterBinding}): the process catalog does not declare that parameter as a raster source input.");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Refuses typed raster execution until the v2 worker admission/resolution path from #3090
+    /// is available. Contract authoring and spec projection remain testable, but no local or
+    /// remote backend can receive a descriptor it does not understand.
+    /// </summary>
+    public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
+    {
+        if (plan.Steps.Any(step => step.RasterSources.Count > 0))
+        {
+            throw new GeoprocessingValidationException(
+                "RASTER_SOURCE_EXECUTION_NOT_SUPPORTED: typed raster source execution is disabled until #3090 adds authenticated v2 worker resolution; use the existing catalog layerId/rasterId path.");
         }
     }
 

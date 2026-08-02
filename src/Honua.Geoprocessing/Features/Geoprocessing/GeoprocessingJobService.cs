@@ -373,6 +373,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             EnsurePlanCatalogValid(plan);
         }
 
+        // RAST-003 defines and projects the v2 contract, but no current local or remote
+        // worker consumes it safely. Refuse before approval proposals, fingerprints, job
+        // records, or queue dispatch until #3090 introduces authenticated source resolution.
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+
         // Evaluate the mutating-process tier unconditionally — including for custom-code
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
         // plan carries no executable mutating Geoprocess step, so running this for both

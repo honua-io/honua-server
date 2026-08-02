@@ -134,6 +134,13 @@ public sealed record ProcessParameterSpec
     /// can match ArcGIS-style mixed-case strings.
     /// </summary>
     public IReadOnlyList<string>? AllowedValues { get; init; }
+
+    /// <summary>
+    /// Whether this parameter may be bound through
+    /// <see cref="AnalysisPlanStep.RasterSources"/>. This marker is distinct from the
+    /// legacy string value type so arbitrary text parameters cannot receive descriptors.
+    /// </summary>
+    public bool AcceptsRasterSource { get; init; }
 }
 
 /// <summary>

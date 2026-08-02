@@ -52,8 +52,10 @@ public abstract record RasterSourceDescriptor
     public required RasterContentIdentity Content { get; init; }
 
     /// <summary>
-    /// Opaque tenant authorization context a worker exchanges for scoped access. This is a
-    /// reference only and must never contain credentials.
+    /// Untrusted, caller-authored security-context hint. It is correlation metadata only:
+    /// workers must not use it to authorize or obtain source access. The submission boundary
+    /// introduced by #3068 must mint or revalidate an execution-owned context before any
+    /// descriptor becomes executable.
     /// </summary>
     public required RasterSecurityContextReference SecurityContext { get; init; }
 
@@ -138,17 +140,29 @@ public sealed record RasterContentIdentity
 /// <param name="Value">Hex-encoded digest value.</param>
 public sealed record RasterChecksum(string Algorithm, string Value);
 
-/// <summary>References the tenant and immutable authorization snapshot for a raster job.</summary>
+/// <summary>Caller-authored tenant/security context hint for a future raster job.</summary>
 public sealed record RasterSecurityContextReference
 {
     /// <summary>Tenant identifier that owns the source.</summary>
     public required string TenantId { get; init; }
 
     /// <summary>
-    /// Opaque authorization-snapshot identifier resolved by the execution environment.
-    /// It contains neither a token nor cloud/database credentials.
+    /// Opaque caller-provided authorization-context hint. It contains neither a token nor
+    /// cloud/database credentials and is never evidence of authorization. #3068 must replace
+    /// or revalidate it at an authenticated execution boundary.
     /// </summary>
     public required string AuthorizationSnapshotReference { get; init; }
+
+    /// <summary>
+    /// Always <see langword="false"/> for this public contract. Caller input cannot promote a
+    /// descriptor to a trusted execution context.
+    /// </summary>
+    [JsonIgnore]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The instance property makes the untrusted status explicit on every caller-authored reference.")]
+    public bool IsTrusted => false;
 }
 
 /// <summary>Optional bounded sub-selection applied while reading a raster source.</summary>

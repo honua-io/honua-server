@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Honua.Core.Features.AnalysisContent;
+using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
@@ -80,9 +84,24 @@ public sealed class RasterSourceContractTests
     [InlineData("tiles/source.tif?X-Amz-Credential=secret")]
     [InlineData("C:\\secrets\\source.tif")]
     [InlineData("bucket/%2e%2e/secret.tif")]
+    [InlineData("bucket/source%00.tif")]
+    [InlineData("bucket/source%0a.tif")]
+    [InlineData("bucket/source%1f.tif")]
     public void Validate_ObjectStoreKeyInjection_IsRejected(string objectKey)
     {
         var result = RasterSourceDescriptorValidator.Validate(Cog() with { ObjectKey = objectKey });
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
+    }
+
+    [Theory]
+    [InlineData("artifact%00secret")]
+    [InlineData("artifact%0asecret")]
+    public void Validate_StagedArtifactEncodedControl_IsRejected(string artifactReference)
+    {
+        var result = RasterSourceDescriptorValidator.Validate(
+            Staged() with { ArtifactReference = artifactReference });
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.UnsafeLocator);
@@ -131,6 +150,131 @@ public sealed class RasterSourceContractTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
+    }
+
+    [Fact]
+    public void Validate_InlinePayloadChecksumMismatch_IsRejected()
+    {
+        var result = RasterSourceDescriptorValidator.Validate(Inline([1, 2, 3, 4]));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.ChecksumMismatch);
+    }
+
+    [Theory]
+    [InlineData("content")]
+    [InlineData("checksumFields")]
+    [InlineData("bands")]
+    [InlineData("dimensions")]
+    public void Validate_ExplicitNestedNulls_ReturnValidationFailuresInsteadOfThrowing(string nullCase)
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        switch (nullCase)
+        {
+            case "content":
+                document["content"] = null;
+                break;
+            case "checksumFields":
+                document["content"]!["checksum"] = new JsonObject
+                {
+                    ["algorithm"] = null,
+                    ["value"] = null,
+                };
+                break;
+            case "bands":
+                document["selection"] = new JsonObject
+                {
+                    ["bands"] = null,
+                    ["dimensions"] = new JsonArray(),
+                };
+                break;
+            case "dimensions":
+                document["selection"] = new JsonObject
+                {
+                    ["bands"] = new JsonArray(),
+                    ["dimensions"] = null,
+                };
+                break;
+        }
+
+        var descriptor = RasterSourceJson.Deserialize(document.ToJsonString());
+        var exception = Record.Exception(() => RasterSourceDescriptorValidator.Validate(descriptor));
+
+        Assert.Null(exception);
+        Assert.False(RasterSourceDescriptorValidator.Validate(descriptor).IsValid);
+    }
+
+    [Fact]
+    public void ValidatePlan_CountNameAndSerializedBudgets_AreBounded()
+    {
+        var descriptor = Cog();
+        var plan = Plan(new Dictionary<string, RasterSourceDescriptor>
+        {
+            ["source"] = descriptor,
+            ["second"] = descriptor,
+        });
+        var options = RasterSourceValidationOptions.Default with
+        {
+            MaxSourcesPerPlan = 1,
+            MaxParameterNameLength = 5,
+            MaxSerializedBytesPerPlan = 1,
+        };
+
+        var result = RasterSourcePlanValidator.Validate(plan, options);
+
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.TooManySources);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InvalidParameterName);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.SerializedBudgetExceeded);
+    }
+
+    [Fact]
+    public void ValidatePlan_UnsafeParameterName_IsRejected()
+    {
+        var result = RasterSourcePlanValidator.Validate(Plan(new Dictionary<string, RasterSourceDescriptor>
+        {
+            ["source/../../token"] = Cog(),
+        }));
+
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InvalidParameterName);
+    }
+
+    [Fact]
+    public void SecurityContext_CallerCannotMarkReferenceTrusted()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        document["securityContext"]!["isTrusted"] = true;
+
+        var descriptor = RasterSourceJson.Deserialize(document.ToJsonString());
+
+        Assert.False(descriptor.SecurityContext.IsTrusted);
+    }
+
+    [Fact]
+    public void AnalysisContentJsonContext_NestedRasterDescriptor_RoundTrips()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor> { ["source"] = Cog() }),
+        };
+
+        var json = JsonSerializer.Serialize(package, AnalysisContentJsonContext.Default.AnalysisPackageContent);
+        var roundTrip = JsonSerializer.Deserialize(json, AnalysisContentJsonContext.Default.AnalysisPackageContent);
+
+        var source = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(source);
+    }
+
+    [Fact]
+    public void AnalysisContentPersistencePolicy_InlineRaster_IsRejected()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor> { ["source"] = Inline([1, 2, 3, 4]) }),
+        };
+
+        var result = AnalysisContentRasterSourcePolicy.ValidateForPersistence(package);
+
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePersistenceDenied);
     }
 
     [Fact]
@@ -275,6 +419,22 @@ public sealed class RasterSourceContractTests
         Payload = payload,
         Content = Content() with { SizeBytes = payload.Length },
         SecurityContext = Security(),
+    };
+
+    private static AnalysisPlan Plan(IReadOnlyDictionary<string, RasterSourceDescriptor> rasterSources) => new()
+    {
+        PlanId = "plan-raster-contract",
+        IntentId = "intent-raster-contract",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-0",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "raster.clip",
+                RasterSources = rasterSources,
+            },
+        ],
     };
 
     private static RasterContentIdentity Content() => new()

@@ -34,6 +34,15 @@ internal static class GeoprocessingSpecBuilder
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(specParams);
 
+        var planValidation = RasterSourcePlanValidator.Validate(plan);
+        if (!planValidation.IsValid)
+        {
+            var failure = planValidation.Errors[0];
+            throw new ArgumentException(
+                $"Raster source plan is invalid ({failure.Code}): {failure.Message}",
+                nameof(plan));
+        }
+
         specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
 
         var processDefinitions = plan.Steps

@@ -183,6 +183,14 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             throw new ArgumentException("Analysis package body must include an executable plan.");
         }
 
+        var rasterValidation = AnalysisContentRasterSourcePolicy.ValidateForPersistence(content, cancellationToken: cancellationToken);
+        if (!rasterValidation.IsValid)
+        {
+            var failure = rasterValidation.Errors[0];
+            throw new ArgumentException(
+                $"Analysis package raster source is invalid ({failure.Code}): {failure.Message}");
+        }
+
         var jobId = draft.Envelope.Dependencies
             .FirstOrDefault(static dependency => string.Equals(dependency.Kind, JobDependencyKind, StringComparison.OrdinalIgnoreCase))
             ?.Ref;
