@@ -18,6 +18,32 @@ internal static partial class FeatureStreamEndpoints
     internal static bool HasReplayWindowGap(long requestedCursor, long firstAvailableCursor)
         => requestedCursor < long.MaxValue && firstAvailableCursor > requestedCursor + 1;
 
+    internal static bool TryFindReplayWindowGap(
+        IReadOnlyList<FeatureChangeEvent> events,
+        long requestedCursor,
+        out long previousCursor,
+        out long firstAvailableCursor)
+    {
+        previousCursor = requestedCursor;
+        firstAvailableCursor = requestedCursor;
+
+        foreach (var evt in events)
+        {
+            var expectedCursor = previousCursor == long.MaxValue
+                ? long.MaxValue
+                : previousCursor + 1;
+            if (evt.Cursor != expectedCursor)
+            {
+                firstAvailableCursor = evt.Cursor;
+                return true;
+            }
+
+            previousCursor = evt.Cursor;
+        }
+
+        return false;
+    }
+
     private static async Task<long> ReplayToWebSocketAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,
@@ -175,8 +201,11 @@ internal static partial class FeatureStreamEndpoints
         Guid sessionId,
         string? subscriptionId)
     {
-        var firstAvailableCursor = events[0].Cursor;
-        if (!HasReplayWindowGap(requestedCursor, firstAvailableCursor))
+        if (!TryFindReplayWindowGap(
+                events,
+                requestedCursor,
+                out var previousCursor,
+                out var firstAvailableCursor))
         {
             return;
         }
@@ -185,9 +214,9 @@ internal static partial class FeatureStreamEndpoints
             logger,
             sessionId,
             subscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
-            requestedCursor,
+            previousCursor,
             firstAvailableCursor);
-        throw new FeatureStreamReplayWindowGapException(requestedCursor, firstAvailableCursor);
+        throw new FeatureStreamReplayWindowGapException(previousCursor, firstAvailableCursor);
     }
 
     /// <summary>

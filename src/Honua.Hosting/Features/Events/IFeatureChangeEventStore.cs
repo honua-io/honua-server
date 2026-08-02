@@ -4,6 +4,57 @@
 namespace Honua.Infrastructure.Events;
 
 /// <summary>
+/// Describes the durable cursor boundary and whether the retained successor window is known.
+/// </summary>
+internal readonly record struct FeatureChangeRetentionWindow(
+    long CurrentCursor,
+    long OldestRetainedCursor,
+    bool IsEmpty,
+    bool IsDeterminate)
+{
+    /// <summary>
+    /// Creates a known window containing retained payloads.
+    /// </summary>
+    internal static FeatureChangeRetentionWindow Retained(long currentCursor, long oldestRetainedCursor)
+        => new(currentCursor, oldestRetainedCursor, IsEmpty: false, IsDeterminate: true);
+
+    /// <summary>
+    /// Creates a known-empty window whose monotonic cursor can still show prior activity.
+    /// </summary>
+    internal static FeatureChangeRetentionWindow KnownEmpty(long currentCursor)
+        => new(currentCursor, OldestRetainedCursor: 0, IsEmpty: true, IsDeterminate: true);
+
+    /// <summary>
+    /// Creates a fail-closed result for a window that could not be inspected.
+    /// </summary>
+    internal static FeatureChangeRetentionWindow Indeterminate(long currentCursor)
+        => new(currentCursor, OldestRetainedCursor: long.MaxValue, IsEmpty: false, IsDeterminate: false);
+
+    /// <summary>
+    /// Returns whether deltas strictly after <paramref name="cursor"/> cannot be replayed.
+    /// </summary>
+    internal bool HasGapAfter(long cursor)
+    {
+        if (!IsDeterminate)
+        {
+            return true;
+        }
+
+        if (cursor >= CurrentCursor)
+        {
+            return false;
+        }
+
+        if (IsEmpty)
+        {
+            return true;
+        }
+
+        return cursor < long.MaxValue && OldestRetainedCursor > cursor + 1;
+    }
+}
+
+/// <summary>
 /// Persists and queries feature-change events for replay.
 /// </summary>
 internal interface IFeatureChangeEventStore
@@ -15,9 +66,10 @@ internal interface IFeatureChangeEventStore
     Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the lowest cursor still present in the retained window, or 0 when the store
-    /// holds no events. Consumers compare a client-supplied resume cursor against this
-    /// value to tell "no events since your cursor" apart from "the events since your cursor
+    /// Returns the lowest cursor still present in the retained window, or 0 when the stream
+    /// is known never to have advanced. Consumers compare a client-supplied resume cursor
+    /// against this value to tell "no events since your cursor" apart from "the events since
+    /// your cursor
     /// have been trimmed or expired" — the latter requires a replacement snapshot rather
     /// than silently continuing with deltas.
     /// <para>
@@ -31,11 +83,33 @@ internal interface IFeatureChangeEventStore
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The oldest retained cursor, 0 when the store is empty, or <see cref="long.MaxValue"/>
-    /// when the retained window cannot be determined.
+    /// The oldest retained cursor; 0 when the stream is known never to have advanced; or
+    /// <see cref="long.MaxValue"/> when the scalar result cannot safely represent the window,
+    /// including indeterminate access and a fully expired window after prior activity.
     /// </returns>
     Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(0L);
+
+    /// <summary>
+    /// Returns the current cursor together with a typed retained-window state. Unlike the
+    /// legacy oldest-cursor projection, this distinguishes a known-empty window after every
+    /// payload expires from an unavailable or otherwise indeterminate window.
+    /// </summary>
+    async Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var current = await GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+        var oldest = await GetOldestRetainedCursorAsync(cancellationToken).ConfigureAwait(false);
+
+        if (oldest == long.MaxValue)
+        {
+            return FeatureChangeRetentionWindow.Indeterminate(current);
+        }
+
+        return oldest == 0
+            ? FeatureChangeRetentionWindow.KnownEmpty(current)
+            : FeatureChangeRetentionWindow.Retained(current, oldest);
+    }
 
     Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
         long? cursor,

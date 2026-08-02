@@ -2321,7 +2321,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 2,
-      "provingTestCount": 57,
+      "provingTestCount": 62,
       "maturity": {
         "implemented": 2
       },

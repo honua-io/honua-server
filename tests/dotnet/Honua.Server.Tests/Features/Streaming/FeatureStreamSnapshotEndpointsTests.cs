@@ -658,6 +658,136 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new FullyExpiredEventStore(inner, currentCursor: 37));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest(
+                "/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+
+            baseline.Begin.GetProperty("reason").GetString().Should().Be("cursor-expired");
+            baseline.Begin.GetProperty("cursor").GetInt64().Should().Be(37);
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
+                "the fully expired predecessor history has no missing successor after the captured cursor");
+            baseline.EventIds[^1].Should().Be("37",
+                "a complete replacement snapshot is a resumable checkpoint");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new FullyExpiredEventStore(inner, currentCursor: 37));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0"),
+                cts.Token);
+
+            JsonElement end = default;
+            while (!cts.IsCancellationRequested)
+            {
+                var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+                if (frame.GetProperty("type").GetString() == SnapshotEnd)
+                {
+                    end = frame;
+                    break;
+                }
+            }
+
+            end.ValueKind.Should().Be(JsonValueKind.Object);
+            end.GetProperty("cursor").GetInt64().Should().Be(37);
+            end.GetProperty("complete").GetBoolean().Should().BeTrue(
+                "WebSocket must accept the same known-empty successor window as SSE");
+
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_ReplayBatchWithInteriorGap_EndsBeforeSendingAnyDelta()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new InteriorReplayGapEventStore(inner));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest(
+                "/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+
+            delta.Should().BeNull(
+                "the whole replay batch must be checked before cursor N+1 is emitted ahead of a missing N+2");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_ReplayBatchWithInteriorGap_ClosesBeforeSendingAnyDelta()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new InteriorReplayGapEventStore(inner));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0"),
+                cts.Token);
+
+            var sawDelta = await ReceiveFeatureChangeBeforeCloseAsync(ws, cts.Token);
+            sawDelta.Should().BeFalse(
+                "WebSocket replay must reject an interior cursor gap before sending any member of the batch");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete()
     {
         // The cap is set equal to the page size, so it is reached exactly when a page ends and
@@ -750,6 +880,20 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration(
                 (_, configBuilder) => configBuilder.AddInMemoryCollection(settings)));
 
+    private static WebAppFixture CreateFixtureWithEventStoreDecorator(
+        Func<IFeatureChangeEventStore, IFeatureChangeEventStore> decorate)
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureServices(services =>
+            {
+                var original = services.Last(d => d.ServiceType == typeof(IFeatureChangeEventStore));
+                services.Remove(original);
+                services.Add(ServiceDescriptor.Describe(
+                    typeof(IFeatureChangeEventStore),
+                    sp => decorate(CreateEventStore(sp, original)),
+                    original.Lifetime));
+            });
+
     /// <summary>
     /// Wraps the real event store so <see cref="IFeatureChangeEventStore.GetOldestRetainedCursorAsync"/>
     /// reports a retained floor ABOVE the snapshot's baseline cursor — the state the store is
@@ -820,6 +964,89 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             ];
             return Task.FromResult(gap);
         }
+    }
+
+    /// <summary>
+    /// Represents a quiescent stream whose durable cursor survived after every retained payload
+    /// expired. Older resume cursors still require replacement, but a snapshot captured at the
+    /// current cursor has a known-empty successor window and is complete.
+    /// </summary>
+    private sealed class FullyExpiredEventStore(IFeatureChangeEventStore inner, long currentCursor)
+        : IFeatureChangeEventStore
+    {
+        public Task<FeatureChangeEvent> AppendAsync(
+            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(request, cancellationToken);
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(currentCursor);
+
+        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(long.MaxValue);
+
+        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor));
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+    }
+
+    /// <summary>
+    /// Returns a replay batch with its first successor intact and one missing payload in the
+    /// middle, matching Redis after individual payload eviction leaves sorted-set tombstones.
+    /// </summary>
+    private sealed class InteriorReplayGapEventStore(IFeatureChangeEventStore inner)
+        : IFeatureChangeEventStore
+    {
+        public Task<FeatureChangeEvent> AppendAsync(
+            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(request, cancellationToken);
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 0));
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            if (!cursor.HasValue)
+            {
+                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
+            }
+
+            IReadOnlyList<FeatureChangeEvent> gap =
+            [
+                CreateReplayEvent(cursor.Value + 1, "before-interior-gap"),
+                CreateReplayEvent(cursor.Value + 3, "after-interior-gap")
+            ];
+            return Task.FromResult(gap);
+        }
+
+        private static FeatureChangeEvent CreateReplayEvent(long cursor, string eventId)
+            => new()
+            {
+                EventId = eventId,
+                Cursor = cursor,
+                Timestamp = DateTimeOffset.UtcNow,
+                SourceId = TestServiceId,
+                ServiceId = TestServiceId,
+                LayerId = 0,
+                ObjectId = cursor,
+                Operation = "update",
+                Protocol = "test",
+                RequestId = eventId,
+                PropertiesJson = "{}"
+            };
     }
 
     private static IFeatureChangeEventStore CreateEventStore(
@@ -1008,5 +1235,48 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(builder.ToString());
         return document.RootElement.Clone();
+    }
+
+    private static async Task<bool> ReceiveFeatureChangeBeforeCloseAsync(
+        WebSocket socket,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[64 * 1024];
+        var builder = new StringBuilder();
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            builder.Clear();
+            WebSocketReceiveResult result;
+            do
+            {
+                try
+                {
+                    result = await socket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer),
+                        cancellationToken);
+                }
+                catch (WebSocketException)
+                {
+                    return false;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    return false;
+                }
+
+                builder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            }
+            while (!result.EndOfMessage);
+
+            using var document = JsonDocument.Parse(builder.ToString());
+            if (document.RootElement.GetProperty("type").GetString() == FeatureChange)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

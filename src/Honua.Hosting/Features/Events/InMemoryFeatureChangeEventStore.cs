@@ -274,23 +274,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             try
             {
-                // Highest cursor = the head of the stream. With Order.Descending the set is
-                // walked high→low, so rank 0 is the max score; (-1,-1) would instead return
-                // the *lowest* cursor, which made a fresh Redis-backed stream connection
-                // replay the entire retained history rather than resume from "now" (#2428).
-                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, 0, Order.Descending).ConfigureAwait(false);
-                if (members.Length == 0)
-                {
-                    return 0;
-                }
-
-                if (!long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor))
-                {
-                    return 0;
-                }
-
-                ObserveRedisCursor(cursor);
-                return cursor;
+                return await GetCurrentRedisCursorAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -308,32 +292,39 @@ internal sealed class InMemoryFeatureChangeEventStore(
             }
         }
 
-        lock (_sync)
-        {
-            return _events.Count == 0 ? 0 : _events[^1].Cursor;
-        }
+        return CurrentInMemoryCursor();
     }
 
     public async Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+    {
+        var window = await GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
+
+        // Preserve the legacy fail-closed projection: a caller that only asks for the oldest
+        // cursor cannot distinguish "never advanced" from "advanced, then every payload
+        // expired". The typed window carries that distinction for snapshot validation.
+        return window.IsEmpty && window.CurrentCursor > 0
+            ? long.MaxValue
+            : window.OldestRetainedCursor;
+    }
+
+    public async Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (_redisDb != null)
         {
-            // The health PROBE failing never reaches the catch below, so it needed the same
-            // treatment: with Redis already down and the in-memory store empty, this returned 0
-            // — "nothing was ever retained", i.e. replayable — while QueryAsync could not read
-            // Redis either, so the client got neither its deltas nor a replacement snapshot
-            // (honua-server#3038 review). Every path on which the Redis retained window cannot
-            // be queried now yields the fail-closed sentinel.
+            // The fallback lets writes keep flowing into the in-memory buffer; it does not
+            // recover the history Redis already held. Any Redis-unavailable path therefore
+            // remains indeterminate even when the local tail is readable.
             if (!await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
             {
-                return UnavailableRedisWindow();
+                return FeatureChangeRetentionWindow.Indeterminate(CurrentInMemoryCursor());
             }
 
             try
             {
-                return await GetOldestRetainedRedisCursorAsync(cancellationToken).ConfigureAwait(false);
+                return await GetRedisRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -343,44 +334,29 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 // Intentional: same no-logger rationale as GetCurrentCursorAsync above.
                 _redisUnavailable = true;
-                return UnavailableRedisWindow();
+                return FeatureChangeRetentionWindow.Indeterminate(CurrentInMemoryCursor());
             }
         }
 
-        return OldestInMemoryCursor();
+        lock (_sync)
+        {
+            return _events.Count == 0
+                ? FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 0)
+                : FeatureChangeRetentionWindow.Retained(_events[^1].Cursor, _events[0].Cursor);
+        }
     }
 
-    /// <summary>
-    /// The answer when the REDIS retained window cannot be read, whether the fallback is
-    /// permitted or not.
-    /// </summary>
-    /// <remarks>
-    /// The fallback lets writes keep flowing into the in-memory buffer; it does not recover the
-    /// history Redis already held. Answering from that buffer said "the window starts at 0" —
-    /// replayable — while <c>QueryAsync</c> could only inspect the same empty tail, so a client
-    /// whose cursor predates the outage silently skipped every pre-outage delta. The window is
-    /// indeterminate on this path regardless of the fallback, so it fails closed and the client
-    /// takes a replacement snapshot (honua-server#3038 review).
-    /// </remarks>
-    private static long UnavailableRedisWindow() => long.MaxValue;
-
-    /// <summary>
-    /// The oldest cursor the in-memory buffer retains, or 0 when it holds nothing. Reached only
-    /// when Redis is not configured at all, so the buffer IS the whole history.
-    /// </summary>
-    private long OldestInMemoryCursor()
+    private long CurrentInMemoryCursor()
     {
         lock (_sync)
         {
-            return _events.Count == 0 ? 0 : _events[0].Cursor;
+            return _events.Count == 0 ? 0 : _events[^1].Cursor;
         }
     }
 
     /// <summary>
-    /// Walks the index from the low end and returns the lowest cursor whose event payload is
-    /// still present, pruning index members whose payload key has already expired. Returns
-    /// <see cref="long.MaxValue"/> when the walk cannot reach a live payload within its
-    /// budget, which classifies every resume cursor as expired.
+    /// Walks the index from the low end and returns the retained-window state, pruning index
+    /// members whose payload key has already expired.
     /// </summary>
     /// <remarks>
     /// Each <c>featurechange:event:*</c> key carries its own TTL, but the matching sorted-set
@@ -392,16 +368,16 @@ internal sealed class InMemoryFeatureChangeEventStore(
     /// members and return empty before reaching live events. Pruning here fixes both.
     /// <para>
     /// The result feeds a "can this client still resume from deltas?" test, so an
-    /// UNDER-estimate is unsafe: it admits a resume whose events are actually gone, and the
-    /// client then keeps incomplete state believing it is current. When the budget is
-    /// exhausted without seeing a live payload the answer is unknown, so this fails closed
-    /// with <see cref="long.MaxValue"/> — every cursor reads as expired and clients take a
-    /// fresh baseline — rather than returning a lower bound that would read as replayable.
+    /// UNDER-estimate is unsafe. A known-empty window is distinct from an indeterminate one:
+    /// the former lets a fresh baseline captured at the durable current cursor complete,
+    /// while the latter remains fail-closed.
     /// </para>
     /// </remarks>
-    private async Task<long> GetOldestRetainedRedisCursorAsync(CancellationToken cancellationToken)
+    private async Task<FeatureChangeRetentionWindow> GetRedisRetentionWindowAsync(
+        CancellationToken cancellationToken)
     {
         const int BatchSize = 128;
+        var currentCursor = await GetCurrentRedisCursorAsync().ConfigureAwait(false);
 
         // TrimRedisAsync caps the index at _maxRetained, so a healthy index can never hold
         // more members than that; the extra batch is slack for members appended while the
@@ -417,7 +393,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             var members = await _redisDb!.SortedSetRangeByRankAsync(IndexKey, 0, BatchSize - 1, Order.Ascending).ConfigureAwait(false);
             if (members.Length == 0)
             {
-                return await NothingRetainedAsync().ConfigureAwait(false);
+                return FeatureChangeRetentionWindow.KnownEmpty(currentCursor);
             }
 
             remaining -= members.Length;
@@ -446,7 +422,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
                         await _redisDb.SortedSetRemoveAsync(IndexKey, [.. stale]).ConfigureAwait(false);
                     }
 
-                    return cursors[i];
+                    return FeatureChangeRetentionWindow.Retained(
+                        Math.Max(currentCursor, cursors[i]),
+                        cursors[i]);
                 }
 
                 stale.Add(members[i]);
@@ -457,7 +435,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             if (members.Length < BatchSize)
             {
                 // The whole index was tombstones: nothing is retained.
-                return await NothingRetainedAsync().ConfigureAwait(false);
+                return FeatureChangeRetentionWindow.KnownEmpty(currentCursor);
             }
         }
 
@@ -468,30 +446,42 @@ internal sealed class InMemoryFeatureChangeEventStore(
         // incomplete state instead of taking a replacement baseline. Fail closed with a value
         // above every real cursor, which classifies every resume cursor as expired and forces
         // a fresh snapshot until the sweep can see live payloads again.
-        return long.MaxValue;
+        return FeatureChangeRetentionWindow.Indeterminate(currentCursor);
     }
 
     /// <summary>
-    /// The answer when the walk finds NO live payload: 0 only if the stream genuinely never
-    /// advanced, otherwise <see cref="long.MaxValue"/>.
+    /// Reads the monotonic cursor counter, falling back to the highest index member for stores
+    /// created before the counter is available or while migrating existing Redis data.
     /// </summary>
     /// <remarks>
-    /// "Index empty" and "every event expired" are indistinguishable from the index alone once
-    /// the tombstones are pruned, and reporting 0 for the second case reads as "a store nobody
-    /// has written to" — replayable from any cursor. A client resuming an old cursor then
-    /// received neither the missing deltas nor a replacement snapshot (honua-server#3038
-    /// review). <c>CursorKey</c> is the durable monotonic counter the append script bumps; it
-    /// carries no per-event TTL, so it survives the payloads and is the evidence that the
-    /// stream once advanced.
+    /// Payload keys expire after seven days and their sorted-set members are pruned lazily.
+    /// The counter has no per-event TTL, so it remains the authoritative baseline boundary
+    /// after the final payload expires. Reading only the index reset a quiescent stream's
+    /// apparent current cursor to zero and made the next append look like a replay gap.
     /// </remarks>
-    private async Task<long> NothingRetainedAsync()
+    private async Task<long> GetCurrentRedisCursorAsync()
     {
         var counter = await _redisDb!.StringGetAsync(CursorKey).ConfigureAwait(false);
-        var advanced = counter.HasValue
+        if (counter.HasValue
             && long.TryParse(counter.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var issued)
-            && issued > 0;
+            && issued >= 0)
+        {
+            ObserveRedisCursor(issued);
+            return issued;
+        }
 
-        return advanced ? long.MaxValue : 0;
+        // Highest cursor = the head of the stream. With Order.Descending the set is walked
+        // high-to-low, so rank 0 is the max score; (-1,-1) would instead return the lowest
+        // cursor and replay the entire retained history rather than resume from now (#2428).
+        var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, 0, Order.Descending).ConfigureAwait(false);
+        if (members.Length == 0
+            || !long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor))
+        {
+            return 0;
+        }
+
+        ObserveRedisCursor(cursor);
+        return cursor;
     }
 
     private async Task<FeatureChangeEvent> AppendWithRedisAsync(

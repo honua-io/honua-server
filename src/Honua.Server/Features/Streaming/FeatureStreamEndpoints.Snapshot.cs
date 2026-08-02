@@ -224,18 +224,16 @@ internal static partial class FeatureStreamEndpoints
             return FeatureStreamSnapshotReasons.CursorInvalid;
         }
 
-        var current = await eventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
-        if (cursor > current)
+        var window = await eventStore.GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
+        if (cursor > window.CurrentCursor)
         {
             return FeatureStreamSnapshotReasons.CursorInvalid;
         }
 
-        var oldest = await eventStore.GetOldestRetainedCursorAsync(cancellationToken).ConfigureAwait(false);
-
-        // The retained window starts at `oldest`. Deltas the client still needs occupy
-        // (cursor, oldest); when that interval is non-empty the events are gone and the
-        // client cannot converge from deltas alone.
-        return oldest > cursor + 1
+        // A known-empty window is replayable only from its current boundary. Older clients
+        // still need expired events and must take a replacement snapshot; an indeterminate
+        // window always fails closed.
+        return window.HasGapAfter(cursor)
             ? FeatureStreamSnapshotReasons.CursorExpired
             : null;
     }
@@ -416,11 +414,14 @@ internal static partial class FeatureStreamEndpoints
         // fresh snapshot, which is exactly the required recovery.
         if (complete)
         {
-            var oldestRetained = await deps.EventStore
-                .GetOldestRetainedCursorAsync(cancellationToken).ConfigureAwait(false);
-            if (oldestRetained > baselineCursor + 1)
+            var retentionWindow = await deps.EventStore
+                .GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
+            if (retentionWindow.HasGapAfter(baselineCursor))
             {
                 complete = false;
+                var oldestRetained = retentionWindow.IsEmpty
+                    ? long.MaxValue
+                    : retentionWindow.OldestRetainedCursor;
                 FeatureStreamLog.SnapshotReplayWindowTrimmed(
                     logger, sessionId, subscriptionId, baselineCursor, oldestRetained);
             }
