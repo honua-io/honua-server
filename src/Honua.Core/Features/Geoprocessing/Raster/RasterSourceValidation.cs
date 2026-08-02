@@ -376,12 +376,10 @@ public static class RasterSourceDescriptorValidator
             return false;
         }
 
-        foreach (var character in value)
+        if (value.Any(character =>
+                !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
         {
-            if (!(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':'))
-            {
-                return false;
-            }
+            return false;
         }
 
         return value[0] != '.' && !value.Contains("..", StringComparison.Ordinal);
