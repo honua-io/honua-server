@@ -61,9 +61,11 @@ internal interface IApplyEditsIdempotencyStore
 
     /// <summary>
     /// Releases a reservation taken by <see cref="TryReserveAsync"/> that will never be replaced by a
-    /// recorded response (#3052) — the edit threw, was rejected, rolled back, or committed no rows. Without
-    /// this the reservation lingers for the whole reservation window and a genuine client retry gets
-    /// 409 Conflict instead of a deterministic repeat of the original outcome.
+    /// recorded response (#3052) — the edit failed before dispatch, was rejected, rolled back, or
+    /// committed no rows. Ambiguous failures after dispatch are not released because rows may have
+    /// committed. Without release on known no-write paths, the reservation lingers for the whole
+    /// reservation window and a genuine client retry gets 409 Conflict instead of a deterministic
+    /// repeat of the original outcome.
     ///
     /// Release is a compare-and-delete against <paramref name="reservationToken"/>, the exact token this
     /// caller was handed. Anything else — a recorded response, or a reservation belonging to a different
@@ -72,8 +74,9 @@ internal interface IApplyEditsIdempotencyStore
     /// failures because this runs on an already-failing path and must never mask the original error.
     ///
     /// Deliberately takes no <see cref="CancellationToken"/>: the release must still run when the
-    /// request that owns the reservation was cancelled or timed out — those are exactly the failures
-    /// that would otherwise pin the key — so there is no token a caller could correctly pass.
+    /// request that owns the reservation was cancelled or timed out before write dispatch — one of
+    /// the failures that would otherwise pin the key — so there is no token a caller could correctly
+    /// pass.
     /// </summary>
     /// <param name="scope">The scope whose reservation is being released.</param>
     /// <param name="reservationToken">The token returned by the <see cref="TryReserveAsync"/> call that won this reservation.</param>

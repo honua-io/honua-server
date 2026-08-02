@@ -7,6 +7,7 @@ using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -354,10 +355,13 @@ internal sealed class FeatureServerEditsHandler(
         // transaction handlers already do (honua-server#2983).
         catch (NotSupportedException ex)
         {
-            // A blanket refusal, not a partial write: a read-only provider rejects the batch before
-            // touching a row, so unlike other write-path exceptions this one is proof that nothing
-            // committed and the reservation is safe to release.
-            writeOutcome.MayHaveCommitted = false;
+            // Only this explicit read-only rejection proves the provider refused the batch before
+            // touching a row. A general NotSupportedException after dispatch is ambiguous and must
+            // keep the reservation just like any other write-path fault.
+            if (ex is ReadOnlyFeatureWriteException)
+            {
+                writeOutcome.MayHaveCommitted = false;
+            }
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateFromException(httpContext, ex);
@@ -386,10 +390,11 @@ internal sealed class FeatureServerEditsHandler(
             // the default rollbackOnFailure=false performs, a transport fault mid-batch — because
             // rows may already exist and re-running them would duplicate.
             //
-            // ReleaseAsync takes no cancellation token on purpose, so an aborted/cancelled request
-            // still frees its key. This covers in-process failures only: a process crash between
-            // reserve and release still leaves the reservation behind, which is what the store's
-            // ReservationWindow TTL exists to bound.
+            // ReleaseAsync takes no cancellation token on purpose, so cancellation before dispatch
+            // can still free its key. An ambiguous cancellation after dispatch keeps the key. This
+            // covers in-process failures only: a process crash between reserve and release still
+            // leaves the reservation behind, which is what the store's ReservationWindow TTL
+            // exists to bound.
             if (heldReservation is { } releaseScope && heldReservationToken is { } releaseToken && !writeOutcome.MayHaveCommitted)
             {
                 await _idempotencyStore.ReleaseAsync(releaseScope, releaseToken).ConfigureAwait(false);

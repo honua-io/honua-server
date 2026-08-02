@@ -115,11 +115,15 @@ Contract details:
   atomic across replicas on Redis (`SET NX`) and atomic within a single process on the
   fallback, so a multi-replica deployment without Redis keeps only the single-node
   guarantee.
-- A reservation is released as soon as its request finishes without recording a response —
-  an exception, a read-only provider rejection, a `rollbackOnFailure` validation failure, or
-  a commit that changed no rows. A sequential retry inside the window therefore re-attempts
-  the edit and reproduces the original outcome, rather than colliding with a finished
-  request's leftover reservation (#3052).
+- A reservation is released when the request is known to have changed no rows — for example,
+  an exception before write dispatch, an explicit read-only provider rejection, a
+  `rollbackOnFailure` validation failure, a confirmed rollback, or a completed write that
+  changed no rows. A sequential retry then re-attempts the edit instead of colliding with a
+  finished request's leftover reservation. If a write was dispatched but failed without a
+  definitive outcome (for example, cancellation or a transport fault part-way through a
+  non-transactional batch), the reservation is retained until it expires and an immediate
+  same-key retry receives `409`; this safety bias prevents duplicating rows that may already
+  have committed (#3052).
 
 ### applyEdits per-feature error codes
 

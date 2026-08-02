@@ -19,11 +19,11 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Regression coverage for honua-server#3052: the <c>Idempotency-Key</c> reservation the shared
-/// FeatureServer edit pipeline takes before executing an edit must be released on the exception
-/// exits, not only replaced on the success exit. This class covers the exception boundary — the
-/// provider rejection raised as <see cref="NotSupportedException"/> after the reservation is held —
-/// on the ordinary Postgres host, so the guarantee is proven in the primary integration lane rather
-/// than only in the read-only provider smoke lane.
+/// FeatureServer edit pipeline takes before executing an edit must be released when an exception
+/// proves no write occurred, not only replaced on the success exit. This class covers the explicit
+/// read-only provider rejection after the reservation is held on the ordinary Postgres host, so the
+/// guarantee is proven in the primary integration lane rather than only in the read-only provider
+/// smoke lane.
 /// </summary>
 /// <remarks>
 /// The host is the standard fixture with one substitution: <see cref="IFeatureWriter"/> is the
@@ -186,6 +186,46 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             $"and the retry refused rather than re-applied: {retryBody}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterGenericNotSupportedWriteWithUnknownOutcome_ReportsConflict()
+    {
+        // NotSupportedException by itself does not prove a write was rejected before touching a
+        // row. Only the read-only provider's explicit rejection has that guarantee; a different
+        // writer can surface the same base exception after a partial commit. The reservation must
+        // therefore remain held for this ambiguous failure just as it does for other writer faults.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?> { ["name"] = $"Unsupported-{idempotencyKey}" },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var first = await PostApplyEditsAsync(json, idempotencyKey);
+        first.Be200Ok();
+        var firstBody = await first.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(firstBody).Should().Be(
+            405,
+            $"NotSupportedException still maps through the shared protocol error boundary: {firstBody}");
+
+        var retry = await PostApplyEditsAsync(json, idempotencyKey);
+        retry.Be200Ok();
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        FeatureServerApplyEditsIdempotencyReleaseTests.ReadErrorCode(retryBody).Should().Be(
+            409,
+            "the generic NotSupportedException does not prove that no rows were committed, so the " +
+            $"reservation must remain held: {retryBody}");
+    }
+
     private async Task<HttpResponseMessage> PostApplyEditsAsync(string json, string idempotencyKey)
     {
         using var message = new HttpRequestMessage(
@@ -215,6 +255,16 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             => throw new InvalidOperationException("write failed part-way through the batch");
 
         public Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("write failed part-way through the batch");
+        {
+            if (editBatch.Creates.Any(static feature =>
+                    feature.Attributes.TryGetValue("name", out var name) &&
+                    name is string text &&
+                    text.StartsWith("Unsupported-", StringComparison.Ordinal)))
+            {
+                throw new NotSupportedException("write became unsupported part-way through the batch");
+            }
+
+            throw new InvalidOperationException("write failed part-way through the batch");
+        }
     }
 }

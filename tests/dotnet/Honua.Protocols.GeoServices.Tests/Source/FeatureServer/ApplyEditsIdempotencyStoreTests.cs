@@ -152,9 +152,9 @@ public sealed class ApplyEditsIdempotencyStoreTests
     // ─── #3052: reservation release ──────────────────────────────────────────────
 
     /// <summary>
-    /// #3052: a reservation that will never be replaced by a recorded response (the edit threw,
-    /// was rejected, rolled back, or committed no rows) must be releasable, so the client's retry
-    /// wins the reservation again instead of losing it and getting a 409.
+    /// #3052: a reservation that will never be replaced by a recorded response (the edit failed
+    /// before dispatch, was rejected, rolled back, or committed no rows) must be releasable, so the
+    /// client's retry wins the reservation again instead of losing it and getting a 409.
     /// </summary>
     [UnitTest]
     [Operation(Operations.ApplyEdits)]
