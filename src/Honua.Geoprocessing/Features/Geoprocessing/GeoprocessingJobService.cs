@@ -201,6 +201,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
 
+        foreach (var step in plan.Steps)
+        {
+            if (step.RasterSources is null)
+            {
+                violations.Add(new GeoprocessingValidationFailure
+                {
+                    Code = RasterSourceValidationCodes.InvalidField,
+                    Message = "Raster source bindings must be an object when supplied.",
+                    FieldPath = "rasterSources",
+                });
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(plan.PlanId))
         {
             violations.Add(new GeoprocessingValidationFailure

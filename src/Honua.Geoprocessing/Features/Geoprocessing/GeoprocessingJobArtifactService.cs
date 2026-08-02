@@ -125,7 +125,7 @@ internal sealed class GeoprocessingJobArtifactService
 
         foreach (var step in plan.Steps)
         {
-            if (step.RasterSources.Any(source => source.Value is not InlineRasterSourceDescriptor))
+            if (step.RasterSources?.Any(source => source.Value is not InlineRasterSourceDescriptor) == true)
             {
                 return new GeoprocessingValidationFailure
                 {

@@ -364,6 +364,23 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public async Task ResolveAsync_MediaTypeDoesNotMatch_ReturnsIntegrityMismatch()
+    {
+        var descriptor = Cog();
+        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
+            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
+            {
+                Version = descriptor.Version,
+                Content = descriptor.Content with { MediaType = "application/octet-stream" },
+            })));
+
+        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
+
+        Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
+        Assert.Equal("source_integrity_mismatch", result.FailureCode);
+    }
+
+    [Fact]
     public async Task ResolveAsync_VersionDoesNotMatch_ReturnsStale()
     {
         var descriptor = Cog();

@@ -209,7 +209,7 @@ internal static partial class ProcessPlanValidator
                 }
 
                 if (!step.Inputs.ContainsKey(param.Name)
-                    && !(param.AcceptsRasterSource && step.RasterSources.ContainsKey(param.Name)))
+                    && !(param.AcceptsRasterSource && step.RasterSources?.ContainsKey(param.Name) == true))
                 {
                     violations.Add(new GeoprocessingValidationFailure
                     {
@@ -1746,7 +1746,7 @@ internal static partial class ProcessPlanValidator
         // catalog rejects it at submit-time validation instead. (The base required
         // loop no longer enforces 'source' because it is now optional.)
         var hasSource = (step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source))
-            || step.RasterSources.ContainsKey("source");
+            || step.RasterSources?.ContainsKey("source") == true;
         var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerId) && !string.IsNullOrWhiteSpace(layerId);
         var hasRasterId = step.Inputs.TryGetValue("rasterId", out var rasterId) && !string.IsNullOrWhiteSpace(rasterId);
         if (!hasSource && !hasLayerId && !hasRasterId)

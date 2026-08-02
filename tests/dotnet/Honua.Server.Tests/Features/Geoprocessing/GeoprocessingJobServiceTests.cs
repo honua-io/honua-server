@@ -192,8 +192,27 @@ public sealed class GeoprocessingJobServiceTests
 
         result.IsExecutable.Should().BeFalse();
         result.Violations.Should().ContainSingle(violation =>
-            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
-            && violation.FieldPath == "steps[step-raster].raster_sources");
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
+                && violation.FieldPath == "steps[step-raster].raster_sources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_NullRasterSources_ReportsInvalidField()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps = [plan.Steps[0] with { RasterSources = null! }],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidField
+            && violation.FieldPath == "rasterSources");
     }
 
     // -----------------------------------------------------------------------
