@@ -339,6 +339,14 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
             var engines = new HashSet<RasterEngine>();
             foreach (var engine in process.Engines)
             {
+                if (!Enum.IsDefined(engine.Engine))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' declares undefined engine value "
+                        + $"'{(int)engine.Engine}'.",
+                        nameof(capabilities));
+                }
+
                 if (!engines.Add(engine.Engine))
                 {
                     throw new ArgumentException(
