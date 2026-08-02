@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -19,11 +18,11 @@ namespace Honua.Server.Tests.Features.Licensing;
 /// <summary>
 /// Guards the output-cache entitlement gate (<c>caching.output-cache</c>, Pro; #2998).
 /// <c>Program</c> wires <c>UseOutputCache()</c> inside an <c>app.UseWhen(...)</c> branch whose
-/// predicate is <see cref="LicenseGate.HasLiveEntitlement"/>, so the decision follows the live
-/// license snapshot instead of being captured once at process boot. That matters in both
-/// directions: a Community process upgraded through <see cref="ILicenseManager"/> must start
-/// caching without a restart, and a Pro license that expires at runtime must stop serving cached
-/// responses immediately.
+/// predicate checks the live license snapshot instead of capturing it once at process boot. A
+/// Redis-backed output cache additionally requires the live <c>caching.redis</c> entitlement. That
+/// matters in both directions: a Community process upgraded through <see cref="ILicenseManager"/>
+/// must start caching without a restart, and a paid license that expires or loses the Redis
+/// entitlement at runtime must stop serving cached responses immediately.
 /// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
@@ -89,6 +88,32 @@ public sealed class OutputCacheEntitlementGateTests
 
         IsOutputCacheEntitled(context).Should().BeFalse(
             "once the license snapshot reports Expired the output-cache branch must stop running");
+    }
+
+    [UnitTest]
+    public void OutputCacheGate_RedisBackendWithoutLiveRedisEntitlement_DoesNotEntitleOutputCache()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Pro);
+        var context = BuildContext(entitlements);
+
+        IsOutputCacheEntitled(context, redisOutputCacheConfigured: true).Should().BeTrue();
+
+        entitlements.Apply(HonuaEdition.Pro, [FeatureCatalog.OutputCacheKey]);
+
+        IsOutputCacheEntitled(context, redisOutputCacheConfigured: true).Should().BeFalse(
+            "a Redis-backed output cache must stop after a hot license replacement removes caching.redis");
+    }
+
+    [UnitTest]
+    public void OutputCacheGate_LocalBackendWithoutRedisEntitlement_StillEntitlesOutputCache()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Pro);
+        var context = BuildContext(entitlements);
+
+        entitlements.Apply(HonuaEdition.Pro, [FeatureCatalog.OutputCacheKey]);
+
+        IsOutputCacheEntitled(context, redisOutputCacheConfigured: false).Should().BeTrue(
+            "the local output-cache store does not require the separate Redis entitlement");
     }
 
     [UnitTest]
@@ -163,11 +188,11 @@ public sealed class OutputCacheEntitlementGateTests
 
         var guarded = branch[..outputCacheIndex];
         guarded.Should().Contain(
-            nameof(LicenseGate.HasLiveEntitlement),
+            nameof(ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements),
             "the branch predicate must read the live license snapshot");
         guarded.Should().Contain(
-            nameof(FeatureCatalog.OutputCacheKey),
-            "the branch predicate must be keyed on caching.output-cache");
+            "redisOutputCacheConfigured",
+            "the branch predicate must require the live Redis entitlement for a Redis backend");
 
         source.Should().NotContain(
             "IsOutputCacheEntitledAsync",
@@ -177,8 +202,12 @@ public sealed class OutputCacheEntitlementGateTests
             "the Redis output-cache backend must receive the boot-time caching.redis decision");
     }
 
-    private static bool IsOutputCacheEntitled(HttpContext context)
-        => LicenseGate.HasLiveEntitlement(context.RequestServices, FeatureCatalog.OutputCacheKey);
+    private static bool IsOutputCacheEntitled(
+        HttpContext context,
+        bool redisOutputCacheConfigured = false)
+        => ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements(
+            context.RequestServices,
+            redisOutputCacheConfigured);
 
     private static IOutputCacheStore ResolveOutputCacheStore(bool redisCacheEntitled)
     {
@@ -261,8 +290,8 @@ public sealed class OutputCacheEntitlementGateTests
         public MutableLicenseEntitlementService(HonuaEdition edition)
             => _snapshot = LicenseTestSupport.CreateSnapshot(edition);
 
-        public void Apply(HonuaEdition edition)
-            => _snapshot = LicenseTestSupport.CreateSnapshot(edition);
+        public void Apply(HonuaEdition edition, string[]? entitlements = null)
+            => _snapshot = LicenseTestSupport.CreateSnapshot(edition, entitlements: entitlements);
 
         public void Expire()
             => _snapshot = LicenseTestSupport.CreateSnapshot(

@@ -194,6 +194,9 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
+var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.ShouldUseRedisOutputCache(
+    redisCacheEntitled,
+    redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -1326,17 +1329,16 @@ app.UseLimitsEnforcement();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
-// Enable output caching only for requests the live caching.output-cache entitlement covers
-// (#2998). The decision is taken per request against the current license snapshot rather than
-// frozen at boot: a Community process upgraded through ILicenseManager.ApplyLicenseAsync starts
-// caching without a restart, and — the direction that matters — a Pro license that expires at
-// runtime stops serving cached responses immediately instead of keeping the entitlement until the
-// next restart. Without the branch, endpoint CacheOutput metadata is inert, so Community
-// deployments serve identical responses — just uncached.
+// Enable output caching only for requests covered by the live entitlements required by the
+// selected backend (#2998). The backend is fixed at startup, but its output-cache entitlement and,
+// for Redis, caching.redis entitlement are rechecked per request. A runtime license replacement
+// therefore cannot keep either capability active after it is removed. Without the branch,
+// endpoint CacheOutput metadata is inert, so unentitled deployments serve identical responses —
+// just uncached.
 app.UseWhen(
-    static context => Honua.Infrastructure.Licensing.LicenseGate.HasLiveEntitlement(
+    context => ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements(
         context.RequestServices,
-        Honua.Core.Features.Licensing.Domain.FeatureCatalog.OutputCacheKey),
+        redisOutputCacheConfigured),
     static entitled => entitled.UseOutputCache());
 
 // Log application startup

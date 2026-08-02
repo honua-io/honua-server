@@ -291,6 +291,12 @@ public static class FeatureCatalog
     public const string OutputCacheKey = "caching.output-cache";
 
     /// <summary>
+    /// Entitlement key for the Redis-backed distributed and output-cache stores. Pro-tier:
+    /// deployments without this entitlement fall back to process-local cache storage.
+    /// </summary>
+    public const string RedisCacheKey = "caching.redis";
+
+    /// <summary>
     /// Entitlement key for SAML 2.0 service-provider authentication (#2978). Enterprise-only
     /// per ADR-0024's Identity Governance tier ("Multi-provider OIDC configuration,
     /// claim-to-role mapping, SAML bridge, SCIM user/group provisioning"); the Pro "no SSO
@@ -428,7 +434,7 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "HTTP response caching with tag-based invalidation."),
 
         // Caching — Pro
-        new("caching.redis", "Redis Distributed Cache", Categories.Caching,
+        new(RedisCacheKey, "Redis Distributed Cache", Categories.Caching,
             HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
         // Import — Community (one-shot file import ships in Community; see docs/features/README.md)

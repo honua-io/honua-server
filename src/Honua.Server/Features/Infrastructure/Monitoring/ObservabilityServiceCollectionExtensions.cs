@@ -12,6 +12,7 @@ using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -639,7 +640,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         var redisConnectionString = configuration.GetConnectionString("redis")
             ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString))
+        if (ShouldUseRedisOutputCache(redisCacheEntitled, redisConnectionString))
         {
             var cacheKeyPrefix = configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
             services.AddStackExchangeRedisOutputCache(options =>
@@ -649,6 +650,23 @@ internal static class ObservabilityServiceCollectionExtensions
             });
         }
     }
+
+    internal static bool ShouldUseRedisOutputCache(
+        bool redisCacheEntitled,
+        string? redisConnectionString)
+        => redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString);
+
+    /// <summary>
+    /// Checks the live entitlements required by the output-cache backend selected at startup.
+    /// A local store requires only output caching; a Redis store requires both output caching
+    /// and Redis on every request so a hot license replacement cannot retain Redis access.
+    /// </summary>
+    internal static bool HasLiveOutputCacheEntitlements(
+        IServiceProvider services,
+        bool redisOutputCacheConfigured)
+        => LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OutputCacheKey)
+            && (!redisOutputCacheConfigured
+                || LicenseGate.HasLiveEntitlement(services, FeatureCatalog.RedisCacheKey));
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
