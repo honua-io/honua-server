@@ -129,7 +129,7 @@ internal sealed class GeoprocessingJobArtifactService
         for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
         {
             var step = plan.Steps[stepIndex];
-            if (step.RasterSources.Count == 0)
+            if (step.RasterSources is not { Count: > 0 })
             {
                 continue;
             }
