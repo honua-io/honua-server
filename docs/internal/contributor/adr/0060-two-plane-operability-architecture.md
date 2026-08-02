@@ -3,7 +3,7 @@
 Status: Proposed
 Date: 2026-07-04
 
-Raster specialization: [ADR-0070](0070-raster-execution-boundary.md) controls
+Raster specialization: [ADR-0071](0071-raster-execution-boundary.md) controls
 raster engine and placement within the execution/GP plane. A configured batch
 backend is an eligible placement, not a universal destination: bounded,
 data-resident raster work prefers PostGIS when it fits the database SLO budget,
@@ -34,7 +34,7 @@ Adopt a **two-plane, substrate-neutral operability architecture**: Honua owns th
 - **Execution/GP plane (`IBatchComputeBackend`)** — stateless batch jobs (inputs from store → outputs to store); submit / track / retry / cancel / collect; scheduler-fronted.
 
 For raster jobs, the execution plane includes governed durable PostGIS work as
-well as local and remote native workers. The planner defined by ADR-0070 chooses
+well as local and remote native workers. The planner defined by ADR-0071 chooses
 among them before an attempt starts; `IBatchComputeBackend` is used only when
 the selected placement is remote native execution.
 

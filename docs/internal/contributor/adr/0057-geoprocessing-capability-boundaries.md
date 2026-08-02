@@ -4,7 +4,7 @@
 
 Accepted (2026-06)
 
-For raster processes, [ADR-0070](0070-raster-execution-boundary.md) controls
+For raster processes, [ADR-0071](0071-raster-execution-boundary.md) controls
 physical engine and workload placement. "One canonical GP engine" in this ADR
 means one server-owned process contract and result semantics; it does not mean
 one physical compute engine.
@@ -98,14 +98,14 @@ resolve through the existing secure-connection/secret mechanism.
 ### 4. Raster GP uses the selected PostGIS or isolated-native engine
 
 Raster/terrain GP remains a set of canonical server processes, but physical
-execution follows ADR-0070. Bounded, data-resident work prefers PostGIS when it
+execution follows ADR-0071. Bounded, data-resident work prefers PostGIS when it
 fits the database resource and serving-SLO budget. External-format,
 high-scratch, bursty, or database-disruptive work uses utilities shipped in the
 native GDAL worker (`gdal_calc`, `gdal_grid`, `gdal_contour`, `gdal_proximity`,
 `gdal_viewshed`, `gdal_polygonize`/`gdal_rasterize`, `gdaldem`) locally or in a
 remote backend such as AWS Batch. Neither path adds numerical or native
 dependencies to the AOT serving image. Equivalent implementations must honor
-the shared semantics and selection record defined by ADR-0070.
+the shared semantics and selection record defined by ADR-0071.
 
 ## Scope Out
 
@@ -145,7 +145,7 @@ the shared semantics and selection record defined by ADR-0070.
 - [ADR-0026: AI-First Operator Contract](0026-ai-first-operator-contract.md)
 - [ADR-0029: Geoprocess Canonical Model Mappings](0029-geoprocess-canonical-model-mappings.md)
 - [ADR-0038: GeoETL Pipeline Architecture and Runtime Boundary](0038-geoetl-pipeline-architecture-and-runtime-boundary.md)
-- [ADR-0070: PostGIS-First, Database-SLO-Aware Raster Execution Boundary](0070-raster-execution-boundary.md)
+- [ADR-0071: PostGIS-First, Database-SLO-Aware Raster Execution Boundary](0071-raster-execution-boundary.md)
 - Epic: honua-io/honua-server#1259 (port Esri GP services) — holistic plan in its comments
 - honua-io/honua-server#2239 (raster map-algebra + spectral indices), #2240
   (proximity/terrain pack), #2241 (imagery/ML cloud delegation)

@@ -4,7 +4,7 @@
 
 Accepted
 
-For raster processes, [ADR-0070](0070-raster-execution-boundary.md) is the
+For raster processes, [ADR-0071](0071-raster-execution-boundary.md) is the
 controlling engine and placement decision. The PostGIS primitives introduced by
 this ADR express available canonical capabilities; they do not require every
 supported workload to execute in PostGIS. Placement is also gated by database
@@ -197,7 +197,7 @@ model. Must not add domain types to `Honua.Core`.
   For heavyweight `surface.*` and
   `raster.*` workloads this ticket adds the PostGIS-backed execution
   primitives (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`)
-  that will sit behind the canonical worker boundary. ADR-0070 controls whether
+  that will sit behind the canonical worker boundary. ADR-0071 controls whether
   an invocation uses those primitives through the managed PostGIS raster
   profile or uses isolated native GDAL locally or through a batch backend. The
   handler/executor wiring that dispatches catalog entries into the selected

@@ -1,4 +1,4 @@
-# ADR-0070: PostGIS-first, database-SLO-aware raster execution boundary
+# ADR-0071: PostGIS-first, database-SLO-aware raster execution boundary
 
 ## Status
 
