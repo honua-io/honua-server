@@ -104,6 +104,24 @@ public sealed class RasterEngineCapabilityRegistryTests
     }
 
     [Fact]
+    public void Constructor_UndefinedEngineValues_AreRejected()
+    {
+        var template = new RasterEngineCapabilityRegistry().Processes[0];
+        var malformed = template with
+        {
+            Engines = template.Engines
+                .Select((engine, index) => engine with { Engine = (RasterEngine)(100 + index) })
+                .ToArray(),
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new RasterEngineCapabilityRegistry([malformed]));
+
+        Assert.Equal("capabilities", exception.ParamName);
+        Assert.Contains("undefined engine value", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Estimate_NegativeMetric_IsRejected()
     {
         var registry = new RasterEngineCapabilityRegistry();
