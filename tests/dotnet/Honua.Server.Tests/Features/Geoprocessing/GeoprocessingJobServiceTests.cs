@@ -3504,10 +3504,10 @@ public sealed class GeoprocessingJobServiceTests
     private static AnalysisPlan CreateTypedRasterPlan(
         string parameterName,
         ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
-    {
-        PlanId = "plan-typed-raster",
-        IntentId = "intent-typed-raster",
-        Steps =
+        {
+            PlanId = "plan-typed-raster",
+            IntentId = "intent-typed-raster",
+            Steps =
         [
             new AnalysisPlanStep
             {
@@ -3521,7 +3521,7 @@ public sealed class GeoprocessingJobServiceTests
                 },
             },
         ],
-    };
+        };
 
     private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
     {
