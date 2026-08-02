@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
@@ -41,6 +42,23 @@ public sealed class AnalysisContentServiceTests
 
         var json = JsonSerializer.Serialize(package, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
         var roundTrip = JsonSerializer.Deserialize(json, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
+
+        var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
+    }
+
+    [UnitTest]
+    public void AnalysisContentApiJsonContext_SourceTypeAfterDescriptorProperties_IsAccepted()
+    {
+        var document = JsonNode.Parse(JsonSerializer.Serialize(
+            CreateReferenceRasterPackage(), AnalysisContentApiJsonContext.Default.AnalysisPackageContent))!;
+        var source = document["plan"]!["steps"]![0]!["rasterSources"]!["source"]!.AsObject();
+        var sourceType = source["sourceType"]!.GetValue<string>();
+        Assert.True(source.Remove("sourceType"));
+        source["sourceType"] = sourceType;
+
+        var roundTrip = JsonSerializer.Deserialize(
+            document.ToJsonString(), AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
 
         var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
