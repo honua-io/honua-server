@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
 using NSubstitute;
