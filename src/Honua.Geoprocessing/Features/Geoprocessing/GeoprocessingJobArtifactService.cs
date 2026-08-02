@@ -47,6 +47,17 @@ internal sealed class GeoprocessingJobArtifactService
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
     /// <summary>
+    /// Binds raster-id selectors to their owning layer before the shared submit-time layer gate.
+    /// This is metadata-only and therefore cannot read or expose raster bytes before access is
+    /// authorized.
+    /// </summary>
+    public Task<AnalysisPlan> BindRasterSourceLayerIdsAsync(
+        AnalysisPlan plan,
+        CancellationToken cancellationToken)
+        => GeoprocessingRasterSourceResolution.BindLayerIdsAsync(
+            plan, _processCatalog, _rasterSourceResolver, cancellationToken);
+
+    /// <summary>
     /// Resolves any native raster/surface step that references a registered catalog raster
     /// by layerId/rasterId, materializing the bytes onto the canonical base64 <c>source</c>
     /// input the worker reads (#2264). Returns the original plan unchanged when no step

@@ -42,6 +42,13 @@ time.**
 submitter's principal id, tenant, and captured claims. It is stamped at submit time by
 the shared geoprocessing submit pipeline and travels with the job record.
 
+The stored tenant is the **effective request tenant** from `ITenantContext`, after the
+tenant middleware has applied configured `TenantClaimTypes`, an authorized
+`X-Honua-Tenant` override, or default handling. Capture must not re-parse hard-coded
+`tenant_id`/`tid` claims: an accepted header override can intentionally differ from the
+token tenant. Restore replaces the canonical tenant aliases with that authoritative
+value so deferred authorization cannot fall back to stale token scope.
+
 At execution, `GeoprocessingDispatchJobExecutor` — the single seam every managed process
 executor runs through — opens a `JobSecurityScope` (an `AsyncLocal` ambient scope,
 following `FeatureMutationOutboxScope`) for the whole dispatch.
@@ -124,7 +131,11 @@ refusal has to happen at submit time.
   their snapshot is inherited and absent. They must be resubmitted too.
 - Policy changes take effect on already-queued jobs, because the predicate and mask are
   re-derived per read.
-- Out-of-process backends (GDAL worker, AWS Batch) are unaffected: catalog-layer reads go
-  through the managed `source.honua-layer` connector, and no layer-sourced process declares
-  a native runtime profile. Should one ever do so, the fail-closed guard at the connector
-  is the enforcement point that must be honored or the job refused.
+- Out-of-process backends (GDAL worker, AWS Batch) do not reopen catalog layers. Vector
+  catalog reads go through the managed `source.honua-layer` connector. For a native raster
+  process, a `rasterId` is first resolved to its owning `layerId` using registration metadata;
+  the shared layer gate authorizes that layer, and only then may the serving process read and
+  materialize raster bytes onto the job's `source` input. Unknown or mismatched references
+  fail through the same authorization channel as forbidden layers, before byte access. A
+  future native process that reads a catalog layer directly must propagate the security scope
+  to the read seam or be refused.

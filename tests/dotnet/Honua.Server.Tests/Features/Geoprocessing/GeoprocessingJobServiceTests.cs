@@ -13,12 +13,14 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -230,6 +232,148 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
 
         job.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PinsEffectiveRequestTenantInsteadOfParsingTokenClaims()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns("tenant-from-header");
+        await using var requestServices = new ServiceCollection()
+            .AddSingleton(tenantContext)
+            .BuildServiceProvider();
+        var httpContextAccessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { RequestServices = requestServices }
+        };
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            httpContextAccessor: httpContextAccessor);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "tenant-admin"),
+                new Claim("organization_scope", "tenant-from-custom-claim"),
+                new Claim("tenant_id", "tenant-from-token")
+            ],
+            "Test"));
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, principal);
+
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-from-header");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterIdOnly_AuthorizesOwningLayerBeforeReadingBytes()
+    {
+        var events = new List<string>();
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91 && reference.LayerId == null),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("resolve-layer");
+                return Task.FromResult(RasterSourceLayerResolution.Success(42));
+            });
+        rasterResolver
+            .ResolveAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91 && reference.LayerId == 42),
+                Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("read-bytes");
+                return Task.FromResult(RasterSourceResolution.Success([1, 2, 3]));
+            });
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("authorize-layer");
+                return Task.FromResult(AccessDecision.Allowed());
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var job = await sut.SubmitJobAsync(CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
+
+        events.Should().Equal("resolve-layer", "authorize-layer", "read-bytes");
+        job.Spec.Parameters["honua.geoprocessing.step.0.layerId"].Should().Be("42");
+        job.Spec.Parameters["honua.geoprocessing.step.0.source"].Should().Be(Convert.ToBase64String([1, 2, 3]));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterIdOwningLayerDenied_DoesNotReadRasterBytes()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>())
+            .Returns(RasterSourceLayerResolution.Success(42));
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_UnknownOrMismatchedRasterReference_FailsWithoutReadingBytesOrEnumerating()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>())
+            .Returns(RasterSourceLayerResolution.NotFound());
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateRasterSourcePlan(rasterId: 91, layerId: 7), null, CreatePrincipal());
+
+        var failure = (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()).Which;
+        failure.Message.Should().NotContain("91").And.NotContain("7");
+        await layerAuthorizer.DidNotReceive().AuthorizeLayerAsync(
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<int>(), Arg.Any<AuthorizationOperation>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -798,6 +942,42 @@ public sealed class GeoprocessingJobServiceTests
         job.Audit.SubmitterSecurityContext!.Claims.Should().NotContain(
             claim => claim.Value == "admin",
             "the orchestrator's admin role must never leak onto a step job's snapshot");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_LayerGateUsesRestoredRequesterNotOrchestratorAdmin()
+    {
+        ClaimsPrincipal? gatedPrincipal = null;
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Do<ClaimsPrincipal>(principal => gatedPrincipal = principal),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(
+            rasterResolver: null,
+            layerAuthorizer: layerAuthorizer);
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+        var inherited = new JobSecurityContext(
+            "subject-123",
+            TenantId: "tenant-requester",
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+
+        await sut.SubmitJobWithSecurityContextAsync(
+            CreateLayerSourcePlan(42), null, orchestratorPrincipal, null, inherited);
+
+        gatedPrincipal.Should().NotBeNull();
+        gatedPrincipal!.IsInRole("analyst").Should().BeTrue();
+        gatedPrincipal.IsInRole("admin").Should().BeFalse();
+        gatedPrincipal.FindFirst("tenant_id")?.Value.Should().Be("tenant-requester");
     }
 
     private static JobSecurityContext CreateSubmitterSecurityContext()
@@ -3507,6 +3687,67 @@ public sealed class GeoprocessingJobServiceTests
         PlanId = "plan-1",
         IntentId = "intent-1",
         Steps = [BufferStep("step-1")]
+    };
+
+    private GeoprocessingJobService CreateServiceWithRasterResolver(
+        IGeoprocessingRasterSourceResolver? rasterResolver,
+        ILayerAccessAuthorizer layerAuthorizer)
+        => new(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterSourceResolver: rasterResolver,
+            layerAccessAuthorizer: layerAuthorizer);
+
+    private static AnalysisPlan CreateRasterSourcePlan(long rasterId, int? layerId = null)
+    {
+        var inputs = new Dictionary<string, string>
+        {
+            ["rasterId"] = rasterId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        if (layerId is { } value)
+        {
+            inputs["layerId"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new AnalysisPlan
+        {
+            PlanId = "plan-raster-source",
+            IntentId = "intent-raster-source",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-raster-source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = inputs,
+                },
+            ],
+        };
+    }
+
+    private static AnalysisPlan CreateLayerSourcePlan(int layerId) => new()
+    {
+        PlanId = "plan-layer-source",
+        IntentId = "intent-layer-source",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-layer-source",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "source.honua-layer",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["layerId"] = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                },
+            },
+        ],
     };
 
     private static AnalysisPlanStep BufferStep(string stepId) => new()

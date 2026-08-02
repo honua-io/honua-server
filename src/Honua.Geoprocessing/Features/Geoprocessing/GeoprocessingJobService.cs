@@ -360,7 +360,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // can be withdrawn, all after the proposal was authorized. Re-evaluating the CURRENT
         // grants against the persisted submitter identity — the same identity the worker will
         // read under — closes that window (honua-server#3046 review).
-        var authorizationPrincipal = resumingApproved
+        var authorizationPrincipal = resumingApproved || inheritsSubmitterSecurityContext
             ? JobSecurityContextCapture.Restore(resolvedSecurityContext)
             : principal;
 
@@ -413,6 +413,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             EnsurePlanCatalogValid(plan);
         }
 
+        // A rasterId is a catalog reference even though its catalog parameter is a 64-bit text
+        // value rather than LayerId. Resolve only the registration metadata here and bind its
+        // owning layer onto the plan, so the generic scope/RBAC gate below authorizes that layer
+        // BEFORE CatalogRasterSourceResolver reads any cloud bytes. Unknown registrations and
+        // rasterId/layerId mismatches fail through the same generic authorization channel.
+        plan = await _artifacts.BindRasterSourceLayerIdsAsync(plan, cancellationToken)
+            .ConfigureAwait(false);
+
         // Evaluate the mutating-process tier unconditionally — including for custom-code
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
         // plan carries no executable mutating Geoprocess step, so running this for both
@@ -444,7 +452,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // while the generic gate above still rechecks every directly declared layer reference.
         if (!resumingApproved)
         {
-            plan = await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+            plan = await _authorizer
+                .EnsureLayerReadAccessAsync(plan, authorizationPrincipal, cancellationToken)
                 .ConfigureAwait(false);
         }
 
