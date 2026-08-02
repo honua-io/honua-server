@@ -1,0 +1,174 @@
+"""Proofs for the Admin OpenAPI breaking-change acknowledgement policy."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[3]
+POLICY_SPEC = importlib.util.spec_from_file_location(
+    "openapi_breaking_change_policy",
+    ROOT / "scripts/ci/openapi-breaking-change-policy.py",
+)
+POLICY = importlib.util.module_from_spec(POLICY_SPEC)
+assert POLICY_SPEC and POLICY_SPEC.loader
+sys.modules[POLICY_SPEC.name] = POLICY
+POLICY_SPEC.loader.exec_module(POLICY)
+
+
+class ResolvePolicyTests(unittest.TestCase):
+    def test_ResolvePolicy_NoOverrideOrMarker_DisallowsBreakingChanges(self):
+        decision = POLICY.resolve_policy("false", "## Breaking Changes\nNone")
+
+        self.assertFalse(decision.allow_breaking_changes)
+        self.assertEqual(decision.source, "none")
+
+    def test_ResolvePolicy_CheckedPrMarker_AllowsOnlyThisPr(self):
+        decision = POLICY.resolve_policy(
+            "false",
+            "- [X] `OPENAPI_BREAKING_CHANGE_APPROVED` — migration guide updated",
+        )
+
+        self.assertTrue(decision.allow_breaking_changes)
+        self.assertEqual(
+            decision.source,
+            "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
+        )
+
+    def test_ResolvePolicy_UncheckedPrMarker_DoesNotAllowBreakingChanges(self):
+        decision = POLICY.resolve_policy(
+            "false",
+            "- [ ] `OPENAPI_BREAKING_CHANGE_APPROVED` — migration guide updated",
+        )
+
+        self.assertFalse(decision.allow_breaking_changes)
+
+    def test_ResolvePolicy_PrePublicationRepositoryOverride_TakesPrecedence(self):
+        decision = POLICY.resolve_policy(
+            "true",
+            "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` — migration guide updated",
+        )
+
+        self.assertTrue(decision.allow_breaking_changes)
+        self.assertEqual(
+            decision.source,
+            "repository variable OPENAPI_ALLOW_BREAKING_CHANGES",
+        )
+
+    def test_ParseRepositoryOverride_InvalidValue_FailsClosed(self):
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            POLICY.resolve_policy("tru", "")
+
+
+@unittest.skipUnless(
+    os.name != "nt" and shutil.which("bash"),
+    "a native bash environment is required for the shell validator",
+)
+class SuppressedFindingVisibilityTests(unittest.TestCase):
+    """A successful suppression must remain loud in the PR's Actions UI."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.repo = Path(self.directory.name)
+
+        script_target = self.repo / "scripts/ci/validate-openapi-contracts.sh"
+        resolver_target = self.repo / "scripts/ci/lib/python-resolve.sh"
+        script_target.parent.mkdir(parents=True)
+        resolver_target.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/ci/validate-openapi-contracts.sh", script_target)
+        shutil.copy2(ROOT / "scripts/ci/lib/python-resolve.sh", resolver_target)
+
+        specs_target = self.repo / "docs/developer/api-specs"
+        specs_target.mkdir(parents=True)
+        for name in (
+            "admin-api.json",
+            "ogc-api-features.json",
+            "ogc-api-tiles.json",
+        ):
+            shutil.copy2(ROOT / "docs/developer/api-specs" / name, specs_target / name)
+
+        admin_path = specs_target / "admin-api.json"
+        current_admin = json.loads(admin_path.read_text(encoding="utf-8"))
+        baseline_admin = json.loads(json.dumps(current_admin))
+        baseline_admin["paths"]["/__breaking-change-visibility-probe"] = {
+            "get": {"responses": {"200": {"description": "probe"}}}
+        }
+        admin_path.write_text(
+            json.dumps(baseline_admin, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+        self._git("init")
+        self._git("config", "user.name", "OpenAPI Policy Test")
+        self._git("config", "user.email", "openapi-policy-test@example.invalid")
+        self._git("add", ".")
+        self._git("commit", "-m", "baseline")
+
+        admin_path.write_text(json.dumps(current_admin), encoding="utf-8")
+        self.summary_path = self.repo / "step-summary.md"
+
+    def _git(self, *args: str) -> None:
+        subprocess.run(
+            ["git", *args],
+            cwd=self.repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def _run_validator(self, allow_breaking: bool) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "OPENAPI_BASE_REF": "HEAD",
+                "OPENAPI_ALLOW_BREAKING_CHANGES": (
+                    "true" if allow_breaking else "false"
+                ),
+                "OPENAPI_BREAKING_CHANGE_SOURCE": (
+                    "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED"
+                ),
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_STEP_SUMMARY": str(self.summary_path),
+            }
+        )
+        return subprocess.run(
+            [shutil.which("bash") or "bash", "scripts/ci/validate-openapi-contracts.sh"],
+            cwd=self.repo,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_Validator_UnacknowledgedBreakingChange_Fails(self):
+        result = self._run_validator(allow_breaking=False)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Path '/__breaking-change-visibility-probe' was removed", result.stdout)
+        self.assertNotIn("::warning title=OpenAPI breaking-change suppression", result.stdout)
+
+    def test_Validator_AcknowledgedBreakingChange_AnnotatesAndSummarizes(self):
+        result = self._run_validator(allow_breaking=True)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "::warning title=OpenAPI breaking-change suppression active::",
+            result.stdout,
+        )
+        self.assertIn("pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED", result.stdout)
+        summary = self.summary_path.read_text(encoding="utf-8")
+        self.assertIn("Admin OpenAPI breaking changes acknowledged", summary)
+        self.assertIn("/__breaking-change-visibility-probe", summary)
+
+
+if __name__ == "__main__":
+    unittest.main()
