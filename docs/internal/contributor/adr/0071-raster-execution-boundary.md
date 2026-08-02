@@ -119,11 +119,17 @@ payload bytes and evaluates, in order:
 5. request, database, local-worker, and remote-backend budgets and health; and
 6. operator policy and backend availability.
 
-Every durable raster job records at least the selected engine, placement,
-runtime/worker-image contract version, input residency, cost estimate, output
-sink, decision reason, and applicable operator override. Static process catalog
-runtime profiles may declare capabilities or defaults, but they are not a
-sufficient placement decision.
+Every durable raster job owns an append-only sequence of attempt-scoped routing
+records. Before any executor attempt starts—including the initial selection, a
+same-engine retry, a pre-execution fallback, or a post-failure replan—the
+durable coordinator appends a record with an immutable attempt identifier,
+selected engine, placement, runtime/worker-image contract version, input
+residency, cost estimate, output sink, decision reason, and applicable operator
+override. A new selection or retry never updates or replaces a prior record.
+The attempt identifier also scopes the executor outcome and staged artifacts so
+operators can reconstruct which decision produced each side effect. Static
+process catalog runtime profiles may declare capabilities or defaults, but they
+are not a sufficient placement decision.
 
 Numeric routing thresholds remain configuration informed by benchmark and
 production evidence. This ADR deliberately does not freeze universal values.
@@ -157,12 +163,15 @@ creating an object does not implicitly create or replace a layer.
   registration, and overwrite of an existing output.
 - A pre-execution fallback is allowed only when no externally visible mutation
   occurred, the alternate engine is declared semantically compatible, policy
-  permits it, and the new decision reason is persisted before execution.
+  permits it, and a new attempt-scoped routing record is appended before
+  execution.
 - A post-failure change of engine is a newly planned attempt, not an internal
-  retry. The prior attempt remains auditable and its staged outputs are either
-  cleaned up or retained according to policy.
+  retry. Its routing record is appended rather than replacing the failed
+  attempt's record. The prior attempt remains auditable and its staged outputs
+  are either cleaned up or retained according to policy.
 - Automatic retries stay on the selected engine and placement and occur only
-  for classified retryable failures. They reuse a stable idempotency key.
+  for classified retryable failures. They append a new attempt record and reuse
+  a stable idempotency key.
 - PostGIS outputs use transaction/staging semantics where possible. Object
   outputs use attempt-scoped keys followed by atomic promotion or an equivalent
   compare-and-set registration. Catalog registration is idempotent by job,
