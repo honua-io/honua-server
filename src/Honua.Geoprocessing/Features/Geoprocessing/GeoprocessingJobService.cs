@@ -1534,15 +1534,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 }
                 writer.WriteEndArray();
 
-                writer.WriteStartArray("rasterSources");
-                foreach (var source in step.RasterSources.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                // Preserve the pre-raster fingerprint byte shape for legacy plans. This is a
+                // rolling-deployment contract: jobs submitted before typed raster bindings existed
+                // omitted the property, so emitting an empty array would make a retry conflict with
+                // its already-durable idempotency record.
+                if (step.RasterSources.Count > 0)
                 {
-                    writer.WriteStartObject();
-                    writer.WriteString("Key", source.Key);
-                    writer.WriteString("Descriptor", RasterSourceJson.Serialize(source.Value));
-                    writer.WriteEndObject();
+                    writer.WriteStartArray("rasterSources");
+                    foreach (var source in step.RasterSources.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("Key", source.Key);
+                        writer.WriteString("Descriptor", RasterSourceJson.Serialize(source.Value));
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
                 }
-                writer.WriteEndArray();
 
                 writer.WriteStartArray("dependsOn");
                 foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))
