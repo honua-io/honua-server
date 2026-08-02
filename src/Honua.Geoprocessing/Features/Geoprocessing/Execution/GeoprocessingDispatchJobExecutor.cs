@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Diagnostics;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -112,6 +113,18 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"Process id '{processId ?? "<none>"}' is not supported by the geoprocessing runtime. " +
                 $"Supported ids in this slice: {supported}.");
         }
+
+        // Establish the job-security scope for the whole dispatch (#3068). The worker has no
+        // HttpContext, so the request-scoped RLS and field-mask sources would otherwise resolve
+        // NO row filter and an EMPTY mask and hand the submitter data they cannot see
+        // synchronously. Begun here — the single seam every managed process executor runs
+        // through — rather than per-executor, so a newly added layer-sourced process inherits it.
+        //
+        // The scope is begun even when the record carries no snapshot: that combination is the
+        // fail-closed signal the catalog-layer read seam refuses on, rather than reading
+        // unrestricted. Begun synchronously in this method's own flow so the AsyncLocal write is
+        // visible to the awaited executor.
+        using var securityScope = JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext);
 
         JobExecutionResult result;
         var (workspaceScope, effectiveContext, workspaceError) =

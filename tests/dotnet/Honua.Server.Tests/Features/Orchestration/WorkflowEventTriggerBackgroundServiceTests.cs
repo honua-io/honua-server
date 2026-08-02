@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
@@ -263,6 +265,15 @@ public sealed class WorkflowEventTriggerBackgroundServiceTests
     {
         WorkflowId = id,
         Name = "event-triggered",
+        // Every workflow published through WorkflowPackageService carries this. An event-driven
+        // firing has no requesting principal, so it is the only identity available both to pin
+        // the run's row/field security snapshot (#3068) and to authorize the run's layer/mutating
+        // targets (#3046); a definition without one is refused rather than falling back to the
+        // admin-carrying orchestrator.
+        AuthorSecurityContext = new JobSecurityContext(
+            "workflow-author",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst")]),
         Steps = new[]
         {
             new WorkflowStepDefinition

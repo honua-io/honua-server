@@ -417,6 +417,18 @@ public sealed record OperationAuditInfo
     /// which carry no declared scope — preserving existing behavior.
     /// </summary>
     public CustomCodeOwnerScope? CustomCodeOwnerScope { get; init; }
+
+    /// <summary>
+    /// Durable snapshot of the submitting principal's row/field security identity
+    /// (honua-server#3068). Pinned at submit time — where the principal is still in hand —
+    /// so the background worker can resolve the SAME row-level-security predicate and field
+    /// mask the synchronous protocol surfaces resolve for that caller. Persisted with the job
+    /// record, so it survives a worker restart and is available to a job dequeued by a
+    /// different node. <see langword="null"/> for job records created by paths that do not
+    /// read catalog layers (and for records written before this field existed), which the
+    /// catalog-layer read seam treats as fail-closed.
+    /// </summary>
+    public JobSecurityContext? SubmitterSecurityContext { get; init; }
 }
 
 /// <summary>

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -130,6 +131,14 @@ internal sealed record GeoprocessExecutionPayload
 
     /// <summary>Protocol metadata captured from the original submission.</summary>
     public Dictionary<string, string>? Metadata { get; init; }
+
+    /// <summary>
+    /// The original submitter's pinned row/field security identity (honua-server#3068).
+    /// Carried on the proposal because the resume path reconstructs a principal from
+    /// <see cref="RequestedBy"/> alone; without this, an approved job would resolve an empty
+    /// role set and therefore NO row-level-security predicate and an EMPTY field mask.
+    /// </summary>
+    public JobSecurityContext? SubmitterSecurityContext { get; init; }
 
     /// <summary>Parses a serialized payload, returning null when missing/malformed.</summary>
     public static GeoprocessExecutionPayload? Parse(string? json)

@@ -21,6 +21,16 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 public interface IGeoprocessingRasterSourceResolver
 {
     /// <summary>
+    /// Resolves a registered raster to its owning catalog layer without reading raster bytes.
+    /// A missing registration or a <see cref="RasterSourceReference.LayerId"/> hint that does
+    /// not match the registration returns <see cref="RasterSourceLayerResolution.NotFound"/>
+    /// so the submit pipeline can fail through the same non-enumerating authorization channel.
+    /// </summary>
+    Task<RasterSourceLayerResolution> ResolveLayerIdAsync(
+        RasterSourceReference reference,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Resolves <paramref name="reference"/> to raster bytes, rejecting any resolved
     /// object larger than <paramref name="maxBytes"/>. Returns a failure result
     /// (never throws) when the reference cannot be resolved so the caller maps it
@@ -41,6 +51,27 @@ public interface IGeoprocessingRasterSourceResolver
 /// <param name="LayerId">Catalog layer identifier whose registered raster to resolve.</param>
 /// <param name="RasterId">Registered raster identifier to resolve directly.</param>
 public sealed record RasterSourceReference(int? LayerId, long? RasterId);
+
+/// <summary>
+/// Metadata-only outcome for resolving a raster registration to its owning catalog layer.
+/// Deliberately carries no missing-resource explanation so unknown, mismatched, and forbidden
+/// references remain indistinguishable to callers.
+/// </summary>
+public sealed record RasterSourceLayerResolution
+{
+    /// <summary>Whether the registration and any supplied layer hint matched.</summary>
+    public bool Found { get; init; }
+
+    /// <summary>The owning catalog layer when <see cref="Found"/> is <see langword="true"/>.</summary>
+    public int? LayerId { get; init; }
+
+    /// <summary>Builds a successful metadata resolution.</summary>
+    public static RasterSourceLayerResolution Success(int layerId) =>
+        new() { Found = true, LayerId = layerId };
+
+    /// <summary>Builds a non-enumerating missing or mismatched result.</summary>
+    public static RasterSourceLayerResolution NotFound() => new();
+}
 
 /// <summary>
 /// Outcome of a <see cref="IGeoprocessingRasterSourceResolver.ResolveAsync"/> call.
