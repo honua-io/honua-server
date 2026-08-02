@@ -247,16 +247,19 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
 
             // Temporal analytics — promoted to GA (Implemented) in #2429. Time filtering
             // (Community) + extent discovery (Community), date-bin histograms (Pro),
-            // time-series tiles (Pro). The registry maturity flip un-gates the manifest
-            // omission and the /api/v1/temporal/* route gate; edition entitlements
-            // (Community vs Pro, FeatureCatalog) still apply — GA does not bypass licensing.
-            // Provider support is Postgres (all four) + DuckDB (filtering/extent/histogram);
-            // providers without temporal SQL fail loud (NotSupportedException), never silently
+            // time-series tiles (Pro), and the SDK/admin animation-contract flag (Pro).
+            // The registry maturity flip un-gates the manifest omission and the
+            // /api/v1/temporal/* route gate; edition entitlements (Community vs Pro,
+            // FeatureCatalog) still apply — GA does not bypass licensing. Provider
+            // support for the four execution surfaces is Postgres (all four) + DuckDB
+            // (filtering/extent/histogram); the animation flag has no provider path.
+            // Providers without temporal SQL fail loud (NotSupportedException), never silently
             // return unfiltered rows — see the per-provider guards hardened in #2429.
             ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
             // Disconnected-sync conflict review — built-experimental (T10 flip).
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
