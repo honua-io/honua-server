@@ -7,10 +7,12 @@ Accepted
 For raster serving and GP, [ADR-0070](0070-raster-execution-boundary.md) is the
 controlling engine and placement decision. This ADR's instruction to delegate
 heavy spatial transforms to PostGIS means "when capability, data locality, and
-the database resource/SLO budget permit." Raster work outside that envelope
-uses the dedicated managed PostGIS profile or isolated native GDAL placement
-defined by ADR-0070. The GeoETL-specific rollout and worker names below remain
-historical decisions for GeoETL, not a universal raster topology.
+the database resource/SLO budget permit." Raster work outside the synchronous
+request envelope but still inside the database budget uses the dedicated
+managed PostGIS profile; work outside the database budget uses the isolated
+native GDAL placement defined by ADR-0070. The GeoETL-specific rollout and
+worker names below remain historical decisions for GeoETL, not a universal
+raster topology.
 
 ## Context
 
