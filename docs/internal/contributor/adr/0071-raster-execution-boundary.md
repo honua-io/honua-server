@@ -158,15 +158,22 @@ PostGIS. Promotion and registration are atomic only when they share a
 transactional sink, as with PostGIS materialization and its catalog row. For an
 object artifact plus database catalog entry, the object commit marker is the
 authoritative winner and registration is an explicit, durable, idempotently
-reconciled cross-store step. A job requesting that registration retains
-canonical status `Running` with durable
-`OutputPublicationPhase.Finalizing` until the matching catalog entry is
-durable. `Finalizing` admits no new execution and excludes the job from both
-execution-heartbeat and execution-timeout expiry. A separate durable publication lease,
+reconciled cross-store step. The executor may stage bytes, but it must not
+promote the artifact, commit the sink intent, report terminal execution, or
+stop its execution heartbeat until the coordinator has atomically persisted
+the attempt-fenced output intent and transitioned the durable job to canonical
+status `Running` with `OutputPublicationPhase.Finalizing`. A crash before that
+transition leaves only attempt-scoped staging for the execution reaper to
+discard; a crash after it is recovered exclusively by the output reconciler.
+There is consequently no state in which a committed object is still eligible
+for execution requeue. A job requesting registration remains in `Finalizing`
+until the matching catalog entry is durable. `Finalizing` admits no new
+execution and excludes the job from both execution-heartbeat and
+execution-timeout expiry. A separate durable publication lease,
 heartbeat/deadline, and fenced output reconciler recover stalled registration;
 that recovery never requeues raster execution. The protocol does not claim
-cross-store atomicity. Creating an object does not implicitly create or
-replace a layer.
+cross-store atomicity. Creating an object does not implicitly create or replace
+a layer.
 
 ### Failure, fallback, retry, and idempotency
 
