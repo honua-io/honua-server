@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -45,6 +46,52 @@ internal sealed class GeoprocessingJobArtifactService
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
+
+    /// <summary>
+    /// Validates typed raster descriptors against submit-side limits before an approval
+    /// proposal or job record can be persisted.
+    /// </summary>
+    public void ValidateRasterSources(AnalysisPlan plan, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        var options = new RasterSourceValidationOptions
+        {
+            MaxInlineBytes = _executorOptions.CurrentValue.MaxInlineRasterSourceBytes,
+        };
+
+        foreach (var step in plan.Steps)
+        {
+            foreach (var source in step.RasterSources)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(source.Key))
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId}' contains a raster source with an empty parameter name.");
+                }
+
+                if (step.Inputs.TryGetValue(source.Key, out var legacyValue)
+                    && !string.IsNullOrWhiteSpace(legacyValue))
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId}' supplies raster input '{source.Key}' as both a typed reference "
+                        + "and a legacy string input. Supply exactly one source representation.");
+                }
+
+                var validation = RasterSourceDescriptorValidator.Validate(
+                    source.Value,
+                    options,
+                    cancellationToken);
+                if (!validation.IsValid)
+                {
+                    var failure = validation.Errors[0];
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId}' raster source '{source.Key}' is invalid "
+                        + $"({failure.Code}): {failure.Message}");
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Resolves any native raster/surface step that references a registered catalog raster

@@ -15,6 +15,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
@@ -339,6 +340,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+        _artifacts.ValidateRasterSources(plan, cancellationToken);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
@@ -1220,7 +1222,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             RuntimeProfile = requiredRuntimeProfile ?? workload.RuntimeProfile,
             // Carry the workload's required serving↔worker job-contract version onto the spec so the
             // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
-            ContractVersion = workload.ContractVersion,
+            ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
+                plan,
+                workload.ContractVersion),
             Parameters = specParams
         };
     }
@@ -1398,6 +1402,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     writer.WriteStartObject();
                     writer.WriteString("Key", kv.Key);
                     writer.WriteString("Value", kv.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+
+                writer.WriteStartArray("rasterSources");
+                foreach (var source in step.RasterSources.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("Key", source.Key);
+                    writer.WriteString("Descriptor", RasterSourceJson.Serialize(source.Value));
                     writer.WriteEndObject();
                 }
                 writer.WriteEndArray();

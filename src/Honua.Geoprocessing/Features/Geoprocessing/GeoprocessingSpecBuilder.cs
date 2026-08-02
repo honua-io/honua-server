@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
@@ -61,7 +62,7 @@ internal static class GeoprocessingSpecBuilder
         for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
         {
             var step = plan.Steps[stepIndex];
-            if (step.Kind != AnalysisPlanStepKind.Geoprocess || step.Inputs.Count == 0)
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess)
             {
                 continue;
             }
@@ -75,6 +76,29 @@ internal static class GeoprocessingSpecBuilder
 
                 var key = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}{stepIndex}.{input.Key}";
                 specParams[key] = input.Value ?? string.Empty;
+            }
+
+            foreach (var source in step.RasterSources)
+            {
+                if (string.IsNullOrWhiteSpace(source.Key))
+                {
+                    throw new ArgumentException(
+                        $"Raster source parameter names cannot be empty on step '{step.StepId}'.",
+                        nameof(plan));
+                }
+
+                var validation = RasterSourceDescriptorValidator.Validate(source.Value);
+                if (!validation.IsValid)
+                {
+                    var failure = validation.Errors[0];
+                    throw new ArgumentException(
+                        $"Raster source '{source.Key}' on step '{step.StepId}' is invalid "
+                        + $"({failure.Code}): {failure.Message}",
+                        nameof(plan));
+                }
+
+                var key = $"{ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix}{stepIndex}.{source.Key}";
+                specParams[key] = RasterSourceJson.Serialize(source.Value);
             }
         }
 
@@ -120,8 +144,21 @@ internal static class GeoprocessingSpecBuilder
             // claim fence routes the job to the GDAL worker and away from the lean
             // dispatcher. Null leaves the job managed/default.
             RuntimeProfile = requiredRuntimeProfile,
+            ContractVersion = ResolveRequiredContractVersion(plan),
             Parameters = specParams,
         };
+    }
+
+    /// <summary>
+    /// Returns the minimum worker-contract version required by the plan while preserving
+    /// the caller's higher baseline requirement.
+    /// </summary>
+    public static int ResolveRequiredContractVersion(AnalysisPlan plan, int baselineVersion = 1)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        return plan.Steps.Any(step => step.RasterSources.Count > 0)
+            ? Math.Max(baselineVersion, RasterSourceContract.JobContractVersion)
+            : baselineVersion;
     }
 
     /// <summary>

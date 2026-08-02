@@ -12,6 +12,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -217,6 +218,49 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
+    {
+        var plan = CreateValidPlan();
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                    {
+                        ["source"] = new InlineRasterSourceDescriptor
+                        {
+                            Version = "inline-v1",
+                            Payload = new byte[RasterSourceValidationOptions.Default.MaxInlineBytes + 1],
+                            Content = new RasterContentIdentity
+                            {
+                                SizeBytes = RasterSourceValidationOptions.Default.MaxInlineBytes + 1,
+                                MediaType = "image/tiff",
+                                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+                            },
+                            SecurityContext = new RasterSecurityContextReference
+                            {
+                                TenantId = "tenant-a",
+                                AuthorizationSnapshotReference = "auth-snapshot-123",
+                            },
+                        },
+                    },
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain(RasterSourceValidationCodes.InlinePayloadTooLarge);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
