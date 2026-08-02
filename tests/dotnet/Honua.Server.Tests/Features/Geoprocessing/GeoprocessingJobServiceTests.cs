@@ -14,6 +14,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -268,15 +269,19 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_TypedRasterSource_RefusesExecutionBeforeDurablePersistence()
+    public async Task SubmitJob_TypedRasterSource_PersistsMetadataOnlyV2Contract()
     {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         var plan = CreateTypedRasterPlan("source");
 
-        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
-            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
-        exception.Message.Should().Contain("RASTER_SOURCE_EXECUTION_NOT_SUPPORTED");
-        await _jobStore.DidNotReceive().TryCreateAsync(
+        job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
+            .Should().Contain("\"sourceType\":\"cog\"")
+            .And.NotContain("payload");
+        await _jobStore.Received(1).TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
@@ -413,7 +418,9 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
             .Should().Contain("\"sourceType\":\"cog\"")
             .And.Contain("\"provider\":\"AwsS3\"")
-            .And.NotContain("payload", StringComparison.OrdinalIgnoreCase);
+            .And.Contain("\"tenantId\":\"default\"")
+            .And.Contain($"\"authorizationSnapshotReference\":\"job:{job.OperationId}:submitter\"")
+            .And.NotContain("payload");
         job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
     }
 
@@ -497,7 +504,7 @@ public sealed class GeoprocessingJobServiceTests
         await rasterResolver.DidNotReceive().ResolveLayerIdAsync(
             Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
         await rasterResolver.DidNotReceive().ResolveAsync(
-            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -3871,6 +3878,7 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     [parameterName] = new ObjectStoreCogRasterSourceDescriptor
                     {
+                        Provider = CloudStorageProvider.AwsS3,
                         Version = "object-v1",
                         StoreReference = "imagery-prod",
                         ObjectKey = "tenant/source.tif",

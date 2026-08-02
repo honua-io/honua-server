@@ -14,6 +14,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Ai.AnalysisContent;
@@ -539,6 +540,7 @@ public sealed class AnalysisContentServiceTests
             {
                 ["source"] = new ObjectStoreCogRasterSourceDescriptor
                 {
+                    Provider = CloudStorageProvider.AwsS3,
                     Version = "object-v1",
                     StoreReference = "imagery-prod",
                     ObjectKey = "tenant/source.tif",

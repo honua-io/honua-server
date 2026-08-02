@@ -84,7 +84,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {sourceError}");
@@ -175,18 +175,22 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         {
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var inputPath = Path.Join(workspace, "input.tif");
+            var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
 
             // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (sourceInput.InlineBytes is { } sourceBytes
+                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
                 return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {dimensionError}");
             }
 
-            await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+            if (sourceInput.InlineBytes is { } inlineBytes)
+            {
+                await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
+            }
 
             var zonalResults = new List<ZonalRow>();
             var index = 0;
@@ -223,9 +227,10 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     "-cutline", cutlinePath,
                     "-crop_to_cutline",
                     "-b", band.ToString(CultureInfo.InvariantCulture),
-                    inputPath,
-                    clippedPath,
                 };
+                sourceInput.AddReadPin(clipArgs);
+                clipArgs.Add(inputPath);
+                clipArgs.Add(clippedPath);
 
                 await context.ReportProgressAsync(
                     PercentForZone(zoneIndex, zones.Count, 10, 80),

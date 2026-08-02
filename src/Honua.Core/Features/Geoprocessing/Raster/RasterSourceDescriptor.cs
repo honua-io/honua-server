@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Raster;
 
@@ -76,6 +77,15 @@ public sealed record PostgisRasterSourceDescriptor : RasterSourceDescriptor
 /// <summary>References an immutable Cloud Optimized GeoTIFF in a registered object store.</summary>
 public sealed record ObjectStoreCogRasterSourceDescriptor : RasterSourceDescriptor
 {
+    /// <summary>Cloud provider whose execution-owned credentials open the object.</summary>
+    public required CloudStorageProvider Provider { get; init; }
+
+    /// <summary>Owning catalog layer retained for audit and worker telemetry.</summary>
+    public int? CatalogLayerId { get; init; }
+
+    /// <summary>Catalog raster registration retained for audit and worker telemetry.</summary>
+    public long? CatalogRasterId { get; init; }
+
     /// <summary>
     /// Logical identifier of an operator-registered object store. It is not a provider
     /// connection string, URI, or credential.

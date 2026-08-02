@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
@@ -1064,6 +1065,7 @@ public sealed class GrpcProcessServiceTests
     private static ObjectStoreCogRasterSourceDescriptor CogSource(string objectKey) => new()
     {
         Version = "object-version-1",
+        Provider = CloudStorageProvider.AwsS3,
         StoreReference = "imagery-prod",
         ObjectKey = objectKey,
         Content = new RasterContentIdentity

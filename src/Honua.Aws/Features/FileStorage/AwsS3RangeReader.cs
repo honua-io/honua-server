@@ -62,4 +62,28 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         var metadata = await _client.GetObjectMetadataAsync(bucket, key, cancellationToken).ConfigureAwait(false);
         return metadata.ContentLength;
     }
+
+    /// <inheritdoc />
+    public async Task<CloudObjectMetadata> GetObjectMetadataAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var metadata = await _client.GetObjectMetadataAsync(bucket, key, cancellationToken).ConfigureAwait(false);
+        var checksum = NormalizeSha256(metadata.ChecksumSHA256);
+        return new CloudObjectMetadata
+        {
+            SizeBytes = metadata.ContentLength,
+            Version = metadata.VersionId,
+            ETag = metadata.ETag,
+            MediaType = metadata.Headers.ContentType,
+            ChecksumAlgorithm = checksum is null ? null : "sha256",
+            ChecksumValue = checksum,
+        };
+    }
+
+    private static string? NormalizeSha256(string? sha256)
+        => string.IsNullOrWhiteSpace(sha256)
+            ? null
+            : Convert.ToHexString(Convert.FromBase64String(sha256));
 }

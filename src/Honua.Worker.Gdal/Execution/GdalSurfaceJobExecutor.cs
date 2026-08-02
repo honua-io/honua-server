@@ -95,7 +95,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {inputError}");
@@ -111,17 +111,19 @@ internal sealed partial class GdalSurfaceJobExecutor(
         {
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var inputPath = Path.Join(workspace, "input.tif");
             var outputPath = Path.Join(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (sourceInput.InlineBytes is { } sourceBytes
+                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
-            await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+            var inputPath = await sourceInput
+                .PreparePathAsync(workspace, "input.tif", cancellationToken)
+                .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, $"Running gdaldem {subcommand}", cancellationToken).ConfigureAwait(false);
@@ -137,6 +139,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
                 "-q",
             };
             args.AddRange(modeArgs);
+            sourceInput.AddReadPin(args);
             args.Add(inputPath);
             args.Add(outputPath);
 

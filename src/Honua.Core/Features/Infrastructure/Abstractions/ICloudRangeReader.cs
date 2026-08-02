@@ -47,4 +47,18 @@ public interface ICloudRangeReader
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Object size in bytes</returns>
     Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets bounded object identity metadata without reading the object payload.
+    /// Implementations should use a provider HEAD/properties request. The default keeps
+    /// existing range-reader implementations source-compatible while returning size only.
+    /// </summary>
+    async Task<CloudObjectMetadata> GetObjectMetadataAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+        => new()
+        {
+            SizeBytes = await GetObjectSizeAsync(bucket, key, cancellationToken).ConfigureAwait(false),
+        };
 }

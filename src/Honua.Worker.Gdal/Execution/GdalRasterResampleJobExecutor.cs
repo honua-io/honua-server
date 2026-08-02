@@ -106,7 +106,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 "(nearestneighbor, bilinear, cubic, lanczos).");
         }
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid resample inputs: {sourceError}");
@@ -117,12 +117,13 @@ internal sealed partial class GdalRasterResampleJobExecutor(
         {
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var inputPath = Path.Join(workspace, "input.tif");
+            var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
             var outputPath = Path.Join(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (sourceInput.InlineBytes is { } sourceBytes
+                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
@@ -133,9 +134,10 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             // when the raster carries no georeferencing, matching gdalwarp's own -tr
             // interpretation). When the header is not one we can read dimensions from, the
             // input dimension caps plus the timeout/artifact ceilings remain the backstop.
-            if (GdalRasterDimensionGuard.TryReadRasterDimensions(sourceBytes, out var inputDims))
+            if (sourceInput.InlineBytes is { } sourceForGrid
+                && GdalRasterDimensionGuard.TryReadRasterDimensions(sourceForGrid, out var inputDims))
             {
-                GdalRasterDimensionGuard.ReadGeoTiffPixelScale(sourceBytes, out var scaleX, out var scaleY);
+                GdalRasterDimensionGuard.ReadGeoTiffPixelScale(sourceForGrid, out var scaleX, out var scaleY);
                 if (!GdalOutputGridGuard.TryAdmitResolution(
                         inputDims.Width * scaleX,
                         inputDims.Height * scaleY,
@@ -148,7 +150,10 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 }
             }
 
-            await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+            if (sourceInput.InlineBytes is { } inlineBytes)
+            {
+                await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running gdalwarp resample", cancellationToken).ConfigureAwait(false);
@@ -159,9 +164,10 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 "-of", "GTiff",
                 "-tr", FormatDouble(cellSizeX), FormatDouble(cellSizeY),
                 "-r", resamplingFlag,
-                inputPath,
-                outputPath,
             };
+            sourceInput.AddReadPin(args);
+            args.Add(inputPath);
+            args.Add(outputPath);
 
             await GdalCommandLog.LogCommandAsync(context, "gdalwarp", args, workspace, cancellationToken).ConfigureAwait(false);
 

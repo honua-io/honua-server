@@ -62,4 +62,22 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         return properties.Value.ContentLength;
     }
+
+    /// <inheritdoc />
+    public async Task<CloudObjectMetadata> GetObjectMetadataAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
+        var response = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        var properties = response.Value;
+        return new CloudObjectMetadata
+        {
+            SizeBytes = properties.ContentLength,
+            Version = properties.VersionId,
+            ETag = properties.ETag.ToString(),
+            MediaType = properties.ContentType,
+        };
+    }
 }

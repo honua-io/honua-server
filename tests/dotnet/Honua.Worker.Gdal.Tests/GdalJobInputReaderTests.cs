@@ -3,6 +3,8 @@
 
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 
@@ -21,6 +23,85 @@ public sealed class GdalJobInputReaderTests
         {
             [GdalWorkerParameterKeys.StepInputPrefix + name] = value,
         };
+
+    [UnitTest]
+    public void TryGetRasterInput_PinnedCog_ProjectsConditionalVsiRead()
+    {
+        var descriptor = new ObjectStoreCogRasterSourceDescriptor
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            StoreReference = "imagery-prod",
+            ObjectKey = "tenant/dem.tif",
+            Version = "version-7",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 8_000_000_000,
+                MediaType = "image/tiff",
+                ETag = "etag-7",
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "catalog-registration:91",
+            },
+        };
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor),
+        };
+
+        var ok = GdalJobInputReader.TryGetRasterInput(
+            parameters,
+            "source",
+            maxInlineBytes: 64 * 1024,
+            out var input,
+            out var error);
+
+        ok.Should().BeTrue(error);
+        input.InlineBytes.Should().BeNull();
+        input.ReferencedPath.Should().Be("/vsis3/imagery-prod/tenant/dem.tif");
+        var arguments = new List<string>();
+        input.AddReadPin(arguments);
+        arguments.Should().Equal("--config", "GDAL_HTTP_HEADERS", "If-Match: etag-7");
+    }
+
+    [UnitTest]
+    public void TryGetRasterInput_CogWithoutETag_FailsClosed()
+    {
+        var descriptor = new ObjectStoreCogRasterSourceDescriptor
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            StoreReference = "imagery-prod",
+            ObjectKey = "tenant/dem.tif",
+            Version = "version-7",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 4096,
+                MediaType = "image/tiff",
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "catalog-registration:91",
+            },
+        };
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor),
+        };
+
+        var ok = GdalJobInputReader.TryGetRasterInput(
+            parameters,
+            "source",
+            maxInlineBytes: 64 * 1024,
+            out _,
+            out var error);
+
+        ok.Should().BeFalse();
+        error.Should().Contain("requires an ETag");
+    }
 
     [UnitTest]
     public void TryGetBase64Input_OversizedPayload_RejectedByPreDecodeUpperBound()

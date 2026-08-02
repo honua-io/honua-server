@@ -76,14 +76,14 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             // Deferred approval execution can run inside the APPROVER's request while
             // authorizing the restored SUBMITTER. The supplied principal owns the resource
             // decision, so its captured tenant must win over the ambient request tenant.
-            var tenantId = ResolveAuthorizationTenantId(
+            var authorizationTenantId = ResolveAuthorizationTenantId(
                 principal,
                 TenantScopeHelpers.ResolveRequestTenantId(httpContext));
 
             return await EvaluateAsync(
                 httpContext.RequestServices,
                 principal,
-                tenantId,
+                authorizationTenantId,
                 applyTenantScope: true,
                 layerId,
                 operation,

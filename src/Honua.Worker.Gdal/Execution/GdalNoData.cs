@@ -68,7 +68,8 @@ internal static class GdalNoData
         string inputPath,
         string workspace,
         TimeSpan toolTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedETag = null)
     {
         using var timeoutCts = new CancellationTokenSource(toolTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -76,7 +77,10 @@ internal static class GdalNoData
         GdalCommandResult result;
         try
         {
-            result = await runner.RunAsync("gdalinfo", ["-json", inputPath], workspace, linked.Token).ConfigureAwait(false);
+            var args = new List<string> { "-json" };
+            GdalRasterInput.Referenced(inputPath, expectedETag ?? "").AddReadPin(args);
+            args.Add(inputPath);
+            result = await runner.RunAsync("gdalinfo", args, workspace, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {

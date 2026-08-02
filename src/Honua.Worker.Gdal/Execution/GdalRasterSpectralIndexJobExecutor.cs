@@ -114,7 +114,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             for (var i = 0; i < roles.Count; i++)
             {
                 var letter = (char)('A' + i);
-                if (!GdalJobInputReader.TryGetBase64Input(parameters, roles[i], opts.MaxArtifactBytes, out var bytes, out var roleError))
+                if (!GdalJobInputReader.TryGetRasterInput(parameters, roles[i], opts.MaxArtifactBytes, out var rasterInput, out var roleError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, roleError);
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {roleError}");
@@ -123,7 +123,8 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 // Bound the DECLARED pixel footprint before writing the file or
                 // invoking GDAL so a compressible GeoTIFF declaring enormous
                 // dimensions cannot force a decompression-bomb allocation (#2766).
-                if (!GdalRasterDimensionGuard.TryAdmit(bytes, opts, out var dimensionError))
+                if (rasterInput.InlineBytes is { } bytes
+                    && !GdalRasterDimensionGuard.TryAdmit(bytes, opts, out var dimensionError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, dimensionError);
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {dimensionError}");
@@ -134,7 +135,35 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 // assigned by TryBuildIndex's switch above (never user-supplied), so
                 // it can never be rooted and silently discard workspace.
                 var inputPath = Path.Join(workspace, $"{roles[i]}.tif");
-                await File.WriteAllBytesAsync(inputPath, bytes, cancellationToken).ConfigureAwait(false);
+                if (rasterInput.InlineBytes is { } inlineBytes)
+                {
+                    await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    // gdal_calc accepts one process-wide HTTP header, while spectral
+                    // indices can bind several independently pinned objects. Stage each
+                    // source through a conditional GDAL read inside the worker so every
+                    // object gets its own If-Match check and no payload enters the web job.
+                    var stageArgs = new List<string> { "-of", "GTiff" };
+                    rasterInput.AddReadPin(stageArgs);
+                    stageArgs.Add(rasterInput.ReferencedPath!);
+                    stageArgs.Add(inputPath);
+
+                    using var stageTimeoutCts = new CancellationTokenSource(opts.ToolTimeout);
+                    using var stageLinked = CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken,
+                        stageTimeoutCts.Token);
+                    var stageResult = await runner
+                        .RunAsync("gdal_translate", stageArgs, workspace, stageLinked.Token)
+                        .ConfigureAwait(false);
+                    if (!stageResult.Succeeded || !File.Exists(inputPath))
+                    {
+                        return JobExecutionResult.Failed(
+                            $"Raster source '{roles[i]}' failed its pinned worker read: "
+                            + GdalErrorSanitizer.Sanitize(stageResult.StandardError, workspace));
+                    }
+                }
                 if (i == 0)
                 {
                     firstInputPath = inputPath;

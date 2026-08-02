@@ -73,7 +73,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {sourceError}");
@@ -89,18 +89,22 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         {
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var inputPath = Path.Join(workspace, "input.tif");
+            var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
 
             // Bound the DECLARED pixel footprint before gdalinfo -stats forces a
             // full-raster read, so a compressible GeoTIFF declaring enormous
             // dimensions cannot force a decompression-bomb allocation (#2766).
-            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (sourceInput.InlineBytes is { } sourceBytes
+                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
                 return JobExecutionResult.Failed($"Invalid {processId} inputs: {dimensionError}");
             }
 
-            await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+            if (sourceInput.InlineBytes is { } inlineBytes)
+            {
+                await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running gdalinfo", cancellationToken).ConfigureAwait(false);
@@ -110,6 +114,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             {
                 args.Add("-hist");
             }
+            sourceInput.AddReadPin(args);
             args.Add(inputPath);
 
             await GdalCommandLog.LogCommandAsync(context, "gdalinfo", args, workspace, cancellationToken).ConfigureAwait(false);

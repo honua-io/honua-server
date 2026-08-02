@@ -18,7 +18,7 @@ CLI contract (invoked by ``GdalProximityJobExecutor`` via ``python3``):
 
     gdal_euclidean_allocation.py SRC DST
         [--band N] [--dist-units GEO|PIXEL]
-        [--max-distance D] [--values v1,v2,...]
+        [--max-distance D] [--values v1,v2,...] [--http-if-match ETAG]
 
 The output GeoTIFF preserves the source extent, cell size, CRS and band data
 type; allocated values are the source pixel values. Cells whose nearest source
@@ -84,10 +84,12 @@ def compute_allocation(
     return alloc.astype(arr.dtype, copy=False)
 
 
-def _read_source(src: str, band_index: int):
+def _read_source(src: str, band_index: int, http_if_match: Optional[str] = None):
     from osgeo import gdal  # Imported lazily so the pure algorithm stays GDAL-free.
 
     gdal.UseExceptions()
+    if http_if_match:
+        gdal.SetConfigOption("GDAL_HTTP_HEADERS", f"If-Match: {http_if_match}")
     dataset = gdal.Open(src, gdal.GA_ReadOnly)
     if dataset is None:
         raise RuntimeError(f"could not open source raster '{src}'")
@@ -126,6 +128,7 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--dist-units", choices=["GEO", "PIXEL"], default="GEO", help="Distance units for --max-distance.")
     parser.add_argument("--max-distance", type=float, default=None, help="Optional maximum allocation distance.")
     parser.add_argument("--values", default=None, help="Optional comma-separated source pixel values to allocate from.")
+    parser.add_argument("--http-if-match", default=None, help="Conditional object-store ETag pin.")
     args = parser.parse_args(argv)
 
     values: Optional[list[float]] = None
@@ -133,7 +136,7 @@ def main(argv: Sequence[str]) -> int:
         values = [float(v) for v in args.values.split(",") if v.strip() != ""]
 
     try:
-        dataset, band, arr = _read_source(args.src, args.band)
+        dataset, band, arr = _read_source(args.src, args.band, args.http_if_match)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

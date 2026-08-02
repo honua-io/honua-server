@@ -102,7 +102,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             fieldName = fieldRaw.Trim();
         }
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid polygonize inputs: {sourceError}");
@@ -113,17 +113,21 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         {
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var inputPath = Path.Join(workspace, "input.tif");
+            var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
             var outputPath = Path.Join(workspace, "output.geojson");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (!GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (sourceInput.InlineBytes is { } sourceBytes
+                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
-            await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
+            if (sourceInput.InlineBytes is { } inlineBytes)
+            {
+                await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
+            }
 
             // gdal_polygonize.py [-8] -b band -f fmt -q raster out_file layer fieldname.
             var args = new List<string>();
@@ -136,6 +140,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             args.Add("-f");
             args.Add("GeoJSON");
             args.Add("-q");
+            sourceInput.AddReadPin(args);
             args.Add(inputPath);
             args.Add(outputPath);
             args.Add("polygonized");

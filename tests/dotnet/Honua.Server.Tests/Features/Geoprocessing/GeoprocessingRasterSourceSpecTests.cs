@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 
@@ -111,6 +112,7 @@ public sealed class GeoprocessingRasterSourceSpecTests
     private static ObjectStoreCogRasterSourceDescriptor Cog() => new()
     {
         Version = "object-version-1",
+        Provider = CloudStorageProvider.AwsS3,
         StoreReference = "imagery-prod",
         ObjectKey = "tenant-a/imagery/source.tif",
         Content = Content(4096) with { MediaType = "image/tiff", ETag = "etag-1" },

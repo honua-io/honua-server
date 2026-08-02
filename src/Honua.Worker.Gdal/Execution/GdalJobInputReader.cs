@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using Honua.Core.Features.Geoprocessing.Raster;
+
 namespace Honua.Worker.Gdal.Execution;
 
 /// <summary>
@@ -9,6 +12,98 @@ namespace Honua.Worker.Gdal.Execution;
 /// </summary>
 internal static class GdalJobInputReader
 {
+    /// <summary>
+    /// Reads either the legacy bounded base64 input or the v2 typed raster descriptor.
+    /// Object-store descriptors become GDAL VSI paths; credentials remain execution-owned
+    /// worker environment state and never travel in the job payload.
+    /// </summary>
+    public static bool TryGetRasterInput(
+        IReadOnlyDictionary<string, string> parameters,
+        string name,
+        long maxInlineBytes,
+        out GdalRasterInput input,
+        out string error)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        input = default;
+        error = "";
+        var hasTyped = parameters.TryGetValue(
+            GdalWorkerParameterKeys.StepRasterSourcePrefix + name,
+            out var descriptorJson);
+        var hasLegacy = parameters.ContainsKey(GdalWorkerParameterKeys.StepInputPrefix + name);
+        if (hasTyped && hasLegacy)
+        {
+            error = $"input '{name}' has both typed and legacy source representations";
+            return false;
+        }
+
+        if (!hasTyped)
+        {
+            if (!TryGetBase64Input(parameters, name, maxInlineBytes, out var bytes, out error))
+            {
+                return false;
+            }
+
+            input = GdalRasterInput.Inline(bytes);
+            return true;
+        }
+
+        RasterSourceDescriptor descriptor;
+        try
+        {
+            descriptor = RasterSourceJson.Deserialize(descriptorJson!);
+        }
+        catch (JsonException)
+        {
+            error = $"typed raster input '{name}' is not a valid descriptor";
+            return false;
+        }
+
+        var validation = RasterSourceDescriptorValidator.Validate(
+            descriptor,
+            new RasterSourceValidationOptions
+            {
+                MaxInlineBytes = (int)Math.Min(maxInlineBytes, int.MaxValue),
+            });
+        if (!validation.IsValid)
+        {
+            var failure = validation.Errors[0];
+            error = $"typed raster input '{name}' is invalid ({failure.Code}): {failure.Message}";
+            return false;
+        }
+
+        switch (descriptor)
+        {
+            case InlineRasterSourceDescriptor inline:
+                input = GdalRasterInput.Inline(inline.Payload);
+                return true;
+
+            case ObjectStoreCogRasterSourceDescriptor cog when !string.IsNullOrWhiteSpace(cog.Content.ETag):
+                try
+                {
+                    input = GdalRasterInput.Referenced(
+                        GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey),
+                        cog.Content.ETag);
+                    return true;
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+                {
+                    error = $"typed raster input '{name}' cannot be opened: {ex.Message}";
+                    return false;
+                }
+
+            case ObjectStoreCogRasterSourceDescriptor:
+                error = $"typed raster input '{name}' requires an ETag for a conditional worker read";
+                return false;
+
+            default:
+                error = $"typed raster input '{name}' source type is not supported by the GDAL worker";
+                return false;
+        }
+    }
+
     /// <summary>
     /// Resolves the first canonical process id from the durable spec, mirroring the
     /// lean dispatch helper's resolution order.
@@ -188,5 +283,56 @@ internal static class GdalJobInputReader
         }
 
         return true;
+    }
+}
+
+/// <summary>A bounded inline payload or a pinned GDAL-readable object-store path.</summary>
+internal readonly record struct GdalRasterInput(byte[]? InlineBytes, string? ReferencedPath, string? ExpectedETag)
+{
+    /// <summary>Whether the input is an inline payload that must be staged to scratch.</summary>
+    public bool IsInline => InlineBytes is not null;
+
+    /// <summary>Creates an inline input.</summary>
+    public static GdalRasterInput Inline(byte[] bytes) => new(bytes, null, null);
+
+    /// <summary>Creates a conditional object-store input.</summary>
+    public static GdalRasterInput Referenced(string path, string expectedETag) =>
+        new(null, path, expectedETag);
+
+    /// <summary>
+    /// Returns the GDAL input path, writing only bounded inline content to scratch.
+    /// Referenced objects are opened in place through VSI.
+    /// </summary>
+    public async Task<string> PreparePathAsync(
+        string workspace,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        if (InlineBytes is { } bytes)
+        {
+            var path = Path.Join(workspace, fileName);
+            await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+            return path;
+        }
+
+        return ReferencedPath
+            ?? throw new InvalidOperationException("Raster input has neither inline bytes nor a referenced path.");
+    }
+
+    /// <summary>
+    /// Adds a provider conditional-read header so mutation after submission fails closed.
+    /// GDAL applies this header to VSI HEAD/range requests; a changed object returns 412.
+    /// </summary>
+    public void AddReadPin(List<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (string.IsNullOrWhiteSpace(ExpectedETag))
+        {
+            return;
+        }
+
+        arguments.Add("--config");
+        arguments.Add("GDAL_HTTP_HEADERS");
+        arguments.Add($"If-Match: {ExpectedETag}");
     }
 }
