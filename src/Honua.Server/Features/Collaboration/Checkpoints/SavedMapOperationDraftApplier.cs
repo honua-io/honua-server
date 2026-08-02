@@ -29,33 +29,76 @@ internal static class SavedMapOperationDraftApplier
     /// of silently dropping edits.
     /// </exception>
     /// <exception cref="SavedMapCheckpointPayloadException">An operation payload is malformed.</exception>
-    /// <exception cref="StudioCompositionNotFoundException">A targeted layer does not exist.</exception>
+    /// <exception cref="SavedMapCheckpointStateConflictException">A targeted layer does not exist.</exception>
     public static StudioPackageEnvelope Apply(
         StudioPackageEnvelope envelope,
-        IReadOnlyList<SavedMapOperationEnvelope> operations)
+        IReadOnlyList<SavedMapOperationEnvelope> operations) =>
+        ApplyForCheckpoint(envelope, operations, supersedeConflictingOperationCursor: null).Envelope;
+
+    /// <summary>
+    /// Applies a checkpoint replay and optionally supersedes one explicitly acknowledged
+    /// operation when, and only when, that operation still fails because its composition target
+    /// is missing. The returned supersession is persisted by the checkpoint endpoint alongside
+    /// the immutable version; an arbitrary valid operation can never be skipped by supplying its
+    /// cursor.
+    /// </summary>
+    public static SavedMapCheckpointApplyResult ApplyForCheckpoint(
+        StudioPackageEnvelope envelope,
+        IReadOnlyList<SavedMapOperationEnvelope> operations,
+        long? supersedeConflictingOperationCursor)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(operations);
 
         var current = envelope;
+        SavedMapCheckpointSupersededOperation? superseded = null;
         foreach (var operation in operations.OrderBy(static op => op.ServerCursor.Value))
         {
-            current = operation.Kind switch
+            try
             {
-                // Keep this switch and IsCheckpointable in lockstep: the append endpoint rejects
-                // any kind this applier cannot express, so an unsupported kind can never enter a
-                // checkpointable log (honua-server#2999 review).
-                SavedMapOperationKind.SetViewport => ApplyBody(current, operation, ApplySetViewport),
-                SavedMapOperationKind.SetLayerVisibility => ApplyBody(current, operation, ApplySetLayerVisibility),
-                SavedMapOperationKind.ReorderLayers => ApplyBody(current, operation, ApplyReorderLayers),
-                SavedMapOperationKind.PatchStyle => ApplyBody(current, operation, ApplyPatchStyle),
-                SavedMapOperationKind.ReplaceWebMapDocument => ApplyReplaceDocument(current, operation),
-                _ => throw new SavedMapCheckpointUnsupportedOperationException(operation)
-            };
+                var applied = ApplyOperation(current, operation);
+                if (operation.ServerCursor.Value == supersedeConflictingOperationCursor)
+                {
+                    throw new SavedMapCheckpointReconciliationException(
+                        $"Operation cursor {supersedeConflictingOperationCursor.Value} applies cleanly and cannot be superseded.");
+                }
+
+                current = applied;
+            }
+            catch (StudioCompositionNotFoundException ex)
+                when (operation.ServerCursor.Value == supersedeConflictingOperationCursor)
+            {
+                superseded = new SavedMapCheckpointSupersededOperation(operation, ex.Message);
+            }
+            catch (StudioCompositionNotFoundException ex)
+            {
+                throw new SavedMapCheckpointStateConflictException(operation, ex.Message, ex);
+            }
         }
 
-        return current;
+        if (supersedeConflictingOperationCursor.HasValue && superseded is null)
+        {
+            throw new SavedMapCheckpointReconciliationException(
+                $"Operation cursor {supersedeConflictingOperationCursor.Value} is not pending for this checkpoint.");
+        }
+
+        return new SavedMapCheckpointApplyResult(current, superseded);
     }
+
+    private static StudioPackageEnvelope ApplyOperation(
+        StudioPackageEnvelope current,
+        SavedMapOperationEnvelope operation) => operation.Kind switch
+        {
+            // Keep this switch and IsCheckpointable in lockstep: the append endpoint rejects
+            // any kind this applier cannot express, so an unsupported kind can never enter a
+            // checkpointable log (honua-server#2999 review).
+            SavedMapOperationKind.SetViewport => ApplyBody(current, operation, ApplySetViewport),
+            SavedMapOperationKind.SetLayerVisibility => ApplyBody(current, operation, ApplySetLayerVisibility),
+            SavedMapOperationKind.ReorderLayers => ApplyBody(current, operation, ApplyReorderLayers),
+            SavedMapOperationKind.PatchStyle => ApplyBody(current, operation, ApplyPatchStyle),
+            SavedMapOperationKind.ReplaceWebMapDocument => ApplyReplaceDocument(current, operation),
+            _ => throw new SavedMapCheckpointUnsupportedOperationException(operation)
+        };
 
     /// <summary>
     /// Whether <paramref name="kind"/> can be applied to a Studio composition body by
@@ -322,6 +365,47 @@ internal sealed class SavedMapCheckpointPayloadException : Exception
 {
     public SavedMapCheckpointPayloadException(SavedMapOperationEnvelope operation, string message, Exception? inner = null)
         : base($"Operation '{operation.OperationId.Value}' (kind '{operation.Kind}'): {message}", inner)
+    {
+    }
+}
+
+/// <summary>Result of applying a checkpoint replay, including an explicit supersession.</summary>
+internal sealed record SavedMapCheckpointApplyResult(
+    StudioPackageEnvelope Envelope,
+    SavedMapCheckpointSupersededOperation? SupersededOperation);
+
+/// <summary>An accepted operation explicitly superseded during checkpoint reconciliation.</summary>
+internal sealed record SavedMapCheckpointSupersededOperation(
+    SavedMapOperationEnvelope Operation,
+    string Reason);
+
+/// <summary>
+/// Raised when an accepted operation targets composition state that does not exist at its replay
+/// position. Carries the exact operation identity and cursor a client must acknowledge to resolve
+/// the conflict without silently dropping an unrelated edit.
+/// </summary>
+internal sealed class SavedMapCheckpointStateConflictException : Exception
+{
+    public SavedMapCheckpointStateConflictException(
+        SavedMapOperationEnvelope operation,
+        string message,
+        Exception? inner = null)
+        : base(
+            $"Operation '{operation.OperationId.Value}' (kind '{operation.Kind}', cursor " +
+            $"{operation.ServerCursor.Value}) could not be replayed: {message}",
+            inner)
+    {
+        Operation = operation;
+    }
+
+    public SavedMapOperationEnvelope Operation { get; }
+}
+
+/// <summary>Raised when a requested checkpoint reconciliation does not match a live conflict.</summary>
+internal sealed class SavedMapCheckpointReconciliationException : Exception
+{
+    public SavedMapCheckpointReconciliationException(string message)
+        : base(message)
     {
     }
 }

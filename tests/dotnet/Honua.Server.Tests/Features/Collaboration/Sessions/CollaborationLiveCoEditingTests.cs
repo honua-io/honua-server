@@ -823,6 +823,95 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap()
+    {
+        using var factory = CreateFactory(restartDurableOperationLog: true);
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "replace-with-roads",
+            "ReplaceWebMapDocument",
+            baseCursor: 0,
+            payload: """{"layers":[{"id":"roads","title":"Roads","visible":true}]}""");
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "hide-removed-parcels",
+            "SetLayerVisibility",
+            baseCursor: 1,
+            payload: """{"layerId":"parcels","visible":false}""");
+
+        using var checkpointContent = new StringContent(
+            """{"changeNote":"replace then hide"}""", Encoding.UTF8, "application/json");
+        using var conflictResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", checkpointContent);
+        conflictResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var conflict = await ReadJsonAsync(conflictResponse);
+        conflict.GetProperty("conflictCode").GetString().Should().Be("missing-composition-target");
+        conflict.GetProperty("operationId").GetString().Should().Be("hide-removed-parcels");
+        conflict.GetProperty("operationCursor").GetInt64().Should().Be(2);
+        conflict.GetProperty("operationKind").GetString().Should().Be("SetLayerVisibility");
+        conflict.GetProperty("resolutionField").GetString()
+            .Should().Be("supersedeConflictingOperationCursor");
+
+        // The owner explicitly acknowledges the exact conflicting cursor. The replacement still
+        // applies; only the scalar edit whose target it removed is superseded, and that decision
+        // is recorded in both the response and the immutable version's change note.
+        using var reconcileContent = new StringContent(
+            """
+            {
+              "changeNote": "replace then hide",
+              "supersedeConflictingOperationCursor": 2
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+        using var reconcileResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", reconcileContent);
+        var reconcileText = await reconcileResponse.Content.ReadAsStringAsync();
+        reconcileResponse.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            "reconciliation response body: {0}",
+            reconcileText);
+        using var reconcileDocument = JsonDocument.Parse(reconcileText);
+        var checkpoint = reconcileDocument.RootElement.GetProperty("data");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+        var superseded = checkpoint.GetProperty("supersededOperations").EnumerateArray().Single();
+        superseded.GetProperty("operationId").GetString().Should().Be("hide-removed-parcels");
+        superseded.GetProperty("serverCursor").GetInt64().Should().Be(2);
+
+        using var versionResponse = await client.GetAsync(
+            $"/api/v1/studio/content-items/{checkpoint.GetProperty("itemId").GetGuid():D}" +
+            $"/versions/{checkpoint.GetProperty("versionId").GetGuid():D}");
+        var version = (await ReadJsonAsync(versionResponse)).GetProperty("data");
+        version.GetProperty("envelope").GetProperty("body").GetProperty("layers").EnumerateArray()
+            .Select(layer => layer.GetProperty("id").GetString())
+            .Should().Equal(
+                ["roads"],
+                "the replacement must not be discarded with the conflicting scalar edit");
+        version.GetProperty("changeNote").GetString().Should().Contain("hide-removed-parcels");
+
+        // The resolution advances the checkpoint cursor. A later valid edit can be appended and
+        // saved instead of replaying the same irreconcilable operation forever.
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "hide-roads",
+            "SetLayerVisibility",
+            baseCursor: 2,
+            payload: """{"layerId":"roads","visible":false}""");
+        var laterCheckpoint = await CheckpointAsync(client, mapId, "after reconciliation");
+        laterCheckpoint.GetProperty("headCursor").GetInt64().Should().Be(3);
+        laterCheckpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync()

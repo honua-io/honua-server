@@ -145,6 +145,48 @@ public sealed class SavedMapOperationDraftApplierTests
         body.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
     }
 
+    [UnitTest]
+    public void ApplyForCheckpoint_MissingTargetAtAcknowledgedCursor_SupersedesOnlyThatOperation()
+    {
+        var result = SavedMapOperationDraftApplier.ApplyForCheckpoint(
+            BuildEnvelope(CanonicalMapBody),
+            [
+                BuildOperation(
+                    SavedMapOperationKind.ReplaceWebMapDocument,
+                    """{"layers":[{"id":"roads"}]}""",
+                    cursor: 1),
+                BuildOperation(
+                    SavedMapOperationKind.SetLayerVisibility,
+                    """{"layerId":"parcels","visible":false}""",
+                    cursor: 2),
+            ],
+            supersedeConflictingOperationCursor: 2);
+
+        result.Envelope.Body!.Value.GetProperty("layers").EnumerateArray()
+            .Select(layer => layer.GetProperty("id").GetString())
+            .Should().Equal("roads");
+        result.SupersededOperation.Should().NotBeNull();
+        result.SupersededOperation!.Operation.OperationId.Value.Should().Be("op-2");
+        result.SupersededOperation.Operation.ServerCursor.Value.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void ApplyForCheckpoint_ValidOperationAtAcknowledgedCursor_RejectsSupersession()
+    {
+        var act = () => SavedMapOperationDraftApplier.ApplyForCheckpoint(
+            BuildEnvelope(CanonicalMapBody),
+            [
+                BuildOperation(
+                    SavedMapOperationKind.SetLayerVisibility,
+                    """{"layerId":"parcels","visible":false}""",
+                    cursor: 1),
+            ],
+            supersedeConflictingOperationCursor: 1);
+
+        act.Should().Throw<SavedMapCheckpointReconciliationException>()
+            .WithMessage("*applies cleanly and cannot be superseded*");
+    }
+
     private static StudioPackageEnvelope BuildEnvelope(string bodyJson)
     {
         using var document = JsonDocument.Parse(bodyJson);

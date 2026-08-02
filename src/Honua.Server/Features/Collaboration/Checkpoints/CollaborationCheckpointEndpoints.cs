@@ -82,6 +82,13 @@ internal static class CollaborationCheckpointEndpoints
                 $"changeNote must be {MaxChangeNoteLength} characters or fewer.");
         }
 
+        if (request.SupersedeConflictingOperationCursor is <= 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "supersedeConflictingOperationCursor must be a positive server cursor.");
+        }
+
         // Sessions, appends, replay, and checkpoints must share ONE log key per draft, so the
         // route value (which authorization accepts in any GUID textual form) is canonicalized
         // to the "D" form before touching the op log.
@@ -185,29 +192,49 @@ internal static class CollaborationCheckpointEndpoints
             // replayed: there is then no applied edit a concurrent write could displace, so a
             // no-op checkpoint of the current draft state stays valid.
             long? appliedGeneration = null;
-            if (replay.Operations.Count > 0)
+            SavedMapCheckpointSupersededOperation? supersededOperation = null;
+            var appliedOperationCount = replay.Operations.Count;
+            if (replay.Operations.Count > 0 || request.SupersedeConflictingOperationCursor.HasValue)
             {
                 StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
-                var envelope = SavedMapOperationDraftApplier.Apply(draft.Envelope, replay.Operations);
-                var updated = await lifecycle.UpdateDraftAsync(
-                        draftId,
-                        new UpdateStudioPackageDraftCommand
-                        {
-                            PackageKey = draft.PackageKey,
-                            WorkspaceId = draft.WorkspaceId,
-                            OwnerId = draft.OwnerId,
-                            Envelope = envelope,
-                            Generation = draft.Generation,
-                            ActorId = actorId,
-                        },
-                        context.RequestAborted)
-                    .ConfigureAwait(false);
-                if (updated is null)
-                {
-                    return StandardErrorHelpers.CreateNotFound(context, "Studio package draft was not found.");
-                }
+                var applyResult = SavedMapOperationDraftApplier.ApplyForCheckpoint(
+                    draft.Envelope,
+                    replay.Operations,
+                    request.SupersedeConflictingOperationCursor);
+                supersededOperation = applyResult.SupersededOperation;
+                appliedOperationCount -= supersededOperation is null ? 0 : 1;
 
-                appliedGeneration = updated.Generation;
+                if (appliedOperationCount > 0)
+                {
+                    var updated = await lifecycle.UpdateDraftAsync(
+                            draftId,
+                            new UpdateStudioPackageDraftCommand
+                            {
+                                PackageKey = draft.PackageKey,
+                                WorkspaceId = draft.WorkspaceId,
+                                OwnerId = draft.OwnerId,
+                                Envelope = applyResult.Envelope,
+                                Generation = draft.Generation,
+                                ActorId = actorId,
+                            },
+                            context.RequestAborted)
+                        .ConfigureAwait(false);
+                    if (updated is null)
+                    {
+                        return StandardErrorHelpers.CreateNotFound(context, "Studio package draft was not found.");
+                    }
+
+                    appliedGeneration = updated.Generation;
+                }
+                else if (supersededOperation is not null)
+                {
+                    // Even when reconciliation supersedes the only pending operation, version
+                    // exactly the generation against which the missing-target conflict was
+                    // proven. A concurrent draft update could reintroduce the target and make the
+                    // acknowledged supersession stale; the lifecycle generation guard must then
+                    // reject this checkpoint without advancing its cursor.
+                    appliedGeneration = draft.Generation;
+                }
             }
 
             // Version EXACTLY the generation that received the replay. SaveDraftAsVersionAsync
@@ -218,7 +245,7 @@ internal static class CollaborationCheckpointEndpoints
             // same operations onto the current draft (honua-server#2999 review).
             var version = await lifecycle.SaveDraftAsVersionAsync(
                     draftId,
-                    string.IsNullOrWhiteSpace(request.ChangeNote) ? "Live collaboration checkpoint" : request.ChangeNote.Trim(),
+                    BuildChangeNote(request.ChangeNote, supersededOperation),
                     actorId,
                     appliedGeneration,
                     context.RequestAborted)
@@ -241,8 +268,20 @@ internal static class CollaborationCheckpointEndpoints
                 VersionNumber = version.VersionNumber,
                 ContentHash = version.ContentHash,
                 CreatedAt = version.CreatedAt,
-                AppliedOperationCount = replay.Operations.Count,
+                AppliedOperationCount = appliedOperationCount,
                 HeadCursor = replay.HeadCursor.Value,
+                SupersededOperations = supersededOperation is null
+                    ? []
+                    :
+                    [
+                        new CollaborationCheckpointSupersededOperationResponse
+                        {
+                            OperationId = supersededOperation.Operation.OperationId.Value,
+                            Kind = supersededOperation.Operation.Kind,
+                            ServerCursor = supersededOperation.Operation.ServerCursor.Value,
+                            Reason = supersededOperation.Reason,
+                        },
+                    ],
             };
             return Results.Json(
                 ApiResponse<CollaborationCheckpointResponse>.CreateSuccess(response),
@@ -258,6 +297,26 @@ internal static class CollaborationCheckpointEndpoints
         catch (SavedMapCheckpointPayloadException ex)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(context, ex.Message);
+        }
+        catch (SavedMapCheckpointStateConflictException ex)
+        {
+            return Results.Problem(
+                detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Saved-map checkpoint requires reconciliation",
+                type: "urn:honua:problem:collaboration-checkpoint-reconciliation-required",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["conflictCode"] = "missing-composition-target",
+                    ["operationId"] = ex.Operation.OperationId.Value,
+                    ["operationKind"] = ex.Operation.Kind.ToString(),
+                    ["operationCursor"] = ex.Operation.ServerCursor.Value,
+                    ["resolutionField"] = "supersedeConflictingOperationCursor",
+                });
+        }
+        catch (SavedMapCheckpointReconciliationException ex)
+        {
+            return StandardErrorHelpers.CreateConflict(context, ex.Message);
         }
         catch (StudioCompositionNotFoundException ex)
         {
@@ -283,6 +342,38 @@ internal static class CollaborationCheckpointEndpoints
                 "Retry the checkpoint against the current draft state.");
         }
     }
+
+    private static string BuildChangeNote(
+        string? requestedChangeNote,
+        SavedMapCheckpointSupersededOperation? supersededOperation)
+    {
+        var baseNote = string.IsNullOrWhiteSpace(requestedChangeNote)
+            ? "Live collaboration checkpoint"
+            : requestedChangeNote.Trim();
+        if (supersededOperation is null)
+        {
+            return baseNote;
+        }
+
+        var operation = supersededOperation.Operation;
+        var auditNote =
+            $"Reconciled collaboration checkpoint: superseded operation '{operation.OperationId.Value}' " +
+            $"at cursor {operation.ServerCursor.Value} ({operation.Kind}).";
+        var maximumBaseNoteLength = MaxChangeNoteLength - auditNote.Length - 1;
+        if (maximumBaseNoteLength <= 0)
+        {
+            return auditNote.Length <= MaxChangeNoteLength
+                ? auditNote
+                : auditNote[..MaxChangeNoteLength];
+        }
+
+        if (baseNote.Length > maximumBaseNoteLength)
+        {
+            baseNote = baseNote[..maximumBaseNoteLength].TrimEnd();
+        }
+
+        return string.IsNullOrEmpty(baseNote) ? auditNote : $"{baseNote} {auditNote}";
+    }
 }
 
 /// <summary>Logger category marker for the collaboration checkpoint endpoints.</summary>
@@ -300,9 +391,10 @@ internal static partial class CollaborationCheckpointLog
 
 /// <summary>
 /// Request body for a live-session checkpoint. The replay window is server-derived (always the
-/// full retained log): a client-supplied cursor is deliberately NOT accepted, because the server
-/// does not track the draft's last-applied cursor and trusting an arbitrary client value could
-/// silently drop accepted operations from the immutable version (honua-server#2999).
+/// full retained log): a client-supplied replay-start cursor is deliberately NOT accepted, because
+/// trusting one could silently drop accepted operations from the immutable version. The optional
+/// reconciliation cursor does not change the window; it can acknowledge only a typed conflict the
+/// server reproduces at that exact operation (honua-server#2999, honua-server#3047).
 /// </summary>
 internal sealed record CollaborationCheckpointRequest
 {
@@ -316,6 +408,13 @@ internal sealed record CollaborationCheckpointRequest
     /// </summary>
     [StringLength(CollaborationCheckpointEndpoints.MaxChangeNoteLength)]
     public string? ChangeNote { get; init; }
+
+    /// <summary>
+    /// Exact server cursor from a typed checkpoint conflict response that the authorized owner
+    /// explicitly chooses to supersede. The cursor is skipped only when replay proves that same
+    /// operation still targets missing composition state; a valid operation cannot be discarded.
+    /// </summary>
+    public long? SupersedeConflictingOperationCursor { get; init; }
 }
 
 /// <summary>
@@ -347,6 +446,28 @@ internal sealed record CollaborationCheckpointResponse
 
     /// <summary>Op-log head cursor captured by this checkpoint.</summary>
     public required long HeadCursor { get; init; }
+
+    /// <summary>
+    /// Accepted operations the owner explicitly superseded while resolving this checkpoint.
+    /// Empty for ordinary checkpoints.
+    /// </summary>
+    public IReadOnlyList<CollaborationCheckpointSupersededOperationResponse> SupersededOperations { get; init; } = [];
+}
+
+/// <summary>Wire record of one explicitly superseded collaboration operation.</summary>
+internal sealed record CollaborationCheckpointSupersededOperationResponse
+{
+    /// <summary>Client-generated identity of the superseded operation.</summary>
+    public required string OperationId { get; init; }
+
+    /// <summary>Operation family that could not be replayed.</summary>
+    public required SavedMapOperationKind Kind { get; init; }
+
+    /// <summary>Server cursor the owner acknowledged.</summary>
+    public required long ServerCursor { get; init; }
+
+    /// <summary>State conflict that required reconciliation.</summary>
+    public required string Reason { get; init; }
 }
 
 /// <summary>Source-generated JSON context for the collaboration checkpoint surface.</summary>
@@ -356,6 +477,7 @@ internal sealed record CollaborationCheckpointResponse
     WriteIndented = false)]
 [JsonSerializable(typeof(CollaborationCheckpointRequest))]
 [JsonSerializable(typeof(CollaborationCheckpointResponse))]
+[JsonSerializable(typeof(CollaborationCheckpointSupersededOperationResponse))]
 [JsonSerializable(typeof(ApiResponse<CollaborationCheckpointResponse>))]
 internal sealed partial class CollaborationCheckpointJsonContext : JsonSerializerContext
 {
