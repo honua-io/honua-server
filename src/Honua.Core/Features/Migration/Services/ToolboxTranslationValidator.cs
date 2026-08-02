@@ -216,25 +216,29 @@ public static class ToolboxTranslationValidator
             // downgrade survives only for a genuinely unenumerable domain
             // (transform.computed-field's 'op'), where certifying an unvisited branch would
             // over-claim executability.
-            AddConditionalBranchIssues(definition, conditionalInputProbe, suppliedNames, issues);
+            missingRequired = AddConditionalBranchIssues(
+                definition, conditionalInputProbe, suppliedNames, issues);
 
-            IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
-                    definition.ProcessId, suppliedNames)
-                // With no probe the two cases cannot be told apart, so the pessimistic answer
-                // stands rather than guessing which omissions are branch-dependent.
-                ?? definition.Parameters
-                    .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
-                    .Select(parameter => parameter.Name)
-                    .ToArray();
-
-            if (unverifiable.Count > 0)
+            if (!missingRequired)
             {
-                issues.Add(new ToolboxTranslationIssue
+                IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
+                        definition.ProcessId, suppliedNames)
+                    // With no probe the two cases cannot be told apart, so the pessimistic answer
+                    // stands rather than guessing which omissions are branch-dependent.
+                    ?? definition.Parameters
+                        .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
+                        .Select(parameter => parameter.Name)
+                        .ToArray();
+
+                if (unverifiable.Count > 0)
                 {
-                    Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
-                    Message = $"Parameter(s) {string.Join(", ", unverifiable)} of process '{definition.ProcessId}' are neither mapped nor defaulted and the canonical validator can require them on a branch this report cannot pin down, so execution cannot be proven for every caller-supplied value; review before treating this tool as executable.",
-                    ParameterName = unverifiable[0]
-                });
+                    issues.Add(new ToolboxTranslationIssue
+                    {
+                        Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
+                        Message = $"Parameter(s) {string.Join(", ", unverifiable)} of process '{definition.ProcessId}' are neither mapped nor defaulted and the canonical validator can require them on a branch this report cannot pin down, so execution cannot be proven for every caller-supplied value; review before treating this tool as executable.",
+                        ParameterName = unverifiable[0]
+                    });
+                }
             }
         }
 
@@ -255,7 +259,7 @@ public static class ToolboxTranslationValidator
     /// spells the same branch several ways (<c>kmeans</c> / <c>k-means</c>) reads as one gap
     /// with several triggering values rather than as several gaps.
     /// </summary>
-    private static void AddConditionalBranchIssues(
+    private static bool AddConditionalBranchIssues(
         ProcessDefinition definition,
         IProcessConditionalInputProbe? conditionalInputProbe,
         IReadOnlyCollection<string> suppliedNames,
@@ -265,7 +269,7 @@ public static class ToolboxTranslationValidator
             definition.ProcessId, suppliedNames);
         if (requirements is not { Count: > 0 })
         {
-            return;
+            return false;
         }
 
         // "Constrain the source value instead of mapping" is only sound advice when some
@@ -275,7 +279,7 @@ public static class ToolboxTranslationValidator
         // on dbscan and `k` on kmeans, and then no value of `algorithm` executes at all.
         // Coverage is therefore computed across ALL requirements before the claim is made
         // (honua-server#3048 review).
-        var remedy = DescribeBranchRemedy(definition, requirements);
+        var (remedy, exhaustsAllBranches) = DescribeBranchRemedy(definition, requirements);
 
         foreach (var group in requirements.GroupBy(
             requirement => requirement.ParameterName, StringComparer.OrdinalIgnoreCase))
@@ -292,13 +296,15 @@ public static class ToolboxTranslationValidator
                 ParameterName = group.Key
             });
         }
+
+        return exhaustsAllBranches;
     }
 
     /// <summary>
     /// Decides which remedy the branch-requirement issues may honestly recommend, by testing
     /// whether any discriminator has every one of its declared values covered by some gap.
     /// </summary>
-    private static string DescribeBranchRemedy(
+    private static (string Remedy, bool ExhaustsAllBranches) DescribeBranchRemedy(
         ProcessDefinition definition,
         IReadOnlyList<ProcessBranchRequirement> requirements)
     {
@@ -320,13 +326,13 @@ public static class ToolboxTranslationValidator
             // over- or under-claiming from a partial reading, drop to the unqualified remedy.
             if (assignments.Length != 1)
             {
-                return MapUnqualified;
+                return (MapUnqualified, false);
             }
 
             var separator = assignments[0].IndexOf('=', StringComparison.Ordinal);
             if (separator <= 0)
             {
-                return MapUnqualified;
+                return (MapUnqualified, false);
             }
 
             var name = assignments[0][..separator].Trim();
@@ -348,11 +354,11 @@ public static class ToolboxTranslationValidator
             if (FindParameter(definition, name)?.AllowedValues is { Count: > 0 } allowed &&
                 allowed.All(values.Contains))
             {
-                return MapOnly;
+                return (MapOnly, true);
             }
         }
 
-        return MapOrConstrain;
+        return (MapOrConstrain, false);
     }
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)

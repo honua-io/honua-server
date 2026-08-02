@@ -329,6 +329,9 @@ public sealed class ToolboxTranslationValidatorTests
                 ]));
 
         var tool = report.Tools.Single();
+        tool.Classification.Should().Be(
+            ToolboxToolClassifications.Unsupported,
+            "no admissible discriminator value produces an executable native process");
         tool.Issues.Should().OnlyContain(issue =>
             issue.Code == ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
         tool.Issues.Should().HaveCount(2, "one issue per unmapped parameter");
