@@ -6,6 +6,7 @@ on:
     paths:
       - 'docker/worker-gdal/**'
       - 'src/Honua.Worker.Gdal/**'
+      - 'src/Honua.Analyzers/**'
       - 'src/Honua.Geoprocessing/**'
       - 'src/Honua.Jobs/**'
       - 'src/Honua.Core/**'

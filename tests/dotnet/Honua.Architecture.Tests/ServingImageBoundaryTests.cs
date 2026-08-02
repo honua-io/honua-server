@@ -86,6 +86,8 @@ public sealed class ServingImageBoundaryTests
         platformDeploy.Should().Contain("tag_suffix: -ecs-jit");
         platformDeploy.Should().Contain("tag_suffix: -lambda-jit");
         platformDeploy.Should().Contain("tag_suffix: -functions-jit");
+        platformDeploy.Should().Contain("publish_aot_alias: true", Exactly.Thrice());
+        platformDeploy.Should().Contain("targets+=(-t \"${tag%-aot}\")");
     }
 
     [ArchitectureTest]
@@ -130,11 +132,15 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
         workflow.Should().Contain("redis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
+        workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
+        workflow.Should().Contain("ignore-unfixed: true", Exactly.Twice());
+        workflow.Should().Contain("exit-code: '1'");
         workflow.Should().Contain("actions/upload-artifact");
         workflow.Should().Contain("github.event.pull_request.head.repo.fork == false");
 
         foreach (var transitiveInput in new[]
                  {
+                     "src/Honua.Analyzers/**",
                      "src/Honua.Core.Abstractions/**",
                      "src/Honua.Hosting/**",
                      "src/Honua.ServiceDefaults/**",
