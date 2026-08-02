@@ -28,18 +28,33 @@ FORBIDDEN_BINDING = re.compile(
     r"^_?(?:osgeo[._-])?(?:gdal|ogr|osr)(?:[._-](?:const|array|numeric|csharp|wrap|bindings?))?.*\.(?:dll|so|dylib|py)$",
     re.IGNORECASE,
 )
-FORBIDDEN_EXECUTABLES = {
-    "cct",
-    "cs2cs",
+GDAL_UTILITY_NAMES = {
+    # Canonical command roster installed by the pinned OSGeo ubuntu-full image.
+    # Keep explicit names because several GDAL utilities have no gdal/ogr prefix.
+    "gdal",
+    "gdal2tiles",
+    "gdal2xyz",
+    "gdal_calc",
     "gdal_contour",
     "gdal-config",
     "gdal_create",
+    "gdal_edit",
+    "gdal_fillnodata",
+    "gdal_footprint",
     "gdal_grid",
+    "gdal_merge",
+    "gdal_pansharpen",
+    "gdal_polygonize",
+    "gdal_proximity",
     "gdal_rasterize",
+    "gdal_retile",
+    "gdal_sieve",
     "gdal_translate",
     "gdal_viewshed",
     "gdaladdo",
+    "gdalattachpct",
     "gdalbuildvrt",
+    "gdalcompare",
     "gdaldem",
     "gdalenhance",
     "gdalinfo",
@@ -49,17 +64,33 @@ FORBIDDEN_EXECUTABLES = {
     "gdaltindex",
     "gdaltransform",
     "gdalwarp",
+    "gdalmdiminfo",
+    "gdalmdimtranslate",
+    "gdalmove",
+    "gnmanalyse",
+    "gnmmanage",
+    "nearblack",
+    "ogr2ogr",
+    "ogr_layer_algebra",
+    "ogrinfo",
+    "ogrlineref",
+    "ogrmerge",
+    "ogrtindex",
+    "pct2rgb",
+    "rgb2pct",
+    "sozip",
+}
+PROJ_GEOS_UTILITY_NAMES = {
+    "cct",
+    "cs2cs",
     "geod",
     "geos-config",
     "invgeod",
     "invproj",
-    "ogr2ogr",
-    "ogrinfo",
-    "ogrlineref",
-    "ogrtindex",
     "proj",
     "projinfo",
 }
+FORBIDDEN_EXECUTABLES = GDAL_UTILITY_NAMES | PROJ_GEOS_UTILITY_NAMES
 APP_MANIFEST_SUFFIXES = (".deps.json", ".nuspec")
 EXPECTED_WORKER_LABELS = {
     "honua.runtime.profile": "native",
@@ -76,7 +107,7 @@ def _normalise(name: str) -> str:
 def _forbidden_file_reason(path: str) -> str | None:
     basename = PurePosixPath(path).name
     folded = basename.casefold()
-    executable_name = folded.removesuffix(".exe")
+    executable_name = folded.removesuffix(".exe").removesuffix(".py")
     if executable_name in FORBIDDEN_EXECUTABLES or executable_name.startswith("gdal_") and "." not in executable_name:
         return "native raster CLI"
     if FORBIDDEN_GDAL_LIBRARY.match(basename) or FORBIDDEN_PROJ_GEOS_LIBRARY.match(basename):

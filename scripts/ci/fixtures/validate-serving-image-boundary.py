@@ -51,6 +51,8 @@ assert_clean(base | {"/app/ProjNet.dll": b"managed CRS fixture"})
 assert_rejected({"/app/Honua.Server": b"#!/bin/sh\n"}, "not an ELF executable")
 assert_rejected(base | {"/usr/lib/libgdal.so.36": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/usr/bin/gdalinfo": b"fixture"}, "native raster CLI")
+for utility in ("nearblack", "rgb2pct.py", "sozip", "gnmmanage"):
+    assert_rejected(base | {f"/usr/bin/{utility}": b"fixture"}, "native raster CLI")
 assert_rejected(base | {"/app/OSGeo.GDAL.dll": b"fixture"}, ".NET/Python GDAL binding")
 assert_rejected(base | {"/app/MaxRev.Gdal.Core.dll": b"fixture"}, ".NET/Python GDAL binding")
 assert_rejected(
