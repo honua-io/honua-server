@@ -23,6 +23,27 @@ internal sealed class CatalogRasterSourceResolver(IServiceScopeFactory scopeFact
     : IGeoprocessingRasterSourceResolver
 {
     /// <inheritdoc />
+    public async Task<RasterSourceLayerResolution> ResolveLayerIdAsync(
+        RasterSourceReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var cogStore = scope.ServiceProvider.GetService<ICogStore>();
+        if (cogStore is null)
+        {
+            return RasterSourceLayerResolution.NotFound();
+        }
+
+        var registration = await ResolveRegistrationAsync(cogStore, reference, cancellationToken)
+            .ConfigureAwait(false);
+        return registration is null
+            ? RasterSourceLayerResolution.NotFound()
+            : RasterSourceLayerResolution.Success(registration.LayerId);
+    }
+
+    /// <inheritdoc />
     public async Task<RasterSourceResolution> ResolveAsync(
         RasterSourceReference reference,
         long maxBytes,

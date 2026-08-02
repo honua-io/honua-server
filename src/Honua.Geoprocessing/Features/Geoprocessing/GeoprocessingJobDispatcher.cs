@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -162,6 +163,7 @@ internal sealed class GeoprocessingJobDispatcher
         IReadOnlyDictionary<string, string>? protocolMetadata,
         bool isCustomCode,
         string? approvalGatedProcessId,
+        JobSecurityContext? submitterSecurityContext,
         CancellationToken cancellationToken)
     {
         if (_operationGateway == null || isCustomCode)
@@ -177,6 +179,9 @@ internal sealed class GeoprocessingJobDispatcher
             Metadata = protocolMetadata == null
                 ? null
                 : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
+            // Persist the submitter's row/field security identity with the proposal so the
+            // resumed job enforces the ORIGINAL submitter's RLS and masking (#3068).
+            SubmitterSecurityContext = submitterSecurityContext,
         };
 
         var request = new OperationGatewayRequest

@@ -4,7 +4,10 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing;
 
@@ -22,26 +25,45 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
+    private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
     private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
     /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851) and the per-layer read gate (honua-server#2283).
+    /// (honua-server#2851), the generic per-layer access authorizer (#3046), and the enrichment
+    /// layer-binding guard (#2283/#3043).
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
+        ILayerAccessAuthorizer layerAccessAuthorizer,
         GeoprocessingLayerAccessGuard layerAccessGuard,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<GeoprocessingJobService> logger)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _scopeAuthorizer = scopeAuthorizer;
+        _layerAccessAuthorizer = layerAccessAuthorizer;
         _layerAccessGuard = layerAccessGuard;
+        _httpContextAccessor = httpContextAccessor;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Captures the submitter identity together with the effective tenant selected by request
+    /// middleware. Keeping this behind the authorization collaborator avoids adding another
+    /// cross-cutting dependency to the job lifecycle service.
+    /// </summary>
+    public JobSecurityContext CaptureSecurityContext(ClaimsPrincipal principal, RbacOptions options)
+    {
+        var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
+            .GetService<ITenantContext>();
+        return JobSecurityContextCapture.Capture(principal, options, tenantContext);
     }
 
     /// <summary>
@@ -115,6 +137,136 @@ internal sealed class GeoprocessingJobAuthorizer
                 AuthorizationDenialReason.InsufficientScope);
         }
     }
+
+    /// <summary>
+    /// Enforces per-layer READ authorization for every catalog layer the submitted plan will
+    /// touch, evaluated against the SUBMITTING principal before any job record is created
+    /// (honua-server#3046).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The layer set is derived generically from the process catalog
+    /// (<see cref="PlanLayerReferences.Derive"/>), so this covers the layer-sourced executor
+    /// family (<c>analytics.*</c>, <c>generalization.*</c>, <c>conversion.feature-project</c>,
+    /// the <c>source.honua-layer</c> DAG connector), the submit-time raster-source resolution
+    /// that materializes a catalog raster's bytes onto the job spec, and any future process
+    /// that declares a <see cref="ProcessParameterValueType.LayerId"/> parameter.
+    /// </para>
+    /// <para>
+    /// A denial produces one generic <see cref="GeoprocessingAuthorizationException"/> whether
+    /// the layer is forbidden, retired, hidden from the caller's tenant, or does not exist, so
+    /// the submit path is not an oracle for which layer ids exist. Adapters map it onto their
+    /// protocol's 401/403 exactly as they already do for the process-execute gates.
+    /// </para>
+    /// </remarks>
+    /// <param name="principal">The submitting principal.</param>
+    /// <param name="plan">The plan being submitted.</param>
+    /// <param name="catalog">The process catalog declaring each process's parameters.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task EnsurePlanLayerAccessAsync(
+        ClaimsPrincipal principal,
+        AnalysisPlan plan,
+        IProcessCatalog catalog,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var reference in PlanLayerReferences.Derive(plan, catalog))
+        {
+            // The parameter declares WHAT the process does to the layer, so each target is gated
+            // on the grant that operation actually needs. A destination-only layer is not held
+            // to a read the process never performs, and a destructive process is not gated on
+            // `insert` — delete-features needs `delete`, calculate-field needs `update`
+            // (honua-server#3046 review).
+            var operation = ToAuthorizationOperation(reference.Access);
+            var isRead = operation == AuthorizationOperation.Query;
+
+            // OAuth scope narrowing applies to the DERIVED operation too, not just the baseline
+            // process gate. Without it, an execute-only delegated token (honua.mcp.execute with
+            // no honua.mcp.read) could run a layer-sourced plan purely on the strength of the
+            // underlying principal's roles — the token's deliberate lack of read authority was
+            // never consulted, and a mutating workflow could then sink that data
+            // (honua-server#3046 review). Checked before the grant evaluation because a scope
+            // denial is a property of the token and needs no catalog lookup.
+            // A layer MUTATION here is performed by the process, not by the caller directly, so
+            // the scope that delegates it is the mutating-process scope the tier gate already
+            // required — not OperatorOperation.Update, which OperatorScopeCatalog maps to no
+            // scope except honua.mcp.full. Mapping it to Update made every normally delegated
+            // mutating token fail this gate after passing the tier gate, so
+            // data-management.calculate-field could not run with the advertised
+            // honua.mcp.execute.mutating scope (honua-server#3046 review). Reads stay on Read,
+            // which honua.mcp.read grants, so an execute-only token still cannot read a layer.
+            var operatorOperation = isRead
+                ? OperatorOperation.Read
+                : OperatorOperation.ExecuteMutatingProcess;
+            var scopeDecision = _scopeAuthorizer.Evaluate(
+                principal, OperatorResourceType.Catalog, operatorOperation);
+            if (!scopeDecision.IsAllowed)
+            {
+                GeoprocessingServiceLog.AuthorizationScopeDenied(
+                    _logger, OperatorResourceType.Catalog.ToString(), operatorOperation.ToString());
+                throw new GeoprocessingAuthorizationException(
+                    requiresAuthentication: false,
+                    scopeDecision.Reason
+                        ?? $"The access token's scopes do not permit '{operatorOperation}' on "
+                        + $"{OperatorResourceType.Catalog}.",
+                    OperatorResourceType.Catalog,
+                    operatorOperation,
+                    AuthorizationDenialReason.InsufficientScope);
+            }
+
+            var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
+                principal,
+                reference.LayerId,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+
+            if (decision.IsAllowed)
+            {
+                continue;
+            }
+
+            GeoprocessingServiceLog.LayerAccessDenied(
+                _logger,
+                reference.LayerId,
+                reference.StepId,
+                reference.ProcessId);
+
+            throw new GeoprocessingAuthorizationException(
+                decision.RequiresAuthentication,
+                decision.RequiresAuthentication
+                    ? "Authentication is required for this operation."
+                    : $"You do not have permission to {DescribeAccess(reference.Access)} layer "
+                      + $"{reference.LayerId} referenced by step '{reference.StepId}'.",
+                OperatorResourceType.Catalog,
+                operatorOperation,
+                AuthorizationDenialReason.InsufficientGrant);
+        }
+    }
+
+    /// <summary>
+    /// Maps a declared layer access onto the canonical authorization operation it requires.
+    /// One-to-one by construction, so a member added to either enum forces a decision here.
+    /// </summary>
+    private static AuthorizationOperation ToAuthorizationOperation(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => AuthorizationOperation.Insert,
+            ProcessLayerAccess.Update => AuthorizationOperation.Update,
+            ProcessLayerAccess.Delete => AuthorizationOperation.Delete,
+            // None is filtered out by PlanLayerReferences.Derive and never arrives here; if it
+            // ever did, the conservative reading is the strictest, not the loosest.
+            ProcessLayerAccess.None => AuthorizationOperation.Delete,
+            _ => AuthorizationOperation.Query,
+        };
+
+    /// <summary>Caller-facing verb for a denial, matching the operation that was refused.</summary>
+    private static string DescribeAccess(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => "add features to",
+            ProcessLayerAccess.Update => "modify features in",
+            ProcessLayerAccess.Delete => "delete features from",
+            _ => "read",
+        };
 
     /// <summary>
     /// Evaluates the approval requirement for the supplied request. Callers own the

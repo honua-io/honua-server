@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
@@ -165,6 +166,10 @@ public sealed class WorkflowBranchingAndForEachTests
                     ForEach = new WorkflowForEachSpec(ForEachRegions)
                 }
             ],
+            // Background runs inherit the publisher snapshot. Definitions created before this
+            // durable identity existed are intentionally refused and must be republished
+            // (#3068); this fixture models a current, successfully published definition.
+            AuthorSecurityContext = new JobSecurityContext("tester", TenantId: null, Claims: []),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -234,6 +239,7 @@ public sealed class WorkflowBranchingAndForEachTests
                     ForEach = new WorkflowForEachSpec(ForEachRegions)
                 }
             ],
+            AuthorSecurityContext = new JobSecurityContext("tester", TenantId: null, Claims: []),
             CreatedAt = now,
             UpdatedAt = now
         };

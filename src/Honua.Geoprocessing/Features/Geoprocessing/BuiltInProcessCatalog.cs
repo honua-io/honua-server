@@ -869,7 +869,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 .. NativeRasterSourceParameters,
                 Param("zones", "Zones Inline", "Inline zone polygons as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path; zonesLayerId-resolved sourcing is a follow-on.", ProcessParameterValueType.Text, required: true),
-                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId),
+                // Reserved placeholder: the executor reads only the inline `zones`, so there is
+                // no layer access to gate (honua-server#3046 review). Give this a real
+                // ProcessLayerAccess when the resolution path lands.
+                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.None),
                 Param("band", "Band", "1-based raster band to aggregate. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
                 Param("statistics", "Statistics", "Comma-separated stat names. Allowed values: count, sum, mean, min, max, stddev, variance.", ProcessParameterValueType.Text, defaultValue: "count,mean,stddev,min,max,sum"),
             ],
@@ -1205,7 +1208,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                // Destructive target: gated on the layer DELETE grant, not a generic write
+                // (honua-server#3046 review).
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Delete),
                 Param("where", "Where", "ArcGIS SQL filter selecting features to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
                 Param("objectIds", "Object IDs", "Comma-separated feature identifiers to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
             ],
@@ -1220,7 +1225,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                // Mutating target: gated on the layer UPDATE grant (honua-server#3046 review).
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true, layerAccess: ProcessLayerAccess.Update),
                 Param("fieldName", "Field Name", "Simple identifier naming the field to update (letters, digits, underscore; no dotted paths).", ProcessParameterValueType.Text, required: true),
                 Param("expression", "Expression", "Constant or SQL expression evaluated per feature. Parsed by the same allow-listed expression gate FeatureServer.Edits.CalculateFieldValue uses.", ProcessParameterValueType.Text, required: true),
                 Param("where", "Where", "Optional ArcGIS SQL filter selecting features to update.", ProcessParameterValueType.Text),
@@ -1260,7 +1266,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("sourceUrl", "Source URL", "Optional originating URL when the source was fetched from a remote object, recorded in provenance.", ProcessParameterValueType.Text),
                 Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier for the imported geometries. Defaults to 4326.", ProcessParameterValueType.Srid),
-                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId),
+                // Destination, never a source: the importer tiles INTO this layer and never
+                // reads it, so the submit gate must not demand a read grant on it
+                // (honua-server#3046 review).
+                Param("rasterLayerId", "Raster Layer", "When the source is a raster, the layer identifier to tile into; triggers raster import, statistics, and tile/overview pre-generation.", ProcessParameterValueType.LayerId, layerAccess: ProcessLayerAccess.Insert),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1515,7 +1524,11 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "source",
             Parameters =
             [
-                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.WholeNumber, required: true),
+                // Declared as LayerId (not WholeNumber) because it IS a catalog layer
+                // reference: the submit-time per-layer read gate derives the layers a plan
+                // reads from the declared LayerId parameters, and this connector streams a
+                // catalog layer's features straight into a job artifact (honua-server#3046).
+                Param("layerId", "Layer Id", "Honua catalog layer identifier to read from.", ProcessParameterValueType.LayerId, required: true),
                 Param("where", "Where", "Optional GeoServices-style SQL where clause filtering the features.", ProcessParameterValueType.Text),
                 Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' envelope filter in the output CRS.", ProcessParameterValueType.Text),
                 Param("outFields", "Output Fields", "Optional comma-separated output field allow-list. Defaults to all fields.", ProcessParameterValueType.Text),
@@ -1825,7 +1838,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         bool required = false,
         string? defaultValue = null,
         IReadOnlyList<string>? allowedValues = null,
-        bool acceptsRasterSource = false) => new()
+        bool acceptsRasterSource = false,
+        ProcessLayerAccess layerAccess = ProcessLayerAccess.Read) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1834,6 +1848,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Required = required,
             DefaultValue = defaultValue,
             AllowedValues = allowedValues,
-            AcceptsRasterSource = acceptsRasterSource
+            AcceptsRasterSource = acceptsRasterSource,
+            LayerAccess = layerAccess
         };
 }

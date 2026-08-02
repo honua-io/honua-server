@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+
 namespace Honua.Core.Features.Orchestration.Domain;
 
 /// <summary>
@@ -47,4 +49,24 @@ public sealed record WorkflowDefinition
     /// Opaque free-form metadata attached to the definition.
     /// </summary>
     public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Row/field security identity of the principal that PUBLISHED this workflow, captured at
+    /// publication time.
+    /// </summary>
+    /// <remarks>
+    /// A cron or event-triggered run has no requesting principal — the scheduler and event
+    /// services create it under the synthesized orchestrator identity, which carries
+    /// <c>role=admin</c>. Capturing the run's snapshot from that principal would give every
+    /// step job ADMIN row/field visibility, so a restricted author's scheduled workflow would
+    /// read all rows and unmasked fields; the publication-time authorization check only
+    /// verifies layer access and does not preserve the author's RLS claims or field-mask roles.
+    /// This snapshot is what those runs inherit instead (honua-server#3068 review).
+    /// <para>
+    /// <see langword="null"/> means the definition predates this field. Triggered runs are
+    /// REFUSED in that case rather than falling back to the orchestrator capture, on the same
+    /// fail-closed reasoning as the job submit path; the workflow must be republished.
+    /// </para>
+    /// </remarks>
+    public JobSecurityContext? AuthorSecurityContext { get; init; }
 }
