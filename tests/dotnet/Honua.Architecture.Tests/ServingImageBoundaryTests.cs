@@ -91,17 +91,29 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void RequiredPrGate_ShouldBuildInspectAllProductionAotImagesAndSmokeCanonicalImage()
+    public void RequiredPrGate_ShouldKeepBoundaryValidationLightweight()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
+
+        workflow.Should().Contain("validate-serving-image-boundary.py");
+        workflow.Should().NotContain("docker/build-push-action");
+        workflow.Should().NotContain("docker run -d");
+    }
+
+    [ArchitectureTest]
+    public void ServingImageBoundaryWorkflow_ShouldBuildInspectAllProductionAotImagesAndSmokeCanonicalImage()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/serving-image-boundary.yml"));
 
         workflow.Should().Contain("file: docker/Dockerfile.aot");
         workflow.Should().Contain("file: docker/Dockerfile.lambda.aot");
         workflow.Should().Contain("file: docker/Dockerfile.functions.aot");
         workflow.Should().Contain(VerifierCommand, Exactly.Thrice());
         workflow.Should().Contain("http://localhost:8080/healthz/live");
-        workflow.Should().Contain("validate-serving-image-boundary.py");
+        workflow.Should().Contain("pull_request:");
+        workflow.Should().Contain("paths:");
 
         var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
         foreach (var project in new[]

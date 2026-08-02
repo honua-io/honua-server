@@ -1,76 +1,14 @@
 name: PR Gate
 
-# ===========================================================================
-# THE PER-PR REQUIRED CHECK (#2865)
-# ===========================================================================
-# WHY THIS EXISTS
-# ---------------
-# `trunk` branch protection required the context `CI Gate`, which ci.yml
-# produces ONLY on a `train/batch/*` workflow_dispatch — never on a PR head SHA
-# (ci.yml has no `pull_request` trigger, deliberately). So every PR sat at
-# mergeStateStatus=BLOCKED forever and `--admin` became the only way to land
-# anything. Admin merges bypass the train, so the batch CI never ran on the
-# merged work, and a stale docs/gis/data/feature-catalog.json reached trunk red.
-# This workflow supplies a context that actually materializes on a PR, so
-# protection can name a check that is reachable and `clean` becomes attainable
-# The merge train consumes this exact-head result alongside `Review Gate`.
-#
-# THE NAME IS `PR Gate`, NOT `CI Gate`
-# ------------------------------------
-# `CI Gate` is the batch aggregator in ci.yml. Conflating the two is the exact
-# category error #2865 is about, and it is the same one ci.yml already warns
-# against one layer down: "The merge-queue REQUIRED check must be `Merge Queue
-# Gate`, NOT `CI Gate`." Three gates, three distinct contexts:
-#   * `PR Gate`          (this file)  — per-PR,        pull_request
-#   * `Merge Queue Gate` (ci.yml)     — per-batch,     merge_group   [dormant]
-#   * `CI Gate`          (ci.yml)     — train batch CI, workflow_dispatch/schedule
-#
-# WHY A SEPARATE WORKFLOW INSTEAD OF ADDING `pull_request:` TO ci.yml
-# -------------------------------------------------------------------
-# Because that would re-create the problem the current design was built to
-# avoid. Nearly every heavy job in ci.yml is guarded by
-# `github.event_name != 'pull_request' || <not dependabot>`, which evaluates
-# TRUE for an ordinary PR — so merely adding the trigger would fan the full
-# ~45-job matrix (AOT, docker, the 30+ Server Tests shards, browser/MCP lanes)
-# out on every push to every PR. That is the runner storm that starved the
-# merge queue into being disabled on 2026-06-18 (ruleset 17808547). A separate
-# file cannot accidentally fire ci.yml's matrix. The no-per-PR-matrix decision
-# in ci.yml's header stands; this workflow does not touch it.
-#
-# THE GATE LOGIC IS SHARED, NOT COPIED
-# ------------------------------------
-# The steps live in ./.github/actions/lean-gate and are used verbatim by
-# ci.yml's `Merge Queue Gate`. Two hand-maintained copies of the same gate is
-# the drift that produced this ticket; there is one definition.
-#
-# IT MUST STAY CHEAP
-# ------------------
-# One ubuntu-latest runner. No GitHub `services:` orchestration, no matrix, no
-# coverage collection. Build (warnings-as-errors) + format + Server Fast tier +
-# architecture tests + Server governance/drift tests. It is not a replacement
-# for the train's batch CI — it is the cheap floor that stops a PR that cannot
-# compile, is unformatted, breaks shared unit behavior, has drifted the feature
-# catalog, or has drifted EndpointRegistry from the deployed routes (#2862/#2882)
-# from reaching trunk at all. The authoritative full matrix remains the train's
-# batch CI and the nightly schedule.
-#
-# One step (Server governance/drift) is the single exception to "service-free":
-# EndpointRegistryDriftTests must enumerate the REAL, store-gated route table, so
-# it boots one ephemeral Testcontainers PostgreSQL on this same runner — not a
-# `services:` block, not the provider matrix, ~1.5 min warm / ~3-4 min cold. See
-# .github/actions/lean-gate/action.yml for the fidelity-vs-cost rationale.
-#
-# NO `paths:` FILTER — IT RUNS ON EVERY PR, ON PURPOSE
-# ----------------------------------------------------
-# A required status check with a `paths:` filter never reports on a PR that
-# does not match it, and GitHub leaves such a PR permanently "Expected —
-# Waiting for status to be reported". That is #2865 again with extra steps.
-# A required context must be unconditional.
-
+# The branch-protection context produced by this workflow must remain a cheap,
+# unconditional per-PR floor. The authoritative broad matrix remains on the
+# merge train/nightly schedule, and native-AOT image assembly runs separately
+# in serving-image-boundary.yml so Docker work cannot stall this required gate.
+# Do not add a paths filter: a skipped required workflow leaves PRs permanently
+# waiting for a status that GitHub never creates (#2865).
 on:
   pull_request:
     branches: [trunk]
-  # Manual replay for a PR head or a branch, e.g. after a transient runner fault.
   workflow_dispatch:
 
 permissions:
@@ -78,9 +16,6 @@ permissions:
   packages: read
 
 concurrency:
-  # Key on the PR number so a re-push cancels the superseded run instead of
-  # queuing a second full build behind it. The rollup always reflects the run
-  # for the newest head SHA.
   group: pr-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
@@ -92,8 +27,7 @@ env:
 jobs:
   pr-gate:
     # This exact string is the branch-protection required context. Changing it
-    # silently un-gates trunk (a renamed context stops reporting and protection
-    # waits forever). See #2865.
+    # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -101,8 +35,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # The full-solution Release build can exhaust ubuntu-latest disk once
-      # every project writes bin/obj. Reclaim unused hosted toolchains before
-      # .NET setup and restore. Best-effort; mirrors ci.yml's heavy jobs.
+      # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
         run: |
           sudo rm -rf /usr/local/lib/android || true
@@ -121,160 +54,8 @@ jobs:
         with:
           trx-prefix: pr-gate
 
+      # Exercise all clean and injected-rootfs fixtures here without building a
+      # container. The separate serving-image workflow and release/deploy/nightly
+      # lanes apply this detector to the final production root filesystems.
       - name: Test serving-image boundary detector
         run: python3 scripts/ci/fixtures/validate-serving-image-boundary.py
-
-      - name: Detect serving-image boundary impact
-        id: raster_boundary
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "generic=true" >> "$GITHUB_OUTPUT"
-            echo "lambda=true" >> "$GITHUB_OUTPUT"
-            echo "functions=true" >> "$GITHUB_OUTPUT"
-            echo "any=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          printf '%s\n' "$changed"
-          generic=false
-          lambda=false
-          functions=false
-
-          # Common transitive image inputs (GitHub-glob equivalents):
-          # src/**, eng/**, docs/gis/data/feature-catalog.json,
-          # docs/developer/api-specs/admin-api.json, tests/fixtures/ai-builder/**,
-          # Directory.Build.props, Directory.Build.targets,
-          # Directory.Packages.props, scripts/docker/restore-dotnet-with-github-packages.sh,
-          # and .dockerignore. Ordinary source changes must rebuild every production
-          # AOT variant because each one publishes the same Honua.Server graph.
-          while IFS= read -r path; do
-            case "$path" in
-              src/*|eng/*|samples/Honua.StacOpsDemo/*|docs/gis/data/feature-catalog.json|docs/developer/api-specs/admin-api.json|tests/fixtures/ai-builder/*|Honua.sln|global.json|Directory.Build.props|Directory.Build.targets|Directory.Packages.props|NuGet.config|.editorconfig|.dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/pr-gate.yml|.github/workflows/release-bundle.yml|.github/workflows/deploy.yml|.github/workflows/deploy-platform-images.yml|.github/workflows/nightly-container-build.yml)
-                generic=true
-                lambda=true
-                functions=true
-                ;;
-              docker/Dockerfile.aot)
-                generic=true
-                ;;
-              docker/Dockerfile.lambda.aot)
-                lambda=true
-                ;;
-              docker/Dockerfile.functions.aot|docker/cloud/azure-functions/*)
-                functions=true
-                ;;
-            esac
-          done <<< "$changed"
-
-          echo "generic=$generic" >> "$GITHUB_OUTPUT"
-          echo "lambda=$lambda" >> "$GITHUB_OUTPUT"
-          echo "functions=$functions" >> "$GITHUB_OUTPUT"
-          if [[ "$generic" == true || "$lambda" == true || "$functions" == true ]]; then
-            echo "any=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "any=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx for serving-image boundary
-        if: steps.raster_boundary.outputs.any == 'true'
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
-
-      - name: Build canonical native-AOT serving image
-        if: steps.raster_boundary.outputs.generic == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-server:aot-boundary
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-aot-boundary
-          provenance: false
-          sbom: false
-
-      - name: Verify canonical serving-image contents
-        if: steps.raster_boundary.outputs.generic == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:aot-boundary
-
-      - name: Build Lambda native-AOT serving image
-        if: steps.raster_boundary.outputs.lambda == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.lambda.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-server:lambda-aot-boundary
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-lambda-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-lambda-aot-boundary
-          provenance: false
-          sbom: false
-
-      - name: Verify Lambda serving-image contents
-        if: steps.raster_boundary.outputs.lambda == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:lambda-aot-boundary
-
-      - name: Build Azure Functions native-AOT serving image
-        if: steps.raster_boundary.outputs.functions == 'true'
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          file: docker/Dockerfile.functions.aot
-          platforms: linux/amd64
-          load: true
-          tags: honua-server:functions-aot-boundary
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=gha,scope=pr-functions-aot-boundary
-          cache-to: type=gha,mode=max,scope=pr-functions-aot-boundary
-          provenance: false
-          sbom: false
-
-      - name: Verify Azure Functions serving-image contents
-        if: steps.raster_boundary.outputs.functions == 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:functions-aot-boundary
-
-      - name: Smoke-test canonical serving image
-        if: steps.raster_boundary.outputs.generic == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run -d \
-            --name honua-aot-boundary \
-            --network host \
-            -e ASPNETCORE_ENVIRONMENT=Development \
-            -e HONUA_SKIP_MIGRATIONS=true \
-            -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
-            -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
-            -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
-            honua-server:aot-boundary
-
-          for attempt in {1..30}; do
-            if curl --fail --silent http://localhost:8080/healthz/live >/dev/null; then
-              echo "Native-AOT serving container passed its liveness probe."
-              exit 0
-            fi
-            sleep 2
-          done
-
-          docker logs honua-aot-boundary
-          exit 1
-
-      - name: Clean up serving-image smoke container
-        if: always() && steps.raster_boundary.outputs.generic == 'true'
-        run: docker rm -f honua-aot-boundary || true
