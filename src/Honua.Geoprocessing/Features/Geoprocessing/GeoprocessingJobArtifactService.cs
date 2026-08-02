@@ -21,6 +21,11 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal sealed class GeoprocessingJobArtifactService
 {
+    internal const string TypedRasterExecutionNotSupportedCode = "RASTER_SOURCE_EXECUTION_NOT_SUPPORTED";
+    private const string TypedRasterExecutionNotSupportedMessage =
+        "Typed raster source execution is disabled until #3090 adds authenticated v2 worker resolution; "
+        + "use the existing catalog layerId/rasterId path.";
+
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly IProcessCatalog _processCatalog;
@@ -105,11 +110,39 @@ internal sealed class GeoprocessingJobArtifactService
     /// </summary>
     public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
     {
-        if (plan.Steps.Any(step => step.RasterSources.Count > 0))
+        var violation = GetTypedRasterExecutionViolation(plan);
+        if (violation is not null)
         {
             throw new GeoprocessingValidationException(
-                "RASTER_SOURCE_EXECUTION_NOT_SUPPORTED: typed raster source execution is disabled until #3090 adds authenticated v2 worker resolution; use the existing catalog layerId/rasterId path.");
+                $"{violation.Code}: {violation.Message}");
         }
+    }
+
+    /// <summary>
+    /// Returns the structured pre-flight violation that mirrors the submit-time typed-raster
+    /// execution gate, or <see langword="null"/> when the plan uses only executable inputs.
+    /// </summary>
+    public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(AnalysisPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
+        {
+            var step = plan.Steps[stepIndex];
+            if (step.RasterSources.Count == 0)
+            {
+                continue;
+            }
+
+            return new GeoprocessingValidationFailure
+            {
+                Code = TypedRasterExecutionNotSupportedCode,
+                Message = TypedRasterExecutionNotSupportedMessage,
+                FieldPath = $"steps[{step.StepId}].raster_sources",
+            };
+        }
+
+        return null;
     }
 
     /// <summary>

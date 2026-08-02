@@ -180,6 +180,19 @@ public sealed class GeoprocessingJobServiceTests
         result.Warnings.Should().Contain(w => w.Contains("QueryFeatures", StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
+            && violation.FieldPath == "steps[step-raster].raster_sources");
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------
@@ -198,6 +211,17 @@ public sealed class GeoprocessingJobServiceTests
         // geometry.buffer produces a feature layer — derived from the catalog when the plan
         // declares no explicit outputs.
         result.EstimatedArtifacts.Should().Contain(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var act = () => _sut.DryRunPlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode}*");
     }
 
     // -----------------------------------------------------------------------
