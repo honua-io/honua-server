@@ -351,6 +351,11 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
                 {
                     errors.Add($"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot have empty target claim name");
                 }
+                else if (OidcClaimsTransformation.IsReservedProvenanceClaimType(mapping.Value))
+                {
+                    errors.Add(
+                        $"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot target reserved Honua provenance claim '{mapping.Value}'");
+                }
             }
         }
 
