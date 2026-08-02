@@ -22,6 +22,8 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         + "implement kriging and PostGIS has no canonical kriging executor.";
 
     private static readonly IReadOnlyList<string> GeoTiff = ReadOnly("image/tiff");
+    private static readonly IReadOnlyList<string> GeoTiffAndWkb =
+        ReadOnly("image/tiff", "application/wkb");
     private static readonly IReadOnlyList<string> GeoJson = ReadOnly("application/geo+json");
     private static readonly IReadOnlyList<string> Json = ReadOnly("application/json");
     private static readonly IReadOnlyList<string> RasterExportFormats =
@@ -163,7 +165,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         Create(
             "raster.clip",
             "raster.clip",
-            GeoTiff,
+            GeoTiffAndWkb,
             GeoTiff,
             postgisPreferred: true,
             postgisRequestAllowed: true),

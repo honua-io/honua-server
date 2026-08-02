@@ -36,6 +36,18 @@ public sealed class RasterEngineCapabilityRegistryTests
     }
 
     [Fact]
+    public void BuiltInCapabilities_ClipAdvertisesRasterAndBoundaryInputFormats()
+    {
+        var capability = new RasterEngineCapabilityRegistry().Find("raster.clip");
+
+        Assert.NotNull(capability);
+        Assert.All(capability.Engines, engine =>
+            Assert.Equal(
+                new[] { "image/tiff", "application/wkb" },
+                engine.Formats.InputMediaTypes));
+    }
+
+    [Fact]
     public void Estimate_UnknownMetadata_SaturatesAndRefusesRequestExecution()
     {
         var registry = new RasterEngineCapabilityRegistry();
