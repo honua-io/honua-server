@@ -25,6 +25,7 @@ internal static class GeoservicesCatalogEndpoints
     private const string FeatureServerProtocolName = "FeatureServer";
     private const string MapServerProtocolName = "MapServer";
     private const string ImageServerProtocolName = "ImageServer";
+    private const string GPServerProtocolName = "GPServer";
     private const string SceneServerProtocolName = "SceneServer";
     private const string VectorTileServerProtocolName = "VectorTileServer";
 
@@ -37,7 +38,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")
-            .WithDescription("Returns FeatureServer, MapServer, ImageServer, VectorTileServer, and (Enterprise) SceneServer service directory entries.")
+            .WithDescription("Returns FeatureServer, MapServer, ImageServer, GPServer, VectorTileServer, and (Enterprise) SceneServer service directory entries.")
             .WithTags("GeoServices Catalog")
             .CacheOutput("ServiceDirectory")
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -109,9 +110,22 @@ internal static class GeoservicesCatalogEndpoints
                 }
             }
 
-            if (visibleResources.Count == 0)
+            // GPServer is service-scoped: its built-in process catalog is usable even when
+            // a service has no layer publications (including the default layerless
+            // `geoprocessing` service). Other directory types remain publication-backed.
+            // Evaluate the service policy before exposing this layerless entry so catalog
+            // discovery matches the GPServer endpoints' own service-level authorization.
+            var advertiseLayerlessGp = visibleResources.Count == 0
+                && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal)
+                && AccessPolicyHelpers.RequireServiceAccess(context, service) is null;
+            if (visibleResources.Count == 0 && !advertiseLayerlessGp)
             {
                 continue;
+            }
+
+            if (visibleResources.Count == 0)
+            {
+                directoryTypes = [GPServerProtocolName];
             }
 
             var escapedName = Uri.EscapeDataString(service.Metadata.Name);
@@ -233,7 +247,7 @@ internal static class GeoservicesCatalogEndpoints
     /// <summary>
     /// Maps every Esri-family protocol a service exposes to the directory-entry "type"
     /// strings the GeoServices REST catalog advertises (FeatureServer, MapServer,
-    /// ImageServer, VectorTileServer, SceneServer), preserving the service's declared
+    /// ImageServer, GPServer, VectorTileServer, SceneServer), preserving the service's declared
     /// protocol order and de-duplicating. A service reachable under several Esri types
     /// is listed once per type, matching ArcGIS Services Directory semantics (#1853).
     /// Non-Esri protocols (OGC API Features, STAC, OData, etc.) are skipped because they
@@ -251,7 +265,7 @@ internal static class GeoservicesCatalogEndpoints
     /// <summary>
     /// Maps an Esri-family protocol to the directory-entry "type" string the
     /// GeoServices REST catalog exposes (FeatureServer, MapServer, ImageServer,
-    /// VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
+    /// GPServer, VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
     /// which are surfaced through other catalogs.
     /// </summary>
     private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
@@ -266,6 +280,9 @@ internal static class GeoservicesCatalogEndpoints
                 return true;
             case ImageServerProtocolName:
                 directoryType = "ImageServer";
+                return true;
+            case GPServerProtocolName:
+                directoryType = "GPServer";
                 return true;
             case VectorTileServerProtocolName:
                 directoryType = "VectorTileServer";
