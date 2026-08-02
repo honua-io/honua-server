@@ -310,7 +310,7 @@ public static class RasterOutputWorkerContract
 
     /// <summary>Builds the metadata-only publication manifest key for a job attempt.</summary>
     public static string BuildManifestObjectKey(string jobId, int attempt)
-        => BuildStagingPrefix(jobId, attempt) + "publication-manifest.json";
+        => BuildStagingPrefix(jobId, attempt) + "_honua/publication-manifest.json";
 
     private static void ValidateSegment(string value, string parameterName)
     {

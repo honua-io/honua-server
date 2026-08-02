@@ -910,12 +910,18 @@ public sealed class GeoprocessingJobServiceTests
                 WorkloadName = "Remote geoprocessing",
                 ArtifactReference = "ecr/honua-gp:latest",
                 RuntimeProfile = "py311",
+                ContractVersion = RasterOutputContract.JobContractVersion,
                 Parameters = new Dictionary<string, string>
                 {
                     ["queue"] = "gp-primary"
                 }
             }
         });
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities
+            {
+                MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
+            });
         backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
             .Returns(new BatchComputeSubmissionResult
             {
@@ -949,6 +955,7 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.WorkloadId.Should().Be("geoprocessing-remote");
         job.Spec.Backend.Should().Be("aws-batch");
         job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
+        job.Spec.ContractVersion.Should().Be(RasterOutputContract.JobContractVersion);
         job.Spec.Parameters.Should().ContainKey("gpserver.serviceId").WhoseValue.Should().Be("TestService");
         job.Spec.Parameters.Should().ContainKey("queue").WhoseValue.Should().Be("gp-primary");
         job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
