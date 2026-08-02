@@ -31,34 +31,57 @@ FORBIDDEN_BINDING = re.compile(
 FORBIDDEN_EXECUTABLES = {
     "cct",
     "cs2cs",
+    "gdal",
+    "gdal2tiles",
+    "gdal_calc",
     "gdal_contour",
     "gdal-config",
     "gdal_create",
+    "gdal_edit",
+    "gdal_fillnodata",
+    "gdal_merge",
+    "gdal_pansharpen",
+    "gdal_polygonize",
+    "gdal_proximity",
     "gdal_grid",
     "gdal_rasterize",
+    "gdal_retile",
+    "gdal_sieve",
     "gdal_translate",
     "gdal_viewshed",
     "gdaladdo",
     "gdalbuildvrt",
+    "gdalcompare",
     "gdaldem",
     "gdalenhance",
     "gdalinfo",
     "gdallocationinfo",
     "gdalmanage",
+    "gdalmdiminfo",
+    "gdalmdimtranslate",
+    "gdalmove",
     "gdalsrsinfo",
     "gdaltindex",
     "gdaltransform",
     "gdalwarp",
     "geod",
     "geos-config",
+    "gnmanalyse",
+    "gnmmanage",
     "invgeod",
     "invproj",
+    "nearblack",
     "ogr2ogr",
+    "ogr_layer_algebra",
     "ogrinfo",
     "ogrlineref",
+    "ogrmerge",
     "ogrtindex",
+    "pct2rgb",
     "proj",
     "projinfo",
+    "rgb2pct",
+    "sozip",
 }
 APP_MANIFEST_SUFFIXES = (".deps.json", ".nuspec")
 EXPECTED_WORKER_LABELS = {
@@ -76,8 +99,10 @@ def _normalise(name: str) -> str:
 def _forbidden_file_reason(path: str) -> str | None:
     basename = PurePosixPath(path).name
     folded = basename.casefold()
-    executable_name = folded.removesuffix(".exe")
-    if executable_name in FORBIDDEN_EXECUTABLES or executable_name.startswith("gdal_") and "." not in executable_name:
+    executable_name = re.sub(r"\.(?:exe|py)$", "", folded)
+    if executable_name in FORBIDDEN_EXECUTABLES or (
+        executable_name.startswith("gdal_") and "." not in executable_name
+    ):
         return "native raster CLI"
     if FORBIDDEN_GDAL_LIBRARY.match(basename) or FORBIDDEN_PROJ_GEOS_LIBRARY.match(basename):
         return "native GDAL/PROJ/GEOS library"
