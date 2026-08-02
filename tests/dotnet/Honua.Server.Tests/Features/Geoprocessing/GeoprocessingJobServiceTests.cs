@@ -350,7 +350,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_RasterIdOnly_AuthorizesOwningLayerBeforeReadingBytes()
+    public async Task SubmitJob_RasterIdOnly_AuthorizesOwningLayerBeforeResolvingMetadataOnlyReference()
     {
         var events = new List<string>();
         var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
@@ -366,12 +366,28 @@ public sealed class GeoprocessingJobServiceTests
         rasterResolver
             .ResolveAsync(
                 Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91 && reference.LayerId == 42),
-                Arg.Any<long>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                events.Add("read-bytes");
-                return Task.FromResult(RasterSourceResolution.Success([1, 2, 3]));
+                events.Add("resolve-reference");
+                return Task.FromResult(RasterSourceResolution.Success(new ObjectStoreCogRasterSourceDescriptor
+                {
+                    Version = "version-1",
+                    Provider = CloudStorageProvider.AwsS3,
+                    StoreReference = "test-bucket",
+                    ObjectKey = "test.tif",
+                    Content = new RasterContentIdentity
+                    {
+                        SizeBytes = 12_345_678,
+                        MediaType = "image/tiff",
+                        ETag = "etag-1",
+                    },
+                    SecurityContext = new RasterSecurityContextReference
+                    {
+                        TenantId = "execution",
+                        AuthorizationSnapshotReference = "catalog-registration:91",
+                    },
+                }));
             });
         var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
         layerAuthorizer
@@ -391,9 +407,14 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await sut.SubmitJobAsync(CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
 
-        events.Should().Equal("resolve-layer", "authorize-layer", "read-bytes");
+        events.Should().Equal("resolve-layer", "authorize-layer", "resolve-reference");
         job.Spec.Parameters["honua.geoprocessing.step.0.layerId"].Should().Be("42");
-        job.Spec.Parameters["honua.geoprocessing.step.0.source"].Should().Be(Convert.ToBase64String([1, 2, 3]));
+        job.Spec.Parameters.Should().NotContainKey("honua.geoprocessing.step.0.source");
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
+            .Should().Contain("\"sourceType\":\"cog\"")
+            .And.Contain("\"provider\":\"AwsS3\"")
+            .And.NotContain("payload", StringComparison.OrdinalIgnoreCase);
+        job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
     }
 
     [UnitTest]
@@ -420,7 +441,7 @@ public sealed class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         await rasterResolver.DidNotReceive().ResolveAsync(
-            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -445,7 +466,7 @@ public sealed class GeoprocessingJobServiceTests
         await layerAuthorizer.DidNotReceive().AuthorizeLayerAsync(
             Arg.Any<ClaimsPrincipal>(), Arg.Any<int>(), Arg.Any<AuthorizationOperation>(), Arg.Any<CancellationToken>());
         await rasterResolver.DidNotReceive().ResolveAsync(
-            Arg.Any<RasterSourceReference>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
