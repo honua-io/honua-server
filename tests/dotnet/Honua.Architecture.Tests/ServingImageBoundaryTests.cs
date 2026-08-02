@@ -25,7 +25,7 @@ public sealed class ServingImageBoundaryTests
 
         foreach (var (relativePath, entrypoint) in dockerfiles)
         {
-            var contents = File.ReadAllText(Path.Combine(repositoryRoot, relativePath));
+            var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             contents.Should().Contain("-p:PublishAot=true", relativePath);
             contents.Should().Contain("honua.runtime.profile=\"web\"", relativePath);
             contents.Should().Contain("honua.runtime.compilation=\"native-aot\"", relativePath);
@@ -47,7 +47,7 @@ public sealed class ServingImageBoundaryTests
 
         foreach (var relativePath in workflows)
         {
-            File.ReadAllText(Path.Combine(repositoryRoot, relativePath))
+            File.ReadAllText(Path.Join(repositoryRoot, relativePath))
                 .Should().Contain(VerifierCommand, relativePath);
         }
     }
@@ -65,7 +65,7 @@ public sealed class ServingImageBoundaryTests
 
         foreach (var relativePath in dockerfiles)
         {
-            var contents = File.ReadAllText(Path.Combine(repositoryRoot, relativePath));
+            var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             contents.Should().Contain("honua.runtime.profile=\"web-debug\"", relativePath);
             contents.Should().Contain("honua.runtime.compilation=\"jit\"", relativePath);
             contents.Should().Contain("honua.runtime.distribution=\"non-production\"", relativePath);
@@ -76,9 +76,9 @@ public sealed class ServingImageBoundaryTests
     public void PublishedTags_ShouldMakeAotCanonicalAndJitExplicit()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var genericDeploy = File.ReadAllText(Path.Combine(repositoryRoot, ".github/workflows/deploy.yml"))
+        var genericDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy.yml"))
             .ReplaceLineEndings("\n");
-        var platformDeploy = File.ReadAllText(Path.Combine(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
+        var platformDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
 
         genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
         genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
@@ -92,7 +92,7 @@ public sealed class ServingImageBoundaryTests
     public void RequiredPrGate_ShouldBuildInspectAllProductionAotImagesAndSmokeCanonicalImage()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var workflow = File.ReadAllText(Path.Combine(repositoryRoot, ".github/workflows/pr-gate.yml"));
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
 
         workflow.Should().Contain("file: docker/Dockerfile.aot");
         workflow.Should().Contain("file: docker/Dockerfile.lambda.aot");
@@ -123,7 +123,7 @@ public sealed class ServingImageBoundaryTests
     public void GdalWorkerWorkflow_ShouldBuildSmokeProbeScanAndRetainReport()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var workflow = File.ReadAllText(Path.Combine(repositoryRoot, ".github/workflows/worker-gdal-image.yml"));
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/worker-gdal-image.yml"));
 
         workflow.Should().Contain("file: docker/worker-gdal/Dockerfile");
         workflow.Should().Contain("--worker-image honua-worker-gdal:boundary");
@@ -153,7 +153,7 @@ public sealed class ServingImageBoundaryTests
     public void GdalWorkerDockerfile_ShouldRestoreCompleteProjectClosureAndPinNativeSources()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "docker/worker-gdal/Dockerfile"));
+        var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/worker-gdal/Dockerfile"));
 
         foreach (var project in new[]
                  {
