@@ -44,6 +44,31 @@ public sealed class LambdaAotDockerfileTests
         buildStage.Should().Contain("--mount=type=secret,id=github_token");
         buildStage.Should().Contain("--runtime \"$RUNTIME_ID\"");
         buildStage.Should().Contain("-p:RuntimeIdentifier=\"$RUNTIME_ID\"");
+        buildStage.Should().Contain("-p:HonuaUseSkiaNoDependencies=true");
         buildStage.Should().Contain("--no-restore");
+    }
+
+    [ArchitectureTest]
+    public void RuntimeStage_UsesSelfContainedSkiaAndRejectsBrokenNativeLinkage()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var dockerfilePath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            "docker",
+            "Dockerfile.lambda.aot");
+        var projectPath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            "src",
+            "Honua.Server",
+            "Honua.Server.csproj");
+        var dockerfile = File.ReadAllText(dockerfilePath);
+        var project = File.ReadAllText(projectPath);
+
+        project.Should().Contain("SkiaSharp.NativeAssets.Linux.NoDependencies");
+        project.Should().Contain("'$(HonuaUseSkiaNoDependencies)' == 'true'");
+        dockerfile.Should().Contain("-p:HonuaUseSkiaNoDependencies=true");
+        dockerfile.Should().Contain("fonts-dejavu-core");
+        dockerfile.Should().Contain("ldd -r /var/task/libSkiaSharp.so");
+        dockerfile.Should().Contain("grep -Eq 'not found|undefined symbol'");
     }
 }

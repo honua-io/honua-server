@@ -136,7 +136,14 @@
   <ItemGroup>
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="SkiaSharp" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <!-- The distro-linked asset remains the default for long-running Linux hosts. Lambda's
+         Debian runtime uses the self-contained asset instead: the distro-linked arm64 binary
+         ships an unresolved FreeType relocation and can terminate the process on first render
+         (FT_Get_BDF_Property). -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
     <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
