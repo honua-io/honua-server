@@ -61,6 +61,35 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void ReleaseWorkflow_ShouldVerifyAotImageBeforeRegistryPublication()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy.yml"))
+            .ReplaceLineEndings("\n");
+
+        const string localBuildStep = "- name: Build native-AOT image for boundary verification";
+        const string verificationStep = "- name: Verify native-AOT image before registry publication";
+        const string publicationStep = "- name: Build and push";
+
+        var localBuildIndex = workflow.IndexOf(localBuildStep, StringComparison.Ordinal);
+        var verificationIndex = workflow.IndexOf(verificationStep, StringComparison.Ordinal);
+        var publicationIndex = workflow.IndexOf(publicationStep, StringComparison.Ordinal);
+
+        localBuildIndex.Should().BeGreaterThan(-1);
+        verificationIndex.Should().BeGreaterThan(localBuildIndex,
+            "the locally loaded AOT image must exist before it is inspected");
+        publicationIndex.Should().BeGreaterThan(verificationIndex,
+            "no release registry tag may be published before the AOT boundary check passes");
+
+        var localBuild = workflow[localBuildIndex..verificationIndex];
+        localBuild.Should().Contain("load: true");
+        localBuild.Should().Contain("tags: honua-release-boundary:");
+        localBuild.Should().NotContain("push: true");
+        localBuild.Should().NotContain("steps.arch_tags.outputs.tags");
+        workflow[verificationIndex..publicationIndex].Should().Contain(VerifierCommand);
+    }
+
+    [ArchitectureTest]
     public void AuxiliaryJitDockerfiles_ShouldDeclareNonProductionProfile()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

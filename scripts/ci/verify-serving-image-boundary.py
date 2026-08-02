@@ -29,8 +29,8 @@ FORBIDDEN_BINDING = re.compile(
     re.IGNORECASE,
 )
 GDAL_UTILITY_NAMES = {
-    # Canonical command roster installed by the pinned OSGeo ubuntu-full image.
-    # Keep explicit names because several GDAL utilities have no gdal/ogr prefix.
+    # Canonical command roster exposed across GDAL distributions. Keep explicit
+    # names because several GDAL utilities have no gdal/ogr prefix.
     "gdal",
     "gdal2tiles",
     "gdal2xyz",
@@ -48,6 +48,7 @@ GDAL_UTILITY_NAMES = {
     "gdal_proximity",
     "gdal_rasterize",
     "gdal_retile",
+    "gdalserver",
     "gdal_sieve",
     "gdal_translate",
     "gdal_viewshed",
@@ -79,6 +80,7 @@ GDAL_UTILITY_NAMES = {
     "pct2rgb",
     "rgb2pct",
     "sozip",
+    "testepsg",
 }
 PROJ_GEOS_UTILITY_NAMES = {
     "cct",
@@ -108,7 +110,7 @@ def _forbidden_file_reason(path: str) -> str | None:
     basename = PurePosixPath(path).name
     folded = basename.casefold()
     executable_name = folded.removesuffix(".exe").removesuffix(".py")
-    if executable_name in FORBIDDEN_EXECUTABLES or executable_name.startswith("gdal_") and "." not in executable_name:
+    if executable_name in FORBIDDEN_EXECUTABLES or executable_name.startswith("gdal") and "." not in executable_name:
         return "native raster CLI"
     if FORBIDDEN_GDAL_LIBRARY.match(basename) or FORBIDDEN_PROJ_GEOS_LIBRARY.match(basename):
         return "native GDAL/PROJ/GEOS library"
