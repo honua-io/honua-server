@@ -173,14 +173,36 @@ creating an object does not implicitly create or replace a layer.
 - Automatic retries stay on the selected engine and placement and occur only
   for classified retryable failures. They append a new attempt record and reuse
   a stable idempotency key.
-- PostGIS outputs use transaction/staging semantics where possible. Object
-  outputs use attempt-scoped keys followed by atomic promotion or an equivalent
-  compare-and-set registration. Promotion and catalog registration atomically
-  verify the durable job's current-attempt fencing token and commit at most one
-  result per job and logical output. A worker holding a stale token may neither
-  promote nor replace that result; its attempt-scoped staging artifacts remain
-  uncommitted for policy-driven cleanup. Repeating promotion with the same
-  current token and idempotency key returns the already committed result.
+- Every output sink owns a durable commit record keyed by job and logical
+  output. The record contains the current attempt identifier, fencing token,
+  idempotency key, immutable artifact locator, and publication state. Before
+  dispatch, the coordinator conditionally creates or advances an uncommitted
+  intent in that sink and gives the executor the resulting record version. A
+  new attempt may advance an uncommitted intent but may not replace a committed
+  one. Finalization is a sink-local compare-and-set against both the token and
+  record version; checking the coordinator's Redis job state before writing is
+  only an optimization and is not the fence.
+- PostGIS materialization and catalog registration finalize the sink-local
+  record in the same database transaction as the output mutation and
+  registration. A unique job/output key plus a conditional update on the
+  expected token and record version makes a competing or stale attempt fail
+  without exposing its staged data.
+- Object outputs remain at immutable attempt-scoped keys. The stable object is
+  a small intent/commit marker: the coordinator creates or advances the intent
+  before dispatch using create-if-absent or `If-Match` on its prior ETag, and
+  finalizes it with `If-Match` on the ETag issued to that attempt. Advancing an
+  intent therefore changes its ETag before the next attempt runs, so a stale
+  attempt cannot publish. Only the coordinator may write the stable marker;
+  worker credentials permit writes only under the attempt-scoped staging key.
+  Readers expose only the immutable artifact named by a committed marker.
+  Cross-store catalog registration follows that authoritative marker and is
+  idempotently reconciled to the same winner; it must not pretend that an
+  object-store and database transaction is atomic. A cross-service read of
+  Redis followed by an unconditional copy, marker update, or catalog write is
+  not an acceptable fencing protocol.
+- Repeating commit with the same current token and idempotency key returns the
+  existing result. A different or stale token cannot replace it. Losing
+  attempt-scoped artifacts remain uncommitted for policy-driven cleanup.
 - Cancellation stops new work, propagates to the selected executor, and cleans
   uncommitted staging artifacts without deleting a previously committed result.
 
@@ -191,10 +213,14 @@ another engine.
 ### Operator policy and semantic parity
 
 Operators may cap, prefer, deny, or force an engine or placement by workload,
-tenant, deployment profile, and resource budget. A forced unavailable engine
-fails closed with an actionable admission error; Honua does not override that
-choice silently. Database-health admission may promote eligible work from
-PostGIS to native execution before the attempt starts or defer it in the queue.
+tenant, deployment profile, and resource budget. A force rule constrains
+preference and fallback; it never bypasses capability compatibility,
+authorization, input/output locality and access, semantic equivalence, or hard
+database/local/remote admission and resource budgets. If the forced choice is
+unavailable or ineligible under any hard gate, admission fails closed with an
+actionable error; Honua does not override the choice or weaken the gate
+silently. Database-health admission may promote eligible work from PostGIS to
+native execution before the attempt starts or defer it in the queue.
 
 Operations implemented by both PostGIS and GDAL share a canonical contract for
 NoData, grid origin and alignment, extent, CRS, pixel type and rounding,
