@@ -287,7 +287,8 @@ internal sealed partial class AwsBatchComputeBackend(
         SupportsProgressPolling = true,
         SupportsRetry = true,
         SupportsLogStreaming = false,
-        SupportsArtifactStaging = false
+        SupportsArtifactStaging = false,
+        MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
     };
 
     internal static bool TryExtractPendingJobName(string? providerOperationId, out string jobName)

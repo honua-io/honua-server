@@ -78,7 +78,8 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         // process lost to a host restart recovers (a fresh launch on the next attempt).
         SupportsRetry = true,
         SupportsLogStreaming = false,
-        SupportsArtifactStaging = false
+        SupportsArtifactStaging = false,
+        MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
     };
 
     private readonly ILogger<LocalProcessPoolBatchComputeBackend> _logger;

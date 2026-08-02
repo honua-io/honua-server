@@ -91,6 +91,19 @@ public sealed class RasterOutputContractTests
     }
 
     [Fact]
+    public void ManifestKey_UsesNamespaceDisjointFromCallerOutputNames()
+    {
+        var callerOutput = RasterOutputWorkerContract.BuildStagingObjectKey(
+            "job-42",
+            2,
+            "publication-manifest.json");
+        var manifest = RasterOutputWorkerContract.BuildManifestObjectKey("job-42", 2);
+
+        Assert.NotEqual(callerOutput, manifest);
+        Assert.Contains("/_honua/publication-manifest.json", manifest, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StageValidator_RequiresStrongContentAndMatchingLineage()
     {
         var stage = Stage() with

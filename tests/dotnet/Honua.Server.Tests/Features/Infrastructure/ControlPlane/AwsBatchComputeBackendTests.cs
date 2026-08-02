@@ -27,6 +27,7 @@ public sealed class AwsBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
         capabilities.SupportsArtifactStaging.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterOutputContract.JobContractVersion);
     }
 
     [Fact]
