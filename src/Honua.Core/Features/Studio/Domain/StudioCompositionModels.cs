@@ -156,6 +156,16 @@ public static class StudioCompositionViewBounds
             return false;
         }
 
+        if (view.Bbox is { Count: BboxOrdinateCount } orderedBbox &&
+            !(orderedBbox[0] <= orderedBbox[2] && orderedBbox[1] <= orderedBbox[3]))
+        {
+            // The same ordering is required by the canonical Studio map validator. NaN also
+            // fails these comparisons, so a collaboration edit cannot checkpoint an extent
+            // that the package lifecycle subsequently rejects.
+            error = "The viewport 'bbox' must be ordered as [minX,minY,maxX,maxY].";
+            return false;
+        }
+
         if (view.Center is { Count: not CenterOrdinateCount } center)
         {
             error = $"The viewport 'center' requires exactly {CenterOrdinateCount} coordinates; got {center.Count}.";

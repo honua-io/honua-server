@@ -76,4 +76,13 @@ public sealed class StudioCompositionViewBoundsTests
         Assert.True(StudioCompositionViewBounds.TryValidate(
             new StudioCompositionView { Bbox = [0, 0, 10, 10], Center = [5, 5] }, out _));
     }
+
+    [UnitTest]
+    public void TryValidate_InvertedBoundingBox_IsRejected()
+    {
+        Assert.False(StudioCompositionViewBounds.TryValidate(
+            new StudioCompositionView { Bbox = [10, 10, 0, 0] }, out var error));
+
+        Assert.Contains("minX,minY,maxX,maxY", error, StringComparison.Ordinal);
+    }
 }

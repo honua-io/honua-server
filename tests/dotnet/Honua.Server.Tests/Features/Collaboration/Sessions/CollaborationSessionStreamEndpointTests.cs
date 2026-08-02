@@ -151,7 +151,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     public async Task ApplyControlFrame_DisabledFollow_DoesNotFanOutToSameReplica()
     {
         var (service, observer, sender) = await CreateJoinedServiceAsync();
-        var frame = $$"""{"type":"follow","follow":{"targetParticipantId":"{{observer.ParticipantId}}","following":true}}""";
+        var frame = $$$"""{"type":"follow","follow":{"targetParticipantId":"{{{observer.ParticipantId}}}","following":true}}""";
 
         CollaborationSessionStreamEndpoint.ApplyControlFrame(
             service,

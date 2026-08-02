@@ -98,9 +98,11 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // IReadOnlyList<double> deserializes any-length arrays, so the wire model cannot express that
     // bbox is 4 ordinates and center is 2. Both used to take a permanent cursor and fail later.
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0]}""")]
+    [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[10,10,0,0]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1,2,3]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,1,2]}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[10,10,0,0]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
     // Same class of gap on the scalars: double? accepts any magnitude, so {"zoom":25} used to
     // reach the unconditional success path and consume a cursor even though the shared Studio view
