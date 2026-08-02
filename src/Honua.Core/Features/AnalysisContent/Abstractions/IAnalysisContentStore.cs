@@ -60,6 +60,23 @@ public sealed class AnalysisContentStoreUnavailableException : Exception
 }
 
 /// <summary>
+/// Raised when a caller attempts to bypass the analysis-content service and persist a
+/// package that violates the durable raster-source policy.
+/// </summary>
+public sealed class AnalysisContentStoreValidationException : Exception
+{
+    /// <summary>Creates a store-boundary validation failure.</summary>
+    public AnalysisContentStoreValidationException(string message, string code)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    /// <summary>Stable raster-source validation code.</summary>
+    public string Code { get; }
+}
+
+/// <summary>
 /// Durable store for saved-query and analysis-package content items, immutable versions,
 /// and job result artifact metadata.
 /// </summary>

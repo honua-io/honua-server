@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Ai.AnalysisContent;
@@ -139,6 +140,13 @@ internal sealed record AnalysisArtifactResponse
 [JsonSerializable(typeof(ArtifactBindingRef))]
 [JsonSerializable(typeof(AnalysisPlan))]
 [JsonSerializable(typeof(AnalysisPlanStep))]
+[JsonSerializable(typeof(RasterSourceDescriptor))]
+[JsonSerializable(typeof(PostgisRasterSourceDescriptor))]
+[JsonSerializable(typeof(ObjectStoreCogRasterSourceDescriptor))]
+[JsonSerializable(typeof(ObjectStoreZarrRasterSourceDescriptor))]
+[JsonSerializable(typeof(StagedArtifactRasterSourceDescriptor))]
+[JsonSerializable(typeof(InlineRasterSourceDescriptor))]
+[JsonSerializable(typeof(Dictionary<string, RasterSourceDescriptor>))]
 [JsonSerializable(typeof(AnalysisIntent))]
 internal sealed partial class AnalysisContentApiJsonContext : JsonSerializerContext
 {
