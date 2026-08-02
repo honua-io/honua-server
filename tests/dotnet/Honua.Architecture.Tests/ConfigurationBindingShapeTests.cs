@@ -54,33 +54,36 @@ public sealed partial class ConfigurationBindingShapeTests
         }
 
         var typesByName = ParseTypes(sources);
-        var pending = new Stack<string>(boundRootNames);
+        var pending = new Stack<TypeShape>(
+            boundRootNames.SelectMany(rootName =>
+                typesByName.TryGetValue(rootName, out var rootShapes)
+                    ? rootShapes
+                    : []));
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
 
-        while (pending.TryPop(out var typeName))
+        while (pending.TryPop(out var typeShape))
         {
-            if (!visited.Add(typeName) || !typesByName.TryGetValue(typeName, out var typeShapes))
+            if (!visited.Add(typeShape.VisitIdentity))
             {
                 continue;
             }
 
-            foreach (var typeShape in typeShapes)
+            foreach (var property in typeShape.Properties)
             {
-                foreach (var property in typeShape.Properties)
+                if (property.IsInitOnly)
                 {
-                    if (property.IsInitOnly)
-                    {
-                        violations.Add($"{typeShape.Path}: {typeShape.Name}.{property.Name}");
-                    }
+                    violations.Add($"{typeShape.Path}: {typeShape.Name}.{property.Name}");
+                }
 
-                    foreach (Match match in TypeIdentifierPattern().Matches(property.TypeName))
+                foreach (Match match in TypeReferencePattern().Matches(property.TypeName))
+                {
+                    foreach (var referencedType in ResolveReferencedTypes(
+                                 typeShape,
+                                 match.Value,
+                                 typesByName))
                     {
-                        var referencedTypeName = match.Value;
-                        if (typesByName.ContainsKey(referencedTypeName))
-                        {
-                            pending.Push(referencedTypeName);
-                        }
+                        pending.Push(referencedType);
                     }
                 }
             }
@@ -151,6 +154,11 @@ public sealed partial class ConfigurationBindingShapeTests
         foreach (var (path, rawSource) in sources)
         {
             var source = StripCommentsAndLiterals(rawSource);
+            var namespaceName = NamespacePattern().Match(source).Groups["namespace"].Value;
+            var importedNamespaces = UsingNamespacePattern()
+                .Matches(source)
+                .Select(match => match.Groups["namespace"].Value)
+                .ToHashSet(StringComparer.Ordinal);
             foreach (Match typeMatch in TypeDeclarationPattern().Matches(source))
             {
                 var openBrace = typeMatch.Groups["brace"].Index;
@@ -185,11 +193,56 @@ public sealed partial class ConfigurationBindingShapeTests
                     typesByName.Add(typeName, shapes);
                 }
 
-                shapes.Add(new TypeShape(typeName, path, properties));
+                shapes.Add(new TypeShape(
+                    typeName,
+                    namespaceName,
+                    path,
+                    importedNamespaces,
+                    properties));
             }
         }
 
         return typesByName;
+    }
+
+    private static IEnumerable<TypeShape> ResolveReferencedTypes(
+        TypeShape owner,
+        string referencedTypeName,
+        IReadOnlyDictionary<string, List<TypeShape>> typesByName)
+    {
+        var simpleName = SimpleTypeName(referencedTypeName);
+        if (!typesByName.TryGetValue(simpleName, out var candidates))
+        {
+            return [];
+        }
+
+        if (referencedTypeName.Contains('.'))
+        {
+            return candidates.Where(candidate =>
+                string.Equals(candidate.FullName, referencedTypeName, StringComparison.Ordinal) ||
+                candidate.FullName.EndsWith($".{referencedTypeName}", StringComparison.Ordinal));
+        }
+
+        var sameNamespace = candidates
+            .Where(candidate => string.Equals(
+                candidate.NamespaceName,
+                owner.NamespaceName,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (sameNamespace.Length > 0)
+        {
+            return sameNamespace;
+        }
+
+        var imported = candidates
+            .Where(candidate => owner.ImportedNamespaces.Contains(candidate.NamespaceName))
+            .ToArray();
+        if (imported.Length > 0)
+        {
+            return imported;
+        }
+
+        return candidates.Count == 1 ? candidates : [];
     }
 
     private static int FindMatchingBrace(string source, int openBrace)
@@ -413,8 +466,17 @@ public sealed partial class ConfigurationBindingShapeTests
 
     private sealed record TypeShape(
         string Name,
+        string NamespaceName,
         string Path,
-        IReadOnlyList<PropertyShape> Properties);
+        IReadOnlySet<string> ImportedNamespaces,
+        IReadOnlyList<PropertyShape> Properties)
+    {
+        public string FullName => string.IsNullOrEmpty(NamespaceName)
+            ? Name
+            : $"{NamespaceName}.{Name}";
+
+        public string VisitIdentity => $"{FullName}@{Path}";
+    }
 
     [GeneratedRegex(
         @"AddOptions\s*<\s*(?<type>[\w.]+)\s*>\s*\(\s*\)(?<tail>.{0,1200}?)\s*;",
@@ -444,6 +506,15 @@ public sealed partial class ConfigurationBindingShapeTests
         RegexOptions.Singleline)]
     private static partial Regex AutoPropertyPattern();
 
-    [GeneratedRegex(@"\b[A-Z][A-Za-z0-9_]*\b")]
-    private static partial Regex TypeIdentifierPattern();
+    [GeneratedRegex(@"\b(?:[A-Z][A-Za-z0-9_]*\.)*[A-Z][A-Za-z0-9_]*\b")]
+    private static partial Regex TypeReferencePattern();
+
+    [GeneratedRegex(
+        @"\bnamespace\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*[;{]")]
+    private static partial Regex NamespacePattern();
+
+    [GeneratedRegex(
+        @"^\s*using\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;",
+        RegexOptions.Multiline)]
+    private static partial Regex UsingNamespacePattern();
 }

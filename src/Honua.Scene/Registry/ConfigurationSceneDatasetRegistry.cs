@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -90,8 +91,19 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             TilesetFileName = string.IsNullOrWhiteSpace(entry.TilesetFileName)
                 ? "tileset.json"
                 : entry.TilesetFileName!,
-            AccessPolicy = entry.AccessPolicy
+            AccessPolicy = CreateAccessPolicy(entry.AccessPolicy)
         };
         return true;
     }
+
+    private static AccessPolicy? CreateAccessPolicy(SceneAccessPolicyOptions? options)
+        => options is null
+            ? null
+            : new AccessPolicy
+            {
+                AllowAnonymous = options.AllowAnonymous,
+                AllowAnonymousWrite = options.AllowAnonymousWrite,
+                AllowedRoles = options.AllowedRoles?.ToArray(),
+                AllowedWriteRoles = options.AllowedWriteRoles?.ToArray()
+            };
 }

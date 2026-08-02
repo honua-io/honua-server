@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Security.Domain;
-
 namespace Honua.Infrastructure.Scene;
 
 /// <summary>
@@ -58,5 +56,31 @@ public sealed class SceneDatasetEntry
     /// <summary>
     /// Optional access policy. When omitted, the scene is publicly readable.
     /// </summary>
-    public AccessPolicy? AccessPolicy { get; set; }
+    public SceneAccessPolicyOptions? AccessPolicy { get; set; }
+}
+
+/// <summary>
+/// Mutable configuration shape projected to an immutable access-policy snapshot.
+/// </summary>
+public sealed class SceneAccessPolicyOptions
+{
+    /// <summary>
+    /// When true, anonymous read access is allowed.
+    /// </summary>
+    public bool AllowAnonymous { get; set; }
+
+    /// <summary>
+    /// When true, anonymous write access is allowed.
+    /// </summary>
+    public bool AllowAnonymousWrite { get; set; }
+
+    /// <summary>
+    /// Allowed role names for read access.
+    /// </summary>
+    public string[]? AllowedRoles { get; set; }
+
+    /// <summary>
+    /// Allowed role names for write access.
+    /// </summary>
+    public string[]? AllowedWriteRoles { get; set; }
 }
