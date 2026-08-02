@@ -41,6 +41,18 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
     }
 
     /// <inheritdoc />
+    public bool SupportsReplicaSharedReplay => false;
+
+    /// <inheritdoc />
+    public bool SupportsRestartDurableReplay => false;
+
+    /// <inheritdoc />
+    public bool SupportsRestartDurableCheckpointCursors => false;
+
+    /// <inheritdoc />
+    public bool SupportsRestartDurableCheckpointing => false;
+
+    /// <inheritdoc />
     public Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default)
@@ -178,6 +190,46 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
     }
 
+    /// <inheritdoc />
+    public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
+        SavedMapId mapId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            var checkpointCursor = _logs.TryGetValue(mapId, out var state)
+                ? new SavedMapOperationCursor(state.CheckpointCursor)
+                : SavedMapOperationCursor.Empty;
+            return ReplayCore(mapId, checkpointCursor);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task RecordCheckpointAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor checkpointCursor,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            var state = GetOrCreateState(mapId);
+            if (checkpointCursor.Value < 0 || checkpointCursor.Value > state.HeadCursor)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(checkpointCursor),
+                    checkpointCursor.Value,
+                    "Checkpoint cursor must be between zero and the operation-log head.");
+            }
+
+            state.CheckpointCursor = Math.Max(state.CheckpointCursor, checkpointCursor.Value);
+            return Task.CompletedTask;
+        }
+    }
+
     private MapLogState GetOrCreateState(SavedMapId mapId)
     {
         if (!_logs.TryGetValue(mapId, out var state))
@@ -187,6 +239,48 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
 
         return state;
+    }
+
+    private Task<SavedMapOperationReplayResult> ReplayCore(
+        SavedMapId mapId,
+        SavedMapOperationCursor sinceCursor)
+    {
+        if (!_logs.TryGetValue(mapId, out var state))
+        {
+            return Task.FromResult(new SavedMapOperationReplayResult
+            {
+                Status = SavedMapOperationReplayStatus.Ok,
+                SinceCursor = sinceCursor,
+                HeadCursor = SavedMapOperationCursor.Empty,
+                MinimumReplayCursor = SavedMapOperationCursor.Empty,
+                Operations = [],
+            });
+        }
+
+        var headCursor = new SavedMapOperationCursor(state.HeadCursor);
+        var minimumReplayCursor = GetMinimumReplayCursor(state);
+        if (sinceCursor.Value > state.HeadCursor || sinceCursor.Value < minimumReplayCursor.Value)
+        {
+            return Task.FromResult(BuildReplayResyncRequired(
+                sinceCursor,
+                headCursor,
+                minimumReplayCursor,
+                "Cursor is outside the retained operation-log replay window."));
+        }
+
+        var operations = state.Operations
+            .Where(operation => operation.ServerCursor.Value > sinceCursor.Value)
+            .OrderBy(operation => operation.ServerCursor.Value)
+            .ToArray();
+
+        return Task.FromResult(new SavedMapOperationReplayResult
+        {
+            Status = SavedMapOperationReplayStatus.Ok,
+            SinceCursor = sinceCursor,
+            HeadCursor = headCursor,
+            MinimumReplayCursor = minimumReplayCursor,
+            Operations = operations,
+        });
     }
 
     private static SavedMapOperationAppendResult? CheckCursorWindow(
@@ -277,5 +371,7 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         public Dictionary<string, SavedMapOperationEnvelope> ByIdempotencyKey { get; } = new(StringComparer.Ordinal);
 
         public long HeadCursor { get; set; }
+
+        public long CheckpointCursor { get; set; }
     }
 }

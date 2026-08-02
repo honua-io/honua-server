@@ -15,6 +15,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -44,6 +45,7 @@ using Honua.Postgres.Features.Alerts;
 using Honua.Postgres.Features.AnalysisContent;
 using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
+using Honua.Postgres.Features.Collaboration.Operations;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Postgres.Features.Geometry;
@@ -137,6 +139,19 @@ internal static class ServiceCollectionExtensions
                 .GetResult();
             return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
         });
+
+        // Saved-map collaboration operation cursors and checkpoint cursors share the same
+        // restart-durable Postgres implementation (#3067). AddSavedMapOperationLog runs later
+        // and retains its in-memory repository only for non-Postgres providers.
+        var retainedSavedMapOperationCount = configuration.GetValue<int?>(
+            "Collaboration:OperationLog:RetainedOperationCount") ?? 512;
+        services.TryAddScoped<ISavedMapOperationLogRepository>(serviceProvider =>
+            new PostgresSavedMapOperationLogRepository(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ISavedMapOperationConflictPolicy>(),
+                serviceProvider.GetService<TimeProvider>(),
+                retainedSavedMapOperationCount,
+                defaultSchema));
 
         // Catalog honua-layer DAG sink capability (#2210). Registered only here, with the
         // Postgres provider, so the sink.honua-layer executor can load into a named catalog
