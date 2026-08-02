@@ -62,24 +62,74 @@ public interface IProcessConditionalInputProbe
     /// submit time; reporting it would misclassify an executable mapping.
     /// </para>
     /// <para>
-    /// The result is conservative in the other direction: when a supplied parameter's value
-    /// domain cannot be enumerated (the catalog declares no <c>AllowedValues</c> for a
-    /// discriminator such as <c>analytics.cluster-managed</c>'s <c>algorithm</c>), no branch
-    /// can be ruled out and every candidate is returned. Claiming a tool executable when a
-    /// branch is genuinely unproven is the worse error, so an unenumerable domain always
-    /// yields the pessimistic answer.
+    /// This is the CONSERVATIVE half of the answer and applies only where the branch space is
+    /// genuinely unenumerable: a supplied parameter whose legal values the catalog does not
+    /// declare (<c>transform.computed-field</c>'s <c>op</c>) lets a caller select a branch the
+    /// probe never visits, so every candidate the discriminator could turn on is returned.
+    /// Where every supplied discriminator declares <c>AllowedValues</c>, the branch space IS
+    /// enumerable and this method returns nothing —
+    /// <see cref="FindConditionalBranchRequirements"/> answers exactly instead (#3048).
     /// </para>
     /// </remarks>
     /// <param name="processId">Canonical process identifier.</param>
     /// <param name="suppliedParameterNames">Parameter names the caller would supply.</param>
     /// <returns>
     /// Unsupplied parameter names whose conditional requiredness cannot be ruled out, or an
-    /// empty list when every omission is unconditionally optional.
+    /// empty list when every omission is unconditionally optional or provable branch-by-branch.
     /// </returns>
     IReadOnlyList<string> FindUnverifiableConditionalParameters(
         string processId,
         IReadOnlyCollection<string> suppliedParameterNames);
+
+    /// <summary>
+    /// Returns the EXACT branch-qualified missing-input requirements for
+    /// <paramref name="processId"/>, by enumerating a bounded cross-product over the declared
+    /// <see cref="Domain.ProcessParameterSpec.AllowedValues"/> of the supplied parameters and
+    /// reporting the union of the canonical validator's missing-input violations, each tagged
+    /// with the assignment that raised it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the PRECISE half of the answer, available since the catalog publishes the
+    /// finite value domains the plan validator enforces (#3048). A mapping that omits
+    /// <c>analytics.cluster-managed</c>'s <c>k</c> is no longer merely "unverifiable": the
+    /// probe can state that <c>algorithm=kmeans</c> requires it and that no other branch does.
+    /// A mapping no branch faults is provably executable for every admissible value and
+    /// carries no entry at all.
+    /// </para>
+    /// <para>
+    /// Only requirements that some branch raises and another branch clears are reported.
+    /// A requirement common to EVERY branch is unconditional, not branch-dependent, and is
+    /// already reported by <see cref="FindAdmissibilityViolations"/>. The result is empty when
+    /// the branch space is not enumerable; that case stays with
+    /// <see cref="FindUnverifiableConditionalParameters"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="processId">Canonical process identifier.</param>
+    /// <param name="suppliedParameterNames">Parameter names the caller would supply.</param>
+    /// <returns>
+    /// Branch-qualified requirements, or an empty list when no enumerable branch requires an
+    /// unsupplied parameter.
+    /// </returns>
+    IReadOnlyList<ProcessBranchRequirement> FindConditionalBranchRequirements(
+        string processId,
+        IReadOnlyCollection<string> suppliedParameterNames);
 }
+
+/// <summary>
+/// A missing-input requirement the canonical plan validator raises on one specific
+/// discriminator branch and not on others.
+/// </summary>
+/// <param name="Branch">
+/// The discriminator assignment that raises it, formatted as comma-separated
+/// <c>name=value</c> pairs (for example <c>algorithm=kmeans</c>).
+/// </param>
+/// <param name="ParameterName">Canonical parameter the branch requires.</param>
+/// <param name="Message">Human-readable explanation taken from the canonical validator.</param>
+public readonly record struct ProcessBranchRequirement(
+    string Branch,
+    string ParameterName,
+    string Message);
 
 /// <summary>
 /// A single reason the canonical submit path would reject a proposed parameter set.

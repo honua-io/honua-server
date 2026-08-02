@@ -281,7 +281,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan, kmeans. Defaults to dbscan.", ProcessParameterValueType.Text),
+                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan, kmeans. Defaults to dbscan.", ProcessParameterValueType.Text,
+                    allowedValues: ProcessValueDomains.ClusterAlgorithm),
                 Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN, in meters. Must be > 0. Required when algorithm is dbscan. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so eps is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be ≥ 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
                 Param("k", "K", "Number of clusters for KMeans. Must be ≥ 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
@@ -301,7 +302,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (the join geometry contains the target — point-in-polygon), within (the target contains the join geometry), dwithin.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (the join geometry contains the target — point-in-polygon), within (the target contains the join geometry), dwithin.", ProcessParameterValueType.Text,
+                    allowedValues: ProcessValueDomains.SpatialJoinPredicate),
                 Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the threshold is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),
                 Param("carryFields", "Carry Fields", "Comma-separated join-layer columns whose matched values are emitted as arrays on each target feature.", ProcessParameterValueType.Text),
                 Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over the matched join rows for each target feature.", ProcessParameterValueType.Text),
@@ -319,7 +321,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Each target is preserved one-to-one with its match summary.", ProcessParameterValueType.Text, required: true),
                 Param("join", "Join Features", "Join (reference) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory STRtree spatial index.", ProcessParameterValueType.Text, required: true),
-                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (join geometry contains the target — point-in-polygon), within (target contains the join geometry).", ProcessParameterValueType.Text, defaultValue: "intersects"),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (join geometry contains the target — point-in-polygon), within (target contains the join geometry).", ProcessParameterValueType.Text, defaultValue: "intersects",
+                    allowedValues: ProcessValueDomains.ManagedSpatialJoinPredicate),
                 Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates over matched join features. Supported stats: count (always emitted as JOIN_COUNT), sum, mean, min, max on numeric join fields (emitted as STAT_field). Example: 'pop:sum;pop:mean'.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -333,7 +336,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries cluster on their centroid; features with null/empty geometry are dropped before clustering.", ProcessParameterValueType.Text, required: true),
-                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan (default), kmeans.", ProcessParameterValueType.Text, defaultValue: "dbscan"),
+                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan (default), kmeans.", ProcessParameterValueType.Text, defaultValue: "dbscan",
+                    allowedValues: ProcessValueDomains.ClusterAlgorithm),
                 Param("eps", "Epsilon", "Maximum distance between neighbours for DBSCAN, in CRS units. Must be a finite positive number. Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
                 Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be an integer >= 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
                 Param("k", "K", "Number of clusters for K-Means. Must be an integer >= 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
@@ -350,7 +354,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("distance", "Distance", "Buffer distance in the supplied unit. Must be a finite non-negative number. The unit factor converts the value to meters, which are then applied as planar CRS units to the supplied geometries — only meaningful when those geometries are in a metric projected CRS.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles. The chosen unit is converted to meters and applied as planar CRS units; geographic (degree) inputs are unsupported (a meters-as-degrees buffer is meaningless) — project to a metric CRS first. No geodesic conversion is performed.", ProcessParameterValueType.Text, defaultValue: "meters"),
+                Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles. The chosen unit is converted to meters and applied as planar CRS units; geographic (degree) inputs are unsupported (a meters-as-degrees buffer is meaningless) — project to a metric CRS first. No geodesic conversion is performed.", ProcessParameterValueType.Text, defaultValue: "meters",
+                    allowedValues: ProcessValueDomains.BufferAggregateUnit),
                 Param("dissolve", "Dissolve", "Dissolve buffered geometries per group (true) or emit one buffered feature per input (false). Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
                 Param("groupByFields", "Group By Fields", "Comma-separated attribute names used to group dissolved buffers; one feature is emitted per group. When empty, all inputs dissolve into a single feature.", ProcessParameterValueType.Text),
                 Param("sourceCrs", "Source CRS", "Optional EPSG code / identifier (e.g. EPSG:3857) declaring the CRS of the input geometries. When supplied and geographic (e.g. 4326), a non-zero linear buffer is rejected because a meters-as-degrees buffer is meaningless — reproject to a projected/metric CRS first.", ProcessParameterValueType.Text),
@@ -366,7 +371,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Features with null/empty geometry are dropped before binning.", ProcessParameterValueType.Text, required: true),
-                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex (default), square.", ProcessParameterValueType.Text, defaultValue: "hex"),
+                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex (default), square.", ProcessParameterValueType.Text, defaultValue: "hex",
+                    allowedValues: ProcessValueDomains.DensityMode),
                 Param("cellSize", "Cell Size", "Grid cell size in CRS units. Must be a finite positive number.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("weightField", "Weight Field", "Optional attribute name whose numeric values are summed per cell as SUM_<weightField>. Non-numeric or missing values are skipped.", ProcessParameterValueType.Text),
             ],
@@ -557,7 +563,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
                 Param("maxDistance", "Max Distance", "Optional maximum distance to compute. Must be > 0 when supplied. Cells beyond it take the nodata value.", ProcessParameterValueType.FloatingPoint),
-                Param("distUnits", "Distance Units", "Distance units. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
+                Param("distUnits", "Distance Units", "Distance units. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO",
+                    allowedValues: ProcessValueDomains.ProximityDistanceUnit),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as targets. When omitted, all non-zero pixels are targets.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -573,7 +580,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
                 Param("maxDistance", "Max Distance", "Optional maximum allocation distance. Must be > 0 when supplied. Cells whose nearest source is farther take the nodata value.", ProcessParameterValueType.FloatingPoint),
-                Param("distUnits", "Distance Units", "Distance units used for maxDistance. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
+                Param("distUnits", "Distance Units", "Distance units used for maxDistance. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO",
+                    allowedValues: ProcessValueDomains.ProximityDistanceUnit),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as allocation sources. When omitted, all non-zero pixels are sources.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -637,7 +645,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("distance", "Distance", "Buffer distance value in the supplied unit. Must be ≥ 0; the maximum cap is enforced after unit conversion.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("unit", "Unit", "Distance unit. Allowed values: meters, kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters"),
+                Param("unit", "Unit", "Distance unit. Allowed values: meters, kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters",
+                    allowedValues: ProcessValueDomains.BufferAggregateUnit),
                 Param("dissolve", "Dissolve", "Dissolve overlapping buffers.", ProcessParameterValueType.Flag, defaultValue: "true"),
                 Param("groupByFields", "Group By Fields", "Comma-separated columns used to group dissolved buffers; one row is emitted per group.", ProcessParameterValueType.Text),
                 Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated per group. Requires dissolve=true; per-feature output cannot carry aggregate columns.", ProcessParameterValueType.Text),
@@ -654,7 +663,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex, square. Defaults to hex.", ProcessParameterValueType.Text),
+                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex, square. Defaults to hex.", ProcessParameterValueType.Text,
+                    allowedValues: ProcessValueDomains.DensityMode),
                 Param("cellSize", "Cell Size", "Grid cell size in meters. Must be > 0. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so the cell size is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("weightField", "Weight Field", "Optional field name for weighted sums instead of counts.", ProcessParameterValueType.Text),
                 .. SharedAnalyticsFilterParameters,
@@ -681,7 +691,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 .. NativeRasterSourceParameters,
-                Param("units", "Units", "Slope units. Allowed values: degrees, percent. Defaults to degrees. Radians are not emitted directly by gdaldem and are rejected at submit time.", ProcessParameterValueType.Text, defaultValue: "degrees"),
+                Param("units", "Units", "Slope units. Allowed values: degrees, percent. Defaults to degrees. Radians are not emitted directly by gdaldem and are rejected at submit time.", ProcessParameterValueType.Text, defaultValue: "degrees",
+                    allowedValues: ProcessValueDomains.SurfaceSlopeUnit),
                 Param("zFactor", "Z Factor", "Vertical-to-horizontal scale factor. Must be > 0. Defaults to 1.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "1.0"),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -826,7 +837,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 .. NativeRasterSourceParameters,
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear",
+                    allowedValues: ProcessValueDomains.RasterResampling),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -887,7 +899,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. NativeRasterSourceParameters,
                 Param("cellSize", "Cell Size", "Target pixel size in the raster's georeferenced units. Must be > 0. Applied to both axes unless 'cellSizeY' is supplied.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("cellSizeY", "Cell Size Y", "Optional distinct vertical pixel size in georeferenced units. Must be > 0. Defaults to 'cellSize' (square pixels).", ProcessParameterValueType.FloatingPoint),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear",
+                    allowedValues: ProcessValueDomains.RasterResampling),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -934,8 +947,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("sources", "Sources", "Two or more source rasters as base64-encoded GeoTIFFs separated by '|'. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
-                Param("operator", "Operator", "Overlap behavior. Allowed values: first, last. Defaults to last (later-listed source wins).", ProcessParameterValueType.Text, defaultValue: "last"),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to nearestneighbor.", ProcessParameterValueType.Text, defaultValue: "nearestneighbor"),
+                Param("operator", "Operator", "Overlap behavior. Allowed values: first, last. Defaults to last (later-listed source wins).", ProcessParameterValueType.Text, defaultValue: "last",
+                    allowedValues: ProcessValueDomains.RasterMosaicOperator),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to nearestneighbor.", ProcessParameterValueType.Text, defaultValue: "nearestneighbor",
+                    allowedValues: ProcessValueDomains.RasterResampling),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -950,7 +965,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("sources", "Sources", "One or more source rasters as base64-encoded GeoTIFFs separated by '|', bound to band variables A, B, C, … in order. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
                 Param("expression", "Expression", "Allow-listed map-algebra expression over the band variables (e.g. '(A-B)/(A+B)'). Required.", ProcessParameterValueType.Text, required: true),
-                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text,
+                    allowedValues: ProcessValueDomains.RasterCalcDataType),
                 Param("noData", "NoData Value", "Optional output NoData value tagged on the result band and used to fill masked cells. When omitted, the first source raster's band NoData is detected and propagated. Each input is masked by its own NoData by default.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -965,7 +981,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("index", "Index", "Spectral index preset. Allowed values: NDVI, NDWI, NDBI, SAVI, EVI.", ProcessParameterValueType.Text, required: true,
-                    allowedValues: ["NDVI", "NDWI", "NDBI", "SAVI", "EVI"]),
+                    allowedValues: ProcessValueDomains.SpectralIndex),
                 Param("red", "Red Band", "Red-band raster as a base64-encoded GeoTIFF. Required by NDVI, SAVI, EVI.", ProcessParameterValueType.Text),
                 Param("nir", "NIR Band", "Near-infrared-band raster as a base64-encoded GeoTIFF. Required by NDVI, NDWI, NDBI, SAVI, EVI.", ProcessParameterValueType.Text),
                 Param("green", "Green Band", "Green-band raster as a base64-encoded GeoTIFF. Required by NDWI.", ProcessParameterValueType.Text),
@@ -988,7 +1004,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. NativeRasterSourceParameters,
                 Param("remap", "Remap Table", "Reclassification table: ';'-separated 'value:newValue' or 'lo..hi:newValue' entries (e.g. '0..10:1;10..20:2'). Required.", ProcessParameterValueType.Text, required: true),
                 Param("defaultValue", "Default Value", "Optional output value for pixels matching no remap entry. When omitted, unmatched pixels keep their original value.", ProcessParameterValueType.FloatingPoint),
-                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text),
+                Param("dataType", "Output Type", "Optional GDAL output data type. Allowed values: Byte, Int16, UInt16, Int32, UInt32, Float32, Float64.", ProcessParameterValueType.Text,
+                    allowedValues: ProcessValueDomains.RasterCalcDataType),
                 Param("noData", "NoData Value", "Optional output NoData value tagged on the result band and used to fill masked cells. When omitted, the source raster's band NoData is detected and propagated.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -1015,7 +1032,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. NativeRasterSourceParameters,
                 Param("model", "Model Reference", "Model reference passed verbatim to the configured inference backend (for example a deployed model or endpoint-local model name). Optional only when Geoprocessing:ImageryInference:DefaultModel is configured; otherwise the job fails at execution with a clear message.", ProcessParameterValueType.Text),
                 Param("task", "Task", "Inference task. Allowed values: classification, segmentation, detection. Defaults to classification.", ProcessParameterValueType.Text, defaultValue: "classification",
-                    allowedValues: ["classification", "segmentation", "detection"]),
+                    allowedValues: ProcessValueDomains.ImageryClassifyTask),
                 Param("confidenceThreshold", "Confidence Threshold", "Optional minimum score in the closed range [0, 1] forwarded to the backend for detection/segmentation filtering.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster, ArtifactKind.FeatureLayer],
@@ -1039,7 +1056,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("geometry", "Geometry", "Input geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
                 Param("target", "Target Format", "Target geometry encoding. Allowed values: wkt, geojson, wkb, ewkt.", ProcessParameterValueType.Text, required: true,
-                    allowedValues: ["wkt", "geojson", "wkb", "ewkt"]),
+                    allowedValues: ProcessValueDomains.GeometryFormat),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
         },
@@ -1065,7 +1082,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 .. NativeRasterSourceParameters,
-                Param("targetFormat", "Target Format", "Target raster format. Allowed values: GTiff, PNG, JPEG, COG.", ProcessParameterValueType.Text, required: true),
+                Param("targetFormat", "Target Format", "Target raster format. Allowed values: GTiff, PNG, JPEG, COG.", ProcessParameterValueType.Text, required: true,
+                    allowedValues: ProcessValueDomains.RasterFormat),
                 Param("compression", "Compression", "Optional format-specific compression hint passed as gdal_translate -co COMPRESS=<value>.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
@@ -1081,7 +1099,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 .. NativeRasterSourceParameters,
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
-                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear",
+                    allowedValues: ProcessValueDomains.RasterResampling),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native
@@ -1096,7 +1115,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 .. NativeRasterSourceParameters,
                 Param("band", "Band", "Source band to vectorize. Must be a positive integer. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
-                Param("connectedness", "Connectedness", "Pixel connectedness. Allowed values: 4, 8. Defaults to 4.", ProcessParameterValueType.Text, defaultValue: "4"),
+                Param("connectedness", "Connectedness", "Pixel connectedness. Allowed values: 4, 8. Defaults to 4.", ProcessParameterValueType.Text, defaultValue: "4",
+                    allowedValues: ProcessValueDomains.PolygonizeConnectedness),
                 Param("fieldName", "Field Name", "Output attribute holding the pixel value. Must match ^[A-Za-z_][A-Za-z0-9_]*$. Defaults to DN.", ProcessParameterValueType.Text, defaultValue: "DN"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer],
@@ -1297,8 +1317,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("field", "Field", "Attribute name to cast.", ProcessParameterValueType.Text, required: true),
-                Param("to", "Target Type", "Target CLR type. Allowed values: int, long, double, bool, string.", ProcessParameterValueType.Text, required: true),
-                Param("onError", "On Error", "Behavior for uncoercible rows. Allowed values: drop (default), null, keep.", ProcessParameterValueType.Text, defaultValue: "drop"),
+                Param("to", "Target Type", "Target CLR type. Allowed values: int, long, double, bool, string.", ProcessParameterValueType.Text, required: true,
+                    allowedValues: ProcessValueDomains.AttributeCastTargetType),
+                Param("onError", "On Error", "Behavior for uncoercible rows. Allowed values: drop (default), null, keep.", ProcessParameterValueType.Text, defaultValue: "drop",
+                    allowedValues: ProcessValueDomains.AttributeCastOnError),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1332,7 +1354,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
-                Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq"),
+                Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq",
+                    allowedValues: ProcessValueDomains.AttributeFilterOp),
                 Param("value", "Value", "Comparison operand. Omitted for the 'exists' op.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -1414,7 +1437,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
                 Param("bbox", "Bounding Box", "Region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
                 Param("wkt", "WKT Region", "Region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
-                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects (default), within.", ProcessParameterValueType.Text, defaultValue: "intersects"),
+                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects (default), within.", ProcessParameterValueType.Text, defaultValue: "intersects",
+                    allowedValues: ProcessValueDomains.SpatialFilterPredicate),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },

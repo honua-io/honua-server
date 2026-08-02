@@ -285,6 +285,189 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_ProbeReportsBranchQualifiedRequirement_ReplacesTheConservativeDowngrade()
+    {
+        // Where the discriminator's domain IS enumerable the probe answers exactly, so the
+        // report must name the faulting branches instead of falling back to the conservative
+        // "cannot pin this down" wording (#3048).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["source", "layerId"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("mode=exact", "source", "Step is missing 'source'."),
+                    new ProcessBranchRequirement("mode=strict", "source", "Step is missing 'source'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        var issue = tool.Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        issue.ParameterName.Should().Be("source");
+        // One issue per parameter, listing every branch that faults, rather than one per branch.
+        issue.Message.Should().Contain("mode=exact").And.Contain("mode=strict");
+    }
+
+    [Fact]
+    public void Validate_BranchGapsCoverEveryDiscriminatorValue_DoesNotRecommendConstrainingTheSource()
+    {
+        // Gaps are reported per PARAMETER, so each group read as individually escapable even
+        // when the groups TOGETHER covered every branch. With eps missing on dbscan and k
+        // missing on kmeans, no value of `algorithm` executes, and telling the operator to
+        // "constrain the source value" points at a remedy that cannot exist (#3048 review).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(
+            ToolboxToolClassifications.Unsupported,
+            "no admissible discriminator value produces an executable native process");
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Code == ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        tool.Issues.Should().HaveCount(2, "one issue per unmapped parameter");
+        tool.Issues.Should().OnlyContain(issue => issue.Message.Contains("must be mapped or defaulted"));
+        tool.Issues.Should().NotContain(issue => issue.Message.Contains("Every other admissible value executes"));
+    }
+
+    [Fact]
+    public void Validate_BranchGapsLeaveOneDiscriminatorValueClear_StillRecommendsConstrainingTheSource()
+    {
+        // The complement: `kmeans` has no gap, so constraining the source value genuinely does
+        // certify the tool and the report must keep offering that cheaper remedy.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan", "eps", "Step is missing 'eps'.")
+                ]));
+
+        var issue = report.Tools.Single().Issues.Single();
+        issue.Code.Should().Be(ToolboxTranslationIssueCodes.ConditionalBranchRequirement);
+        issue.Message.Should().Contain("At least one admissible branch is not covered");
+    }
+
+    [Fact]
+    public void Validate_PartialCollectiveCoverage_DoesNotClaimEveryOtherValueExecutes()
+    {
+        // NDBI is executable, but NDVI/SAVI/EVI all fail for red and NDWI fails for green.
+        // Each per-parameter issue must describe the collective uncovered branch rather than
+        // claim every value outside that individual parameter's list executes (#3048 review).
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "SpectralLikeTool",
+                "test.partial-branching",
+                Mapping("in_layer", "input"),
+                Mapping("formula", "index"),
+                Mapping("nir_band", "nir"),
+                Mapping("swir_band", "swir"),
+                Mapping("blue_band", "blue"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "index"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("index=ndvi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=savi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=evi", "red", "Step is missing 'red'."),
+                    new ProcessBranchRequirement("index=ndwi", "green", "Step is missing 'green'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Issues.Should().HaveCount(2);
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("At least one admissible branch is not covered"));
+        tool.Issues.Should().NotContain(issue =>
+            issue.Message.Contains("Every other admissible value executes"));
+    }
+
+    [Fact]
+    public void Validate_MultiDiscriminatorGapsCoverEveryAssignment_IsUnsupported()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "MultiBranchTool",
+                "test.multi-branching",
+                Mapping("in_layer", "input"),
+                Mapping("algo", "algorithm"),
+                Mapping("run_mode", "mode"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm", "mode"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=a", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=b", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=a", "k", "Step is missing 'k'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=b", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(
+            ToolboxToolClassifications.Unsupported,
+            "every Cartesian assignment has at least one unmapped requirement");
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("Every admissible discriminator assignment"));
+    }
+
+    [Fact]
+    public void Validate_MultiDiscriminatorGapsLeaveOneAssignmentClear_IsPartiallyTranslated()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "MultiBranchTool",
+                "test.multi-branching",
+                Mapping("in_layer", "input"),
+                Mapping("algo", "algorithm"),
+                Mapping("run_mode", "mode"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm", "mode"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=a", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=b", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=a", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("At least one admissible branch is not covered"));
+    }
+
+    [Fact]
+    public void Validate_ProbeReportsBranchRequirementForAMappedParameter_IsIgnored()
+    {
+        // A mapped parameter is supplied at submit time on every branch, so a stale requirement
+        // naming it must never downgrade the tool.
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["source", "layerId"],
+                branchRequirements:
+                    [new ProcessBranchRequirement("mode=exact", "layerId", "Step is missing 'layerId'.")]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.Translated);
+        tool.Issues.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Validate_ProbeNotConsultedWhenStaticRequiredParameterMissing()
     {
         // A statically-missing required parameter already makes the tool unsupported; the
@@ -340,12 +523,23 @@ public sealed class ToolboxTranslationValidatorTests
 
     /// <summary>
     /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
-    /// missing conditional input unless at least one member of the group is supplied, and
-    /// reports the parameters it was told are branch-dependent.
+    /// missing conditional input unless at least one member of the group is supplied, reports
+    /// the parameters it was told are branch-dependent, and reports the exact branch
+    /// requirements it was told an enumerable domain proves.
     /// </summary>
-    private sealed class FakeProbe(string[] requiredAnyOf, string[]? branchDependent = null)
+    private sealed class FakeProbe(
+        string[] requiredAnyOf,
+        string[]? branchDependent = null,
+        ProcessBranchRequirement[]? branchRequirements = null)
         : IProcessConditionalInputProbe
     {
+        public IReadOnlyList<ProcessBranchRequirement> FindConditionalBranchRequirements(
+            string processId,
+            IReadOnlyCollection<string> suppliedParameterNames)
+            => [.. (branchRequirements ?? [])
+                .Where(requirement => !suppliedParameterNames.Contains(
+                    requirement.ParameterName, StringComparer.OrdinalIgnoreCase))];
+
         public IReadOnlyList<ProcessAdmissibilityViolation> FindAdmissibilityViolations(
             string processId,
             IReadOnlyCollection<string> suppliedParameterNames)
@@ -413,15 +607,92 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
+        /// <summary>
+        /// Mirrors a process such as <c>analytics.cluster-managed</c>: an enumerable
+        /// discriminator whose branches require different parameters, so branch coverage across
+        /// all reported gaps is decidable.
+        /// </summary>
+        private static readonly ProcessDefinition Branching = new()
+        {
+            ProcessId = "test.branching",
+            Title = "Branching",
+            Description = "Test process with an enumerable discriminator.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "algorithm",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["dbscan", "kmeans"]),
+                Parameter("eps", ProcessParameterValueType.FloatingPoint, required: false),
+                Parameter("k", ProcessParameterValueType.WholeNumber, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
+        private static readonly ProcessDefinition PartialBranching = new()
+        {
+            ProcessId = "test.partial-branching",
+            Title = "Partial Branching",
+            Description = "Test process whose reported gaps leave one discriminator branch executable.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "index",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["ndbi", "ndwi", "ndvi", "savi", "evi"]),
+                Parameter("nir", ProcessParameterValueType.Text, required: false),
+                Parameter("swir", ProcessParameterValueType.Text, required: false),
+                Parameter("blue", ProcessParameterValueType.Text, required: false),
+                Parameter("red", ProcessParameterValueType.Text, required: false),
+                Parameter("green", ProcessParameterValueType.Text, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
+        private static readonly ProcessDefinition MultiBranching = new()
+        {
+            ProcessId = "test.multi-branching",
+            Title = "Multi Branching",
+            Description = "Test process with a finite two-discriminator Cartesian domain.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "algorithm",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["dbscan", "kmeans"]),
+                Parameter(
+                    "mode",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["a", "b"]),
+                Parameter("eps", ProcessParameterValueType.FloatingPoint, required: false),
+                Parameter("k", ProcessParameterValueType.WholeNumber, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
         public ProcessDefinition? GetProcess(string processId) => processId switch
         {
             "test.buffer" => Buffer,
             "test.simplify" => Simplify,
             "test.optional-only" => OptionalOnly,
+            "test.branching" => Branching,
+            "test.partial-branching" => PartialBranching,
+            "test.multi-branching" => MultiBranching,
             _ => null
         };
 
-        public IReadOnlyList<ProcessDefinition> ListProcesses() => [Buffer, Simplify, OptionalOnly];
+        public IReadOnlyList<ProcessDefinition> ListProcesses() =>
+            [Buffer, Simplify, OptionalOnly, Branching, PartialBranching, MultiBranching];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) =>
             ListProcesses().Where(definition => definition.Category == category).ToArray();
@@ -430,14 +701,16 @@ public sealed class ToolboxTranslationValidatorTests
             string name,
             ProcessParameterValueType valueType,
             bool required,
-            string? defaultValue = null) => new()
+            string? defaultValue = null,
+            IReadOnlyList<string>? allowedValues = null) => new()
             {
                 Name = name,
                 DisplayName = name,
                 Description = name,
                 ValueType = valueType,
                 Required = required,
-                DefaultValue = defaultValue
+                DefaultValue = defaultValue,
+                AllowedValues = allowedValues
             };
     }
 }
