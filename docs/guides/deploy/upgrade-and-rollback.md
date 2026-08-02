@@ -10,6 +10,23 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. The default recovery is rolling back the application image; the previous version keeps working against the expanded schema.
 3. Database restore is the last resort, only when a destructive migration or data corruption makes the previous version unusable.
 
+### Configuration binding correction (#3055)
+
+This release corrects source-generated binding for options that previously used
+`init`-only properties. Explicit values under the following sections now take effect
+instead of silently retaining their defaults: `Alerts` (including delivery channels),
+`AuditLog:ChainVerification`, `AuditLog:Export:Dispatch`, `Deployment`, `Federation`,
+`Limits:Imports`, `Limits:Validation`, `Database:MigrationSafety`,
+`Database:QueryCache`, `Scenes` access policies, `SecureConfiguration`,
+`Spec:CostEstimator`, `TemporaryFiles`, `TileOptions`, and
+`Geoprocessing:Workspace`.
+
+Review those values before upgrading, especially environment variables already present
+in deployment manifests. Defaults are unchanged when a key is absent. Most notably,
+deployments that already set `Alerts:Enabled=true` or `Alerts__Enabled=true` will start
+the alert evaluator and dispatcher workers after restart; remove the setting or set it
+to `false` before upgrading if activation is not intended.
+
 ### SensorThings API
 
 The OGC SensorThings API remains experimental and is not registered unless

@@ -8,7 +8,11 @@
 
     <!--
       Source-generated configuration binding eliminates the reflection-based
-      ConfigurationBinder.Bind / GetValue calls at every callsite. Safe project-wide.
+      ConfigurationBinder.Bind / GetValue calls at every callsite. Types bound through
+      Configure&lt;T&gt;(IConfiguration) or AddOptions&lt;T&gt;().Bind must use ordinary setters
+      throughout their reachable object graph: the generator cannot assign init-only
+      properties when it binds an existing options instance. The architecture guard in
+      ConfigurationBindingShapeTests enforces this convention (honua-server#3055).
     -->
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
