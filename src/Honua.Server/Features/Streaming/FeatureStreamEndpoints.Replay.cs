@@ -15,6 +15,9 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal static partial class FeatureStreamEndpoints
 {
+    internal static bool HasReplayWindowGap(long requestedCursor, long firstAvailableCursor)
+        => requestedCursor < long.MaxValue && firstAvailableCursor > requestedCursor + 1;
+
     private static async Task<long> ReplayToWebSocketAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,
@@ -38,6 +41,8 @@ internal static partial class FeatureStreamEndpoints
             {
                 break;
             }
+
+            ThrowIfReplayWindowHasGap(events, cursor, logger, sessionId, subscriptionId);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
@@ -124,6 +129,8 @@ internal static partial class FeatureStreamEndpoints
                 break;
             }
 
+            ThrowIfReplayWindowHasGap(events, cursor, logger, sessionId, subscriptionId);
+
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
             foreach (var evt in events)
@@ -161,6 +168,28 @@ internal static partial class FeatureStreamEndpoints
         return cursor;
     }
 
+    private static void ThrowIfReplayWindowHasGap(
+        IReadOnlyList<FeatureChangeEvent> events,
+        long requestedCursor,
+        ILogger logger,
+        Guid sessionId,
+        string? subscriptionId)
+    {
+        var firstAvailableCursor = events[0].Cursor;
+        if (!HasReplayWindowGap(requestedCursor, firstAvailableCursor))
+        {
+            return;
+        }
+
+        FeatureStreamLog.ReplayWindowGapDetected(
+            logger,
+            sessionId,
+            subscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
+            requestedCursor,
+            firstAvailableCursor);
+        throw new FeatureStreamReplayWindowGapException(requestedCursor, firstAvailableCursor);
+    }
+
     /// <summary>
     /// Stamps the next subscription-local sequence onto an envelope that is about to be
     /// written. Returns the envelope unchanged when no session manager or subscription is
@@ -181,5 +210,14 @@ internal static partial class FeatureStreamEndpoints
 
         var sequence = sessionManager.NextSubscriptionSequence(sessionId, subscriptionId, subscriptionGeneration);
         return sequence < 0 ? envelope : envelope with { Sequence = sequence };
+    }
+
+    private sealed class FeatureStreamReplayWindowGapException(
+        long requestedCursor,
+        long firstAvailableCursor)
+        : Exception(
+            $"Feature stream replay expected cursor {requestedCursor + 1}, "
+            + $"but the first retained cursor is {firstAvailableCursor}.")
+    {
     }
 }

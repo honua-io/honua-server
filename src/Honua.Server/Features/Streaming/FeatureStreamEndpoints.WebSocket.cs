@@ -198,6 +198,11 @@ internal static partial class FeatureStreamEndpoints
             {
                 return; // Admin disconnect, slow-consumer removal, or request aborted during replay.
             }
+            catch (FeatureStreamReplayWindowGapException)
+            {
+                sessionManager.DisconnectSession(session.SessionId);
+                return;
+            }
             catch (WebSocketException)
             {
                 return; // Client disconnected during replay.
@@ -255,6 +260,11 @@ internal static partial class FeatureStreamEndpoints
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
         {
             return; // Client disconnected during handoff.
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            sessionManager.DisconnectSession(session.SessionId);
+            return;
         }
         catch (WebSocketException)
         {
@@ -403,6 +413,10 @@ internal static partial class FeatureStreamEndpoints
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
         {
             // Normal shutdown or disconnect.
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            sessionManager.DisconnectSession(session.SessionId);
         }
         catch (WebSocketException ex)
         {
@@ -645,6 +659,10 @@ internal static partial class FeatureStreamEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Normal shutdown.
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            sessionManager.DisconnectSession(session.SessionId);
         }
         catch (WebSocketException)
         {
@@ -945,6 +963,11 @@ internal static partial class FeatureStreamEndpoints
                     Cursor = currentCursor
                 },
                 cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
+            throw;
         }
         finally
         {

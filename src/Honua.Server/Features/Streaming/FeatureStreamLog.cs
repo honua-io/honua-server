@@ -111,4 +111,13 @@ internal static partial class FeatureStreamLog
         string subscriptionId,
         long baselineCursor,
         long oldestRetained);
+
+    [LoggerMessage(EventId = 5024, Level = LogLevel.Warning,
+        Message = "Feature stream replay window was lost for session {SessionId} subscription {SubscriptionId}: requestedCursor={RequestedCursor}, firstAvailableCursor={FirstAvailableCursor}. Ending the stream so the client can resnapshot.")]
+    public static partial void ReplayWindowGapDetected(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        long requestedCursor,
+        long firstAvailableCursor);
 }

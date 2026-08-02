@@ -578,7 +578,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 services.Remove(original);
                 services.Add(ServiceDescriptor.Describe(
                     typeof(IFeatureChangeEventStore),
-                    sp => new TrimmedWindowEventStore(CreateInner(sp, original), oldestRetained: long.MaxValue),
+                    sp => new TrimmedWindowEventStore(CreateEventStore(sp, original), oldestRetained: long.MaxValue),
                     original.Lifetime));
             });
 
@@ -608,12 +608,52 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
 
-        static IFeatureChangeEventStore CreateInner(IServiceProvider sp, ServiceDescriptor descriptor)
-            => descriptor.ImplementationInstance as IFeatureChangeEventStore
-                ?? (descriptor.ImplementationFactory is { } factory
-                    ? (IFeatureChangeEventStore)factory(sp)
-                    : (IFeatureChangeEventStore)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!));
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_ReplayWindowTrimmedAfterBaseline_EndsBeforeSendingPostGapDelta()
+    {
+        // The retained floor can advance after EmitSnapshotAsync revalidates it but before
+        // replay performs its first query. Returning cursor+2 simulates that exact TOCTOU:
+        // cursor+1 was trimmed after snapshot-end, while a later event is still retained.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureServices(services =>
+            {
+                var original = services.Last(d => d.ServiceType == typeof(IFeatureChangeEventStore));
+                services.Remove(original);
+                services.Add(ServiceDescriptor.Describe(
+                    typeof(IFeatureChangeEventStore),
+                    sp => new ReplayGapEventStore(CreateEventStore(sp, original)),
+                    original.Lifetime));
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
+                "the replay window is still intact at the snapshot's post-scan revalidation");
+
+            var postGapDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+            postGapDelta.Should().BeNull(
+                "a cursor jump discovered by replay must end the stream before stale state is checkpointed");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -734,6 +774,63 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => inner.QueryAsync(cursor, from, to, limit, cancellationToken);
     }
+
+    /// <summary>
+    /// Simulates retention advancing between the snapshot's final floor check and its first
+    /// replay query. The floor delegates normally, while replay exposes a first retained event
+    /// one position beyond the cursor the client requires.
+    /// </summary>
+    private sealed class ReplayGapEventStore(IFeatureChangeEventStore inner) : IFeatureChangeEventStore
+    {
+        public Task<FeatureChangeEvent> AppendAsync(
+            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(request, cancellationToken);
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => inner.GetCurrentCursorAsync(cancellationToken);
+
+        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+            => inner.GetOldestRetainedCursorAsync(cancellationToken);
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            if (!cursor.HasValue)
+            {
+                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
+            }
+
+            IReadOnlyList<FeatureChangeEvent> gap =
+            [
+                new FeatureChangeEvent
+                {
+                    EventId = "post-gap-event",
+                    Cursor = cursor.Value + 2,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    SourceId = TestServiceId,
+                    ServiceId = TestServiceId,
+                    LayerId = 0,
+                    ObjectId = 1,
+                    Operation = "update",
+                    Protocol = "test",
+                    RequestId = "post-gap-request",
+                    PropertiesJson = "{}"
+                }
+            ];
+            return Task.FromResult(gap);
+        }
+    }
+
+    private static IFeatureChangeEventStore CreateEventStore(
+        IServiceProvider serviceProvider,
+        ServiceDescriptor descriptor)
+        => descriptor.ImplementationInstance as IFeatureChangeEventStore
+            ?? (descriptor.ImplementationFactory is { } factory
+                ? (IFeatureChangeEventStore)factory(serviceProvider)
+                : (IFeatureChangeEventStore)ActivatorUtilities.CreateInstance(
+                    serviceProvider,
+                    descriptor.ImplementationType!));
 
     private static HttpRequestMessage BuildSseRequest(string url)
     {

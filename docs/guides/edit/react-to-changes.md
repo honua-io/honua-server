@@ -62,6 +62,7 @@ The server emits `snapshot-begin`, one `snapshot-feature` per matching feature, 
 - **`reason`** is `initial` for a fresh subscription, or `cursor-expired` / `cursor-invalid` when you reconnected with a `cursor` the server can no longer replay from. In those cases the server sends a **replacement snapshot** instead of silently continuing with deltas.
 - **`complete: false`** means the baseline hit `FeatureStreaming__MaxSnapshotFeatures` (default 5000) or `FeatureStreaming__MaxSnapshotScanRows` (default 20000). Do not treat a truncated baseline as authoritative state — narrow the subscription scope or raise the bounds.
 - **On SSE, only `snapshot-end` carries an `id:`.** A baseline becomes a resumable cursor only once it is whole, so a connection that drops mid-baseline reconnects (via `Last-Event-ID`) into another snapshot rather than a delta tail with a half-applied baseline.
+- **A replay-window gap ends the stream before the first post-gap delta is emitted.** Reconnect with the last complete cursor; snapshot mode then returns a replacement snapshot instead of letting a retention race leave stale state marked current.
 
 Reconnecting with a still-replayable `cursor` continues with deltas and no snapshot, so steady-state reconnects stay cheap.
 

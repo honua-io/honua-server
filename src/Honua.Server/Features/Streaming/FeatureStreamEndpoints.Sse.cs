@@ -233,6 +233,11 @@ internal static partial class FeatureStreamEndpoints
             {
                 return; // Admin disconnect, slow-consumer removal, or request aborted during replay.
             }
+            catch (FeatureStreamReplayWindowGapException)
+            {
+                sessionManager.DisconnectSession(session.SessionId);
+                return;
+            }
             catch (IOException)
             {
                 return; // Client disconnected during replay.
@@ -448,6 +453,10 @@ internal static partial class FeatureStreamEndpoints
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
         {
             // Normal shutdown.
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            sessionManager.DisconnectSession(session.SessionId);
         }
         catch (IOException)
         {
