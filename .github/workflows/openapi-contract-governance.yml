@@ -5,11 +5,15 @@ on:
     branches:
       - trunk
       - main
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
+      - '.github/pull_request_template.md'
+      - 'scripts/ci/openapi-breaking-change-policy.py'
       - 'scripts/ci/validate-openapi-contracts.sh'
+      - 'tests/python/unit/test_openapi_breaking_change_policy.py'
       - '.github/workflows/openapi-contract-governance.yml'
   workflow_dispatch:
 
@@ -40,10 +44,28 @@ jobs:
             echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Test breaking-change acknowledgement policy
+        run: >-
+          python3 -m unittest discover
+          -s tests/python/unit
+          -p 'test_openapi_breaking_change_policy.py'
+
+      - name: Resolve breaking-change acknowledgement
+        id: breaking-policy
+        env:
+          # PRE-PUBLICATION ONLY (#3065): this repository variable is intentionally true
+          # while the control-plane API has no external release. honua-release#71 blocks
+          # the first RC until it is false. After that reset, intentional breaks must use
+          # the checked OPENAPI_BREAKING_CHANGE_APPROVED marker on the introducing PR.
+          OPENAPI_REPO_ALLOW_BREAKING_CHANGES: ${{ vars.OPENAPI_ALLOW_BREAKING_CHANGES || 'false' }}
+          OPENAPI_PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: python3 scripts/ci/openapi-breaking-change-policy.py
+
       - name: Validate curated OpenAPI contracts
         env:
           OPENAPI_BASE_REF: ${{ steps.baseline.outputs.ref }}
-          OPENAPI_ALLOW_BREAKING_CHANGES: ${{ vars.OPENAPI_ALLOW_BREAKING_CHANGES || 'false' }}
+          OPENAPI_ALLOW_BREAKING_CHANGES: ${{ steps.breaking-policy.outputs.allow }}
+          OPENAPI_BREAKING_CHANGE_SOURCE: ${{ steps.breaking-policy.outputs.source }}
         run: |
           chmod +x scripts/ci/validate-openapi-contracts.sh
           ./scripts/ci/validate-openapi-contracts.sh
