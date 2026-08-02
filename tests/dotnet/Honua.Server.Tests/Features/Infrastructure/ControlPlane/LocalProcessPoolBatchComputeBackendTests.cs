@@ -5,6 +5,7 @@ using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -22,7 +23,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     private static string ShPath => File.Exists("/usr/bin/sh") ? "/usr/bin/sh" : "/bin/sh";
 
     [Fact]
-    public async Task BuildEnvironment_WorkloadCannotOverrideContractVersionGate()
+    public async Task StartAsync_RasterContractProjectsOnlyDerivedMetadata()
     {
         using var backend = CreateBackend();
         var outFile = Path.Join(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
@@ -32,11 +33,21 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
             {
                 [LocalProcessParameterKeys.Executable] = ShPath,
                 [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "-c",
-                [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "printf '%s' \"$HONUA_CONTRACT_VERSION\" > \"$HONUA_TEST_OUT\"",
+                [LocalProcessParameterKeys.ArgumentPrefix + "1"] =
+                    "printf '%s|%s|%s|%s|%s' \"$HONUA_CONTRACT_VERSION\" \"$HONUA_RASTER_OUTPUT_CONTRACT_VERSION\" \"$HONUA_RASTER_OUTPUT_STORE_REFERENCE\" \"$HONUA_RASTER_OUTPUT_STAGING_PREFIX\" \"$HONUA_RASTER_OUTPUT_MANIFEST_KEY\" > \"$HONUA_TEST_OUT\"",
                 [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_TEST_OUT"] = outFile,
                 // A malicious/erroneous workload tries to weaken the serving↔worker contract gate.
-                [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_CONTRACT_VERSION"] = "999"
+                [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_CONTRACT_VERSION"] = "999",
+                [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+                [LocalProcessParameterKeys.EnvironmentPrefix
+                    + RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] =
+                    "https://attacker.example/signed?token=secret"
             });
+            job = job with
+            {
+                AttemptCount = 4,
+                Spec = job.Spec with { ContractVersion = RasterOutputContract.JobContractVersion }
+            };
 
             var start = await backend.StartAsync(job);
             start.Status.Should().Be(ExecutionJobStatus.Running);
@@ -44,8 +55,10 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
             var running = job with { Status = ExecutionJobStatus.Running, ProviderOperationId = start.ProviderOperationId };
             (await WaitForTerminalAsync(backend, running)).Status.Should().Be(ExecutionJobStatus.Succeeded);
 
-            (await File.ReadAllTextAsync(outFile)).Should().Be("1",
-                "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+            (await File.ReadAllTextAsync(outFile)).Should().Be(
+                $"2|1|gp-results|{RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 4)}|"
+                + RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 4),
+                "only server-derived logical raster publication metadata may reach the child environment.");
         }
         finally
         {
@@ -54,6 +67,38 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
                 File.Delete(outFile);
             }
         }
+    }
+
+    [Fact]
+    public void BuildEnvironment_RasterContractMetadataIsSafeAndAttemptScoped()
+    {
+        var job = CreateJob("job-gate", new Dictionary<string, string>
+        {
+            [LocalProcessParameterKeys.EnvironmentPrefix + "HONUA_CONTRACT_VERSION"] = "999",
+            [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+            [LocalProcessParameterKeys.EnvironmentPrefix
+                + RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] =
+                "https://attacker.example/signed?token=secret"
+        });
+        job = job with
+        {
+            AttemptCount = 4,
+            Spec = job.Spec with { ContractVersion = RasterOutputContract.JobContractVersion }
+        };
+
+        var environment = LocalProcessPoolBatchComputeBackend.BuildEnvironment(job)
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+
+        environment["HONUA_CONTRACT_VERSION"].Should().Be("2");
+        environment[RasterOutputWorkerContract.ContractVersionEnvironmentVariable].Should().Be("1");
+        environment[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable].Should().Be("gp-results");
+        environment[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable].Should().Be(
+            RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 4));
+        environment[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable].Should().Be(
+            RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 4));
+        environment.Values.Should().NotContain(value =>
+            value.Contains("attacker", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

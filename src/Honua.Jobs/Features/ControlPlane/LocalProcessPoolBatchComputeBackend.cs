@@ -7,6 +7,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -520,7 +521,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         return ordered.Count == 0 ? Array.Empty<string>() : ordered.Values.ToArray();
     }
 
-    private static List<KeyValuePair<string, string>> BuildEnvironment(ExecutionJobRecord job)
+    internal static List<KeyValuePair<string, string>> BuildEnvironment(ExecutionJobRecord job)
     {
         // Mirror AwsBatchComputeBackend.BuildEnvironmentOverrides variable names so a workload behaves
         // identically whether it runs as a child process here or as a container on a cloud batch service.
@@ -550,7 +551,8 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
             var name = entry.Key[LocalProcessParameterKeys.EnvironmentPrefix.Length..];
             if (string.IsNullOrWhiteSpace(name)
-                || string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+                || string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal)
+                || RasterOutputWorkerContract.IsReservedEnvironmentVariable(name))
             {
                 // Never let a workload passthrough shadow the contract-version gate; it is stamped last.
                 continue;
@@ -563,6 +565,37 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value. Mirrors the
         // cloud backends so a workload behaves identically as a child process or a batch container.
         variables.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
+
+        if (job.Spec.Parameters.TryGetValue(
+            RasterOutputWorkerContract.StoreReferenceParameter,
+            out var rasterOutputStoreReference))
+        {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing
+                || job.Spec.ContractVersion < RasterOutputContract.JobContractVersion)
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a versioned geoprocessing worker contract.");
+            }
+
+            if (!RasterOutputWorkerContract.IsLogicalStoreReference(rasterOutputStoreReference))
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a bounded logical store reference, not a URL or credential.");
+            }
+
+            variables.Add(new(
+                RasterOutputWorkerContract.ContractVersionEnvironmentVariable,
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture)));
+            variables.Add(new(
+                RasterOutputWorkerContract.StoreReferenceEnvironmentVariable,
+                rasterOutputStoreReference));
+            variables.Add(new(
+                RasterOutputWorkerContract.StagingPrefixEnvironmentVariable,
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, job.AttemptCount)));
+            variables.Add(new(
+                RasterOutputWorkerContract.ManifestKeyEnvironmentVariable,
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, job.AttemptCount)));
+        }
 
         return variables;
     }

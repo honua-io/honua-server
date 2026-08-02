@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Net;
 using Amazon.Runtime;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -112,7 +114,70 @@ public sealed class AwsBatchComputeBackendTests
         client.LastSubmission!.EnvironmentOverrides
             .Where(entry => entry.Name == "HONUA_CONTRACT_VERSION")
             .Should().OnlyContain(entry => entry.Value == "1",
-                "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+            "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterOutputContractProjectsOnlyStableAttemptScopedMetadata()
+    {
+        var client = new StubAwsBatchJobClient();
+        var backend = CreateBackend(client);
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy",
+            [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+            ["env.HONUA_RASTER_OUTPUT_STORE_REFERENCE"] = "https://attacker.example/signed?secret=yes",
+            ["env.HONUA_RASTER_OUTPUT_STAGING_PREFIX"] = "raster/staging/wrong/attempt-0/",
+            ["env.HONUA_RASTER_OUTPUT_MANIFEST_KEY"] = "credential=leak",
+            ["env.HONUA_RASTER_OUTPUT_CONTRACT_VERSION"] = "999"
+        };
+        var initial = CreateJob(parameters);
+        var job = initial with
+        {
+            AttemptCount = 3,
+            Spec = initial.Spec with { ContractVersion = RasterOutputContract.JobContractVersion }
+        };
+
+        await backend.StartAsync(job);
+
+        var environment = client.LastSubmission!.EnvironmentOverrides;
+        environment.Where(entry => entry.Name == RasterOutputWorkerContract.StoreReferenceEnvironmentVariable)
+            .Should().ContainSingle().Which.Value.Should().Be("gp-results");
+        environment.Where(entry => entry.Name == RasterOutputWorkerContract.StagingPrefixEnvironmentVariable)
+            .Should().ContainSingle().Which.Value.Should().Be(
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 3));
+        environment.Where(entry => entry.Name == RasterOutputWorkerContract.ManifestKeyEnvironmentVariable)
+            .Should().ContainSingle().Which.Value.Should().Be(
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 3));
+        environment.Where(entry => entry.Name == RasterOutputWorkerContract.ContractVersionEnvironmentVariable)
+            .Should().ContainSingle().Which.Value.Should().Be(
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture));
+        environment.Should().NotContain(entry => entry.Value.Contains("attacker", StringComparison.OrdinalIgnoreCase)
+            || entry.Value.Contains("credential", StringComparison.OrdinalIgnoreCase)
+            || entry.Value.Contains("secret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterOutputContractRejectsUrlStoreReference()
+    {
+        var backend = CreateBackend(new StubAwsBatchJobClient());
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+            [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy",
+            [RasterOutputWorkerContract.StoreReferenceParameter] = "https://bucket.example/signed?token=secret"
+        };
+        var initial = CreateJob(parameters);
+        var job = initial with
+        {
+            Spec = initial.Spec with { ContractVersion = RasterOutputContract.JobContractVersion }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*logical store reference*");
     }
 
     [Fact]

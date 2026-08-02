@@ -7,6 +7,7 @@ using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -898,7 +899,8 @@ internal sealed partial class AwsBatchComputeBackend(
             }
 
             // Never let a workload passthrough shadow the contract-version gate; it is stamped last below.
-            if (string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal))
+            if (string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal)
+                || RasterOutputWorkerContract.IsReservedEnvironmentVariable(name))
             {
                 continue;
             }
@@ -910,6 +912,37 @@ internal sealed partial class AwsBatchComputeBackend(
         // fails closed if it exceeds the version it can run. Appended AFTER the env.* passthrough so a
         // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
         overrides.Add(new("HONUA_CONTRACT_VERSION", job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture)));
+
+        if (job.Spec.Parameters.TryGetValue(
+            RasterOutputWorkerContract.StoreReferenceParameter,
+            out var rasterOutputStoreReference))
+        {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing
+                || job.Spec.ContractVersion < RasterOutputContract.JobContractVersion)
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a versioned geoprocessing worker contract.");
+            }
+
+            if (!RasterOutputWorkerContract.IsLogicalStoreReference(rasterOutputStoreReference))
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a bounded logical store reference, not a URL or credential.");
+            }
+
+            overrides.Add(new(
+                RasterOutputWorkerContract.ContractVersionEnvironmentVariable,
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture)));
+            overrides.Add(new(
+                RasterOutputWorkerContract.StoreReferenceEnvironmentVariable,
+                rasterOutputStoreReference));
+            overrides.Add(new(
+                RasterOutputWorkerContract.StagingPrefixEnvironmentVariable,
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, job.AttemptCount)));
+            overrides.Add(new(
+                RasterOutputWorkerContract.ManifestKeyEnvironmentVariable,
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, job.AttemptCount)));
+        }
 
         return overrides;
     }
