@@ -149,6 +149,10 @@ ARG PDAL_VERSION
 # uses SciPy's exact distance transform (nearest-feature index return) plus the
 # GDAL Python bindings (shipped in the ubuntu-full base) since stock
 # gdal_proximity has no nearest-source allocation mode.
+# The OSGeo base also carries Canonical's Pebble service manager for image-level
+# health checks. Honua runs the worker directly and does not use Pebble, so keep
+# that unrelated Go binary (and its independent vulnerability surface) out of
+# the final runtime image.
 # hadolint ignore=DL3008,DL3015
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
@@ -162,6 +166,7 @@ RUN apt-get update \
       libtbb12 \
       libxml2-16 \
       python3-scipy \
+ && rm -f /usr/bin/pebble \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && chmod +x /tmp/dotnet-install.sh \
@@ -210,6 +215,7 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
  && ! ldd "$(readlink -f /opt/pdal/lib/libpdalcpp.so)" | grep -q 'not found' \
  && dotnet --list-runtimes | grep -F "Microsoft.AspNetCore.App ${DOTNET_RUNTIME_VERSION}" \
  && dotnet --list-runtimes | grep -F "Microsoft.NETCore.App ${DOTNET_RUNTIME_VERSION}" \
+ && ! command -v pebble \
  # PROJ datum-shift support for native vector reproject (transform.reproject on
  # the native profile): projsync/proj.db must be present so PROJ can apply
  # datum/grid shifts (e.g. NAD 27 -> WGS 84). The full base ships PROJ.

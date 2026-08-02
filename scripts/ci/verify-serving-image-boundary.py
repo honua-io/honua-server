@@ -269,6 +269,7 @@ command -v gdalinfo >/dev/null
 command -v gdal_translate >/dev/null
 command -v gdalwarp >/dev/null
 command -v ogr2ogr >/dev/null
+! command -v pebble >/dev/null
 gdalinfo --version | grep -F 'GDAL {EXPECTED_WORKER_LABELS["honua.native.gdal.version"]}'
 gdalinfo --formats | grep -qi netCDF
 gdalinfo --formats | grep -qi GRIB

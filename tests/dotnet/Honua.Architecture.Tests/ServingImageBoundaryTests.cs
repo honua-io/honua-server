@@ -190,6 +190,8 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("gdalinfo --version | grep -F \"GDAL ${GDAL_VERSION}\"");
         dockerfile.Should().Contain("pdal --version | grep -F \"pdal ${PDAL_VERSION}\"");
         dockerfile.Should().Contain("ldd \"$(command -v pdal)\"");
+        dockerfile.Should().Contain("rm -f /usr/bin/pebble");
+        dockerfile.Should().Contain("! command -v pebble");
         dockerfile.Should().Contain("honua.native.gdal.version=\"${GDAL_VERSION}\"");
         dockerfile.Should().Contain("honua.native.pdal.version=\"${PDAL_VERSION}\"");
         var verifier = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/verify-serving-image-boundary.py"));
