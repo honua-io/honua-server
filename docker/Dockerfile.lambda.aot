@@ -107,10 +107,14 @@ ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 # error MSB3073 "...ilc... exited with code -1". Single-threaded linking trades
 # wall-clock for a much lower memory peak; the retry loop additionally rides out an
 # intermittent OOM kill (the regular AOT image relies on the same retry to stay green).
-# The plain Dockerfile.aot wraps restore+publish; here restore is a cached prior stage,
-# so the loop wraps the --no-restore publish that actually OOMs.
+# Keep restore and publish in the same cached RUN, matching Dockerfile.aot. The
+# earlier restore stage warms the NuGet cache, but the full source copy can change
+# the evaluated project graph; refreshing the RID-specific assets here prevents
+# --no-restore publish failures when a newly included package is absent.
 ARG AOT_PUBLISH_MAX_ATTEMPTS=3
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
       amd64) RUNTIME_ID="linux-x64" ;; \
       arm64) RUNTIME_ID="linux-arm64" ;; \
@@ -119,6 +123,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     attempt=1 && \
     max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
     until \
+        sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+          --runtime "$RUNTIME_ID" \
+          -p:RuntimeIdentifier="$RUNTIME_ID" && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
@@ -138,10 +145,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     do \
         status=$? ; \
         if [ "$attempt" -ge "$max_attempts" ]; then \
-            echo "AOT publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
+            echo "AOT restore+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
             exit "$status" ; \
         fi ; \
-        echo "AOT publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
+        echo "AOT restore+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \
