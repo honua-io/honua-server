@@ -153,9 +153,15 @@ ceiling for protocol compatibility. The inline path is never an automatic
 fallback for a reference the selected worker cannot resolve.
 
 Outputs are first published to an attempt-scoped staging location. Successful
-completion promotes the artifact and optionally registers it in the catalog or
-PostGIS atomically. Registration is a separate explicit output-sink decision;
-creating an object does not implicitly create or replace a layer.
+completion promotes the artifact and may register it in the catalog or
+PostGIS. Promotion and registration are atomic only when they share a
+transactional sink, as with PostGIS materialization and its catalog row. For an
+object artifact plus database catalog entry, the object commit marker is the
+authoritative winner and registration is an explicit, durable, idempotently
+reconciled cross-store step. A job requesting that registration remains in a
+finalizing state until the matching catalog entry is durable; it does not claim
+cross-store atomicity. Creating an object does not implicitly create or replace
+a layer.
 
 ### Failure, fallback, retry, and idempotency
 
@@ -203,8 +209,18 @@ creating an object does not implicitly create or replace a layer.
 - Repeating commit with the same current token and idempotency key returns the
   existing result. A different or stale token cannot replace it. Losing
   attempt-scoped artifacts remain uncommitted for policy-driven cleanup.
-- Cancellation stops new work, propagates to the selected executor, and cleans
-  uncommitted staging artifacts without deleting a previously committed result.
+- Cancellation and terminal failure first abort every uncommitted sink intent
+  with a conditional update on its current token and record version. Sink
+  finalization and abort therefore contend on the same record: either commit
+  wins and the coordinator observes the committed result, or abort wins and
+  the worker's later commit fails. For object output this is an `If-Match`
+  transition of the stable intent marker to an aborted state; for PostGIS it is
+  a conditional update in the sink database. The durable job does not become
+  `Cancelled` or `Failed` until all intents are committed or aborted. An
+  unreachable sink leaves the job in a terminalizing state for reconciliation,
+  rather than leaving a valid publication token behind. Cancellation also
+  stops new work, propagates to the selected executor, and cleans uncommitted
+  staging artifacts without deleting a previously committed result.
 
 These rules prevent a timeout in one engine from producing a second,
 numerically different result or duplicating a partially committed output in
