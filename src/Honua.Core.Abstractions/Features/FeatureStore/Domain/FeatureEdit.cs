@@ -310,6 +310,30 @@ public readonly record struct FeatureEditResult
         };
 
     /// <summary>
+    /// Creates a failed edit result for a transaction whose commit acknowledgement was lost.
+    /// The transaction may have committed, so callers must not release an idempotency reservation.
+    /// </summary>
+    /// <param name="createResults">Create failures marked with an unknown commit outcome</param>
+    /// <param name="updateResults">Update failures marked with an unknown commit outcome</param>
+    /// <param name="deleteResults">Delete failures marked with an unknown commit outcome</param>
+    /// <returns>Edit result instance whose commit outcome remains unknown</returns>
+    public static FeatureEditResult FailureWithUnknownCommitOutcome(
+        ImmutableArray<EditOperationResult> createResults = default,
+        ImmutableArray<EditOperationResult> updateResults = default,
+        ImmutableArray<EditOperationResult> deleteResults = default)
+        => new()
+        {
+            CreatedCount = 0,
+            UpdatedCount = 0,
+            DeletedCount = 0,
+            CreatedIds = ImmutableArray<long>.Empty,
+            CreateResults = createResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : createResults,
+            UpdateResults = updateResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : updateResults,
+            DeleteResults = deleteResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : deleteResults,
+            WasRolledBack = false
+        };
+
+    /// <summary>
     /// Gets whether the operation was fully successful
     /// </summary>
     public bool IsSuccess => !WasRolledBack && !HasErrors;

@@ -32,6 +32,18 @@ internal sealed class FeatureEditPreconditionFailedException : Exception
 }
 
 /// <summary>
+/// Signals that COMMIT started but its acknowledgement was not observed. The transaction may
+/// have committed server-side even when a subsequent rollback reports that it already completed.
+/// </summary>
+internal sealed class FeatureEditCommitOutcomeUnknownException : Exception
+{
+    public FeatureEditCommitOutcomeUnknownException(Exception innerException)
+        : base("The feature edit transaction commit outcome is unknown.", innerException)
+    {
+    }
+}
+
+/// <summary>
 /// Internal signal that a create was rejected because the layer's geometry column is
 /// non-nullable (a database NOT NULL constraint fired) and the feature supplied no
 /// geometry. The edit paths translate this into a clean, actionable validation error
@@ -341,13 +353,7 @@ internal sealed partial class FeatureDataAccess
 
             if (transaction != null)
             {
-                // Guard against phantom commits: if the token fires after the server accepts
-                // COMMIT but before the ack arrives, Npgsql throws an OperationCanceledException
-                // and the data is committed server-side but the caller sees a failure. Checking
-                // here before the commit ensures we never hand an interruptible token to CommitAsync;
-                // once COMMIT starts it must complete atomically (or the whole session is lost).
-                cancellationToken.ThrowIfCancellationRequested();
-                await transaction.CommitAsync(CancellationToken.None);
+                await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
             }
 
             if (hasErrors)
@@ -388,9 +394,18 @@ internal sealed partial class FeatureDataAccess
             if (transaction != null)
             {
                 await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
-                var (createResults, updateResults, deleteResults) = CreateFailedOperationResults(editBatch, "Transaction failed.");
+                var commitOutcomeUnknown = ex is FeatureEditCommitOutcomeUnknownException;
+                var errorMessage = commitOutcomeUnknown
+                    ? "Transaction commit outcome is unknown."
+                    : "Transaction failed.";
+                var (createResults, updateResults, deleteResults) = CreateFailedOperationResults(
+                    editBatch,
+                    errorMessage,
+                    commitOutcomeUnknown);
 
-                return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+                return commitOutcomeUnknown
+                    ? FeatureEditResult.FailureWithUnknownCommitOutcome(createResults, updateResults, deleteResults)
+                    : FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
             // BH7-021: for the non-transactional path the partial accumulators above capture
@@ -545,7 +560,7 @@ internal sealed partial class FeatureDataAccess
 
         if (transaction != null)
         {
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
         }
 
         var immutableCreatedIds = createdIds.ToImmutable();
@@ -732,7 +747,8 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<EditOperationResult> updateResults,
         ImmutableArray<EditOperationResult> deleteResults) CreateFailedOperationResults(
         FeatureEditBatch editBatch,
-        string errorMessage)
+        string errorMessage,
+        bool commitOutcomeUnknown = false)
     {
         if (!editBatch.Operations.IsDefaultOrEmpty)
         {
@@ -745,17 +761,22 @@ internal sealed partial class FeatureDataAccess
                 switch (operation.Kind)
                 {
                     case FeatureEditOperationKind.Create:
-                        createResults.Add(EditOperationResult.Failure(errorMessage));
+                        createResults.Add(CreateFailedOperationResult(
+                            errorMessage,
+                            objectId: null,
+                            commitOutcomeUnknown: commitOutcomeUnknown));
                         break;
                     case FeatureEditOperationKind.Update:
-                        updateResults.Add(EditOperationResult.Failure(
+                        updateResults.Add(CreateFailedOperationResult(
                             errorMessage,
-                            objectId: operation.Feature?.Id));
+                            operation.Feature?.Id,
+                            commitOutcomeUnknown));
                         break;
                     case FeatureEditOperationKind.Delete:
-                        deleteResults.Add(EditOperationResult.Failure(
+                        deleteResults.Add(CreateFailedOperationResult(
                             errorMessage,
-                            objectId: operation.ObjectId));
+                            operation.ObjectId,
+                            commitOutcomeUnknown));
                         break;
                 }
             }
@@ -767,9 +788,39 @@ internal sealed partial class FeatureDataAccess
         }
 
         return (
-            System.Linq.Enumerable.Select(editBatch.Creates, _ => EditOperationResult.Failure(errorMessage)).ToImmutableArray(),
-            System.Linq.Enumerable.Select(editBatch.Updates, feature => EditOperationResult.Failure(errorMessage, objectId: feature.Id)).ToImmutableArray(),
-            System.Linq.Enumerable.Select(editBatch.Deletes, id => EditOperationResult.Failure(errorMessage, objectId: id)).ToImmutableArray());
+            System.Linq.Enumerable.Select(editBatch.Creates, _ => CreateFailedOperationResult(
+                errorMessage,
+                objectId: null,
+                commitOutcomeUnknown: commitOutcomeUnknown)).ToImmutableArray(),
+            System.Linq.Enumerable.Select(editBatch.Updates, feature => CreateFailedOperationResult(errorMessage, feature.Id, commitOutcomeUnknown)).ToImmutableArray(),
+            System.Linq.Enumerable.Select(editBatch.Deletes, id => CreateFailedOperationResult(errorMessage, id, commitOutcomeUnknown)).ToImmutableArray());
+    }
+
+    private static EditOperationResult CreateFailedOperationResult(
+        string errorMessage,
+        long? objectId,
+        bool commitOutcomeUnknown)
+        => commitOutcomeUnknown
+            ? EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId)
+            : EditOperationResult.Failure(errorMessage, objectId: objectId);
+
+    private static async Task CommitEditTransactionAsync(
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        // Do not start COMMIT after caller cancellation, and never pass a live token once it does
+        // start. Any provider failure after this boundary is ambiguous: PostgreSQL may have
+        // committed before the acknowledgement or connection was lost.
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            throw new FeatureEditCommitOutcomeUnknownException(ex);
+        }
     }
 
     private static async Task RollbackIfNeededAsync(NpgsqlTransaction transaction)
@@ -780,7 +831,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("has completed", StringComparison.Ordinal))
         {
-            // The transaction was already completed by the provider. Treat that as a successful rollback.
+            // The provider has already completed the transaction, so there is nothing left to
+            // roll back. Commit-time callers retain their separate unknown-outcome classification.
         }
     }
 
