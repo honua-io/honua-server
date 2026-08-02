@@ -8,9 +8,11 @@ For raster serving and GP, [ADR-0071](0071-raster-execution-boundary.md) is the
 controlling engine and placement decision. This ADR's instruction to delegate
 heavy spatial transforms to PostGIS means "when capability, data locality, and
 the database resource/SLO budget permit." Raster work outside the synchronous
-request envelope but still inside the database budget uses the dedicated
-managed PostGIS profile; work outside the database budget uses the isolated
-native GDAL placement defined by ADR-0071. The GeoETL-specific rollout and
+request envelope uses the dedicated managed PostGIS profile only when all three
+gates pass. Work that misses the PostGIS capability or locality gate, or exceeds
+the database budget, uses the isolated native GDAL placement defined by ADR-0071
+only when that engine's capability, locality, and worker-budget gates pass;
+otherwise execution is refused. The GeoETL-specific rollout and
 worker names below remain historical decisions for GeoETL, not a universal
 raster topology.
 
