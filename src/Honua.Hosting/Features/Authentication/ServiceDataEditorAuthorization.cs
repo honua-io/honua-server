@@ -180,7 +180,8 @@ internal static class ServiceDataEditorAuthorization
 
             var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
             var user = context.User!; // non-null: authenticated guard above
-            if (IsAdmin(user, options) || HasGlobalDataEditorRole(user, options))
+            if (IsAdmin(user, options, context.RequestServices) ||
+                HasGlobalDataEditorRole(user, options, context.RequestServices))
             {
                 return AccessDecision.Allowed();
             }
@@ -228,17 +229,17 @@ internal static class ServiceDataEditorAuthorization
 
         var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
 
-        if (IsAdmin(context.User, options))
+        if (IsAdmin(context.User, options, context.RequestServices))
         {
             return Task.FromResult(AccessDecision.Allowed());
         }
 
-        if (HasGlobalDataEditorRole(context.User, options))
+        if (HasGlobalDataEditorRole(context.User, options, context.RequestServices))
         {
             return Task.FromResult(AccessDecision.Allowed());
         }
 
-        if (HasServiceScopedRole(context.User, options, serviceId))
+        if (HasServiceScopedRole(context.User, options, serviceId, context.RequestServices))
         {
             return Task.FromResult(AccessDecision.Allowed());
         }
@@ -302,7 +303,7 @@ internal static class ServiceDataEditorAuthorization
 
         var principal = context.User;
         var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
-        var roles = EnumerateRoles(principal, options).ToList();
+        var roles = RbacRoleClaims.Enumerate(principal, options, context.RequestServices);
         if (roles.Count == 0)
         {
             return false;
@@ -386,58 +387,42 @@ internal static class ServiceDataEditorAuthorization
         }
 
         var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
-        return IsAdmin(context.User, options);
+        return IsAdmin(context.User, options, context.RequestServices);
     }
 
-    private static bool IsAdmin(ClaimsPrincipal principal, RbacOptions options)
-    {
-        return EnumerateRoles(principal, options)
-            .Any(role => string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool IsAdmin(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        IServiceProvider serviceProvider)
+        => RbacRoleClaims.IsAdmin(principal, options, serviceProvider);
 
-    private static bool HasGlobalDataEditorRole(ClaimsPrincipal principal, RbacOptions options)
+    private static bool HasGlobalDataEditorRole(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        IServiceProvider serviceProvider)
     {
         if (options.DataEditorRoles.Length == 0)
         {
             return false;
         }
 
-        return EnumerateRoles(principal, options).Any(role =>
+        return RbacRoleClaims.Enumerate(principal, options, serviceProvider).Any(role =>
             options.DataEditorRoles.Any(allowed =>
                 string.Equals(allowed?.Trim(), role, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private static bool HasServiceScopedRole(ClaimsPrincipal principal, RbacOptions options, string serviceId)
+    private static bool HasServiceScopedRole(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        string serviceId,
+        IServiceProvider serviceProvider)
     {
         var prefix = GetServiceScopedRolePrefix(options);
 
         var expected = string.Concat(prefix, serviceId);
 
-        return EnumerateRoles(principal, options)
+        return RbacRoleClaims.Enumerate(principal, options, serviceProvider)
             .Any(role => string.Equals(role, expected, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static IEnumerable<string> EnumerateServiceScopedRoleServiceIds(ClaimsPrincipal principal, RbacOptions options)
-    {
-        var prefix = GetServiceScopedRolePrefix(options);
-        foreach (var role in EnumerateRoles(principal, options))
-        {
-            if (!role.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (role.Length <= prefix.Length)
-            {
-                continue;
-            }
-
-            var serviceId = role[prefix.Length..].Trim();
-            if (serviceId.Length > 0)
-            {
-                yield return serviceId;
-            }
-        }
     }
 
     private static string GetServiceScopedRolePrefix(RbacOptions options)
@@ -447,20 +432,4 @@ internal static class ServiceDataEditorAuthorization
             : options.DataEditorServicePrefix.Trim();
     }
 
-    private static IEnumerable<string> EnumerateRoles(ClaimsPrincipal principal, RbacOptions options)
-    {
-        foreach (var claim in principal.FindAll(ClaimTypes.Role).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
-        {
-            yield return claim.Value;
-        }
-
-        var roleClaimType = options.EffectiveRoleClaimType;
-        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
-        {
-            foreach (var claim in principal.FindAll(roleClaimType).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
-            {
-                yield return claim.Value;
-            }
-        }
-    }
 }

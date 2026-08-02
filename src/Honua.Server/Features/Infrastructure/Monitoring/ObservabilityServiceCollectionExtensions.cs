@@ -22,12 +22,15 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal static class ObservabilityServiceCollectionExtensions
 {
-    public static IServiceCollection AddObservability(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddObservability(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool redisCacheEntitled = false)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        ConfigureOutputCaching(services, configuration);
+        ConfigureOutputCaching(services, configuration, redisCacheEntitled);
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
@@ -124,7 +127,10 @@ internal static class ObservabilityServiceCollectionExtensions
     }
 
     // Configure output caching for metadata endpoints
-    private static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration)
+    internal static void ConfigureOutputCaching(
+        IServiceCollection services,
+        IConfiguration configuration,
+        bool redisCacheEntitled = false)
     {
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
@@ -633,7 +639,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         var redisConnectionString = configuration.GetConnectionString("redis")
             ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (!string.IsNullOrWhiteSpace(redisConnectionString))
+        if (redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString))
         {
             var cacheKeyPrefix = configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
             services.AddStackExchangeRedisOutputCache(options =>

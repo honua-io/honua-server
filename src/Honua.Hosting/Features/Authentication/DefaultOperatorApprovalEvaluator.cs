@@ -11,7 +11,8 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class DefaultOperatorApprovalEvaluator(
     IOptions<OperatorApprovalOptions> options,
     IOptions<RbacOptions> rbacOptions,
-    ILogger<DefaultOperatorApprovalEvaluator> logger) : IOperatorApprovalEvaluator
+    ILogger<DefaultOperatorApprovalEvaluator> logger,
+    IServiceProvider? serviceProvider = null) : IOperatorApprovalEvaluator
 {
     public ApprovalRequirement Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
     {
@@ -80,22 +81,5 @@ internal sealed class DefaultOperatorApprovalEvaluator(
     }
 
     private bool IsAdmin(ClaimsPrincipal principal)
-    {
-        var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        foreach (var claim in principal.Claims)
-        {
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-
-            if (!isRoleClaim || string.IsNullOrWhiteSpace(claim.Value))
-                continue;
-
-            if (string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
+        => RbacRoleClaims.IsAdmin(principal, rbacOptions.Value, serviceProvider);
 }

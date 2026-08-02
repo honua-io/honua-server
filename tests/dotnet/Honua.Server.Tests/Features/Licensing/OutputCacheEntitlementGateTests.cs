@@ -10,6 +10,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Licensing;
@@ -90,6 +92,26 @@ public sealed class OutputCacheEntitlementGateTests
     }
 
     [UnitTest]
+    public void OutputCacheStore_RedisConfiguredWithoutRedisEntitlement_UsesLocalStore()
+    {
+        var store = ResolveOutputCacheStore(redisCacheEntitled: false);
+
+        store.GetType().Name.Should().NotContain(
+            "Redis",
+            "a Redis connection string must not bypass the caching.redis entitlement");
+    }
+
+    [UnitTest]
+    public void OutputCacheStore_RedisConfiguredWithRedisEntitlement_UsesRedisStore()
+    {
+        var store = ResolveOutputCacheStore(redisCacheEntitled: true);
+
+        store.GetType().Name.Should().Contain(
+            "Redis",
+            "the entitled Redis backend should replace only the local output-cache store");
+    }
+
+    [UnitTest]
     public void OutputCacheKey_SameEditionWithDifferentEntitlements_UsesDifferentFingerprint()
     {
         var first = BuildStatusContext(new LicenseStatus(
@@ -150,10 +172,32 @@ public sealed class OutputCacheEntitlementGateTests
         source.Should().NotContain(
             "IsOutputCacheEntitledAsync",
             "the boot-time capture is what froze the entitlement for the process lifetime");
+        source.Should().Contain(
+            "AddServerFeatures(builder.Configuration, redisCacheEntitled)",
+            "the Redis output-cache backend must receive the boot-time caching.redis decision");
     }
 
     private static bool IsOutputCacheEntitled(HttpContext context)
         => LicenseGate.HasLiveEntitlement(context.RequestServices, FeatureCatalog.OutputCacheKey);
+
+    private static IOutputCacheStore ResolveOutputCacheStore(bool redisCacheEntitled)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:redis"] = "localhost:6379",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        ObservabilityServiceCollectionExtensions.ConfigureOutputCaching(
+            services,
+            configuration,
+            redisCacheEntitled);
+
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOutputCacheStore>();
+    }
 
     private static string ResolveProgramPath()
     {
