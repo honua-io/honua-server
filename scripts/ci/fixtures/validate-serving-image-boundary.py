@@ -45,13 +45,18 @@ def assert_rejected(files: dict[str, bytes], expected: str) -> None:
         raise AssertionError(f"expected a '{expected}' violation, got {violations}")
 
 
-base = {"/app/Honua.Server": b"ELF fixture"}
+base = {"/app/Honua.Server": b"\x7fELF fixture"}
 assert_clean(base)
 assert_clean(base | {"/app/ProjNet.dll": b"managed CRS fixture"})
+assert_rejected({"/app/Honua.Server": b"#!/bin/sh\n"}, "not an ELF executable")
 assert_rejected(base | {"/usr/lib/libgdal.so.36": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/usr/bin/gdalinfo": b"fixture"}, "native raster CLI")
 assert_rejected(base | {"/app/OSGeo.GDAL.dll": b"fixture"}, ".NET/Python GDAL binding")
 assert_rejected(base | {"/app/MaxRev.Gdal.Core.dll": b"fixture"}, ".NET/Python GDAL binding")
+assert_rejected(
+    base | {"/usr/lib/python3/dist-packages/osgeo/_gdal.cpython-314-x86_64-linux-gnu.so": b"fixture"},
+    ".NET/Python GDAL binding",
+)
 assert_rejected(
     base | {"/lib/apk/db/installed": b"P:gdal\nV:3.12.0-r0\n"},
     "forbidden package 'gdal'",

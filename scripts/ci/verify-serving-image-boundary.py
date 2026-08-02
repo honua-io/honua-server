@@ -25,7 +25,7 @@ FORBIDDEN_PROJ_GEOS_LIBRARY = re.compile(
     re.IGNORECASE,
 )
 FORBIDDEN_BINDING = re.compile(
-    r"^(?:osgeo[._-])?(?:gdal|ogr|osr)(?:[._-](?:const|csharp|wrap|bindings?))?.*\.(?:dll|so|dylib|py)$",
+    r"^_?(?:osgeo[._-])?(?:gdal|ogr|osr)(?:[._-](?:const|array|numeric|csharp|wrap|bindings?))?.*\.(?:dll|so|dylib|py)$",
     re.IGNORECASE,
 )
 FORBIDDEN_EXECUTABLES = {
@@ -61,6 +61,12 @@ FORBIDDEN_EXECUTABLES = {
     "projinfo",
 }
 APP_MANIFEST_SUFFIXES = (".deps.json", ".nuspec")
+EXPECTED_WORKER_LABELS = {
+    "honua.runtime.profile": "native",
+    "honua.native.gdal.version": "3.13.1",
+    "honua.native.pdal.version": "2.10.2",
+    "honua.runtime.dotnet.version": "10.0.10",
+}
 
 
 def _normalise(name: str) -> str:
@@ -109,6 +115,9 @@ def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
                 entrypoint_seen = True
                 if member.mode & 0o111 == 0:
                     violations.append(f"native entrypoint is not executable: {entrypoint}")
+                extracted_entrypoint = archive.extractfile(member)
+                if extracted_entrypoint is None or extracted_entrypoint.read(4) != b"\x7fELF":
+                    violations.append(f"native entrypoint is not an ELF executable: {entrypoint}")
 
             if path == managed_entrypoint and member.isfile():
                 violations.append(f"managed server entrypoint is present: {managed_entrypoint}")
@@ -244,25 +253,34 @@ def verify_worker_image(image: str, redis_connection: str | None = None) -> list
     config = metadata.get("Config", {})
     labels = config.get("Labels") or {}
     violations: list[str] = []
-    if labels.get("honua.runtime.profile") != "native":
-        violations.append("worker label honua.runtime.profile must be 'native'")
+    for label, expected in EXPECTED_WORKER_LABELS.items():
+        if labels.get(label) != expected:
+            violations.append(f"worker label {label} must be '{expected}'")
     if config.get("Entrypoint") != ["dotnet", "Honua.Worker.Gdal.dll"]:
         violations.append(
             "worker image entrypoint must be ['dotnet', 'Honua.Worker.Gdal.dll']"
         )
+    if config.get("User") != "1001:1001":
+        violations.append("worker image must run as user 1001:1001")
 
-    command = """
+    command = f"""
 set -eu
 command -v gdalinfo >/dev/null
 command -v gdal_translate >/dev/null
 command -v gdalwarp >/dev/null
 command -v ogr2ogr >/dev/null
+gdalinfo --version | grep -F 'GDAL {EXPECTED_WORKER_LABELS["honua.native.gdal.version"]}'
 gdalinfo --formats | grep -qi netCDF
 gdalinfo --formats | grep -qi GRIB
 python3 -c 'from osgeo import gdal'
 command -v pdal >/dev/null
+pdal --version | grep -F 'pdal {EXPECTED_WORKER_LABELS["honua.native.pdal.version"]}'
 pdal --drivers | grep -qi readers.las
 pdal --drivers | grep -qi filters.reprojection
+! ldd "$(command -v pdal)" | grep -q 'not found'
+! ldd "$(readlink -f /opt/pdal/lib/libpdalcpp.so)" | grep -q 'not found'
+dotnet --list-runtimes | grep -F 'Microsoft.AspNetCore.App {EXPECTED_WORKER_LABELS["honua.runtime.dotnet.version"]}'
+dotnet --list-runtimes | grep -F 'Microsoft.NETCore.App {EXPECTED_WORKER_LABELS["honua.runtime.dotnet.version"]}'
 """.strip()
     result = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "/bin/sh", image, "-c", command],

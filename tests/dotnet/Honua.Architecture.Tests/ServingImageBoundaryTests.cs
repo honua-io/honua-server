@@ -186,6 +186,12 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("ldd \"$(command -v pdal)\"");
         dockerfile.Should().Contain("honua.native.gdal.version=\"${GDAL_VERSION}\"");
         dockerfile.Should().Contain("honua.native.pdal.version=\"${PDAL_VERSION}\"");
+        var verifier = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/verify-serving-image-boundary.py"));
+        verifier.Should().Contain("\"honua.native.gdal.version\": \"3.13.1\"");
+        verifier.Should().Contain("\"honua.native.pdal.version\": \"2.10.2\"");
+        verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"10.0.10\"");
+        verifier.Should().Contain("worker image must run as user 1001:1001");
+        verifier.Should().Contain("libpdalcpp.so");
         dockerfile.Split("--mount=type=cache,target=/root/.nuget/packages")
             .Should().HaveCount(3, "restore and publish must share the BuildKit NuGet cache");
     }
