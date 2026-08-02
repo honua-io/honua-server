@@ -302,7 +302,7 @@ public static class ToolboxTranslationValidator
 
     /// <summary>
     /// Decides which remedy the branch-requirement issues may honestly recommend, by testing
-    /// whether any discriminator has every one of its declared values covered by some gap.
+    /// whether every assignment in the finite discriminator domain is covered by some gap.
     /// </summary>
     private static (string Remedy, bool ExhaustsAllBranches) DescribeBranchRemedy(
         ProcessDefinition definition,
@@ -311,54 +311,100 @@ public static class ToolboxTranslationValidator
         const string MapOrConstrain =
             "At least one admissible branch is not covered by these gaps, so map it (or constrain the source to an uncovered branch) to certify this tool.";
         const string MapOnly =
-            "Every admissible value of the discriminator has an unmapped requirement, so constraining the source value cannot certify this tool - the parameter must be mapped or defaulted.";
+            "Every admissible discriminator assignment has an unmapped requirement, so constraining the source value cannot certify this tool - the parameter must be mapped or defaulted.";
         const string MapUnqualified =
             "Map it, or constrain the source value to a branch that does not require it, to certify this tool.";
 
-        var covered = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var coveredBranches = new List<Dictionary<string, string>>(requirements.Count);
+        var discriminatorNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var requirement in requirements)
         {
             var assignments = requirement.Branch.Split(',', StringSplitOptions.RemoveEmptyEntries);
-
-            // A branch naming several discriminators at once only covers that COMBINATION, so
-            // it says nothing definite about any single discriminator's value. Rather than
-            // over- or under-claiming from a partial reading, drop to the unqualified remedy.
-            if (assignments.Length != 1)
+            if (assignments.Length == 0)
             {
                 return (MapUnqualified, false);
             }
 
-            var separator = assignments[0].IndexOf('=', StringComparison.Ordinal);
-            if (separator <= 0)
+            var branch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var branchAssignment in assignments)
             {
-                return (MapUnqualified, false);
+                var separator = branchAssignment.IndexOf('=', StringComparison.Ordinal);
+                if (separator <= 0)
+                {
+                    return (MapUnqualified, false);
+                }
+
+                var name = branchAssignment[..separator].Trim();
+                var value = branchAssignment[(separator + 1)..].Trim();
+                if (name.Length == 0 || value.Length == 0 || !branch.TryAdd(name, value))
+                {
+                    return (MapUnqualified, false);
+                }
+
+                discriminatorNames.Add(name);
             }
 
-            var name = assignments[0][..separator].Trim();
-            var value = assignments[0][(separator + 1)..].Trim();
-
-            if (!covered.TryGetValue(name, out var values))
-            {
-                values = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                covered[name] = values;
-            }
-
-            values.Add(value);
+            coveredBranches.Add(branch);
         }
 
-        foreach (var (name, values) in covered)
+        var domains = new List<(string Name, IReadOnlyList<string> Values)>(discriminatorNames.Count);
+        long assignmentCount = 1;
+        foreach (var name in discriminatorNames)
         {
             // Only a declared domain makes "every admissible value" a decidable claim; without
             // AllowedValues the branch space is open and no exhaustion can be proven.
-            if (FindParameter(definition, name)?.AllowedValues is { Count: > 0 } allowed &&
-                allowed.All(values.Contains))
+            if (FindParameter(definition, name)?.AllowedValues is not { Count: > 0 } allowed)
             {
-                return (MapOnly, true);
+                return (MapUnqualified, false);
             }
+
+            if (coveredBranches.Any(branch =>
+                    branch.TryGetValue(name, out var value) &&
+                    !allowed.Contains(value, StringComparer.OrdinalIgnoreCase)))
+            {
+                return (MapUnqualified, false);
+            }
+
+            assignmentCount *= allowed.Count;
+            if (assignmentCount > 4096)
+            {
+                // Catalog domains are normally tiny. Refuse an exponential proof rather than
+                // overclaiming when an extension publishes an unexpectedly large product.
+                return (MapUnqualified, false);
+            }
+
+            domains.Add((name, allowed));
         }
 
-        return (MapOrConstrain, false);
+        var assignment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return EveryAssignmentCovered(0)
+            ? (MapOnly, true)
+            : (MapOrConstrain, false);
+
+        bool EveryAssignmentCovered(int domainIndex)
+        {
+            if (domainIndex == domains.Count)
+            {
+                return coveredBranches.Any(branch => branch.All(pair =>
+                    assignment.TryGetValue(pair.Key, out var value) &&
+                    string.Equals(value, pair.Value, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            var (name, values) = domains[domainIndex];
+            foreach (var value in values)
+            {
+                assignment[name] = value;
+                if (!EveryAssignmentCovered(domainIndex + 1))
+                {
+                    assignment.Remove(name);
+                    return false;
+                }
+            }
+
+            assignment.Remove(name);
+            return true;
+        }
     }
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)

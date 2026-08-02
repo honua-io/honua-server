@@ -395,6 +395,61 @@ public sealed class ToolboxTranslationValidatorTests
     }
 
     [Fact]
+    public void Validate_MultiDiscriminatorGapsCoverEveryAssignment_IsUnsupported()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "MultiBranchTool",
+                "test.multi-branching",
+                Mapping("in_layer", "input"),
+                Mapping("algo", "algorithm"),
+                Mapping("run_mode", "mode"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm", "mode"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=a", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=b", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=a", "k", "Step is missing 'k'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=b", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(
+            ToolboxToolClassifications.Unsupported,
+            "every Cartesian assignment has at least one unmapped requirement");
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("Every admissible discriminator assignment"));
+    }
+
+    [Fact]
+    public void Validate_MultiDiscriminatorGapsLeaveOneAssignmentClear_IsPartiallyTranslated()
+    {
+        var report = ToolboxTranslationValidator.Validate(
+            Manifest(Tool(
+                "MultiBranchTool",
+                "test.multi-branching",
+                Mapping("in_layer", "input"),
+                Mapping("algo", "algorithm"),
+                Mapping("run_mode", "mode"))),
+            new FakeCatalog(),
+            new FakeProbe(
+                ["input", "algorithm", "mode"],
+                branchRequirements:
+                [
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=a", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=dbscan,mode=b", "eps", "Step is missing 'eps'."),
+                    new ProcessBranchRequirement("algorithm=kmeans,mode=a", "k", "Step is missing 'k'.")
+                ]));
+
+        var tool = report.Tools.Single();
+        tool.Classification.Should().Be(ToolboxToolClassifications.PartiallyTranslated);
+        tool.Issues.Should().OnlyContain(issue =>
+            issue.Message.Contains("At least one admissible branch is not covered"));
+    }
+
+    [Fact]
     public void Validate_ProbeReportsBranchRequirementForAMappedParameter_IsIgnored()
     {
         // A mapped parameter is supplied at submit time on every branch, so a stale requirement
@@ -600,6 +655,31 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
+        private static readonly ProcessDefinition MultiBranching = new()
+        {
+            ProcessId = "test.multi-branching",
+            Title = "Multi Branching",
+            Description = "Test process with a finite two-discriminator Cartesian domain.",
+            Category = "test",
+            Parameters =
+            [
+                Parameter("input", ProcessParameterValueType.Text, required: true),
+                Parameter(
+                    "algorithm",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["dbscan", "kmeans"]),
+                Parameter(
+                    "mode",
+                    ProcessParameterValueType.Text,
+                    required: true,
+                    allowedValues: ["a", "b"]),
+                Parameter("eps", ProcessParameterValueType.FloatingPoint, required: false),
+                Parameter("k", ProcessParameterValueType.WholeNumber, required: false)
+            ],
+            OutputArtifactKinds = []
+        };
+
         public ProcessDefinition? GetProcess(string processId) => processId switch
         {
             "test.buffer" => Buffer,
@@ -607,11 +687,12 @@ public sealed class ToolboxTranslationValidatorTests
             "test.optional-only" => OptionalOnly,
             "test.branching" => Branching,
             "test.partial-branching" => PartialBranching,
+            "test.multi-branching" => MultiBranching,
             _ => null
         };
 
         public IReadOnlyList<ProcessDefinition> ListProcesses() =>
-            [Buffer, Simplify, OptionalOnly, Branching, PartialBranching];
+            [Buffer, Simplify, OptionalOnly, Branching, PartialBranching, MultiBranching];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) =>
             ListProcesses().Where(definition => definition.Category == category).ToArray();
