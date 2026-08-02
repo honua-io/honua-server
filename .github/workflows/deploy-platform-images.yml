@@ -332,11 +332,28 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
-      # Restrict SARIF generation to HIGH/CRITICAL so the per-image category in the
-      # GitHub Security tab only carries actionable findings. The SARIF uploaded below
-      # is produced by this filtered run, so lower severities are intentionally not
-      # retained by this workflow; re-introduce them by removing `--severity` here.
-      - name: Run Trivy vulnerability scanner
+      # Two passes over the same image, because "what is worth paging on" and
+      # "what is worth recording" are different questions (honua-server#3036):
+      #
+      #   1. Actionable -> GitHub Security tab. HIGH/CRITICAL *with an upstream fix
+      #      available* (`--ignore-unfixed`). This is the only lane that raises code
+      #      scanning alerts, so it is restricted to findings this repo can actually
+      #      close by bumping a package or a base image. It matches the posture the
+      #      blocking CI gate already uses ("Trivy image scan (full CI, HIGH/CRITICAL,
+      #      fixed only)" in ci.yml, `ignore-unfixed: true`); the per-image SARIF was
+      #      previously the one lane that did *not*, which is how distro won't-fix
+      #      records came to be ~99% of this repo's open scan volume and drowned out
+      #      genuinely new criticals.
+      #   2. Inventory -> build artifact. The same severities with NO
+      #      `--ignore-unfixed`, so nothing is hidden. A vulnerability whose distro
+      #      has not shipped a fix stays fully recorded here, and moves into pass 1
+      #      (and therefore onto the Security tab) the moment upstream publishes one.
+      #
+      # Neither pass honours `.trivyignore`. That file includes advisories suppressed
+      # because no upstream fix exists: applying it to pass 1 would keep those findings
+      # hidden after a fix ships, while applying it to pass 2 would make the inventory
+      # incomplete. Both passes must therefore rely only on their explicit filters.
+      - name: Run Trivy vulnerability scanner (actionable, fixed only)
         shell: bash
         env:
           SARIF_OUTPUT: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
@@ -353,8 +370,34 @@ jobs:
             --scanners vuln \
             --skip-version-check \
             --severity HIGH,CRITICAL \
+            --ignore-unfixed \
             --format sarif \
             --output "/work/$SARIF_OUTPUT" \
+            "$SCAN_LOCAL"
+
+      # Deliberately NO --ignorefile in either pass. Trivy excludes anything the ignore file
+      # names, including after a fix ships, so applying it here would make the inventory
+      # incomplete and applying it above would defeat the automatic move into actionable SARIF.
+      - name: Run Trivy vulnerability scanner (full inventory, including unfixed)
+        if: always() && steps.scan_prep.outcome == 'success'
+        shell: bash
+        env:
+          INVENTORY_OUTPUT: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}.json
+          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$TRIVY_CACHE_DIR"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" \
+            -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --skip-version-check \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output "/work/$INVENTORY_OUTPUT" \
             "$SCAN_LOCAL"
 
       - name: Upload Trivy scan results to GitHub Security
@@ -363,6 +406,14 @@ jobs:
         with:
           sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
+
+      - name: Upload Trivy unfixed-inclusive inventory
+        uses: actions/upload-artifact@v7
+        if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
+        with:
+          name: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}
+          path: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}.json
+          retention-days: 90
 
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest

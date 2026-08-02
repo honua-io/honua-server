@@ -137,8 +137,10 @@ internal readonly record struct GeoTiffGeoreferencing
         && double.IsFinite(PixelSizeX) && PixelSizeX > 0
         && double.IsFinite(PixelSizeY) && PixelSizeY > 0
         && double.IsFinite(OriginX) && double.IsFinite(OriginY)
-        // Guards the product overflowing to infinity even when both factors are finite.
-        && double.IsFinite(ExtentWidth) && double.IsFinite(ExtentHeight)
+        // Guards the product overflowing to infinity or underflowing to zero even
+        // when both factors are finite and positive.
+        && double.IsFinite(ExtentWidth) && ExtentWidth > 0
+        && double.IsFinite(ExtentHeight) && ExtentHeight > 0
         && CrsCode != 0;
 
     /// <summary>
@@ -313,6 +315,20 @@ internal readonly record struct GeoTiffGeoreferencing
     /// </summary>
     public string? DescribeMismatchAgainst(GeoTiffGeoreferencing source)
     {
+        // Keep this method total even when called outside the executor's normal
+        // preflight. NaN makes every ordered tolerance comparison false, while
+        // Infinity - Infinity produces NaN, so relying on the comparisons below
+        // can otherwise turn malformed metadata into a reported match.
+        if (!source.IsGeoreferenced)
+        {
+            return "the source georeferencing metadata is not usable";
+        }
+
+        if (!IsGeoreferenced)
+        {
+            return "the output georeferencing metadata is not usable";
+        }
+
         if (source.CrsCode != 0 && CrsCode != source.CrsCode)
         {
             return string.Create(
@@ -508,7 +524,7 @@ internal readonly record struct GeoTiffGeoreferencing
                     _byteCountsCount = count;
                     break;
                 case TagModelPixelScale
-                    when type == TiffTypeDouble && count >= 2 && dataOffset + 16 <= bytes.Length:
+                    when type == TiffTypeDouble && count == 3 && dataOffset + 24 <= bytes.Length:
                     // Per the GeoTIFF spec these are POSITIVE magnitudes (the Y
                     // axis is implicitly negated for the north-up raster). A
                     // non-positive value is malformed, not something to Math.Abs
@@ -518,7 +534,8 @@ internal readonly record struct GeoTiffGeoreferencing
                     _hasScale = true;
                     break;
                 case TagModelTiepoint
-                    when type == TiffTypeDouble && count >= 6 && dataOffset + 48 <= bytes.Length:
+                    when type == TiffTypeDouble && count >= 6 && count % 6 == 0
+                        && dataOffset + 48 <= bytes.Length:
                     // (i, j, k, x, y, z) — the RASTER point (i, j) and the model
                     // point (x, y) it maps to. The raster point is usually (0, 0)
                     // but is not required to be: keep it so TryBuild can walk the
@@ -532,7 +549,7 @@ internal readonly record struct GeoTiffGeoreferencing
                     _hasTiepoint = true;
                     break;
                 case TagModelTransformation
-                    when type == TiffTypeDouble && count >= 16 && dataOffset + 128 <= bytes.Length:
+                    when type == TiffTypeDouble && count == 16 && dataOffset + 128 <= bytes.Length:
                     // Row-major 4x4: m00 m01 m02 m03 / m10 m11 m12 m13 / ...
                     // Signs are PRESERVED (m00 > 0 and m11 < 0 is the standard
                     // north-up orientation) and the off-diagonal m01/m10 terms are

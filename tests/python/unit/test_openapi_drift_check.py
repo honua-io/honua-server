@@ -121,7 +121,10 @@ class AdminDriftGateTests(unittest.TestCase):
         cls.config = admin_config()
         cls.document = MODULE.load_spec(cls.config)
         cls.registry = MODULE.load_registry_endpoints()
-        cls.declared = MODULE.load_undocumented_routes(cls.config)
+        # The gate's exemption set is the sidecar declaration plus the derived
+        # 405 responders; check against the same union main() uses.
+        declared, derived = MODULE.resolve_exempt_routes(cls.config, cls.registry)
+        cls.declared = declared | derived
 
     def _check(self, registry=None, document=None, declared=None):
         return MODULE.check_endpoint_cross_reference(
@@ -209,6 +212,75 @@ class AdminDriftGateTests(unittest.TestCase):
         drifts = self._check(document=document)
         self.assertEqual(categories(drifts), ["missing-in-code"])
         self.assertEqual(drifts[0].operation_id, "ghost")
+
+
+class DeriveMethodNotAllowedRoutesTests(unittest.TestCase):
+    """The 405-responder exclusion is computed from source, not hand-declared
+    (honua-server#3063). These prove the derivation is real, scoped, and that
+    the sidecar no longer duplicates it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.derived = MODULE.derive_method_not_allowed_routes(("/api/v1/admin",))
+        cls.registry = MODULE.normalize_registry(MODULE.load_registry_endpoints())
+
+    def test_DeriveMethodNotAllowedRoutes_AdminSurface_ReturnsRegisteredResponders(self):
+        self.assertNotEqual(self.derived, set(), "derivation found no responders")
+        unregistered = self.derived - self.registry
+        self.assertEqual(
+            unregistered,
+            set(),
+            f"derived routes must exist in EndpointRegistry: {sorted(unregistered)}",
+        )
+
+    def test_DeriveMethodNotAllowedRoutes_AdminSurface_StaysWithinProtocolPaths(self):
+        outside = {
+            path for _method, path in self.derived
+            if not path.startswith("/api/v1/admin")
+        }
+        self.assertEqual(outside, set(), f"derivation leaked outside the admin surface: {sorted(outside)}")
+
+    def test_DeriveMethodNotAllowedRoutes_PrimaryVerb_IsNotExempted(self):
+        # /config, /openapi.json and /connections/{id}/tables are GET-primary with
+        # four 405 responders each. Exempting the primary verb would let the real
+        # operation vanish from the bundle unnoticed.
+        for path in (
+            "/api/v1/admin/config",
+            "/api/v1/admin/openapi.json",
+            "/api/v1/admin/connections/{id}/tables",
+        ):
+            self.assertNotIn(("get", path), self.derived)
+            for verb in ("post", "put", "delete", "patch"):
+                self.assertIn((verb, path), self.derived)
+
+    def test_DeriveMethodNotAllowedRoutes_PostPrimaryRoute_ExemptsGet(self):
+        # /import/preview is POST-primary, so GET is the responder and POST is not.
+        self.assertIn(("get", "/api/v1/admin/import/preview"), self.derived)
+        self.assertNotIn(("post", "/api/v1/admin/import/preview"), self.derived)
+
+    def test_DeriveMethodNotAllowedRoutes_OtherProtocolSurface_IsNotDerived(self):
+        # HealthEndpoints registers the same responder shape without a MapGroup;
+        # it must not be pulled into the admin spec's exemption set.
+        health = MODULE.derive_method_not_allowed_routes(("/healthz",))
+        self.assertEqual(health, set())
+
+    def test_Sidecar_NoLongerDeclaresMethodNotAllowedResponders(self):
+        config = admin_config()
+        document = json.loads(
+            (ROOT / config.undocumented_routes_path).read_text(encoding="utf-8")
+        )
+        self.assertNotIn(
+            "method-not-allowed-responder",
+            document["reasons"],
+            "405 responders are derived now; the reason code must not linger",
+        )
+        declared = MODULE.load_undocumented_routes(config)
+        overlap = declared & self.derived
+        self.assertEqual(
+            overlap,
+            set(),
+            f"sidecar duplicates derived 405 responders: {sorted(overlap)}",
+        )
 
 
 class FullDriftRunTests(unittest.TestCase):
