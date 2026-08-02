@@ -433,7 +433,21 @@ jobs:
         run: |
           set -euo pipefail
           for tag in $TAGS; do
-            docker buildx imagetools create -t "$tag" -t "${tag}-aot" \
+            repository="${tag%:*}"
+            tag_name="${tag##*:}"
+            case "$tag_name" in
+              nightly|trunk)
+                compatibility_tag="${repository}:${tag_name}-aot"
+                ;;
+              nightly-*)
+                compatibility_tag="${repository}:nightly-aot-${tag_name#nightly-}"
+                ;;
+              *)
+                echo "Unexpected AOT manifest tag: $tag" >&2
+                exit 1
+                ;;
+            esac
+            docker buildx imagetools create -t "$tag" -t "$compatibility_tag" \
               "${tag}-amd64" "${tag}-arm64"
           done
 

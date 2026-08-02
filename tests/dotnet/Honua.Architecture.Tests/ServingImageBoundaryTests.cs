@@ -56,6 +56,8 @@ public sealed class ServingImageBoundaryTests
             "both generic and Lambda AOT digests must be inspected before their manifests are published");
         nightly.Should().Contain("id: build", Exactly.Twice(),
             "both AOT builds expose the immutable digest consumed by their verifier");
+        nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
+            "dated and SHA AOT compatibility tags must retain their established infix naming");
     }
 
     [ArchitectureTest]
