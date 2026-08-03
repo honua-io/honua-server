@@ -334,8 +334,8 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         if (disabledFormats.Length > 0)
         {
             throw new InvalidOperationException(
-                "GdalWorker:AllowedRasterInputFormats enables format(s) whose GDAL drivers "
-                + $"are all disabled by GdalWorker:Hardening:SkipDrivers: {string.Join(", ", disabledFormats)}.");
+                $"GdalWorker:AllowedRasterInputFormats enables format(s) {string.Join(", ", disabledFormats)} "
+                + "whose GDAL drivers are all disabled by GdalWorker:Hardening:SkipDrivers.");
         }
 
         var inputMediaTypes = formats
