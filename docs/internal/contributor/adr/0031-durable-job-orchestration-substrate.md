@@ -63,10 +63,16 @@ existing direct transitions.
 
 The `Running` to `Finalizing` handoff is a conditional job-store update. It
 compares the expected record version, current execution claim, attempt
-identifier, and fencing token before changing the publication phase. A stale
-attempt cannot enter `Finalizing`, release the current execution claim, or
-publish; only the winning update may stop its execution heartbeat and transfer
-recovery ownership to the publication lease.
+identifier, fencing token, and absence of `CancellationRequestedAt` before
+changing the publication phase. A stale or already-cancelled attempt cannot
+enter `Finalizing`, release the current execution claim, or publish; only the
+winning update may stop its execution heartbeat and transfer recovery ownership
+to the publication lease. If the same compare-and-set observes a pending
+cancellation, the coordinator instead records requested status `Cancelled`,
+enters `Terminalizing`, references the prepared output set, and transfers
+recovery to a new publication-lease generation. It never starts sink commits or
+passes through `Finalizing`; the output reconciler aborts the intents before the
+canonical job becomes `Cancelled`.
 
 Cancellation during `Finalizing` is also a conditional job-store transition.
 It compares the expected record version, canonical `Running` status,

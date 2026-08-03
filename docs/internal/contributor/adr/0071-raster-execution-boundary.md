@@ -166,8 +166,12 @@ job to canonical status `Running` with
 created before dispatch as described below; the job-store transition persists
 an immutable reference to that already-durable intent. It is a compare-and-set
 on the expected job record version, current execution claim, attempt
-identifier, and fencing token. It does not claim an atomic transaction across
-the job store and sink.
+identifier, fencing token, and absence of a pending cancellation. If
+`CancellationRequestedAt` is already present, the same conditional handoff
+enters `Terminalizing` with requested status `Cancelled`, binds the prepared
+output set to the current attempt for abort reconciliation, advances the
+publication-lease generation, and performs no sink commit. The ordinary
+handoff does not claim an atomic transaction across the job store and sink.
 
 The same job-store compare-and-set freezes a job-wide output-set manifest to
 that winning attempt. The manifest enumerates every required logical output
