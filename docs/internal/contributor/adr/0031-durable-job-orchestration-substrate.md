@@ -52,7 +52,10 @@ either phase the job admits no new execution and is excluded from execution
 heartbeat and timeout expiry as well as requeue. During terminalization the record also persists
 the requested terminal status (`Failed` or `Cancelled`). The coordinator
 changes the canonical status only after every sink intent is committed or
-aborted. Jobs without output intents keep the existing direct transitions.
+aborted. Success additionally requires the job-wide output-set manifest from
+ADR-0071 to be `Complete` for one winning attempt; individual committed sink
+records are not projected into `ArtifactReferences` before that point. Jobs
+without output intents keep the existing direct transitions.
 
 The `Running` to `Finalizing` handoff is a conditional job-store update. It
 compares the expected record version, current execution claim, attempt

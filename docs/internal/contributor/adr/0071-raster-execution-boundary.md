@@ -169,6 +169,18 @@ on the expected job record version, current execution claim, attempt
 identifier, and fencing token. It does not claim an atomic transaction across
 the job store and sink.
 
+The same job-store compare-and-set freezes a job-wide output-set manifest to
+that winning attempt. The manifest enumerates every required logical output
+and its sink intent/version. Individual sinks may then commit sequentially,
+but a partial commit leaves the job in `Finalizing`; the output reconciler must
+resume the same winning attempt and no replacement execution is eligible. The
+manifest becomes `Complete` only after every required output and registration
+is durably committed under that attempt's fence. Result packages and artifact
+readers expose none of the set until that completion transition succeeds, so a
+successful result can never combine outputs from different attempts. If the
+set cannot be completed, the job terminalizes without publishing a mixed or
+partial result.
+
 A stale attempt is rejected without changing the phase or releasing the
 current claim and may not publish its staged output. Only the winning
 job-store compare-and-set permits the coordinator to stop that attempt's
@@ -203,6 +215,15 @@ a layer.
 - Automatic retries stay on the selected engine and placement and occur only
   for classified retryable failures. They append a new attempt record and reuse
   a stable idempotency key.
+- Every job with declared outputs owns a durable output-set manifest keyed by
+  job. Before dispatch it records the complete required logical-output set and
+  references each prepared sink intent. The attempt-fenced transition to
+  `Finalizing` conditionally freezes that manifest to one winning attempt. A
+  later attempt may replace a prepared manifest only before `Finalizing` and
+  only after every required uncommitted sink intent has been advanced to its
+  fence; failure to advance any member prevents dispatch. Once frozen, partial
+  sink success is publication-recovery work for the same attempt, never a
+  reason to execute another attempt.
 - Every output sink owns a durable commit record keyed by job and logical
   output. The record contains the current attempt identifier, fencing token,
   idempotency key, immutable artifact locator, and publication state. Before
@@ -224,12 +245,13 @@ a layer.
   intent therefore changes its ETag before the next attempt runs, so a stale
   attempt cannot publish. Only the coordinator may write the stable marker;
   worker credentials permit writes only under the attempt-scoped staging key.
-  Readers expose only the immutable artifact named by a committed marker.
-  Cross-store catalog registration follows that authoritative marker and is
-  idempotently reconciled to the same winner; it must not pretend that an
-  object-store and database transaction is atomic. A cross-service read of
-  Redis followed by an unconditional copy, marker update, or catalog write is
-  not an acceptable fencing protocol.
+  The reconciler may resolve the immutable artifact named by a committed
+  marker, but public/result readers expose it only through a `Complete`
+  job-wide output-set manifest. Cross-store catalog registration follows that
+  authoritative marker and is idempotently reconciled to the same winner; it
+  must not pretend that an object-store and database transaction is atomic. A
+  cross-service read of Redis followed by an unconditional copy, marker
+  update, or catalog write is not an acceptable fencing protocol.
 - Repeating commit with the same current token and idempotency key returns the
   existing result. A different or stale token cannot replace it. Losing
   attempt-scoped artifacts remain uncommitted for policy-driven cleanup.
