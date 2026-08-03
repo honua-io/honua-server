@@ -78,6 +78,7 @@
   - [Monitoring](guides/deploy/monitoring.md)
   - [Backup & restore](guides/deploy/backup-and-restore.md)
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
+  - [Raster storage capacity planning](guides/deploy/raster-storage-capacity-planning.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
 - Migrate

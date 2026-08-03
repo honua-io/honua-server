@@ -76,6 +76,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0068](0068-optional-jwt-access-tokens-and-introspection.md) | Optional JWT Access Tokens and RFC 7662 Introspection | Accepted | 2026-06 |
 | [0069](0069-studio-persistence-bridge-forms-analysis.md) | Bridge Forms and Analysis Persistence into the Studio Package Lifecycle | Accepted | 2026-07 |
 | [0071](0071-raster-execution-boundary.md) | PostGIS-First, Database-SLO-Aware Raster Execution Boundary | Accepted | 2026-08 |
+| [0072](0072-raster-storage-layout-policy.md) | Evidence-Gated Raster Storage Layouts | Accepted | 2026-08 |
 
 ## Template
 
