@@ -101,6 +101,38 @@ public sealed class DatabaseMigrationSafetyTests
             "integration hosts skip migrations, so their canonical seed must mirror migration 080");
     }
 
+    [ArchitectureTest]
+    public void ServerSeed_ShouldMirror_RasterFunctionDefinitionImmutabilitySchema()
+    {
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            projectRoot,
+            "src",
+            "Honua.Server",
+            "Migrations",
+            "092_CreateRasterFunctionDefinitions.sql"));
+        var seed = File.ReadAllText(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed", "server.yaml"));
+        var requiredFragments = new[]
+        {
+            "CREATE TABLE IF NOT EXISTS honua.raster_function_definitions",
+            "CREATE TABLE IF NOT EXISTS honua.raster_function_definition_versions",
+            "UNIQUE (tenant_id, function_name, idempotency_key)",
+            "expected_previous_version = version - 1",
+            "trg_raster_function_definition_versions_immutable",
+        };
+
+        foreach (var fragment in requiredFragments)
+        {
+            migration.Should().Contain(fragment);
+            seed.Should().Contain(fragment);
+        }
+
+        migration.Should().NotContain("INSERT INTO honua.raster_function_definition",
+            "persisting the schema must not seed or advertise executable raster functions");
+        seed.Should().NotContain("INSERT INTO honua.raster_function_definition",
+            "the integration seed must preserve the intentionally empty function catalog");
+    }
+
     // Delegates to the shared runtime classifier so the architecture gate and the runtime
     // migration-safety enforcement (MigrationSafetyClassifier) share one source of truth.
     private static IReadOnlyList<string> AnalyzePotentiallyBreakingChanges(string sql)

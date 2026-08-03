@@ -33,6 +33,9 @@ namespace Honua.Core.Features.Geoprocessing.Raster.Functions;
 [JsonSerializable(typeof(RasterFunctionCompositeNode))]
 [JsonSerializable(typeof(RasterReclassificationRule))]
 [JsonSerializable(typeof(Dictionary<string, RasterSourceDescriptor>))]
+[JsonSerializable(typeof(RasterFunctionCacheIdentity))]
+[JsonSerializable(typeof(RasterFunctionSourceCacheIdentity[]))]
+[JsonSerializable(typeof(int[]))]
 public sealed partial class RasterFunctionJsonContext : JsonSerializerContext;
 
 /// <summary>AOT-safe serialization and deterministic identity helpers.</summary>

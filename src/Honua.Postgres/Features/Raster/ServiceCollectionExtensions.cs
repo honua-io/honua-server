@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster.Functions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,11 @@ internal static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddPostgresRasterStore(this IServiceCollection services, string? schemaName = null)
     {
+        services.AddScoped<IRasterFunctionDefinitionStore>(provider =>
+            new PostgresRasterFunctionDefinitionStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaName));
+
         // Register the main raster store implementation
         services.AddScoped<IRasterStore>(provider =>
             new PostgresRasterStore(
