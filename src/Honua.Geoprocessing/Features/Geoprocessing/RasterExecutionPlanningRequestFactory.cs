@@ -9,7 +9,7 @@ namespace Honua.Geoprocessing;
 /// <summary>Builds metadata-only planner inputs from a validated single-step analysis plan.</summary>
 internal static class RasterExecutionPlanningRequestFactory
 {
-    private const long InlineDecodedExpansionFactor = 64;
+    private const long OpaquePayloadExpansionFactor = 64;
     private const long BytesPerSample = 8;
     private const long ScratchExpansionFactor = 2;
     private const long GdalGridDefaultDimension = 256;
@@ -72,23 +72,26 @@ internal static class RasterExecutionPlanningRequestFactory
         var sourceCount = legacy?.SourceCount ?? sources.Length;
         var bandCount = legacy?.BandCount ?? TrySumBands(sources);
         var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
-        var outputPixels = TryReadOutputPixels(step) ?? legacy?.DefaultOutputPixels ?? inputPixels;
+        var sampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
+        var outputPixels = TryReadOutputPixels(step);
+        if (outputPixels is null && !RequiresDerivedOutputGrid(step))
+        {
+            outputPixels = legacy?.DefaultOutputPixels ?? inputPixels;
+        }
+
         long? decodedBytes = legacy?.DecodedBytes;
 
         if (decodedBytes is null && inputPixels is { } pixels && bandCount is { } bands)
         {
-            decodedBytes = SaturatingMultiply(SaturatingMultiply(pixels, bands), BytesPerSample);
-        }
-        else if (decodedBytes is null && TryGetBoundedInlineBytes(step, sources) is { } inlineBytes)
-        {
-            bandCount ??= 1;
-            decodedBytes = SaturatingMultiply(inlineBytes, InlineDecodedExpansionFactor);
-            inputPixels ??= Math.Max(decodedBytes.Value / BytesPerSample, 1);
+            decodedBytes = SaturatingMultiply(SaturatingMultiply(pixels, bands), sampleBytes);
         }
 
-        if (decodedBytes is not null && outputPixels is { } output)
+        if (decodedBytes is not null && outputPixels is { } output && bandCount is { } outputBands)
         {
-            decodedBytes = Math.Max(decodedBytes.Value, SaturatingMultiply(output, BytesPerSample));
+            var outputBytes = SaturatingMultiply(
+                SaturatingMultiply(output, outputBands),
+                sampleBytes);
+            decodedBytes = Math.Max(decodedBytes.Value, outputBytes);
         }
 
         long? scratchBytes = decodedBytes is { } decoded
@@ -136,7 +139,7 @@ internal static class RasterExecutionPlanningRequestFactory
         {
             var pointBytes = TryGetEncodedPayloadBytes(ReadInput(step, "points"));
             long? expandedBytes = pointBytes is { } bytes
-                ? SaturatingMultiply(bytes, InlineDecodedExpansionFactor)
+                ? SaturatingMultiply(bytes, OpaquePayloadExpansionFactor)
                 : null;
             long? pointUnits = pointBytes is { } payloadBytes ? Math.Max(payloadBytes, 1) : null;
             return new LegacyRasterMetadata(
@@ -147,12 +150,23 @@ internal static class RasterExecutionPlanningRequestFactory
                 DefaultOutputPixels: SaturatingMultiply(GdalGridDefaultDimension, GdalGridDefaultDimension));
         }
 
-        var sourceBytes = TryGetEncodedPayloadBytes(ReadInput(step, "source"));
-        long? decodedBytes = sourceBytes is { } encodedBytes
-            ? SaturatingMultiply(encodedBytes, InlineDecodedExpansionFactor)
-            : null;
-        long? inputPixels = decodedBytes is { } decoded ? Math.Max(decoded / BytesPerSample, 1) : null;
-        return new LegacyRasterMetadata(1, 1, inputPixels, decodedBytes, null);
+        if (string.Equals(processId, "conversion.rasterize", StringComparison.Ordinal))
+        {
+            // The source is vector GeoJSON, not a compressed raster. Its bounded encoded length
+            // can conservatively represent input work, but the cell-size branch still leaves
+            // output dimensions incomplete until a worker derives them from the spatial envelope.
+            var vectorBytes = TryGetEncodedPayloadBytes(ReadInput(step, "source"));
+            long? expandedBytes = vectorBytes is { } bytes
+                ? SaturatingMultiply(bytes, OpaquePayloadExpansionFactor)
+                : null;
+            long? inputUnits = expandedBytes is { } decoded
+                ? Math.Max(decoded / BytesPerSample, 1)
+                : null;
+            return new LegacyRasterMetadata(1, 1, inputUnits, expandedBytes, null);
+        }
+
+        var source = ReadInput(step, "source");
+        return BuildRasterPayloadMetadata(string.IsNullOrWhiteSpace(source) ? [] : [source]);
     }
 
     private static LegacyRasterMetadata BuildRasterPayloadMetadata(string[] payloads)
@@ -162,22 +176,34 @@ internal static class RasterExecutionPlanningRequestFactory
             return new LegacyRasterMetadata(1, 1, null, null, null);
         }
 
-        long encodedBytes = 0;
+        long bandCount = 0;
+        long inputPixels = 0;
+        long decodedBytes = 0;
+        long sampleBytes = BytesPerSample;
         foreach (var payload in payloads)
         {
-            encodedBytes = SaturatingAdd(
-                encodedBytes,
-                TryGetEncodedPayloadBytes(payload) ?? 0);
+            if (!InlineRasterMetadataReader.TryReadBase64(payload, out var metadata))
+            {
+                return new LegacyRasterMetadata(payloads.Length, null, null, null, null);
+            }
+
+            var pixels = SaturatingMultiply(metadata.Width, metadata.Height);
+            bandCount = SaturatingAdd(bandCount, metadata.Bands);
+            inputPixels = SaturatingAdd(inputPixels, pixels);
+            sampleBytes = Math.Max(sampleBytes, metadata.SampleBytes);
+            decodedBytes = SaturatingAdd(
+                decodedBytes,
+                SaturatingMultiply(SaturatingMultiply(pixels, metadata.Bands), metadata.SampleBytes));
         }
 
-        var decodedBytes = SaturatingMultiply(encodedBytes, InlineDecodedExpansionFactor);
         var sourceCount = payloads.Length;
         return new LegacyRasterMetadata(
             SourceCount: sourceCount,
-            BandCount: sourceCount,
-            InputPixels: Math.Max(decodedBytes / BytesPerSample, 1),
+            BandCount: bandCount,
+            InputPixels: inputPixels,
             DecodedBytes: decodedBytes,
-            DefaultOutputPixels: null);
+            DefaultOutputPixels: null,
+            SampleBytes: sampleBytes);
     }
 
     private static string[] ReadSeparatedPayloads(AnalysisPlanStep step, string key)
@@ -253,9 +279,15 @@ internal static class RasterExecutionPlanningRequestFactory
         long total = 0;
         foreach (var source in sources)
         {
-            if (source is InlineRasterSourceDescriptor && source.Selection?.Bands.Count is not > 0)
+            if (source is InlineRasterSourceDescriptor inline
+                && source.Selection?.Bands.Count is not > 0)
             {
-                total = SaturatingAdd(total, 1);
+                if (!InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
+                {
+                    return null;
+                }
+
+                total = SaturatingAdd(total, metadata.Bands);
                 continue;
             }
 
@@ -280,38 +312,44 @@ internal static class RasterExecutionPlanningRequestFactory
         long total = 0;
         foreach (var source in sources)
         {
-            if (source.Selection?.PixelWindow is not { } window)
+            if (source.Selection?.PixelWindow is { } window)
+            {
+                total = SaturatingAdd(total, SaturatingMultiply(window.Width, window.Height));
+                continue;
+            }
+
+            if (source is not InlineRasterSourceDescriptor inline
+                || !InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
             {
                 return null;
             }
 
-            total = SaturatingAdd(total, SaturatingMultiply(window.Width, window.Height));
+            total = SaturatingAdd(total, SaturatingMultiply(metadata.Width, metadata.Height));
         }
 
         return total;
     }
 
-    private static long? TryGetBoundedInlineBytes(
-        AnalysisPlanStep step,
-        RasterSourceDescriptor[] sources)
+    private static long? TryMaxInlineSampleBytes(RasterSourceDescriptor[] sources)
     {
-        if (sources.Length > 0)
-        {
-            return sources.All(source => source is InlineRasterSourceDescriptor)
-                ? sources.Aggregate(
-                    0L,
-                    static (total, source) => SaturatingAdd(total, source.Content.SizeBytes))
-                : null;
-        }
-
-        if (!step.Inputs.TryGetValue("source", out var encoded) || string.IsNullOrWhiteSpace(encoded))
+        if (sources.Length == 0)
         {
             return null;
         }
 
-        // Metadata-only upper bound for legacy base64. Validation/worker decoding remains
-        // authoritative; the planner never allocates or decodes the payload.
-        return TryGetEncodedPayloadBytes(encoded);
+        long maximum = BytesPerSample;
+        foreach (var source in sources)
+        {
+            if (source is not InlineRasterSourceDescriptor inline
+                || !InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
+            {
+                return null;
+            }
+
+            maximum = Math.Max(maximum, metadata.SampleBytes);
+        }
+
+        return maximum;
     }
 
     private static long? TryReadOutputPixels(AnalysisPlanStep step)
@@ -330,6 +368,10 @@ internal static class RasterExecutionPlanningRequestFactory
 
         return null;
     }
+
+    private static bool RequiresDerivedOutputGrid(AnalysisPlanStep step)
+        => step.Inputs.TryGetValue("cellSize", out var cellSize)
+            && !string.IsNullOrWhiteSpace(cellSize);
 
     private static long? ResolveZoneCount(AnalysisPlanStep step)
     {
@@ -389,5 +431,6 @@ internal static class RasterExecutionPlanningRequestFactory
         long? BandCount,
         long? InputPixels,
         long? DecodedBytes,
-        long? DefaultOutputPixels);
+        long? DefaultOutputPixels,
+        long SampleBytes = RasterExecutionPlanningRequestFactory.BytesPerSample);
 }

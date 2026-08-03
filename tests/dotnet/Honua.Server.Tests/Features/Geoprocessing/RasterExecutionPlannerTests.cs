@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
@@ -13,6 +15,9 @@ public sealed class RasterExecutionPlannerTests
 {
     private readonly RasterExecutionPlanner _sut = new(
         CreateRegistry(),
+        NullLogger<RasterExecutionPlanner>.Instance);
+    private readonly RasterExecutionPlanner _builtInPlanner = new(
+        new RasterEngineCapabilityRegistry(),
         NullLogger<RasterExecutionPlanner>.Instance);
 
     [Fact]
@@ -292,11 +297,12 @@ public sealed class RasterExecutionPlannerTests
     [Fact]
     public void RequestFactory_AlternateLegacyRasterInputs_ProduceCompleteLocalNativeEstimates()
     {
+        var smallTiff = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1);
         AssertLegacyInputsUseLocal(
             "raster.mosaic",
             new Dictionary<string, string>
             {
-                ["sources"] = "AAAA|BBBB",
+                ["sources"] = $"{smallTiff}|{smallTiff}",
                 ["operator"] = "last",
             },
             expectedSourceCount: 2);
@@ -304,7 +310,7 @@ public sealed class RasterExecutionPlannerTests
             "raster.map-algebra",
             new Dictionary<string, string>
             {
-                ["sources"] = "AAAA|BBBB",
+                ["sources"] = $"{smallTiff}|{smallTiff}",
                 ["expression"] = "A+B",
             },
             expectedSourceCount: 2);
@@ -313,8 +319,8 @@ public sealed class RasterExecutionPlannerTests
             new Dictionary<string, string>
             {
                 ["index"] = "NDVI",
-                ["nir"] = "AAAA",
-                ["red"] = "BBBB",
+                ["nir"] = smallTiff,
+                ["red"] = smallTiff,
             },
             expectedSourceCount: 2);
         AssertLegacyInputsUseLocal(
@@ -333,13 +339,75 @@ public sealed class RasterExecutionPlannerTests
             "raster.zonal-statistics",
             new Dictionary<string, string>
             {
-                ["source"] = "AAAA",
+                ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
                 ["zones"] = "e30=",
             });
 
         request.Cost.ZoneCount.Should().Be(3,
             "the decoded-byte upper bound completes planning without trusting a nonexistent zoneCount input");
-        _sut.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void RequestFactory_HighlyCompressedTiff_UsesHeaderDimensionsAndOffloads()
+    {
+        var request = CreateLegacyRequest(
+            "gdal.gdalwarp",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(
+                    width: 20_000,
+                    height: 20_000,
+                    bands: 1,
+                    bitsPerSample: 128),
+                ["targetSrs"] = "3857",
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.InputPixels.Should().Be(400_000_000);
+        request.Cost.DecodedBytes.Should().Be(6_400_000_000);
+        request.Cost.ExpectedScratchBytes.Should().Be(12_800_000_000);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+    }
+
+    [Fact]
+    public void RequestFactory_UnrecognizedInlineRaster_DoesNotTrustEncodedSizeMultiplier()
+    {
+        var request = CreateLegacyRequest(
+            "gdal.gdalwarp",
+            new Dictionary<string, string>
+            {
+                ["source"] = "AAAA",
+                ["targetSrs"] = "3857",
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.DecodedBytes.Should().BeNull();
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.ReasonCode.Should().Be("native-remote-conservative");
+    }
+
+    [Fact]
+    public void RequestFactory_RasterizeCellSize_KeepsDerivedGridConservativeAndOffloads()
+    {
+        const string geoJson = """
+            {"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[10000,0],[10000,10000],[0,10000],[0,0]]]}}]}
+            """;
+        var request = CreateLegacyRequest(
+            "conversion.rasterize",
+            new Dictionary<string, string>
+            {
+                ["source"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(geoJson)),
+                ["burnValue"] = "1",
+                ["cellSize"] = "0.01",
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.OutputPixels.Should().BeNull();
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.Cost.UnknownInputs.Should().Contain("outputPixels");
     }
 
     private void AssertLegacyInputsUseLocal(
@@ -356,14 +424,15 @@ public sealed class RasterExecutionPlannerTests
         request.Cost.DecodedBytes.Should().NotBeNull();
         request.Cost.ExpectedScratchBytes.Should().NotBeNull();
         request.Cost.ExpectedDatabaseWork.Should().NotBeNull();
-        _sut.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
     }
 
     private static RasterExecutionPlanningRequest CreateLegacyRequest(
         string processId,
-        Dictionary<string, string> inputs)
+        Dictionary<string, string> inputs,
+        bool remoteBackendAvailable = false)
     {
-        var process = CreateRegistry().Find(processId)!;
+        var process = new RasterEngineCapabilityRegistry().Find(processId)!;
         var plan = new AnalysisPlan
         {
             PlanId = "plan-" + processId,
@@ -384,8 +453,40 @@ public sealed class RasterExecutionPlannerTests
             plan,
             process,
             new RasterExecutionPlannerOptions(),
-            remoteBackendAvailable: false,
-            remoteBackend: null);
+            remoteBackendAvailable,
+            remoteBackend: remoteBackendAvailable ? "aws-batch" : null);
+    }
+
+    private static string CreateTiffHeaderBase64(
+        int width,
+        int height,
+        int bands,
+        int bitsPerSample = 64)
+    {
+        var payload = new byte[62];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 4);
+        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: (uint)bitsPerSample);
+        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: (uint)bands);
+        return Convert.ToBase64String(payload);
+    }
+
+    private static void WriteTiffEntry(
+        byte[] payload,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 8), value);
     }
 
     private const long MiB = 1024L * 1024L;

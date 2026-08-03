@@ -228,6 +228,14 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__ImageryInference__DefaultModel` | *(unset)* | Fallback model reference when a job omits the `model` input. |
 | `Geoprocessing__ImageryInference__TimeoutSeconds` | `300` | Per-request delegation timeout (clamped to 1–3600). |
 
+Raster admission never loads GDAL into the web process. For inline TIFF/BigTIFF inputs it reads
+only a bounded header to obtain trusted dimensions and band count, then charges a conservative
+minimum of eight bytes per sample (increasing for wider declared types). Unrecognized raster
+headers and output grids whose dimensions depend on a
+spatial envelope (for example `conversion.rasterize` with `cellSize`) remain incomplete: they are
+isolated on an available remote native backend or refused, never admitted locally from an encoded-
+size compression guess.
+
 ## Related pages
 
 - [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.

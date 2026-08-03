@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -442,7 +443,7 @@ public sealed class GeoprocessingJobServiceTests
                     ProcessId = "gdal.gdalwarp",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["source"] = "AAAA",
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
                         ["targetSrs"] = "3857"
                     }
                 }
@@ -492,7 +493,7 @@ public sealed class GeoprocessingJobServiceTests
                     ProcessId = "gdal.gdalwarp",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["source"] = "AAAA",
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
                         ["targetSrs"] = "3857"
                     }
                 }
@@ -525,7 +526,7 @@ public sealed class GeoprocessingJobServiceTests
                 Arg.Any<RasterSourceReference>(),
                 Arg.Any<long>(),
                 Arg.Any<CancellationToken>())
-            .Returns(RasterSourceResolution.Success([1, 2, 3]));
+            .Returns(RasterSourceResolution.Success(CreateTiffHeader(width: 32, height: 16, bands: 1)));
         var planner = new RasterExecutionPlanner(
             new RasterEngineCapabilityRegistry(),
             NullLogger<RasterExecutionPlanner>.Instance);
@@ -569,7 +570,8 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.RasterExecution.Should().NotBeNull();
         job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
         job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.Inline);
-        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"].Should().Be("AQID");
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"]
+            .Should().Be(CreateTiffHeaderBase64(width: 32, height: 16, bands: 1));
         job.Audit.RequestFingerprint.Should().Be(referenceFingerprint);
         await resolver.Received(1).ResolveAsync(
             Arg.Any<RasterSourceReference>(),
@@ -3570,6 +3572,37 @@ public sealed class GeoprocessingJobServiceTests
         IntentId = "intent-1",
         Steps = [BufferStep("step-1")]
     };
+
+    private static string CreateTiffHeaderBase64(int width, int height, int bands)
+        => Convert.ToBase64String(CreateTiffHeader(width, height, bands));
+
+    private static byte[] CreateTiffHeader(int width, int height, int bands)
+    {
+        var payload = new byte[62];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 4);
+        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: (uint)bands);
+        return payload;
+    }
+
+    private static void WriteTiffEntry(
+        byte[] payload,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 8), value);
+    }
 
     private static AnalysisPlan CreateTypedRasterPlan(string parameterName) => new()
     {
