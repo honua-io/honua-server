@@ -53,6 +53,21 @@ public sealed class FeatureDataAccessCommitClassificationTests
     }
 
     [Fact]
+    public async Task CommitEditTransactionAsync_StatementCompletionUnknown_WrapsAmbiguousAcknowledgement()
+    {
+        var unknownCompletion = PostgresFailure(
+            "statement completion is unknown",
+            "ERROR",
+            PostgresErrorCodes.StatementCompletionUnknown);
+        var transaction = new StubDbTransaction(_ => Task.FromException(unknownCompletion));
+
+        var thrown = await Assert.ThrowsAsync<FeatureEditCommitOutcomeUnknownException>(
+            () => FeatureDataAccess.CommitEditTransactionAsync(transaction, CancellationToken.None));
+
+        thrown.InnerException.Should().BeSameAs(unknownCompletion);
+    }
+
+    [Fact]
     public async Task CommitEditTransactionAsync_ConnectionFailure_WrapsAmbiguousAcknowledgement()
     {
         var connectionFailure = new NpgsqlException("Connection was lost while awaiting COMMIT.");

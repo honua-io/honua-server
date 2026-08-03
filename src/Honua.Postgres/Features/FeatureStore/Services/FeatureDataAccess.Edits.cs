@@ -826,6 +826,7 @@ internal sealed partial class FeatureDataAccess
 
     private static bool IsConfirmedCommitRejection(PostgresException exception)
         => string.Equals(exception.InvariantSeverity, "ERROR", StringComparison.Ordinal) &&
+            !string.Equals(exception.SqlState, PostgresErrorCodes.StatementCompletionUnknown, StringComparison.Ordinal) &&
             !exception.SqlState.StartsWith("08", StringComparison.Ordinal) &&
             !exception.SqlState.StartsWith("57", StringComparison.Ordinal);
 
