@@ -94,6 +94,27 @@ public sealed class RasterEngineCapabilityRegistryTests
         Assert.Contains("SkipDrivers", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("GTiff", "surface.slope")]
+    [InlineData("COG", "conversion.raster-format")]
+    [InlineData("PNG", "conversion.raster-format")]
+    [InlineData("JPEG", "conversion.raster-format")]
+    [InlineData("GeoJSON", "conversion.polygonize")]
+    public void ConfiguredGdalRequiredOutputDriverSkipped_IsRejected(
+        string skippedDriver,
+        string affectedProcess)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+                ["TIFF"],
+                [skippedDriver]));
+
+        Assert.Contains(skippedDriver, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(affectedProcess, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("output driver", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cannot be advertised", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Estimate_UnknownMetadata_SaturatesAndRefusesRequestExecution()
     {

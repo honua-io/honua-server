@@ -338,11 +338,37 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                 + "whose GDAL drivers are all disabled by GdalWorker:Hardening:SkipDrivers.");
         }
 
+        var builtIns = BuildBuiltIns();
+        var disabledOutputDrivers = builtIns
+            .SelectMany(process => process.Engines
+                .Where(engine => engine.Engine == RasterEngine.GdalNative && engine.IsAvailable)
+                .SelectMany(engine => engine.Formats.OutputMediaTypes
+                    .Select(ToGdalRasterOutputDriver)
+                    .Where(driver => driver is not null)
+                    .Cast<string>()
+                    .Concat(AdditionalRequiredGdalOutputDrivers(process.ProcessId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(driver => (process.ProcessId, Driver: driver))))
+            .Where(requirement => skipped.Contains(requirement.Driver))
+            .OrderBy(requirement => requirement.Driver, StringComparer.Ordinal)
+            .ThenBy(requirement => requirement.ProcessId, StringComparer.Ordinal)
+            .ToArray();
+        if (disabledOutputDrivers.Length > 0)
+        {
+            var detail = string.Join(
+                ", ",
+                disabledOutputDrivers.Select(requirement =>
+                    $"{requirement.Driver} ({requirement.ProcessId})"));
+            throw new InvalidOperationException(
+                "GdalWorker:Hardening:SkipDrivers disables required raster output driver(s) "
+                + $"{detail}; the affected executor capabilities cannot be advertised.");
+        }
+
         var inputMediaTypes = formats
             .Select(format => format.MediaType)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        return BuildBuiltIns()
+        return builtIns
             .Select(process => process with
             {
                 Engines = process.Engines
@@ -616,6 +642,30 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     private static bool IsGdalRasterMediaType(string mediaType) => mediaType is
         "image/tiff" or "image/png" or "image/jpeg" or "image/jp2" or "image/gif"
         or "image/bmp" or "application/vnd.nitf" or "application/x-erdas-hfa";
+
+    private static string? ToGdalRasterOutputDriver(string mediaType) => mediaType switch
+    {
+        "image/tiff" => "GTiff",
+        "image/png" => "PNG",
+        "image/jpeg" => "JPEG",
+        "image/jp2" => "JP2OpenJPEG",
+        "image/gif" => "GIF",
+        "image/bmp" => "BMP",
+        "application/vnd.nitf" => "NITF",
+        "application/x-erdas-hfa" => "HFA",
+        "application/geo+json" => "GeoJSON",
+        _ => null,
+    };
+
+    private static IReadOnlyList<string> AdditionalRequiredGdalOutputDrivers(string processId) =>
+        processId switch
+        {
+            // The conversion process advertises TIFF as a media type, but targetFormat can
+            // explicitly select the distinct COG driver as well as GTiff. Both must remain
+            // registered for the process capability to be truthful.
+            "conversion.raster-format" => ReadOnly("COG"),
+            _ => Array.Empty<string>(),
+        };
 
     private static GdalRasterInputFormat? ToGdalRasterInputFormat(string format) =>
         format.Trim().ToUpperInvariant() switch
