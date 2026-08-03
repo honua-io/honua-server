@@ -251,11 +251,16 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync();
-        var esriPublication = snapshot.Graph.Publications.Single(publication =>
-            publication.LayerIndex == WebAppFixture.TestLayerId &&
-            publication.PublicationType is (
-                MetadataV2PublicationType.EsriMapLayer or
-                MetadataV2PublicationType.EsriFeatureLayer));
+        var esriPublication = snapshot.Graph.Publications
+            .Where(publication =>
+                publication.LayerIndex == WebAppFixture.TestLayerId &&
+                publication.PublicationType is (
+                    MetadataV2PublicationType.EsriMapLayer or
+                    MetadataV2PublicationType.EsriFeatureLayer))
+            .OrderBy(publication =>
+                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
+            .ThenBy(publication => publication.Metadata.Id, StringComparer.Ordinal)
+            .First();
         var stacPublication = esriPublication with
         {
             Metadata = esriPublication.Metadata with
@@ -265,11 +270,25 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             },
             PublicationType = MetadataV2PublicationType.StacCollection,
         };
+        var danglingMapPublication = esriPublication with
+        {
+            Metadata = esriPublication.Metadata with
+            {
+                Id = $"000-{esriPublication.Metadata.Id}-dangling-map",
+                Name = $"{esriPublication.Metadata.Name}-dangling-map",
+            },
+            ResourceId = "missing-mapserver-resource",
+            StorageBindingId = "missing-mapserver-binding",
+            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+        };
 
         provider.SetGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
-            Publications = snapshot.Graph.Publications.Append(stacPublication).ToArray(),
+            Publications = snapshot.Graph.Publications
+                .Append(stacPublication)
+                .Append(danglingMapPublication)
+                .ToArray(),
         });
 
         using var exportResponse = await _fixture.Client.GetAsync(
@@ -281,19 +300,32 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var mapServerRequests = new[]
         {
-            (Operation: "legend", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json"),
-            (Operation: "find", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json"),
-            (Operation: "identify", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json"),
-            (Operation: "generateKml", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateKml?layers={WebAppFixture.TestLayerId}&f=kml"),
+            (Operation: "legend", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json", ExpectedProperty: "layers"),
+            (Operation: "find", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json", ExpectedProperty: "results"),
+            (Operation: "identify", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json", ExpectedProperty: "results"),
+            (Operation: "generateKml", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateKml?layers={WebAppFixture.TestLayerId}&f=kml", ExpectedProperty: string.Empty),
         };
 
-        foreach (var (operation, path) in mapServerRequests)
+        foreach (var (operation, path, expectedProperty) in mapServerRequests)
         {
             using var response = await _fixture.Client.GetAsync(path);
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(
                 HttpStatusCode.OK,
                 $"MapServer {operation} should ignore non-Esri publications with the same public layer ID. Response: {content}");
+
+            if (operation == "generateKml")
+            {
+                response.Content.Headers.ContentType?.MediaType.Should()
+                    .Be("application/vnd.google-earth.kml+xml");
+                XDocument.Parse(content).Root.Should().NotBeNull();
+                continue;
+            }
+
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            using var document = JsonDocument.Parse(content);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            document.RootElement.TryGetProperty(expectedProperty, out _).Should().BeTrue();
         }
     }
 

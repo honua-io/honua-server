@@ -429,7 +429,9 @@ internal static partial class MapServerEndpoints
             // Prefer an explicit Esri map publication when a graph also contains a feature
             // publication for the same id; malformed or transitional graphs remain deterministic
             // and cannot crash the renderer with duplicate dictionary keys.
-            if (publication.LayerIndex is not int publicLayerId || !seenPublicLayerIds.Add(publicLayerId))
+            if (publication.LayerIndex is not int publicLayerId ||
+                snapshot.ResolveResource(publication) is null ||
+                !seenPublicLayerIds.Add(publicLayerId))
             {
                 continue;
             }
