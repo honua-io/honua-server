@@ -115,7 +115,11 @@ per-job request values supplied under the `gp.resource.*` keys (for example
 profile &gt; workload baseline. The local queue does **not** carry provider
 override keys. Kubernetes receives CPU/memory/deadline parameters, Azure Batch
 receives timeout/retry parameters, and fixed-pool dimensions are enforced by
-the workload compatibility envelope.
+the workload compatibility envelope. Ordinary requests must use the
+`gp.resource.*` contract; raw `batch.*`, `k8s.*`, or `azure.batch.*` resource
+overrides are rejected before admission so provider submission cannot diverge
+from the persisted placement decision. Positive-GPU jobs do not select the
+Kubernetes backend until its manifest contract can request a device resource.
 
 ## Health-gating a GP substrate deploy
 

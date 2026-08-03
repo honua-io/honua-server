@@ -1479,6 +1479,33 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithRawBackendResourceOverride_RejectsBeforeAdmissionOrPersistence()
+    {
+        var sut = BuildBatchWorkloadService(out var backend);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.BatchEphemeralGibKey] = "150",
+            });
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*'batch.ephemeral_gib'*'gp.resource.ephemeral_gib'*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithLocalDefault_DoesNotCarryBatchSizingParams()
     {
         // The no-remote-workload local baseline must NOT carry batch.* sizing — the keys are

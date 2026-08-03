@@ -111,6 +111,24 @@ internal sealed record GpResourceProfile
     internal const string AzureRetryAttemptsKey = "azure.batch.max_task_retry_count";
     internal const string AzureTimeoutMinutesKey = "azure.batch.task_timeout_minutes";
 
+    private static readonly (string BackendKey, string RequestKey)[] BackendResourceAliases =
+    [
+        (BatchVcpusKey, VcpusRequestKey),
+        (BatchMemoryMibKey, MemoryMibRequestKey),
+        (BatchGpuCountKey, GpuCountRequestKey),
+        (BatchTimeoutSecondsKey, TimeoutSecondsRequestKey),
+        (BatchRetryAttemptsKey, RetryAttemptsRequestKey),
+        (BatchEphemeralGibKey, EphemeralGibRequestKey),
+        (BatchArchKey, ArchRequestKey),
+        (KubernetesCpuRequestKey, VcpusRequestKey),
+        (KubernetesCpuLimitKey, VcpusRequestKey),
+        (KubernetesMemoryRequestKey, MemoryMibRequestKey),
+        (KubernetesMemoryLimitKey, MemoryMibRequestKey),
+        (KubernetesActiveDeadlineSecondsKey, TimeoutSecondsRequestKey),
+        (AzureRetryAttemptsKey, RetryAttemptsRequestKey),
+        (AzureTimeoutMinutesKey, TimeoutSecondsRequestKey),
+    ];
+
     // Conservative per-class default tiers (heuristic). Ephemeral GiB values line up with the
     // honua-iac job-definition pool ceilings (s=20, m=50, l=100).
     private const int ManagedVcpus = 1;
@@ -185,6 +203,26 @@ internal sealed record GpResourceProfile
             EphemeralGib = ReadPositiveInt(parameters, EphemeralGibRequestKey),
             Arch = ReadString(parameters, ArchRequestKey),
         };
+    }
+
+    /// <summary>
+    /// Rejects provider-specific sizing supplied by an ordinary GP request. Those values otherwise
+    /// bypass the provider-neutral profile used for workload compatibility while still winning
+    /// set-if-absent projection at submission time. Workload-owned provider defaults are merged
+    /// later and remain valid; callers express per-job requirements through <c>gp.resource.*</c>.
+    /// </summary>
+    public static void RejectBackendResourceOverrides(IReadOnlyDictionary<string, string> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        foreach (var (backendKey, requestKey) in BackendResourceAliases)
+        {
+            if (parameters.ContainsKey(backendKey))
+            {
+                throw new GeoprocessingValidationException(
+                    $"Backend resource override '{backendKey}' is not accepted in ordinary geoprocessing requests; use '{requestKey}'.");
+            }
+        }
     }
 
     /// <summary>
@@ -285,7 +323,13 @@ internal sealed record GpResourceProfile
                 Set(specParams, KubernetesActiveDeadlineSecondsKey, TimeoutSeconds);
                 break;
             case BatchComputeTargetKind.AzureBatch:
-                Set(specParams, AzureRetryAttemptsKey, RetryAttempts);
+                if (RetryAttempts is { } totalAttempts)
+                {
+                    // The canonical profile counts the initial attempt; Azure's property counts
+                    // only retries after that first execution.
+                    Set(specParams, AzureRetryAttemptsKey, Math.Max(0, totalAttempts - 1));
+                }
+
                 if (TimeoutSeconds is { } timeoutSeconds)
                 {
                     var minutes = Math.Max(1, (int)Math.Ceiling(timeoutSeconds / 60d));

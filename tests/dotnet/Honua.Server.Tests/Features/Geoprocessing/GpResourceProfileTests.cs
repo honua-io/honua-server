@@ -237,6 +237,17 @@ public sealed class GpResourceProfileTests
         profile.ProjectOnto(specParams, BatchComputeTargetKind.AzureBatch);
 
         specParams["azure.batch.task_timeout_minutes"].Should().Be("2");
-        specParams["azure.batch.max_task_retry_count"].Should().Be("3");
+        specParams["azure.batch.max_task_retry_count"].Should().Be("2");
+    }
+
+    [UnitTest]
+    public void ProjectOnto_AzureBatchOneTotalAttemptWritesZeroRetries()
+    {
+        var specParams = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        new GpResourceProfile { RetryAttempts = 1 }
+            .ProjectOnto(specParams, BatchComputeTargetKind.AzureBatch);
+
+        specParams["azure.batch.max_task_retry_count"].Should().Be("0");
     }
 }

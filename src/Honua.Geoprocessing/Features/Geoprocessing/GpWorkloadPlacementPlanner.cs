@@ -188,6 +188,14 @@ internal static class GpWorkloadPlacementPlanner
             incompatibilities.Add($"architecture '{resources.Arch}' is not declared");
         }
 
+        if (!isLocal
+            && workload.TargetKind == BatchComputeTargetKind.KubernetesJob
+            && resources.GpuCount is > 0)
+        {
+            incompatibilities.Add(
+                "the Kubernetes execution backend cannot materialize a positive GPU resource request");
+        }
+
         ValidateAwsTier(workload, resources, incompatibilities);
 
         var capacity = ReadCapacity(workload, isLocal, options);

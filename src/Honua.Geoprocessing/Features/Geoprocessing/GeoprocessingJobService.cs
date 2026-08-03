@@ -492,6 +492,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
+        if (!isCustomCode)
+        {
+            GpResourceProfile.RejectBackendResourceOverrides(specParams);
+        }
+
         var partitionKey = ResolvePartitionKey(specParams);
         var costWeight = ResolveAdmissionCostWeight(plan, rasterDecision);
         var priority = ResolvePriority(specParams);

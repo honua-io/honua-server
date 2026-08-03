@@ -176,6 +176,21 @@ public sealed class GpWorkloadPlacementPlannerTests
     }
 
     [UnitTest]
+    public void Select_KubernetesBackendCannotMaterializeGpuRequest_RejectsBeforeSubmission()
+    {
+        var act = () => Select(
+            [RemoteKubernetes()],
+            NativeResources() with { GpuCount = 1 },
+            requestParameters: new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+            });
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .WithMessage("*Kubernetes execution backend cannot materialize a positive GPU resource request*");
+    }
+
+    [UnitTest]
     public void Select_RasterRemoteDecisionWithBackendRequestPinsExactBackend()
     {
         var raster = RemoteRasterDecision("preliminary-backend");
