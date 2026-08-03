@@ -66,33 +66,6 @@ internal sealed class GeoprocessingJobArtifactService
             throw new GeoprocessingValidationException(
                 $"Raster source plan is invalid ({failure.Code}): {failure.Message}");
         }
-
-        foreach (var step in plan.Steps)
-        {
-            foreach (var source in step.RasterSources)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (step.Inputs.TryGetValue(source.Key, out var legacyValue)
-                    && !string.IsNullOrWhiteSpace(legacyValue))
-                {
-                    throw new GeoprocessingValidationException(
-                        $"Step '{step.StepId}' supplies raster input '{source.Key}' as both a typed reference "
-                        + "and a legacy string input. Supply exactly one source representation.");
-                }
-
-                var definition = string.IsNullOrWhiteSpace(step.ProcessId)
-                    ? null
-                    : _processCatalog.GetProcess(step.ProcessId);
-                var parameter = definition?.Parameters.FirstOrDefault(candidate =>
-                    string.Equals(candidate.Name, source.Key, StringComparison.Ordinal));
-                if (definition is not null && parameter?.AcceptsRasterSource != true)
-                {
-                    throw new GeoprocessingValidationException(
-                        $"Step '{step.StepId}' raster source '{source.Key}' is invalid "
-                        + $"({RasterSourceValidationCodes.InvalidParameterBinding}): the process catalog does not declare that parameter as a raster source input.");
-                }
-            }
-        }
     }
 
     /// <summary>
@@ -104,19 +77,76 @@ internal sealed class GeoprocessingJobArtifactService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        var options = CreateRasterSourceValidationOptions();
         var validation = RasterSourcePlanValidator.Validate(
             plan,
-            CreateRasterSourceValidationOptions(),
+            options,
             cancellationToken);
 
-        return validation.Errors
+        var failures = validation.Errors
             .Select(error => new GeoprocessingValidationFailure
             {
                 Code = error.Code,
                 Message = error.Message,
                 FieldPath = error.Field,
             })
-            .ToArray();
+            .ToList();
+
+        if (plan.Steps is null)
+        {
+            return failures;
+        }
+
+        var inspectedSources = 0;
+        foreach (var step in plan.Steps)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (step?.RasterSources is null)
+            {
+                continue;
+            }
+
+            var definition = string.IsNullOrWhiteSpace(step.ProcessId)
+                ? null
+                : _processCatalog.GetProcess(step.ProcessId);
+            foreach (var source in step.RasterSources)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (inspectedSources++ >= options.MaxSourcesPerPlan)
+                {
+                    return failures;
+                }
+
+                var fieldPath = $"steps[{step.StepId}].raster_sources[{source.Key}]";
+                if (step.Inputs?.TryGetValue(source.Key, out var legacyValue) == true
+                    && !string.IsNullOrWhiteSpace(legacyValue))
+                {
+                    failures.Add(new GeoprocessingValidationFailure
+                    {
+                        Code = RasterSourceValidationCodes.InvalidParameterBinding,
+                        Message = $"Step '{step.StepId}' supplies raster input '{source.Key}' as both a typed reference "
+                            + "and a legacy string input. Supply exactly one source representation.",
+                        FieldPath = fieldPath,
+                    });
+                    continue;
+                }
+
+                var parameter = definition?.Parameters.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Name, source.Key, StringComparison.Ordinal));
+                if (definition is not null && parameter?.AcceptsRasterSource != true)
+                {
+                    failures.Add(new GeoprocessingValidationFailure
+                    {
+                        Code = RasterSourceValidationCodes.InvalidParameterBinding,
+                        Message = $"Step '{step.StepId}' raster source '{source.Key}' is invalid: "
+                            + "the process catalog does not declare that parameter as a raster source input.",
+                        FieldPath = fieldPath,
+                    });
+                }
+            }
+        }
+
+        return failures;
     }
 
     private RasterSourceValidationOptions CreateRasterSourceValidationOptions() => new()

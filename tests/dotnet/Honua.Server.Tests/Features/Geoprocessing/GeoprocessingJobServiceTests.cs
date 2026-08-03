@@ -231,6 +231,52 @@ public sealed class GeoprocessingJobServiceTests
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonRasterParameter_ReportsBindingFailure()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("resampling"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources[resampling]");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedAndLegacyRasterSource_ReportsBindingFailure()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
+                    {
+                        ["source"] = "legacy-base64",
+                    },
+                },
+            ],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources[source]"
+            && violation.Message.Contains("both a typed reference", StringComparison.Ordinal));
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------

@@ -295,15 +295,18 @@ public static class RasterSourceDescriptorValidator
                 "Band selection exceeds the configured count limit.");
         }
 
-        var seenBands = new HashSet<int>();
-        foreach (var band in bands)
+        if (bands.Count <= options.MaxBandSelections)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (band <= 0 || !seenBands.Add(band))
+            var seenBands = new HashSet<int>();
+            foreach (var band in bands)
             {
-                Add(errors, RasterSourceValidationCodes.InvalidField, "selection.bands",
-                    "Band indexes must be unique positive integers.");
-                break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (band <= 0 || !seenBands.Add(band))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "selection.bands",
+                        "Band indexes must be unique positive integers.");
+                    break;
+                }
             }
         }
 
@@ -327,20 +330,23 @@ public static class RasterSourceDescriptorValidator
                 "Dimension selection exceeds the configured count limit.");
         }
 
-        var seenDimensions = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var dimension in dimensions)
+        if (dimensions.Count <= options.MaxDimensionSelections)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (dimension is null
-                || !IsOpaqueReference(dimension.Dimension)
-                || dimension.Start < 0
-                || dimension.Stop <= dimension.Start
-                || dimension.Step <= 0
-                || !seenDimensions.Add(dimension.Dimension))
+            var seenDimensions = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var dimension in dimensions)
             {
-                Add(errors, RasterSourceValidationCodes.InvalidField, "selection.dimensions",
-                    "Dimension slices require unique names and a bounded positive half-open range.");
-                break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (dimension is null
+                    || !IsOpaqueReference(dimension.Dimension)
+                    || dimension.Start < 0
+                    || dimension.Stop <= dimension.Start
+                    || dimension.Step <= 0
+                    || !seenDimensions.Add(dimension.Dimension))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "selection.dimensions",
+                        "Dimension slices require unique names and a bounded positive half-open range.");
+                    break;
+                }
             }
         }
     }

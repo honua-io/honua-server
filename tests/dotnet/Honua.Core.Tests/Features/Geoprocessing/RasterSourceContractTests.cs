@@ -329,6 +329,30 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Validate_SelectionCountCeilings_DoNotEnumerateOversizedCollections()
+    {
+        var descriptor = Zarr() with
+        {
+            Selection = new RasterSourceSelection
+            {
+                Bands = new ThrowingReadOnlyList<int>(2),
+                Dimensions = new ThrowingReadOnlyList<RasterDimensionSlice>(2),
+            },
+        };
+        var options = RasterSourceValidationOptions.Default with
+        {
+            MaxBandSelections = 1,
+            MaxDimensionSelections = 1,
+        };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
+        Assert.Equal(2, result.Errors.Count(error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && error.Message.Contains("configured count limit", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task ResolveAsync_MetadataMatchesPinnedDescriptor_ReturnsAvailable()
     {
         var descriptor = Cog();
@@ -511,5 +535,17 @@ public sealed class RasterSourceContractTests
         public Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
             RasterSourceDescriptor descriptor,
             CancellationToken cancellationToken = default) => callback(descriptor, cancellationToken);
+    }
+
+    private sealed class ThrowingReadOnlyList<T>(int count) : IReadOnlyList<T>
+    {
+        public int Count { get; } = count;
+
+        public T this[int index] => throw new InvalidOperationException("Oversized collection was indexed.");
+
+        public IEnumerator<T> GetEnumerator() =>
+            throw new InvalidOperationException("Oversized collection was enumerated.");
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
