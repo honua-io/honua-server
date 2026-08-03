@@ -140,6 +140,21 @@ public static class GdalWorkerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // Driver/input-format policy is part of the advertised engine capability
+        // contract. Freeze these lists at composition time so configuration reloads
+        // cannot make per-job admission diverge from the singleton registry/catalog.
+        // Changing either list deliberately requires a coordinated worker/server restart.
+        var startupRasterInputFormats = SnapshotConfiguredList(
+            configuration
+                .GetSection(GdalWorkerOptions.SectionName)
+                .GetSection(nameof(GdalWorkerOptions.AllowedRasterInputFormats)),
+            RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames);
+        var startupSkippedDrivers = SnapshotConfiguredList(
+            configuration
+                .GetSection(GdalHardeningOptions.SectionName)
+                .GetSection(nameof(GdalHardeningOptions.SkipDrivers)),
+            RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames);
+
         services
             .AddOptions<GdalWorkerOptions>()
             .Bind(configuration.GetSection(GdalWorkerOptions.SectionName))
@@ -153,11 +168,7 @@ public static class GdalWorkerServiceCollectionExtensions
         // promise. When the config actually supplies the list, REPLACE the bound defaults
         // with precisely the configured values (#2784 follow-up).
         services.PostConfigure<GdalWorkerOptions>(options =>
-            ReplaceListWhenConfigured(
-                configuration
-                    .GetSection(GdalWorkerOptions.SectionName)
-                    .GetSection(nameof(GdalWorkerOptions.AllowedRasterInputFormats)),
-                options.AllowedRasterInputFormats));
+            ReplaceList(options.AllowedRasterInputFormats, startupRasterInputFormats));
 
         // Shared provider-neutral engine roster (#3091), projected through the worker's
         // effective input allowlist so format-conversion metadata matches what this host
@@ -186,11 +197,7 @@ public static class GdalWorkerServiceCollectionExtensions
         // driver (the documented way to actually open a bomb-capable format alongside an
         // AllowedRasterInputFormats opt-in). Replace with the configured set when present.
         services.PostConfigure<GdalHardeningOptions>(options =>
-            ReplaceListWhenConfigured(
-                configuration
-                    .GetSection(GdalHardeningOptions.SectionName)
-                    .GetSection(nameof(GdalHardeningOptions.SkipDrivers)),
-                options.SkipDrivers));
+            ReplaceList(options.SkipDrivers, startupSkippedDrivers));
 
         if (mode == GdalProcessExecutorMode.Container)
         {
@@ -270,23 +277,21 @@ public static class GdalWorkerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// When <paramref name="section"/> actually supplies values, REPLACES the
-    /// pre-populated <paramref name="target"/> list contents with exactly the configured
-    /// values (trimmed, blanks dropped, de-duplicated case-insensitively). This undoes
-    /// ConfigurationBinder's append-onto-defaults behavior so an operator can genuinely
-    /// TIGHTEN (or shrink) a default list — not only grow it. When the section is empty
-    /// the defaults are left intact.
+    /// Snapshots the configured list at composition time, replacing defaults when the
+    /// section is present and otherwise copying the supplied defaults. Values are trimmed,
+    /// blank-filtered, and de-duplicated case-insensitively.
     /// </summary>
-    private static void ReplaceListWhenConfigured(IConfigurationSection section, IList<string> target)
+    private static IReadOnlyList<string> SnapshotConfiguredList(
+        IConfigurationSection section,
+        IReadOnlyList<string> defaults)
     {
         var children = section.GetChildren().ToList();
         if (children.Count == 0)
         {
-            // No config for this list — keep the bound-in defaults as-is.
-            return;
+            return defaults.ToArray();
         }
 
-        target.Clear();
+        var result = new List<string>(children.Count);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Not a .Select(...) candidate: seen.Add(trimmed) is the dedup side effect
         // itself, so a projection here would double as the mutation.
@@ -300,8 +305,20 @@ public static class GdalWorkerServiceCollectionExtensions
             var trimmed = value.Trim();
             if (seen.Add(trimmed))
             {
-                target.Add(trimmed);
+                result.Add(trimmed);
             }
+        }
+
+        return result;
+    }
+
+    /// <summary>Replaces binder-appended defaults with the startup policy snapshot.</summary>
+    private static void ReplaceList(IList<string> target, IReadOnlyList<string> values)
+    {
+        target.Clear();
+        foreach (var value in values)
+        {
+            target.Add(value);
         }
     }
 

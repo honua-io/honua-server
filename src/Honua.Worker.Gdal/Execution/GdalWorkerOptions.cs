@@ -122,6 +122,8 @@ internal sealed class GdalWorkerOptions
     /// of exactly <c>TIFF</c> — PNG and JPEG are then refused. Leaving it unset keeps the
     /// TIFF/PNG/JPEG default. This is enforced in the worker registration, which post-binds
     /// the configured values over ConfigurationBinder's append-onto-defaults behavior.
+    /// Because this list defines advertised engine capabilities, it is snapshotted at host
+    /// composition; changing it requires a coordinated server/worker restart.
     /// </para>
     /// </summary>
     public IList<string> AllowedRasterInputFormats { get; set; } =

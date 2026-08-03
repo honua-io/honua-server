@@ -49,7 +49,9 @@ internal sealed class GdalHardeningOptions
     /// REMOVE a default skip driver (e.g. drop <c>JP2OpenJPEG</c> to open JPEG 2000).
     /// Leaving it unset keeps the full default denial set. This is enforced in the worker
     /// registration, which post-binds the configured values over ConfigurationBinder's
-    /// append-onto-defaults behavior.
+    /// append-onto-defaults behavior. Because the effective driver set defines advertised
+    /// engine capabilities, it is snapshotted at host composition; changing it requires a
+    /// coordinated server/worker restart.
     /// </para>
     /// </summary>
     public IList<string> SkipDrivers { get; set; } =

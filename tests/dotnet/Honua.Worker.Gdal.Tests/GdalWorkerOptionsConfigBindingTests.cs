@@ -81,6 +81,35 @@ public sealed class GdalWorkerOptionsConfigBindingTests
         hardening.SkipDrivers.Should().Contain("JP2OpenJPEG").And.Contain("VRT").And.Contain("NITF");
     }
 
+    [UnitTest]
+    public void AddGdalProcessExecutors_CapabilityPolicyRequiresRestartToChange()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "TIFF",
+                ["GdalWorker:Hardening:SkipDrivers:0"] = "VRT",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        services.AddGdalProcessExecutors(configuration);
+        using var provider = services.BuildServiceProvider();
+        var workerOptions = provider.GetRequiredService<IOptionsMonitor<GdalWorkerOptions>>();
+        var hardeningOptions = provider.GetRequiredService<IOptionsMonitor<GdalHardeningOptions>>();
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+
+        configuration["GdalWorker:AllowedRasterInputFormats:0"] = "PNG";
+        configuration["GdalWorker:Hardening:SkipDrivers:0"] = "GTiff";
+        configuration.Reload();
+
+        workerOptions.CurrentValue.AllowedRasterInputFormats.Should().Equal("TIFF");
+        hardeningOptions.CurrentValue.SkipDrivers.Should().Equal("VRT");
+        registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId)!
+            .Engines.Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes.Should().Equal("image/tiff");
+    }
+
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)
     {
         var configuration = new ConfigurationBuilder()
