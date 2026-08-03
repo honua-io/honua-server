@@ -3,7 +3,8 @@
 
 The repository variable is a temporary pre-publication escape hatch. Once it is
 reset for the first published control-plane release, an intentional break must
-be acknowledged on the pull request that introduces it by checking the exact
+update an expected migration/deprecation document and be acknowledged on the
+pull request that introduces it by checking the exact
 ``OPENAPI_BREAKING_CHANGE_APPROVED`` marker in the PR template.
 """
 
@@ -13,9 +14,17 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 
 APPROVAL_MARKER = "OPENAPI_BREAKING_CHANGE_APPROVED"
+BREAKING_CHANGE_DOCUMENTATION_PATHS = frozenset(
+    {
+        "docs/internal/contributor/RELEASE_CHECKLIST.md",
+        "docs/reference/control-plane-migration-guide.md",
+        "docs/reference/versioning-and-support.md",
+    }
+)
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 APPROVAL_PATTERN = re.compile(
@@ -85,6 +94,17 @@ def pr_body_acknowledges_breaking_change(pr_body: str) -> bool:
 
     visible_markdown = _remove_non_rendered_markdown(pr_body)
     return APPROVAL_PATTERN.search(visible_markdown) is not None
+
+
+def breaking_change_documentation_updated(changed_files: Iterable[str]) -> bool:
+    """Return whether the PR updates an expected migration/deprecation document."""
+
+    normalized_paths = {
+        path.strip().replace("\\", "/")
+        for path in changed_files
+        if path.strip()
+    }
+    return not BREAKING_CHANGE_DOCUMENTATION_PATHS.isdisjoint(normalized_paths)
 
 
 def _remove_non_rendered_markdown(markdown: str) -> str:
@@ -164,7 +184,11 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
     return "\n".join(visible_lines)
 
 
-def resolve_policy(repository_override: str, pr_body: str) -> PolicyDecision:
+def resolve_policy(
+    repository_override: str,
+    pr_body: str,
+    changed_files: Iterable[str] = (),
+) -> PolicyDecision:
     """Resolve the temporary repository override and steady-state PR marker."""
 
     if parse_repository_override(repository_override):
@@ -173,13 +197,26 @@ def resolve_policy(repository_override: str, pr_body: str) -> PolicyDecision:
             source="repository variable OPENAPI_ALLOW_BREAKING_CHANGES",
         )
 
-    if pr_body_acknowledges_breaking_change(pr_body):
+    if (
+        pr_body_acknowledges_breaking_change(pr_body)
+        and breaking_change_documentation_updated(changed_files)
+    ):
         return PolicyDecision(
             allow_breaking_changes=True,
             source=f"pull-request marker {APPROVAL_MARKER}",
         )
 
     return PolicyDecision(allow_breaking_changes=False, source="none")
+
+
+def read_changed_files(path_value: str) -> tuple[str, ...]:
+    """Read the workflow-produced changed-file list, failing closed when absent."""
+
+    normalized_path = path_value.strip()
+    if not normalized_path:
+        return ()
+
+    return tuple(Path(normalized_path).read_text(encoding="utf-8").splitlines())
 
 
 def append_github_outputs(output_path: Path, decision: PolicyDecision) -> None:
@@ -198,6 +235,7 @@ def main() -> int:
     decision = resolve_policy(
         os.environ.get("OPENAPI_REPO_ALLOW_BREAKING_CHANGES", "false"),
         os.environ.get("OPENAPI_PR_BODY", ""),
+        read_changed_files(os.environ.get("OPENAPI_CHANGED_FILES_FILE", "")),
     )
 
     output_path = os.environ.get("GITHUB_OUTPUT", "").strip()

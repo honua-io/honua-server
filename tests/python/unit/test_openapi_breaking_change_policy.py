@@ -14,6 +14,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
+MIGRATION_GUIDE = "docs/reference/control-plane-migration-guide.md"
 POLICY_SPEC = importlib.util.spec_from_file_location(
     "openapi_breaking_change_policy",
     ROOT / "scripts/ci/openapi-breaking-change-policy.py",
@@ -35,6 +36,7 @@ class ResolvePolicyTests(unittest.TestCase):
         decision = POLICY.resolve_policy(
             "false",
             "- [X] `OPENAPI_BREAKING_CHANGE_APPROVED` — migration guide updated",
+            [MIGRATION_GUIDE],
         )
 
         self.assertTrue(decision.allow_breaking_changes)
@@ -66,7 +68,7 @@ class ResolvePolicyTests(unittest.TestCase):
 
         for scenario, body in bodies.items():
             with self.subTest(scenario=scenario):
-                decision = POLICY.resolve_policy("false", body)
+                decision = POLICY.resolve_policy("false", body, [MIGRATION_GUIDE])
 
                 self.assertFalse(decision.allow_breaking_changes)
 
@@ -97,7 +99,7 @@ class ResolvePolicyTests(unittest.TestCase):
 
         for scenario, body in bodies.items():
             with self.subTest(scenario=scenario):
-                decision = POLICY.resolve_policy("false", body)
+                decision = POLICY.resolve_policy("false", body, [MIGRATION_GUIDE])
 
                 self.assertFalse(decision.allow_breaking_changes)
 
@@ -109,6 +111,7 @@ class ResolvePolicyTests(unittest.TestCase):
             "```\n"
             "<!-- another non-approval example -->\n"
             "   - [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval",
+            [MIGRATION_GUIDE],
         )
 
         self.assertTrue(decision.allow_breaking_changes)
@@ -122,6 +125,7 @@ class ResolvePolicyTests(unittest.TestCase):
         decision = POLICY.resolve_policy(
             "false",
             f"- ```markdown\n  {marker} - example only\n  ```\n\n{marker}",
+            [MIGRATION_GUIDE],
         )
 
         self.assertTrue(decision.allow_breaking_changes)
@@ -144,7 +148,7 @@ class ResolvePolicyTests(unittest.TestCase):
 
         for scenario, body in bodies.items():
             with self.subTest(scenario=scenario):
-                decision = POLICY.resolve_policy("false", body)
+                decision = POLICY.resolve_policy("false", body, [MIGRATION_GUIDE])
 
                 self.assertTrue(decision.allow_breaking_changes)
 
@@ -159,6 +163,33 @@ class ResolvePolicyTests(unittest.TestCase):
             decision.source,
             "repository variable OPENAPI_ALLOW_BREAKING_CHANGES",
         )
+
+    def test_ResolvePolicy_CheckedMarkerWithoutMigrationDocumentation_FailsClosed(self):
+        marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval"
+
+        for changed_files in ((), ("README.md",), ("docs/reference/overview.md",)):
+            with self.subTest(changed_files=changed_files):
+                decision = POLICY.resolve_policy("false", marker, changed_files)
+
+                self.assertFalse(decision.allow_breaking_changes)
+                self.assertEqual(decision.source, "none")
+
+    def test_ResolvePolicy_CheckedMarkerWithExpectedDocumentation_AllowsBreak(self):
+        marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval"
+
+        for documentation_path in POLICY.BREAKING_CHANGE_DOCUMENTATION_PATHS:
+            with self.subTest(documentation_path=documentation_path):
+                decision = POLICY.resolve_policy(
+                    "false",
+                    marker,
+                    [documentation_path],
+                )
+
+                self.assertTrue(decision.allow_breaking_changes)
+                self.assertEqual(
+                    decision.source,
+                    "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
+                )
 
     def test_ParseRepositoryOverride_InvalidValue_FailsClosed(self):
         with self.assertRaisesRegex(ValueError, "must be a boolean"):
