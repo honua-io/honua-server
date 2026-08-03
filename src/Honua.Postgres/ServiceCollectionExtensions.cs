@@ -17,6 +17,7 @@ using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -157,6 +158,18 @@ internal static class ServiceCollectionExtensions
                 DataProviderNames.Postgis));
 
         // Register raster store implementation
+        services.AddOptions<RasterOutputPublicationOptions>()
+            .Bind(configuration.GetSection(RasterOutputPublicationOptions.SectionName))
+            .Validate(
+                options => RasterOutputWorkerContract.IsLogicalStoreReference(options.StoreReference),
+                "Raster output StoreReference must be a bounded logical identifier.")
+            .Validate(
+                options => RasterOutputWorkerContract.IsLogicalStoreReference(options.RegistrationTarget),
+                "Raster output RegistrationTarget must be a bounded logical identifier.")
+            .Validate(
+                options => options.MaximumSweepCount is >= 1 and <= 10_000,
+                "Raster output MaximumSweepCount must be between 1 and 10000.")
+            .ValidateOnStart();
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
 
         // Register alert persistence services

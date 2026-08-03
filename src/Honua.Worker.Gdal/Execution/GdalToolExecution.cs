@@ -78,24 +78,26 @@ internal static partial class GdalToolExecution
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(80, encodingPhase, cancellationToken).ConfigureAwait(false);
 
-        var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-        if (outputBytes.Length == 0)
+        var publication = await GdalArtifactPublication.PublishFileAsync(
+            context,
+            outputPath,
+            contentType,
+            options.MaxArtifactBytes,
+            artifactLabel,
+            cancellationToken).ConfigureAwait(false);
+        if (!publication.Succeeded)
         {
-            return JobExecutionResult.Failed($"{tool} produced an empty output.");
+            if (publication.SizeBytes > options.MaxArtifactBytes)
+            {
+                Log.ArtifactTooLarge(logger, operationId, tool, publication.SizeBytes, options.MaxArtifactBytes);
+            }
+
+            return JobExecutionResult.Failed(publication.ErrorMessage!);
         }
 
-        if (outputBytes.Length > options.MaxArtifactBytes)
-        {
-            Log.ArtifactTooLarge(logger, operationId, tool, outputBytes.Length, options.MaxArtifactBytes);
-            return JobExecutionResult.Failed(
-                $"{artifactLabel} size {outputBytes.Length} bytes exceeds configured MaxArtifactBytes={options.MaxArtifactBytes}.");
-        }
-
-        var artifactUri = GdalDataUri.Build(contentType, outputBytes);
-        await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
         await context.ReportProgressAsync(100, completedPhase, cancellationToken).ConfigureAwait(false);
 
-        Log.ToolCompleted(logger, operationId, tool, outputBytes.Length);
+        Log.ToolCompleted(logger, operationId, tool, publication.SizeBytes);
         return JobExecutionResult.Succeeded();
     }
 

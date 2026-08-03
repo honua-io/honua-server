@@ -35,6 +35,14 @@ public sealed record AnalysisPlan
     /// Non-fatal warnings generated during plan compilation.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// Raster publication store and target authorized for this exact plan. This is populated by
+    /// the workflow authorization gate and persisted with the workflow/run plan; ordinary direct
+    /// submissions may omit it and resolve the operator configuration while their live principal
+    /// is still available.
+    /// </summary>
+    public RasterOutputPublicationPin? RasterOutputPublication { get; init; }
 }
 
 /// <summary>

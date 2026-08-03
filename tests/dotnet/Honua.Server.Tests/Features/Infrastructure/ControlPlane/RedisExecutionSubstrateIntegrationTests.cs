@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -73,6 +75,46 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
         var activeJobs = await harness.JobStore.ListActiveAsync();
         activeJobs.Should().NotContain(entry => entry.OperationId == operationId);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_InterruptedTerminalIndexUpdate_ReturnsManifestJobForRecovery()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-terminal-outbox-{Guid.NewGuid():N}";
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId));
+        var queued = await harness.JobStore.GetAsync(operationId);
+        var now = DateTimeOffset.UtcNow;
+        var terminal = queued! with
+        {
+            Version = queued.Version + 1,
+            Status = ExecutionJobStatus.Succeeded,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ArtifactReferences =
+            [
+                RasterOutputArtifactReference.CreateManifest(
+                    "gp-results",
+                    RasterOutputWorkerContract.BuildManifestObjectKey(operationId, 1))
+            ]
+        };
+
+        // Simulate a process stop immediately after the authoritative CAS wrote the terminal
+        // record but before UpdateIndexesAsync could add the projection outbox or remove the old
+        // active membership. Writing the payload directly leaves precisely that intermediate
+        // durable state.
+        var payload = JsonSerializer.Serialize(
+            terminal,
+            ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        await harness.Database.StringSetAsync($"controlplane:job:{operationId}", payload);
+
+        var pending = await ((ITerminalProjectionRetryStore)harness.JobStore)
+            .ListTerminalProjectionsPendingAsync(10);
+        pending.Should().BeEmpty();
+        (await harness.JobStore.ListActiveAsync())
+            .Should().ContainSingle(job =>
+                job.OperationId == operationId
+                && job.Status == ExecutionJobStatus.Succeeded);
     }
 
     [IntegrationTest]

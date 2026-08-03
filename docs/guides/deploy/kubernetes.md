@@ -255,6 +255,14 @@ For Azure Blob, set `FileStorage__Provider: AzureBlob`, put
 `FileStorage__AzureBlob__ConnectionString` in the runtime Secret, and set
 `FileStorage__AzureBlob__ContainerName` in `config.env`.
 
+Raster GP Jobs receive only non-secret bucket/container coordinates from the
+serving host. Configure `ControlPlane__Kubernetes__DefaultServiceAccount` with
+an AWS IRSA or Azure Workload Identity that can read and write the same raster
+object store; Honua does not copy S3 keys or the Azure connection string into
+the Job manifest. For Azure, `FileStorage__AzureBlob__ServiceUri` may explicitly
+set the non-secret HTTPS account endpoint; when omitted, Honua derives it from
+the serving host's connection string.
+
 Apply the same digest-pinned command used for the single-node install. The
 chart fails closed when more than one replica or HPA is combined with
 `SingleInstance`.

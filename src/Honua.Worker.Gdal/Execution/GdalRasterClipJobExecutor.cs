@@ -187,25 +187,22 @@ internal sealed partial class GdalRasterClipJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding clipped raster artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var publication = await GdalArtifactPublication.PublishFileAsync(
+                context, outputPath, GeoTiffContentType, opts.MaxArtifactBytes,
+                "Clipped raster", cancellationToken).ConfigureAwait(false);
+            if (!publication.Succeeded)
             {
-                return JobExecutionResult.Failed("gdalwarp produced an empty output raster.");
+                if (publication.SizeBytes > opts.MaxArtifactBytes)
+                {
+                    Log.ArtifactTooLarge(logger, job.OperationId, publication.SizeBytes, opts.MaxArtifactBytes);
+                }
+
+                return JobExecutionResult.Failed(publication.ErrorMessage!);
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
-            {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Clipped raster size {outputBytes.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
-            }
-
-            var artifactUri = GdalDataUri.Build(GeoTiffContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Clip completed", cancellationToken).ConfigureAwait(false);
 
-            Log.ClipCompleted(logger, job.OperationId, outputBytes.Length);
+            Log.ClipCompleted(logger, job.OperationId, publication.SizeBytes);
             return JobExecutionResult.Succeeded();
         }
         finally

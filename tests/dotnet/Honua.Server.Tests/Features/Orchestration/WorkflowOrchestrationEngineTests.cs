@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
@@ -60,6 +61,42 @@ public sealed class WorkflowOrchestrationEngineTests
 
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
         Assert.Single(harness.JobService.Submitted);
+    }
+
+    [Fact]
+    public async Task CreateRun_PersistsAuthorizedRasterPublicationPinForSystemDispatch()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var authorizedPin = new RasterOutputPublicationPin
+        {
+            StoreReference = "requester-approved-store",
+            RegistrationTarget = new RasterOutputRegistrationTarget(
+                RasterOutputRegistrationKind.CatalogObject,
+                "layer.17")
+        };
+        harness.JobService.OnBindExecutionPlan = plan => plan with
+        {
+            RasterOutputPublication = authorizedPin
+        };
+
+        var run = await harness.Engine.CreateRunAsync(
+            definition,
+            WorkflowTriggerKind.Manual,
+            Operator);
+
+        var persisted = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(
+            authorizedPin,
+            Assert.Single(persisted!.StepStates).AuthorizedPlan!.RasterOutputPublication);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        Assert.Equal(
+            authorizedPin,
+            Assert.Single(harness.JobService.Submitted).RasterOutputPublication);
     }
 
     [Fact]

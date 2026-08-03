@@ -134,17 +134,20 @@ Reading the matrix:
 
 #### Out-of-stack assemblies
 
-| Consumer ↓ \ Provider → | Abstr | Core | Hosting | Jobs | Server | SvcDef |
-|--------------------------|:-----:|:----:|:-------:|:----:|:------:|:------:|
-| **AppHost**              |       |      |         |      |        |   ✓    |
-| **Worker.Gdal**          |   ✓   |  ✓   |         |  ✓   |        |        |
+| Consumer ↓ \ Provider → | Abstr | Core | AWS | Azure | Hosting | Jobs | Server | SvcDef |
+|--------------------------|:-----:|:----:|:---:|:-----:|:-------:|:----:|:------:|:------:|
+| **AppHost**              |       |      |     |       |         |      |        |   ✓    |
+| **Worker.Gdal**          |   ✓   |  ✓   |  ✓  |   ✓   |         |  ✓   |        |        |
 
 `AppHost` is the Aspire-orchestration entry point; it carries no business
 logic and references only `ServiceDefaults`. `Worker.Gdal` is the GDAL/OGR
 side-car process; per ADR-0038 it deliberately does **not** reference
-`Honua.Server` (so the worker image stays slim) and depends only on
-Abstractions + Core + Jobs. New satellites of this kind require an ADR
-amendment, not just a test allow-list entry.
+`Honua.Server`. It depends on Abstractions + Core + Jobs and may consume the
+AWS/Azure satellites only to stream heavy GP inputs and outputs through the
+configured object-store data plane. Those references are build-profile
+conditional and do not introduce provider SDKs or GDAL into the AOT web image.
+New satellites of this kind require an ADR amendment, not just a test
+allow-list entry.
 
 ### Decision tree for new code
 

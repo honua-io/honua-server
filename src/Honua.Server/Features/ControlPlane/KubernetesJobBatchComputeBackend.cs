@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
@@ -23,6 +25,7 @@ namespace Honua.ControlPlane;
 internal sealed partial class KubernetesJobBatchComputeBackend(
     IKubernetesJobClient jobClient,
     IOptionsMonitor<KubernetesExecutionOptions> options,
+    IOptions<CloudStorageOptions> storageOptions,
     ILogger<KubernetesJobBatchComputeBackend> logger) : IBatchComputeBackend
 {
     internal const string BackendId = "honua-kubernetes-job";
@@ -49,7 +52,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
         });
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
@@ -486,7 +490,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         };
     }
 
-    private static Dictionary<string, string> BuildEnvironmentVariables(
+    private Dictionary<string, string> BuildEnvironmentVariables(
         ExecutionJobRecord job,
         IReadOnlyDictionary<string, string> parameters)
     {
@@ -499,7 +503,206 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         // workload-supplied env.HONUA_CONTRACT_VERSION can never override the gate value.
         env["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
 
+        if (parameters.TryGetValue(
+            RasterOutputWorkerContract.StoreReferenceParameter,
+            out var rasterOutputStoreReference))
+        {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing
+                || job.Spec.ContractVersion < RasterOutputContract.JobContractVersion)
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a versioned geoprocessing worker contract.");
+            }
+
+            if (!RasterOutputWorkerContract.IsLogicalStoreReference(rasterOutputStoreReference))
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a bounded logical store reference, not a URL or credential.");
+            }
+
+            env[RasterOutputWorkerContract.ContractVersionEnvironmentVariable] =
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture);
+            env[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] = rasterOutputStoreReference;
+            env[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, job.AttemptCount);
+            env[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, job.AttemptCount);
+            ProjectRasterStorageEnvironment(env, storageOptions.Value);
+        }
+
         return env;
+    }
+
+    private static void ProjectRasterStorageEnvironment(
+        Dictionary<string, string> environmentVariables,
+        CloudStorageOptions storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        foreach (var name in environmentVariables.Keys)
+        {
+            if (name.StartsWith("FileStorage__", StringComparison.OrdinalIgnoreCase)
+                || IsCredentialEnvironmentVariable(name))
+            {
+                throw new InvalidOperationException(
+                    "Raster worker storage configuration and credentials cannot be supplied through durable job parameters.");
+            }
+        }
+
+        environmentVariables["FileStorage__Provider"] = storage.Provider.ToString();
+        switch (storage.Provider)
+        {
+            case CloudStorageProvider.AwsS3 when storage.AwsS3 is { } aws
+                && !string.IsNullOrWhiteSpace(aws.BucketName):
+                Set(environmentVariables, "FileStorage__AwsS3__BucketName", aws.BucketName);
+                Set(environmentVariables, "FileStorage__AwsS3__Region", aws.Region);
+                Set(environmentVariables, "FileStorage__AwsS3__KeyPrefix", aws.KeyPrefix);
+                Set(
+                    environmentVariables,
+                    "FileStorage__AwsS3__ServiceUrl",
+                    ResolveS3ServiceUrl(aws.ServiceUrl));
+                environmentVariables["FileStorage__AwsS3__ForcePathStyle"] =
+                    aws.ForcePathStyle.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                environmentVariables["FileStorage__AwsS3__EnableServerSideEncryption"] =
+                    aws.EnableServerSideEncryption.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return;
+
+            case CloudStorageProvider.AzureBlob when storage.AzureBlob is { } azure
+                && !string.IsNullOrWhiteSpace(azure.ContainerName):
+                Set(environmentVariables, "FileStorage__AzureBlob__ContainerName", azure.ContainerName);
+                Set(environmentVariables, "FileStorage__AzureBlob__BlobPrefix", azure.BlobPrefix);
+                Set(
+                    environmentVariables,
+                    "FileStorage__AzureBlob__ServiceUri",
+                    ResolveAzureBlobServiceUri(azure));
+                return;
+
+            case CloudStorageProvider.Local:
+                throw new InvalidOperationException(
+                    "Kubernetes raster workers require shared S3/Azure storage; pod-local raster output is not publishable.");
+
+            default:
+                throw new InvalidOperationException(
+                    "Kubernetes raster worker storage is incomplete or unsupported.");
+        }
+
+        static void Set(Dictionary<string, string> target, string name, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                target[name] = value;
+            }
+        }
+    }
+
+    private static bool IsCredentialEnvironmentVariable(string name) =>
+        name.Equals("AWS_ACCESS_KEY_ID", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("AWS_SECRET_ACCESS_KEY", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("AWS_SESSION_TOKEN", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("AZURE_CLIENT_SECRET", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("AZURE_CLIENT_CERTIFICATE_PASSWORD", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("AZURE_PASSWORD", StringComparison.OrdinalIgnoreCase);
+
+    private static string? ResolveS3ServiceUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            throw new InvalidOperationException(
+                "Kubernetes S3 raster output requires a non-secret HTTP(S) service URL.");
+        }
+
+        return uri.AbsoluteUri.TrimEnd('/');
+    }
+
+    private static string ResolveAzureBlobServiceUri(AzureBlobOptions options)
+    {
+        if (TryValidateServiceUri(options.ServiceUri, out var configured))
+        {
+            return configured;
+        }
+
+        string? blobEndpoint = null;
+        string? accountName = null;
+        string? protocol = null;
+        string? suffix = null;
+        foreach (var setting in options.ConnectionString.Split(
+                     ';',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = setting.IndexOf('=');
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var name = setting[..separator].Trim();
+            var value = setting[(separator + 1)..].Trim();
+            if (string.Equals(name, "BlobEndpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                blobEndpoint = value;
+            }
+            else if (string.Equals(name, "AccountName", StringComparison.OrdinalIgnoreCase))
+            {
+                accountName = value;
+            }
+            else if (string.Equals(name, "DefaultEndpointsProtocol", StringComparison.OrdinalIgnoreCase))
+            {
+                protocol = value;
+            }
+            else if (string.Equals(name, "EndpointSuffix", StringComparison.OrdinalIgnoreCase))
+            {
+                suffix = value;
+            }
+        }
+
+        if (blobEndpoint is not null
+            && TryValidateServiceUri(blobEndpoint, out var endpoint))
+        {
+            return endpoint;
+        }
+
+        if (accountName is { } validAccountName
+            && IsAzureStorageAccountName(validAccountName))
+        {
+            var derived = (protocol ?? "https") + "://" + validAccountName + ".blob."
+                + (suffix ?? "core.windows.net");
+            if (TryValidateServiceUri(derived, out endpoint))
+            {
+                return endpoint;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Kubernetes Azure raster output requires a non-secret HTTPS Blob service URI for workload identity.");
+    }
+
+    private static bool IsAzureStorageAccountName(string value) =>
+        value.Length is >= 3 and <= 24
+        && value.All(character => char.IsAsciiDigit(character) || char.IsAsciiLetterLower(character));
+
+    private static bool TryValidateServiceUri(string? value, out string normalized)
+    {
+        normalized = string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        normalized = uri.AbsoluteUri.TrimEnd('/');
+        return true;
     }
 
     private static void ApplyEnvironmentVariables(
@@ -515,7 +718,9 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             }
 
             var name = key[prefix.Length..];
-            if (!string.IsNullOrWhiteSpace(name))
+            if (!string.IsNullOrWhiteSpace(name)
+                && !string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal)
+                && !RasterOutputWorkerContract.IsReservedEnvironmentVariable(name))
             {
                 environmentVariables[name] = value;
             }

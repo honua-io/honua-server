@@ -9,6 +9,7 @@ using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
@@ -29,7 +30,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     IGeoprocessingResultPackageStore? resultPackageStore,
     IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingJobTerminalCallback> logger,
-    IScopedJobTokenIssuer? scopedJobTokenIssuer = null) : IJobTerminalCallback
+    IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
+    IExecutionJobStore? executionJobStore = null) : IRetryableJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
@@ -48,19 +50,23 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         // terminal progress/result-package sync below.
         await TryRevokeCustomCodeTokenAsync(job, cancellationToken).ConfigureAwait(false);
 
-        // Tracks whether persisting analysis-content artifacts failed. A successful job
-        // must not be reported as Completed when its referenced artifacts are missing from
-        // the content store, otherwise GetJobResultsAsync returns dangling references with
-        // no retry. When this is set we conservatively fail the terminal-success transition.
-        string? artifactPersistenceError = null;
+        // A successful job must not be reported as Completed when one of its durable result
+        // projections is missing. Raster jobs retain a durable outbox entry and their attempt
+        // manifest until this value remains null through package, progress, and acknowledgement.
+        string? projectionError = null;
+        var hasRasterContract =
+            job.Spec.Parameters.ContainsKey(RasterOutputWorkerContract.StoreReferenceParameter);
 
         try
         {
             AnalysisResultPackage? package = null;
-            var hasAnalysisContentSource = HasAnalysisContentSource(job);
+            job = await PublishRasterOutputsAsync(job, cancellationToken).ConfigureAwait(false);
+            job = await PersistRasterOutputReferencesAsync(job, cancellationToken).ConfigureAwait(false);
+            var packageJob = BuildPackageProjection(job);
+            var hasAnalysisContentSource = HasAnalysisContentSource(packageJob);
             if (resultPackageStore != null || hasAnalysisContentSource)
             {
-                package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
+                package = GeoprocessingResultPackageFactory.Create(packageJob, processCatalog);
             }
 
             // Persist the artifacts to the content store BEFORE writing the result package,
@@ -71,7 +77,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             {
                 try
                 {
-                    await PersistAnalysisContentArtifactsWithScopedStoreAsync(job, package, cancellationToken)
+                    await PersistAnalysisContentArtifactsWithScopedStoreAsync(packageJob, package, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -79,7 +85,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     // Intentionally broad: this is the job's terminal callback — it must
                     // never throw, so any persistence failure is captured and gates the
                     // status transition below instead.
-                    artifactPersistenceError =
+                    projectionError =
                         "Failed to persist analysis-content artifacts; results would be incomplete.";
                     Log.ArtifactPersistenceFailed(logger, job.OperationId, ex);
                     // Skip the result-package write so we never publish a package whose
@@ -96,12 +102,21 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     ProgressRetention,
                     cancellationToken).ConfigureAwait(false);
             }
+
+            if (projectionError is null)
+            {
+                // The package was written for the version that removing the pending manifest
+                // marker will create. Until this CAS lands, GetJobResults observes the prior
+                // job version and cannot expose that package prematurely.
+                job = await FinalizeRasterOutputReferencesAsync(job, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // PA-209: ensure the terminal-success gate sees the failure so a Succeeded job
             // whose result package was never written does not report Completed to callers.
-            artifactPersistenceError = "Failed to persist the result package; results may be unavailable.";
+            projectionError = "Failed to persist the result package; results may be unavailable.";
             Log.ResultPackageSyncFailed(logger, job.OperationId, ex);
         }
 
@@ -109,50 +124,50 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         {
             var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
                 job.OperationId, cancellationToken).ConfigureAwait(false);
-            if (progress == null)
+            if (progress != null
+                && (hasRasterContract
+                    || progress.Status is not (
+                        OperationStatus.Completed
+                        or OperationStatus.Failed
+                        or OperationStatus.Cancelled)))
             {
-                return;
-            }
+                var completedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
 
-            if (progress.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled)
-            {
-                return;
-            }
+                // A job that otherwise succeeded but whose projections failed must not report
+                // Completed-with-success. A later durable retry can replace this conservative
+                // failure with Completed after the package and progress writes both succeed.
+                var effectiveStatus = job.Status == ExecutionJobStatus.Succeeded && projectionError != null
+                    ? ExecutionJobStatus.Failed
+                    : job.Status;
 
-            var completedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
-
-            // A job that otherwise succeeded but whose artifacts failed to persist must not
-            // report Completed-with-success; mark it Failed instead (conservative behavior).
-            var effectiveStatus = job.Status == ExecutionJobStatus.Succeeded && artifactPersistenceError != null
-                ? ExecutionJobStatus.Failed
-                : job.Status;
-
-            GeoprocessingProgress? updated = effectiveStatus switch
-            {
-                ExecutionJobStatus.Succeeded => progress with
+                GeoprocessingProgress? updated = effectiveStatus switch
                 {
-                    WorkflowStatus = GeoprocessingWorkflowStatus.Completed,
-                    CurrentStageStatus = GeoprocessingStageStatus.Completed,
-                    CompletedAt = completedAt,
-                    CurrentPhase = "Completed"
-                },
-                ExecutionJobStatus.Failed => progress with
-                {
-                    WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
-                    CurrentStageStatus = GeoprocessingStageStatus.Failed,
-                    CompletedAt = completedAt,
-                    ErrorMessage = job.ErrorMessage ?? artifactPersistenceError,
-                    CurrentPhase = "Failed"
-                },
-                ExecutionJobStatus.Cancelled => (GeoprocessingProgress)progress.WithCancellation(
-                    completedAt, "Cancelled"),
-                _ => null
-            };
+                    ExecutionJobStatus.Succeeded => progress with
+                    {
+                        WorkflowStatus = GeoprocessingWorkflowStatus.Completed,
+                        CurrentStageStatus = GeoprocessingStageStatus.Completed,
+                        CompletedAt = completedAt,
+                        ErrorMessage = null,
+                        CurrentPhase = "Completed"
+                    },
+                    ExecutionJobStatus.Failed => progress with
+                    {
+                        WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
+                        CurrentStageStatus = GeoprocessingStageStatus.Failed,
+                        CompletedAt = completedAt,
+                        ErrorMessage = job.ErrorMessage ?? projectionError,
+                        CurrentPhase = "Failed"
+                    },
+                    ExecutionJobStatus.Cancelled => (GeoprocessingProgress)progress.WithCancellation(
+                        completedAt, "Cancelled"),
+                    _ => null
+                };
 
-            if (updated != null)
-            {
-                await progressStore.SetProgressAsync(
-                    job.OperationId, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                if (updated != null)
+                {
+                    await progressStore.SetProgressAsync(
+                        job.OperationId, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -160,7 +175,363 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             // Intentionally broad: best-effort terminal progress sync — the job itself
             // has already reached a terminal state, so a sync failure here must be
             // logged, not thrown.
+            projectionError ??= "Failed to synchronize terminal progress; results may be stale.";
             Log.ProgressSyncFailed(logger, job.OperationId, ex);
+        }
+
+        if (projectionError is null && hasRasterContract)
+        {
+            try
+            {
+                if (executionJobStore is ITerminalProjectionRetryStore retryStore)
+                {
+                    await retryStore.CompleteTerminalProjectionAsync(job.OperationId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                // The manifest remains the replay source until package, job-version, progress,
+                // and outbox acknowledgement all succeed. Physical deletion is best-effort once
+                // that durable boundary is crossed; the bounded orphan reconciler is the backstop.
+                await DeleteRasterManifestAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.TerminalProjectionAcknowledgementFailed(logger, job.OperationId, ex);
+            }
+        }
+    }
+
+    private async Task<ExecutionJobRecord> PublishRasterOutputsAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        if (!job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.StoreReferenceParameter,
+                out var configuredStoreReference))
+        {
+            return job;
+        }
+
+        if (job.Spec.ContractVersion < RasterOutputContract.JobContractVersion
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(configuredStoreReference))
+        {
+            throw new InvalidDataException("Terminal raster output job has an invalid worker contract.");
+        }
+
+        if (executionJobStore is null)
+        {
+            throw new InvalidOperationException(
+                "Durable raster output publication requires an execution job store before any output can become visible.");
+        }
+
+        var manifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(
+            job.OperationId,
+            job.AttemptCount);
+        foreach (var reference in job.ArtifactReferences)
+        {
+            if (RasterOutputArtifactReference.TryParseManifest(
+                    reference,
+                    out var markerStore,
+                    out var markerKey)
+                && (!string.Equals(markerStore, configuredStoreReference, StringComparison.Ordinal)
+                    || !RasterOutputWorkerContract.TryParseManifestObjectKey(
+                        markerKey,
+                        out var markerJobId,
+                        out var markerAttempt)
+                    || !string.Equals(markerJobId, job.OperationId, StringComparison.Ordinal)
+                    || markerAttempt > job.AttemptCount))
+            {
+                throw new InvalidDataException("Raster output manifest marker does not belong to this job's attempts.");
+            }
+        }
+
+        using var scope = serviceScopeFactory.CreateScope();
+        var manifestStore = scope.ServiceProvider.GetRequiredService<IRasterOutputManifestStore>();
+        var publisher = scope.ServiceProvider.GetRequiredService<RasterOutputPublisher>();
+        var publicationOptions = scope.ServiceProvider
+            .GetRequiredService<IOptionsMonitor<RasterOutputPublicationOptions>>()
+            .CurrentValue;
+        var registrationTarget = ResolveRegistrationTarget(job, publicationOptions);
+        var manifest = await manifestStore.ReadManifestAsync(
+            configuredStoreReference,
+            manifestKey,
+            cancellationToken).ConfigureAwait(false);
+        if (manifest is null)
+        {
+            if (job.Status == ExecutionJobStatus.Succeeded)
+            {
+                // A repeated terminal notification can carry the original marker-only
+                // snapshot after a prior callback already persisted output descriptors and
+                // removed the manifest. Rehydrate that durable projection; otherwise a
+                // succeeded v2 job without a manifest remains an integrity failure.
+                var persisted = executionJobStore is null
+                    ? null
+                    : await executionJobStore.GetAsync(job.OperationId, cancellationToken)
+                        .ConfigureAwait(false);
+                if (persisted is not null
+                    && persisted.ArtifactReferences.Any(reference =>
+                        RasterOutputArtifactReference.TryParseOutput(reference, out _)))
+                {
+                    return persisted;
+                }
+
+                throw new InvalidDataException("Succeeded raster output job did not publish its attempt manifest.");
+            }
+
+            return job with
+            {
+                ArtifactReferences = job.ArtifactReferences.Where(reference =>
+                    !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)).ToArray()
+            };
+        }
+
+        if (!string.Equals(manifest.JobId, job.OperationId, StringComparison.Ordinal)
+            || manifest.Attempt != job.AttemptCount)
+        {
+            throw new InvalidDataException("Raster output manifest does not belong to the terminal job attempt.");
+        }
+
+        var completionState = job.Status switch
+        {
+            ExecutionJobStatus.Succeeded => RasterOutputCompletionState.Succeeded,
+            ExecutionJobStatus.Failed => RasterOutputCompletionState.Failed,
+            ExecutionJobStatus.Cancelled => RasterOutputCompletionState.Cancelled,
+            _ => throw new InvalidOperationException("Raster outputs can only be projected for terminal jobs.")
+        };
+        var publishedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
+        var outputReferences = new List<string>(manifest.Outputs.Count);
+        foreach (var stage in manifest.Outputs)
+        {
+            var result = await publisher.PublishAsync(new RasterOutputPublicationRequest
+            {
+                Stage = stage,
+                CompletionState = completionState,
+                RegistrationTarget = registrationTarget,
+                PublishedAt = publishedAt,
+                RetainUntil = publishedAt.Add(ProgressRetention)
+            }, cancellationToken).ConfigureAwait(false);
+            if (result.Output is not null)
+            {
+                outputReferences.Add(RasterOutputArtifactReference.CreateOutput(result.Output));
+            }
+        }
+
+        var retainedReferences = job.ArtifactReferences.Where(reference =>
+            !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
+        return job with
+        {
+            ArtifactReferences = completionState == RasterOutputCompletionState.Succeeded
+                ? retainedReferences.Concat(outputReferences).Distinct(StringComparer.Ordinal).ToArray()
+                : retainedReferences.ToArray()
+        };
+    }
+
+    private static RasterOutputRegistrationTarget ResolveRegistrationTarget(
+        ExecutionJobRecord job,
+        RasterOutputPublicationOptions publicationOptions)
+    {
+        if (job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.RegistrationKindParameter,
+                out var pinnedKind)
+            && Enum.TryParse<RasterOutputRegistrationKind>(pinnedKind, ignoreCase: false, out var kind)
+            && Enum.IsDefined(kind)
+            && job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.RegistrationTargetParameter,
+                out var pinnedTarget)
+            && RasterOutputWorkerContract.IsLogicalStoreReference(pinnedTarget)
+            && ((kind is not (RasterOutputRegistrationKind.CatalogObject
+                    or RasterOutputRegistrationKind.PostgisRaster))
+                || RasterOutputRegistrationTarget.TryParseLayerReference(pinnedTarget, out _)))
+        {
+            return new RasterOutputRegistrationTarget(kind, pinnedTarget);
+        }
+
+        // Compatibility is safe only for non-mutating result artifacts. Catalog/PostGIS targets
+        // must have been captured and authorized while the submitting principal was available.
+        if (publicationOptions.RegistrationKind is not RasterOutputRegistrationKind.ResultArtifact
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(publicationOptions.RegistrationTarget))
+        {
+            throw new InvalidDataException(
+                "Terminal raster job does not carry a valid submission-authorized registration target.");
+        }
+
+        return new RasterOutputRegistrationTarget(
+            publicationOptions.RegistrationKind,
+            publicationOptions.RegistrationTarget);
+    }
+
+    private async Task<ExecutionJobRecord> PersistRasterOutputReferencesAsync(
+        ExecutionJobRecord projected,
+        CancellationToken cancellationToken)
+    {
+        if (!projected.Spec.Parameters.ContainsKey(RasterOutputWorkerContract.StoreReferenceParameter))
+        {
+            return projected;
+        }
+
+        if (executionJobStore is null)
+        {
+            throw new InvalidOperationException(
+                "Durable raster output publication requires an execution job store before its manifest can be retired.");
+        }
+
+        const int maximumCasAttempts = 3;
+        for (var attempt = 0; attempt < maximumCasAttempts; attempt++)
+        {
+            var current = await executionJobStore.GetAsync(projected.OperationId, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "Raster output job disappeared before its durable references were persisted.");
+            if (current.Status != projected.Status)
+            {
+                throw new InvalidOperationException(
+                    "Raster output job changed terminal status before its references were persisted.");
+            }
+
+            var mergedReferences = MergeRasterOutputReferences(
+                projected.ArtifactReferences,
+                current.ArtifactReferences);
+            if (current.ArtifactReferences.SequenceEqual(
+                    mergedReferences,
+                    StringComparer.Ordinal))
+            {
+                return current;
+            }
+
+            var candidate = current with { ArtifactReferences = mergedReferences };
+            if (await executionJobStore.TrySetAsync(
+                    candidate,
+                    ProgressRetention,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                // Store implementations increment the optimistic version on a successful
+                // CAS. Carry that exact durable version into ResultPackageId generation.
+                return candidate with { Version = checked(current.Version + 1) };
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Raster output references could not be persisted after repeated version conflicts.");
+    }
+
+    private static string[] MergeRasterOutputReferences(
+        IReadOnlyList<string> projectedReferences,
+        IReadOnlyList<string> currentReferences)
+    {
+        // The manifest marker is the durable projection-pending record. Preserve it while output
+        // references are committed so a package/artifact/progress failure remains discoverable by
+        // the retry sweep. Also preserve unrelated references added by another terminal concern.
+        var pendingManifestReferences = currentReferences.Where(reference =>
+            RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
+        var preservedConcurrentReferences = currentReferences.Where(reference =>
+            !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)
+            && !RasterOutputArtifactReference.TryParseOutput(reference, out _));
+        return projectedReferences
+            .Where(reference => !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _))
+            .Concat(pendingManifestReferences)
+            .Concat(preservedConcurrentReferences)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static ExecutionJobRecord BuildPackageProjection(ExecutionJobRecord job)
+    {
+        var hasPendingManifest = job.ArtifactReferences.Any(reference =>
+            RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
+        return job with
+        {
+            // Removing the durable marker is the visibility CAS immediately after package
+            // persistence. Build the package for that exact resulting version so readers cannot
+            // observe it against the still-pending job record.
+            Version = hasPendingManifest ? checked(job.Version + 1) : job.Version,
+            ArtifactReferences = job.ArtifactReferences.Where(reference =>
+                !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)).ToArray()
+        };
+    }
+
+    private async Task<ExecutionJobRecord> FinalizeRasterOutputReferencesAsync(
+        ExecutionJobRecord pending,
+        CancellationToken cancellationToken)
+    {
+        if (!pending.Spec.Parameters.ContainsKey(RasterOutputWorkerContract.StoreReferenceParameter)
+            || !pending.ArtifactReferences.Any(reference =>
+                RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+        {
+            return pending;
+        }
+
+        if (executionJobStore is null)
+        {
+            throw new InvalidOperationException(
+                "Durable raster output publication requires an execution job store before its manifest can be retired.");
+        }
+
+        var current = await executionJobStore.GetAsync(pending.OperationId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "Raster output job disappeared before its terminal projection was finalized.");
+        if (current.Status != pending.Status)
+        {
+            throw new InvalidOperationException(
+                "Raster output job changed terminal status before its projection was finalized.");
+        }
+
+        if (!current.ArtifactReferences.Any(reference =>
+                RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+        {
+            // A concurrent idempotent callback already crossed the visibility boundary.
+            return current;
+        }
+
+        if (current.Version != pending.Version)
+        {
+            throw new InvalidOperationException(
+                "Raster output job changed before its terminal projection could be finalized.");
+        }
+
+        var candidate = current with
+        {
+            ArtifactReferences = current.ArtifactReferences.Where(reference =>
+                !RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)).ToArray()
+        };
+        if (!await executionJobStore.TrySetAsync(
+                candidate,
+                ProgressRetention,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Raster output terminal projection lost its final visibility compare-and-set.");
+        }
+
+        return candidate with { Version = checked(current.Version + 1) };
+    }
+
+    private async Task DeleteRasterManifestAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        if (!job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.StoreReferenceParameter,
+                out var storeReference))
+        {
+            return;
+        }
+
+        var manifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(
+            job.OperationId,
+            job.AttemptCount);
+        try
+        {
+            using var scope = serviceScopeFactory.CreateScope();
+            var objectStore = scope.ServiceProvider.GetRequiredService<IRasterOutputObjectStore>();
+            await objectStore.DeleteAsync(
+                storeReference,
+                manifestKey,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.ManifestCleanupDeferred(logger, job.OperationId, exception);
         }
     }
 
@@ -315,5 +686,11 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8023, LogLevel.Warning, "Failed to revoke custom-code scoped job token for terminal job {OperationId}; it will expire at its absolute TTL")]
         public static partial void CustomCodeTokenRevokeFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8024, LogLevel.Warning, "Raster output manifest cleanup was deferred for terminal job {OperationId}; orphan reconciliation will retry")]
+        public static partial void ManifestCleanupDeferred(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8025, LogLevel.Warning, "Failed to acknowledge durable terminal projection for job {OperationId}; its outbox entry and manifest remain for retry")]
+        public static partial void TerminalProjectionAcknowledgementFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -168,6 +169,75 @@ public sealed class AzureBatchComputeBackendTests
             .WhoseValue.Should().Be("gdal-heavy");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_JOB_ID");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_WORKLOAD_NAME");
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterContractMetadataIsSafeAndAttemptScoped()
+    {
+        var stub = new StubAzureBatchClient();
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["azure.batch.account_url"] = "https://acct.eastus.batch.azure.com",
+            ["azure.batch.pool_id"] = "gdal-heavy-pool",
+            [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+            ["env." + RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] = "https://attacker.example/signed?secret=yes",
+            ["env." + RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] = "raster/staging/wrong/attempt-0/",
+            ["azure.batch.env." + RasterOutputWorkerContract.ManifestKeyEnvironmentVariable] = "credential=leak",
+            ["azure.batch.env." + RasterOutputWorkerContract.ContractVersionEnvironmentVariable] = "999"
+        };
+        var job = CreateJob(parameters: parameters);
+        job = job with
+        {
+            AttemptCount = 3,
+            Spec = job.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion
+            }
+        };
+
+        await backend.StartAsync(job);
+
+        var environment = stub.LastSubmission!.EnvironmentSettings;
+        environment["HONUA_CONTRACT_VERSION"].Should().Be("2");
+        environment[RasterOutputWorkerContract.ContractVersionEnvironmentVariable].Should().Be("1");
+        environment[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable].Should().Be("gp-results");
+        environment[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable].Should().Be(
+            RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 3));
+        environment[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable].Should().Be(
+            RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 3));
+        environment.Values.Should().NotContain(value =>
+            value.Contains("attacker", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("credential", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("secret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterContractRejectsUrlStoreReference()
+    {
+        var backend = new AzureBatchComputeBackend(
+            new StubAzureBatchClient(),
+            NullLogger<AzureBatchComputeBackend>.Instance);
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["azure.batch.account_url"] = "https://acct.eastus.batch.azure.com",
+            ["azure.batch.pool_id"] = "gdal-heavy-pool",
+            [RasterOutputWorkerContract.StoreReferenceParameter] =
+                "https://bucket.example/signed?token=secret"
+        };
+        var initial = CreateJob(parameters: parameters);
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion
+            }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*logical store reference*");
     }
 
     [Fact]
@@ -673,6 +743,7 @@ public sealed class AzureBatchComputeBackendTests
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsProgressPolling.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterOutputContract.JobContractVersion);
     }
 
     private static ExecutionJobRecord CreateJob(
