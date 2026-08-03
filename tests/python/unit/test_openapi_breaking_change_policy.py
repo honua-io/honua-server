@@ -79,6 +79,11 @@ class ResolvePolicyTests(unittest.TestCase):
             "single-line HTML comment": f"<!-- {marker} -->",
             "multiline HTML comment": f"<!--\n{marker}\n-->",
             "unclosed HTML comment": f"<!--\n{marker}",
+            "raw pre block": f"<pre>\n{marker}\n</pre>",
+            "raw uppercase pre block": f"<PRE class=example>\n{marker}\n</PRE>",
+            "unclosed raw script block": f"<script>\n{marker}",
+            "raw block-level HTML": f"<div>\n{marker}\n</div>",
+            "raw custom-element HTML": f"<honua-example>\n{marker}\n</honua-example>",
             "indented code": f"    {marker}",
         }
 
@@ -103,6 +108,19 @@ class ResolvePolicyTests(unittest.TestCase):
             decision.source,
             "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
         )
+
+    def test_ResolvePolicy_RenderedMarkerAfterRawHtml_AllowsBreakingChanges(self):
+        marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval"
+        bodies = {
+            "closed raw container": f"<pre>example</pre>\n{marker}",
+            "blank-terminated HTML block": f"<div>\nexample\n</div>\n\n{marker}",
+        }
+
+        for scenario, body in bodies.items():
+            with self.subTest(scenario=scenario):
+                decision = POLICY.resolve_policy("false", body)
+
+                self.assertTrue(decision.allow_breaking_changes)
 
     def test_ResolvePolicy_PrePublicationRepositoryOverride_TakesPrecedence(self):
         decision = POLICY.resolve_policy(

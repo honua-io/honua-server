@@ -27,6 +27,27 @@ HTML_COMMENT_PATTERN = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 FENCE_START_PATTERN = re.compile(
     r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
 )
+RAW_HTML_CONTAINER_START_PATTERN = re.compile(
+    r"^[ ]{0,3}<(?P<tag>pre|script|style|textarea)(?:[ \t]|>|$)",
+    re.IGNORECASE,
+)
+HTML_BLOCK_TAG_PATTERN = re.compile(
+    r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|"
+    r"center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|"
+    r"figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|"
+    r"li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|"
+    r"section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)"
+    r"(?:[ \t]|/?>|$)",
+    re.IGNORECASE,
+)
+HTML_COMPLETE_TAG_PATTERN = re.compile(
+    r"^[ ]{0,3}(?:"
+    r"<[A-Za-z][A-Za-z0-9-]*"
+    r"(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*"
+    r"(?:[ \t]*=[ \t]*(?:[^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*"
+    r"[ \t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)"
+    r"[ \t]*$"
+)
 
 
 @dataclass(frozen=True)
@@ -59,14 +80,26 @@ def pr_body_acknowledges_breaking_change(pr_body: str) -> bool:
 
 
 def _remove_non_rendered_markdown(markdown: str) -> str:
-    """Remove HTML comments and fenced code before policy-marker matching."""
+    """Remove raw HTML, HTML comments, and fences before marker matching."""
 
     uncommented = HTML_COMMENT_PATTERN.sub("", markdown)
     visible_lines: list[str] = []
     fence_character: str | None = None
     fence_length = 0
+    raw_html_end_pattern: re.Pattern[str] | None = None
+    raw_html_until_blank = False
 
     for line in uncommented.splitlines():
+        if raw_html_end_pattern is not None:
+            if raw_html_end_pattern.search(line) is not None:
+                raw_html_end_pattern = None
+            continue
+
+        if raw_html_until_blank:
+            if not line.strip():
+                raw_html_until_blank = False
+            continue
+
         if fence_character is not None:
             closing_fence = re.fullmatch(
                 rf"[ ]{{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*",
@@ -85,6 +118,21 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
                 fence_character = fence[0]
                 fence_length = len(fence)
                 continue
+
+        raw_html_container = RAW_HTML_CONTAINER_START_PATTERN.match(line)
+        if raw_html_container is not None:
+            tag = raw_html_container.group("tag")
+            closing_tag = re.compile(rf"</{re.escape(tag)}[ \t]*>", re.IGNORECASE)
+            if closing_tag.search(line, raw_html_container.end()) is None:
+                raw_html_end_pattern = closing_tag
+            continue
+
+        if (
+            HTML_BLOCK_TAG_PATTERN.match(line) is not None
+            or HTML_COMPLETE_TAG_PATTERN.fullmatch(line) is not None
+        ):
+            raw_html_until_blank = True
+            continue
 
         visible_lines.append(line)
 
