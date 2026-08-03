@@ -229,6 +229,33 @@ public sealed class ServingImageBoundaryTests
         genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
         genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
         genericDeploy.Should().Contain("compatibility_alias: -aot");
+        genericDeploy.Should().Contain("- name: Classify stable release tag", Exactly.Twice());
+        genericDeploy.Should().Contain(
+            "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.stable }}",
+            Exactly.Twice());
+        genericDeploy.Should().Contain("latest=false", Exactly.Twice(),
+            "only the explicit stable-release rule may create mutable latest aliases");
+        genericDeploy.Should().Contain(
+            "\"$RELEASE_TAG\" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+(\\+[0-9A-Za-z.-]+)?$",
+            Exactly.Twice(),
+            "only stable semantic-version tags may advance latest and latest-jit");
+        genericDeploy.Should().NotContain("enable={{is_default_branch}}");
+        genericDeploy.Should().Contain("needs: build-and-push",
+            "multi-architecture latest aliases must wait for verified architecture publications");
+
+        var stableReleasePattern = new System.Text.RegularExpressions.Regex(
+            @"^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        foreach (var stableTag in new[] { "v1.2.3", "v10.20.30+build-1" })
+        {
+            stableReleasePattern.IsMatch(stableTag).Should().BeTrue(stableTag);
+        }
+
+        foreach (var prereleaseTag in new[] { "v1.2.3-preview.4", "v1.2.3-rc.1", "trunk" })
+        {
+            stableReleasePattern.IsMatch(prereleaseTag).Should().BeFalse(prereleaseTag);
+        }
+
         platformDeploy.Should().Contain("tag_suffix: -ecs-jit");
         platformDeploy.Should().Contain("tag_suffix: -lambda-jit");
         platformDeploy.Should().Contain("tag_suffix: -functions-jit");
