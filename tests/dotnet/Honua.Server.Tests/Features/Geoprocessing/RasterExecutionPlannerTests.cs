@@ -580,6 +580,31 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void RequestFactory_ResampleModelTransformation_DerivesBoundedOutputGridForLocalWorker()
+    {
+        var request = CreateLegacyRequest(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTransformedGeoTiffHeaderBase64(
+                    width: 1_000,
+                    height: 500,
+                    xFromColumn: 30,
+                    xFromRow: 0,
+                    yFromColumn: 0,
+                    yFromRow: -20),
+                ["cellSize"] = "60",
+                ["cellSizeY"] = "10",
+            });
+
+        request.Cost.InputPixels.Should().Be(500_000);
+        request.Cost.OutputPixels.Should().Be(500_000);
+        var decision = _builtInPlanner.Plan(request);
+        decision.Cost.UnknownInputs.Should().BeEmpty();
+        decision.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
     public void RequestFactory_ResampleWithLateFirstIfd_ReadsOnlyDeclaredMetadataRanges()
     {
         var request = CreateLegacyRequest(
@@ -709,6 +734,39 @@ public sealed class RasterExecutionPlannerTests
         WriteDouble(payload, pixelScaleOffset, scaleX);
         WriteDouble(payload, pixelScaleOffset + sizeof(double), scaleY);
         WriteDouble(payload, pixelScaleOffset + sizeof(double) * 2, 0);
+        return Convert.ToBase64String(payload);
+    }
+
+    private static string CreateTransformedGeoTiffHeaderBase64(
+        int width,
+        int height,
+        double xFromColumn,
+        double xFromRow,
+        double yFromColumn,
+        double yFromRow)
+    {
+        const int ifdOffset = 8;
+        const int matrixOffset = ifdOffset + 66;
+        var payload = new byte[matrixOffset + sizeof(double) * 16];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset), 5);
+        WriteTiffEntry(payload, ifdOffset + 2, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, ifdOffset + 14, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, ifdOffset + 26, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, ifdOffset + 38, tag: 277, type: 3, value: 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset + 50), 34264);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset + 52), 12);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(ifdOffset + 54), 16);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(ifdOffset + 58), matrixOffset);
+        WriteDouble(payload, matrixOffset, xFromColumn);
+        WriteDouble(payload, matrixOffset + sizeof(double), xFromRow);
+        WriteDouble(payload, matrixOffset + 4 * sizeof(double), yFromColumn);
+        WriteDouble(payload, matrixOffset + 5 * sizeof(double), yFromRow);
+        WriteDouble(payload, matrixOffset + 10 * sizeof(double), 1);
+        WriteDouble(payload, matrixOffset + 15 * sizeof(double), 1);
         return Convert.ToBase64String(payload);
     }
 
