@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
 using Honua.PackageReview;
@@ -80,6 +81,62 @@ public sealed class AnalysisPlanPackageReviewAdapterTests
         capturedPrincipal.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
         capturedPrincipal.Claims.Should().Contain(c => c.Type == "roles" && c.Value == "admin");
         capturedPrincipal.Claims.Should().Contain(c => c.Type == "tenant_id" && c.Value == "tenant-a");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ReviewAsync_TypedRasterSources_PreserveCanonicalPlanBindings()
+    {
+        AnalysisPlan? capturedPlan = null;
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.ValidatePlan(Arg.Do<AnalysisPlan>(plan => capturedPlan = plan), Arg.Any<ClaimsPrincipal>())
+            .Returns(new PlanValidationResult { IsExecutable = false });
+        var adapter = new AnalysisPlanPackageReviewAdapter(jobService);
+        var descriptor = new ObjectStoreCogRasterSourceDescriptor
+        {
+            Version = "object-v1",
+            StoreReference = "imagery-prod",
+            ObjectKey = "tenant/source.tif",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 4096,
+                MediaType = "image/tiff",
+                ETag = "etag-1",
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "auth-snapshot-1",
+            },
+        };
+        var descriptorJson = RasterSourceJson.Serialize(descriptor);
+        using var document = JsonDocument.Parse(
+            $$"""
+            {
+              "planId": "plan-raster",
+              "intentId": "intent-raster",
+              "steps": [
+                {
+                  "stepId": "step-raster",
+                  "kind": "Geoprocess",
+                  "processId": "raster.reproject",
+                  "rasterSources": { "source": {{descriptorJson}} }
+                }
+              ]
+            }
+            """);
+        var request = new PackageReviewRequest
+        {
+            PackageFamily = PackageReviewFamilies.AnalysisPlan,
+            PackagePayload = document.RootElement.Clone(),
+        };
+
+        await adapter.ReviewAsync(request, CreateContext(), CancellationToken.None);
+
+        capturedPlan.Should().NotBeNull();
+        var source = capturedPlan!.Steps.Single().RasterSources.Single();
+        source.Key.Should().Be("source");
+        source.Value.Should().BeEquivalentTo(descriptor);
     }
 
     private static PackageReviewRequest CreateRequest(bool includePreview = false)

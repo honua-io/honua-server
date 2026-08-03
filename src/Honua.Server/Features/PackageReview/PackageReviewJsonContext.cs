@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Infrastructure.Models;
 
@@ -14,6 +15,7 @@ namespace Honua.PackageReview;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true,
     WriteIndented = false)]
 [JsonSerializable(typeof(PackageReviewRequest))]
 [JsonSerializable(typeof(PackageReviewRequirements))]
@@ -29,6 +31,7 @@ namespace Honua.PackageReview;
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(AnalysisPlanPackagePayload))]
 [JsonSerializable(typeof(AnalysisPlanStepPackagePayload))]
+[JsonSerializable(typeof(Dictionary<string, RasterSourceDescriptor>))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class PackageReviewJsonContext : JsonSerializerContext
 {

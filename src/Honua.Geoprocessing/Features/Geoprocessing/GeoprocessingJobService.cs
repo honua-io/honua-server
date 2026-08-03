@@ -200,8 +200,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
-        var rasterContractViolations = _artifacts.GetRasterSourceValidationFailures(plan);
-        violations.AddRange(rasterContractViolations);
+        var rasterValidationViolations = _artifacts.GetRasterSourceValidationFailures(plan);
+        violations.AddRange(rasterValidationViolations);
 
         if (string.IsNullOrWhiteSpace(plan.PlanId))
         {
@@ -235,10 +235,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 
-        // A malformed descriptor gets its precise contract diagnostics instead of the
-        // lower-value execution-boundary refusal that applies to otherwise valid direct
-        // durable references.
-        var rasterExecutionViolation = rasterContractViolations.Count == 0
+        // A malformed descriptor or parameter binding gets its precise diagnostics instead
+        // of the lower-value execution-boundary refusal that applies to otherwise valid
+        // direct durable references.
+        var rasterExecutionViolation = rasterValidationViolations.Count == 0
             ? GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan)
             : null;
         if (rasterExecutionViolation is not null)

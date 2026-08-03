@@ -61,6 +61,15 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Deserialize_OmittedSourceContractVersion_IsRejected()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        Assert.True(document.Remove("sourceContractVersion"));
+
+        Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(document.ToJsonString()));
+    }
+
+    [Fact]
     public void Validate_FutureContractVersion_IsRejectedForRollingUpgradeSafety()
     {
         var descriptor = Cog() with
@@ -250,6 +259,23 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void ValidatePlan_DescriptorFailure_ReportsStepBindingAndFieldPath()
+    {
+        var result = RasterSourcePlanValidator.Validate(Plan(new Dictionary<string, RasterSourceDescriptor>
+        {
+            ["source"] = Cog(),
+            ["mask"] = Cog() with { ObjectKey = "../tenant/mask.tif" },
+        }));
+
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "steps[step-0].raster_sources.mask.objectKey");
+        Assert.DoesNotContain(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "objectKey");
+    }
+
+    [Fact]
     public void SecurityContext_CallerCannotMarkReferenceTrusted()
     {
         var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
@@ -326,6 +352,30 @@ public sealed class RasterSourceContractTests
         var result = RasterSourceDescriptorValidator.Validate(descriptor);
 
         Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+    }
+
+    [Fact]
+    public void Validate_SelectionCountCeilings_DoNotEnumerateOversizedCollections()
+    {
+        var descriptor = Zarr() with
+        {
+            Selection = new RasterSourceSelection
+            {
+                Bands = new ThrowingReadOnlyList<int>(2),
+                Dimensions = new ThrowingReadOnlyList<RasterDimensionSlice>(2),
+            },
+        };
+        var options = RasterSourceValidationOptions.Default with
+        {
+            MaxBandSelections = 1,
+            MaxDimensionSelections = 1,
+        };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
+        Assert.Equal(2, result.Errors.Count(error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && error.Message.Contains("configured count limit", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -511,5 +561,17 @@ public sealed class RasterSourceContractTests
         public Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
             RasterSourceDescriptor descriptor,
             CancellationToken cancellationToken = default) => callback(descriptor, cancellationToken);
+    }
+
+    private sealed class ThrowingReadOnlyList<T>(int count) : IReadOnlyList<T>
+    {
+        public int Count { get; } = count;
+
+        public T this[int index] => throw new InvalidOperationException("Oversized collection was indexed.");
+
+        public IEnumerator<T> GetEnumerator() =>
+            throw new InvalidOperationException("Oversized collection was enumerated.");
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

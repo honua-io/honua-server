@@ -229,7 +229,53 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeFalse();
         result.Violations.Should().ContainSingle(violation =>
             violation.Code == RasterSourceValidationCodes.UnsafeLocator
-            && violation.FieldPath == "objectKey");
+            && violation.FieldPath == "steps[step-raster].raster_sources.source.objectKey");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonRasterParameter_ReportsBindingFailure()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("resampling"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.resampling");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedAndLegacyRasterSource_ReportsBindingFailure()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
+                    {
+                        ["source"] = "legacy-source",
+                    },
+                },
+            ],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.source"
+            && violation.Message.Contains("both a typed reference", StringComparison.Ordinal));
         result.Violations.Should().NotContain(violation =>
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
     }
@@ -3939,10 +3985,10 @@ public sealed class GeoprocessingJobServiceTests
     private static AnalysisPlan CreateTypedRasterPlan(
         string parameterName,
         ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
-    {
-        PlanId = "plan-typed-raster",
-        IntentId = "intent-typed-raster",
-        Steps =
+        {
+            PlanId = "plan-typed-raster",
+            IntentId = "intent-typed-raster",
+            Steps =
         [
             new AnalysisPlanStep
             {
@@ -3956,7 +4002,7 @@ public sealed class GeoprocessingJobServiceTests
                 },
             },
         ],
-    };
+        };
 
     private static AnalysisPlan CreateInlineRasterSourcePlan(string source, int? layerId = null)
     {
