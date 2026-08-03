@@ -66,9 +66,10 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
                     : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
             },
             cancellationToken).ConfigureAwait(false);
+        using var download = response.Value;
 
         using var ms = new MemoryStream(length);
-        await response.Value.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
+        await download.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         return ms.ToArray();
     }
 

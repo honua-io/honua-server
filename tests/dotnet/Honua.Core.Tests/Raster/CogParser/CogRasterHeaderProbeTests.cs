@@ -34,6 +34,25 @@ public sealed class CogRasterHeaderProbeTests
     }
 
     [Fact]
+    public async Task ReadAsync_BigEndianClassicTiff_DecodesInlineUnsignedScalars()
+    {
+        const string etag = "big-endian-etag";
+        var reader = new ConditionalRangeReader(BuildBigEndianClassicTiff(), etag);
+
+        var result = await CogRasterHeaderProbe.ReadAsync(
+            reader,
+            "imagery",
+            "big-endian.tif",
+            etag);
+
+        Assert.Equal(640, result.Dimensions.Width);
+        Assert.Equal(480, result.Dimensions.Height);
+        Assert.Equal(3, result.Dimensions.BandCount);
+        Assert.Equal(16, result.Dimensions.BitsPerSample);
+        Assert.Equal(0, reader.UnconditionalReadCount);
+    }
+
+    [Fact]
     public async Task ReadAsync_UnsupportedDimensionFieldType_FailsClosed()
     {
         var reader = new ConditionalRangeReader(BuildClassicTiffWithRationalWidth(), "etag-a");
@@ -58,6 +77,20 @@ public sealed class CogRasterHeaderProbeTests
                 "stale-etag"));
 
         Assert.Contains("ETag", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, reader.UnconditionalReadCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_OverflowingBigTiffIfdOffset_FailsBeforeSecondRangeRead()
+    {
+        const string etag = "overflow-etag";
+        var reader = new ConditionalRangeReader(BuildBigTiffHeader(long.MaxValue), etag);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CogRasterHeaderProbe.ReadAsync(reader, "imagery", "overflow.tif", etag));
+
+        Assert.Contains("overflowing object range", exception.Message, StringComparison.Ordinal);
+        Assert.Single(reader.Requests);
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
@@ -87,6 +120,17 @@ public sealed class CogRasterHeaderProbeTests
         return bytes;
     }
 
+    private static byte[] BuildBigTiffHeader(long firstIfdOffset)
+    {
+        var bytes = new byte[16];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 43);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(4), 8);
+        BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(8), firstIfdOffset);
+        return bytes;
+    }
+
     private static byte[] BuildClassicTiffWithRationalWidth()
     {
         const int ifdOffset = 8;
@@ -103,6 +147,25 @@ public sealed class CogRasterHeaderProbeTests
         WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 64);
         WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 8);
         WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 1);
+        return bytes;
+    }
+
+    private static byte[] BuildBigEndianClassicTiff()
+    {
+        const int ifdOffset = 8;
+        const ushort entryCount = 4;
+        var bytes = new byte[ifdOffset + 2 + (entryCount * 12) + 4];
+        bytes[0] = (byte)'M';
+        bytes[1] = (byte)'M';
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(ifdOffset), entryCount);
+
+        var entryOffset = ifdOffset + 2;
+        WriteBigEndianClassicTiffEntry(bytes, entryOffset, tag: 256, type: 4, count: 1, value: 640);
+        WriteBigEndianClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 480);
+        WriteBigEndianClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 16);
+        WriteBigEndianClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 3);
         return bytes;
     }
 
@@ -132,6 +195,26 @@ public sealed class CogRasterHeaderProbeTests
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset + 2), type);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset + 4), count);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset + 8), value);
+    }
+
+    private static void WriteBigEndianClassicTiffEntry(
+        byte[] bytes,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint count,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(offset + 4), count);
+        if (type == 3 && count == 1)
+        {
+            BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(offset + 8), checked((ushort)value));
+            return;
+        }
+
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(offset + 8), value);
     }
 
     private sealed class ConditionalRangeReader(byte[] payload, string currentETag) : ICloudRangeReader

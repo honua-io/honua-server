@@ -238,9 +238,23 @@ public static class CogRasterHeaderProbe
             int length,
             CancellationToken cancellationToken)
         {
+            if (offset < 0
+                || length <= 0
+                || offset > long.MaxValue - (length - 1L))
+            {
+                throw new InvalidDataException(
+                    "TIFF admission probe requested an invalid or overflowing object range.");
+            }
+
             var bytes = await reader
                 .ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken)
                 .ConfigureAwait(false);
+            if (bytes.Length > length)
+            {
+                throw new InvalidDataException(
+                    "Object range reader returned more data than the bounded admission probe requested.");
+            }
+
             RangeCount = checked(RangeCount + 1);
             RequestedBytes = checked(RequestedBytes + length);
             ReceivedBytes = checked(ReceivedBytes + bytes.Length);
