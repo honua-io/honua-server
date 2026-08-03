@@ -788,6 +788,77 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_EmptyReplayBeforeDurableHead_EndsBeforeLiveHandoff()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new MissingReplayTailEventStore(inner, returnContiguousPrefix: false));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var baseline = await ReadBaselineAsync(reader, cts.Token);
+            baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
+                "the durable head advances only after the snapshot retention check");
+
+            var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+            delta.Should().BeNull(
+                "an empty Redis result must be retried against the durable head and fail closed "
+                + "when the required tail payload remains unavailable");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_ShortReplayBeforeDurableHead_ClosesAfterContiguousPrefix()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var fixture = CreateFixtureWithEventStoreDecorator(
+            inner => new MissingReplayTailEventStore(inner, returnContiguousPrefix: true));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var wsClient = fixture.CreateWebSocketClient();
+            using var ws = await wsClient.ConnectAsync(
+                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot"),
+                cts.Token);
+
+            JsonElement frame;
+            do
+            {
+                frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            }
+            while (frame.GetProperty("type").GetString() != SnapshotEnd);
+
+            var prefix = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            prefix.GetProperty("type").GetString().Should().Be(FeatureChange);
+            prefix.GetProperty("cursor").GetInt64().Should().Be(1);
+
+            var sawAnotherDelta = await ReceiveFeatureChangeBeforeCloseAsync(ws, cts.Token);
+            sawAnotherDelta.Should().BeFalse(
+                "a short contiguous Redis batch must not hand off to live delivery while the "
+                + "already-observed durable tail is missing");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete()
     {
         // The cap is set equal to the page size, so it is reached exactly when a page ends and
@@ -1047,6 +1118,75 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 RequestId = eventId,
                 PropertiesJson = "{}"
             };
+    }
+
+    /// <summary>
+    /// Simulates a tail payload expiring after snapshot retention validation. The first replay
+    /// query is empty or returns a contiguous prefix; only the subsequent durable-window read
+    /// exposes a head beyond that result. A retry still cannot retrieve the required tail.
+    /// </summary>
+    private sealed class MissingReplayTailEventStore(
+        IFeatureChangeEventStore inner,
+        bool returnContiguousPrefix) : IFeatureChangeEventStore
+    {
+        private int _queryCount;
+
+        public Task<FeatureChangeEvent> AppendAsync(
+            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(request, cancellationToken);
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _queryCount) == 0)
+            {
+                return Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 0));
+            }
+
+            var currentCursor = returnContiguousPrefix ? 2 : 1;
+            return Task.FromResult(FeatureChangeRetentionWindow.Retained(currentCursor, oldestRetainedCursor: 1));
+        }
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            if (!cursor.HasValue)
+            {
+                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
+            }
+
+            var queryCount = Interlocked.Increment(ref _queryCount);
+            if (!returnContiguousPrefix || queryCount > 1)
+            {
+                return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+            }
+
+            IReadOnlyList<FeatureChangeEvent> prefix =
+            [
+                new FeatureChangeEvent
+                {
+                    EventId = "contiguous-prefix",
+                    Cursor = cursor.Value + 1,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    SourceId = TestServiceId,
+                    ServiceId = TestServiceId,
+                    LayerId = 0,
+                    ObjectId = 1,
+                    Operation = "update",
+                    Protocol = "test",
+                    RequestId = "contiguous-prefix",
+                    PropertiesJson = "{}"
+                }
+            ];
+            return Task.FromResult(prefix);
+        }
     }
 
     private static IFeatureChangeEventStore CreateEventStore(
