@@ -25,8 +25,10 @@ APPROVAL_PATTERN = re.compile(
 )
 HTML_COMMENT_PATTERN = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 FENCE_START_PATTERN = re.compile(
-    r"^[ ]{0,3}(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?"
-    r"(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
+    r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
+)
+LIST_CONTAINER_PATTERN = re.compile(
+    r"^[ ]{0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+"
 )
 RAW_HTML_CONTAINER_START_PATTERN = re.compile(
     r"^[ ]{0,3}<(?P<tag>pre|script|style|textarea)(?:[ \t]|>|$)",
@@ -116,7 +118,11 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
                 fence_length = 0
             continue
 
-        opening_fence = FENCE_START_PATTERN.fullmatch(line)
+        block_line = line
+        while (list_container := LIST_CONTAINER_PATTERN.match(block_line)) is not None:
+            block_line = block_line[list_container.end():]
+
+        opening_fence = FENCE_START_PATTERN.fullmatch(block_line)
         if opening_fence is not None:
             fence = opening_fence.group("fence")
             info = opening_fence.group("info")
@@ -125,21 +131,21 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
                 fence_length = len(fence)
                 continue
 
-        raw_html_container = RAW_HTML_CONTAINER_START_PATTERN.match(line)
+        raw_html_container = RAW_HTML_CONTAINER_START_PATTERN.match(block_line)
         if raw_html_container is not None:
             tag = raw_html_container.group("tag")
             closing_tag = re.compile(rf"</{re.escape(tag)}[ \t]*>", re.IGNORECASE)
-            if closing_tag.search(line, raw_html_container.end()) is None:
+            if closing_tag.search(block_line, raw_html_container.end()) is None:
                 raw_html_end_pattern = closing_tag
             continue
 
         delimited_html_block = False
         for opening_pattern, closing_pattern in RAW_HTML_DELIMITED_BLOCK_PATTERNS:
-            opening_match = opening_pattern.match(line)
+            opening_match = opening_pattern.match(block_line)
             if opening_match is None:
                 continue
 
-            if closing_pattern.search(line, opening_match.end()) is None:
+            if closing_pattern.search(block_line, opening_match.end()) is None:
                 raw_html_end_pattern = closing_pattern
             delimited_html_block = True
             break
@@ -147,8 +153,8 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
             continue
 
         if (
-            HTML_BLOCK_TAG_PATTERN.match(line) is not None
-            or HTML_COMPLETE_TAG_PATTERN.fullmatch(line) is not None
+            HTML_BLOCK_TAG_PATTERN.match(block_line) is not None
+            or HTML_COMPLETE_TAG_PATTERN.fullmatch(block_line) is not None
         ):
             raw_html_until_blank = True
             continue

@@ -89,6 +89,9 @@ class ResolvePolicyTests(unittest.TestCase):
             "raw processing instruction": f"<?xml\n{marker}\n?>",
             "raw declaration": f"<!DOCTYPE\n{marker}\n>",
             "raw CDATA section": f"<![CDATA[\n{marker}\n]]>",
+            "raw pre block nested in list": f"- <pre>\n  {marker}\n  </pre>",
+            "raw div block nested in ordered list": f"1. <div>\n   {marker}\n   </div>",
+            "raw declaration nested in list": f"- <!DOCTYPE\n  {marker}\n  >",
             "indented code": f"    {marker}",
         }
 
@@ -135,6 +138,8 @@ class ResolvePolicyTests(unittest.TestCase):
             "closed processing instruction": f"<?xml?>\n{marker}",
             "closed declaration": f"<!DOCTYPE html>\n{marker}",
             "closed CDATA section": f"<![CDATA[example]]>\n{marker}",
+            "closed raw container nested in list": f"- <pre>example</pre>\n{marker}",
+            "blank-terminated nested HTML block": f"1. <div>\n   example\n   </div>\n\n{marker}",
         }
 
         for scenario, body in bodies.items():
