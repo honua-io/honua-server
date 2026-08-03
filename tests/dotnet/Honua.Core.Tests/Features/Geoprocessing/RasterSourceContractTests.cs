@@ -61,6 +61,15 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Deserialize_OmittedSourceContractVersion_IsRejected()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        Assert.True(document.Remove("sourceContractVersion"));
+
+        Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(document.ToJsonString()));
+    }
+
+    [Fact]
     public void Validate_FutureContractVersion_IsRejectedForRollingUpgradeSafety()
     {
         var descriptor = Cog() with
@@ -247,6 +256,23 @@ public sealed class RasterSourceContractTests
         }));
 
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InvalidParameterName);
+    }
+
+    [Fact]
+    public void ValidatePlan_DescriptorFailure_ReportsStepBindingAndFieldPath()
+    {
+        var result = RasterSourcePlanValidator.Validate(Plan(new Dictionary<string, RasterSourceDescriptor>
+        {
+            ["source"] = Cog(),
+            ["mask"] = Cog() with { ObjectKey = "../tenant/mask.tif" },
+        }));
+
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "steps[step-0].raster_sources.mask.objectKey");
+        Assert.DoesNotContain(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "objectKey");
     }
 
     [Fact]

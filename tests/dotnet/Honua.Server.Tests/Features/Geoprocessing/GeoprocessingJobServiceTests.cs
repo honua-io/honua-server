@@ -226,7 +226,7 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeFalse();
         result.Violations.Should().ContainSingle(violation =>
             violation.Code == RasterSourceValidationCodes.UnsafeLocator
-            && violation.FieldPath == "objectKey");
+            && violation.FieldPath == "steps[step-raster].raster_sources.source.objectKey");
         result.Violations.Should().NotContain(violation =>
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
     }

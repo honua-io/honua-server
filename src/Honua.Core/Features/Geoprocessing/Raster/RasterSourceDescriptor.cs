@@ -40,6 +40,7 @@ public static class RasterSourceContract
 public abstract record RasterSourceDescriptor
 {
     /// <summary>The version of this descriptor schema.</summary>
+    [JsonRequired]
     public int SourceContractVersion { get; init; } = RasterSourceContract.CurrentVersion;
 
     /// <summary>

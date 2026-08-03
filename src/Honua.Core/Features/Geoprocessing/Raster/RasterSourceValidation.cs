@@ -551,6 +551,7 @@ public static class RasterSourcePlanValidator
             foreach (var source in step.RasterSources)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var sourcePath = $"steps[{step.StepId}].raster_sources.{source.Key}";
                 sourceCount++;
                 if (sourceCount > options.MaxSourcesPerPlan)
                 {
@@ -574,15 +575,17 @@ public static class RasterSourcePlanValidator
                 {
                     errors.Add(new RasterSourceValidationError(
                         RasterSourceValidationCodes.InvalidField,
-                        source.Key,
+                        sourcePath,
                         "Raster source descriptor is required."));
                     continue;
                 }
 
                 errors.AddRange(RasterSourceDescriptorValidator.Validate(
-                    source.Value,
-                    options,
-                    cancellationToken).Errors);
+                        source.Value,
+                        options,
+                        cancellationToken)
+                    .Errors
+                    .Select(error => error with { Field = $"{sourcePath}.{error.Field}" }));
                 if (!serializedBudgetExceeded)
                 {
                     try
@@ -593,7 +596,7 @@ public static class RasterSourcePlanValidator
                     {
                         errors.Add(new RasterSourceValidationError(
                             RasterSourceValidationCodes.InvalidField,
-                            source.Key,
+                            sourcePath,
                             "Raster source descriptor type cannot be serialized by this contract version."));
                     }
 
