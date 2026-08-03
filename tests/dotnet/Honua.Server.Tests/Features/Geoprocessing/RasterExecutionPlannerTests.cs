@@ -368,22 +368,69 @@ public sealed class RasterExecutionPlannerTests
     [Fact]
     public void RequestFactory_ZonalStatistics_DerivesBoundedZoneCountFromAcceptedZonesPayload()
     {
+        const string zonesJson =
+            """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}},{"type":"Feature","geometry":null,"properties":{}}]}""";
+        var zonesBytes = Encoding.UTF8.GetBytes(zonesJson);
+        var encodedZones = Convert.ToBase64String(zonesBytes);
+        var admittedZoneBytes = encodedZones.Length * 3L / 4;
         var request = CreateLegacyRequest(
             "raster.zonal-statistics",
             new Dictionary<string, string>
             {
                 ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
-                ["zones"] = "e30=",
+                ["zones"] = encodedZones,
             });
 
-        request.Cost.ZoneCount.Should().Be(3,
-            "the decoded-byte upper bound completes planning without trusting a nonexistent zoneCount input");
-        request.Cost.DecodedBytes.Should().Be(4_099,
-            "the raster allocation and decoded zones payload both count toward admission");
-        request.Cost.ExpectedScratchBytes.Should().Be(8_198);
-        request.Cost.ExpectedDatabaseWork.Should().Be(1_536,
-            "each conservatively bounded zone can scan the source raster");
+        request.Cost.ZoneCount.Should().Be(2,
+            "managed bounded metadata parsing counts the actual FeatureCollection entries");
+        request.Cost.DecodedBytes.Should().Be(4_096 + (admittedZoneBytes * 4),
+            "the raster allocation plus zones payload and parsing footprint count toward admission");
+        request.Cost.ExpectedScratchBytes.Should().Be((4_096 + (admittedZoneBytes * 4)) * 2);
+        request.Cost.ExpectedDatabaseWork.Should().Be(1_024,
+            "each actual zone can scan the source raster");
         _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void RequestFactory_LargeZonalPayload_DoesNotMaterializeGeoJsonInWebProcess()
+    {
+        var zonesJson =
+            "{\"type\":\"FeatureCollection\",\"features\":[],\"padding\":\""
+            + new string('x', (1024 * 1024) + 1)
+            + "\"}";
+        var request = CreateLegacyRequest(
+            "raster.zonal-statistics",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                ["zones"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(zonesJson)),
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.ZoneCount.Should().BeNull(
+            "large GeoJSON metadata must not be materialized by the lightweight web process");
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.ReasonCode.Should().Be("native-remote-conservative");
+    }
+
+    [Fact]
+    public void RequestFactory_RasterClip_ChargesBoundaryPayloadAndParsingFootprint()
+    {
+        var boundaryBytes = new byte[4_096];
+        var encodedBoundary = Convert.ToBase64String(boundaryBytes);
+        var admittedBoundaryBytes = encodedBoundary.Length * 3L / 4;
+        var request = CreateLegacyRequest(
+            "raster.clip",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                ["boundary"] = encodedBoundary,
+            });
+
+        request.Cost.DecodedBytes.Should().Be(4_096 + (admittedBoundaryBytes * 4),
+            "the boundary WKB and its managed geometry parsing footprint are local allocations");
+        request.Cost.ExpectedScratchBytes.Should().Be((4_096 + (admittedBoundaryBytes * 4)) * 2);
     }
 
     [Fact]

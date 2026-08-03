@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using System.Text.Json;
 
 namespace Honua.Geoprocessing;
 
@@ -12,7 +13,9 @@ internal static class RasterExecutionPlanningRequestFactory
     private const long OpaquePayloadExpansionFactor = 64;
     private const long BytesPerSample = 8;
     private const long ScratchExpansionFactor = 2;
+    private const long SecondaryGeometryExpansionFactor = 4;
     private const long GdalGridDefaultDimension = 256;
+    private const long MaxGeoJsonMetadataBytes = 1024 * 1024;
 
     public static RasterExecutionPlanningRequest Create(
         AnalysisPlan plan,
@@ -74,7 +77,8 @@ internal static class RasterExecutionPlanningRequestFactory
         var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
         var sampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
         var zonePayloadBytes = ResolveZonePayloadBytes(step);
-        var zoneCount = ResolveZoneCount(step, zonePayloadBytes);
+        var zoneCount = ResolveZoneCount(step);
+        var boundaryPayloadBytes = ResolveClipBoundaryPayloadBytes(step);
         var outputPixels = TryReadOutputPixels(step) ?? TryDeriveResampleOutputPixels(step, sources);
         if (outputPixels is null && !RequiresDerivedOutputGrid(step))
         {
@@ -96,9 +100,12 @@ internal static class RasterExecutionPlanningRequestFactory
             decodedBytes = Math.Max(decodedBytes.Value, outputBytes);
         }
 
-        if (decodedBytes is { } rasterBytes && zonePayloadBytes is > 0)
+        var secondaryGeometryBytes = SaturatingMultiply(
+            SaturatingAdd(zonePayloadBytes ?? 0, boundaryPayloadBytes ?? 0),
+            SecondaryGeometryExpansionFactor);
+        if (decodedBytes is { } rasterBytes && secondaryGeometryBytes > 0)
         {
-            decodedBytes = SaturatingAdd(rasterBytes, zonePayloadBytes.Value);
+            decodedBytes = SaturatingAdd(rasterBytes, secondaryGeometryBytes);
         }
 
         long? scratchBytes = decodedBytes is { } decoded
@@ -460,19 +467,70 @@ internal static class RasterExecutionPlanningRequestFactory
         return TryGetEncodedPayloadBytes(ReadInput(step, "zones"));
     }
 
-    private static long? ResolveZoneCount(AnalysisPlanStep step, long? zonePayloadBytes)
+    private static long? ResolveZoneCount(AnalysisPlanStep step)
     {
         if (!string.Equals(step.ProcessId, "raster.zonal-statistics", StringComparison.Ordinal))
         {
             return 0;
         }
 
-        // The accepted contract carries base64 GeoJSON in 'zones', not a separate trusted
-        // zoneCount. Without decoding in the web process, decoded payload bytes are a safe upper
-        // bound on feature count (every feature occupies at least one byte). This completes the
-        // cost vector without trusting a caller-supplied count or allocating the GeoJSON here;
-        // the native worker still parses it and enforces exact feature/vertex caps.
-        return zonePayloadBytes is { } bytes ? Math.Max(bytes, 1) : null;
+        // Count the accepted FeatureCollection with the managed JSON reader. The metadata scan is
+        // deliberately capped so a large inline vector payload is remotely isolated instead of
+        // being materialized by the lightweight web process. The native worker remains the
+        // authority for geometry validity plus exact feature and vertex ceilings.
+        return TryCountGeoJsonFeatures(ReadInput(step, "zones"), out var count)
+            ? count
+            : null;
+    }
+
+    private static long? ResolveClipBoundaryPayloadBytes(AnalysisPlanStep step)
+    {
+        if (!string.Equals(step.ProcessId, "raster.clip", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        return TryGetEncodedPayloadBytes(ReadInput(step, "boundary"));
+    }
+
+    private static bool TryCountGeoJsonFeatures(string? encoded, out long count)
+    {
+        count = 0;
+        var decodedBytes = TryGetEncodedPayloadBytes(encoded);
+        if (decodedBytes is null or > MaxGeoJsonMetadataBytes)
+        {
+            return false;
+        }
+
+        byte[] payload;
+        try
+        {
+            payload = Convert.FromBase64String(encoded!);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("type", out var type)
+                || !string.Equals(type.GetString(), "FeatureCollection", StringComparison.Ordinal)
+                || !document.RootElement.TryGetProperty("features", out var features)
+                || features.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            count = features.GetArrayLength();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool TryReadPositiveLong(AnalysisPlanStep step, string key, out long value)
