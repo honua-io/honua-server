@@ -562,7 +562,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // Raster planning proves that remote native execution is required; workload
             // placement then chooses the compatible provider envelope. Finalize the durable
             // raster snapshot with that exact backend before the job record is persisted.
-            rasterDecision = rasterDecision with { Backend = placement.Workload.Backend };
+            rasterDecision = rasterDecision with
+            {
+                Backend = placement.Workload.Backend,
+                RemoteWorkloadId = placement.Workload.WorkloadId,
+            };
         }
 
         var spec = BuildSpec(

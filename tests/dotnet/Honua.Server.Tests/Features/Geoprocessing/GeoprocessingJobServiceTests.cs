@@ -755,10 +755,12 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.ComputePlacement!.Backend.Should().Be("zzz-compatible");
         job.Spec.RasterExecution.Should().NotBeNull();
         job.Spec.RasterExecution!.Backend.Should().Be("zzz-compatible");
+        job.Spec.RasterExecution.RemoteWorkloadId.Should().Be("gp-remote-compatible");
         await compatibleBackend.Received(1).StartAsync(
             Arg.Is<ExecutionJobRecord>(record =>
                 record.Spec.RasterExecution != null
-                && record.Spec.RasterExecution.Backend == "zzz-compatible"),
+                && record.Spec.RasterExecution.Backend == "zzz-compatible"
+                && record.Spec.RasterExecution.RemoteWorkloadId == "gp-remote-compatible"),
             Arg.Any<CancellationToken>());
         await limitedBackend.DidNotReceive().StartAsync(
             Arg.Any<ExecutionJobRecord>(),
@@ -848,6 +850,15 @@ public sealed class GeoprocessingJobServiceTests
         [
             new ExecutionJobDefinition
             {
+                WorkloadId = "aaa-managed-same-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Managed workload on shared backend",
+                RuntimeProfile = RuntimeProfiles.Managed,
+            },
+            new ExecutionJobDefinition
+            {
                 WorkloadId = "gp-remote-native",
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.AwsBatch,
@@ -911,6 +922,8 @@ public sealed class GeoprocessingJobServiceTests
 
         job.Spec.RasterExecution.Should().NotBeNull();
         job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        job.Spec.RasterExecution.RemoteWorkloadId.Should().Be("gp-remote-native");
+        job.Spec.WorkloadId.Should().Be("gp-remote-native");
         job.Spec.RasterExecution.Cost.UsesConservativeValues.Should().BeTrue();
         job.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
         await admission.Received(1).EvaluateAsync(

@@ -124,15 +124,16 @@ internal sealed class GeoprocessingJobDispatcher
         var remoteWorkload = await FindRemoteRasterWorkloadAsync(cancellationToken).ConfigureAwait(false);
         var remoteBackendAvailable = remoteWorkload is not null
             && _backends.Resolve(remoteWorkload.Backend, remoteWorkload.TargetKind) is not null;
-        // This backend proves that a remote native lane exists for raster-engine planning. The
+        // This workload proves that a remote native lane exists for raster-engine planning. The
         // per-job workload planner later evaluates every compatible remote envelope and the job
-        // service finalizes RasterExecutionDecision.Backend with the selected provider.
+        // service finalizes both backend and workload identity with the selected provider lane.
         var request = RasterExecutionPlanningRequestFactory.Create(
             plan,
             definition.RasterEngineCapabilities,
             _rasterExecutionOptions.CurrentValue,
             remoteBackendAvailable,
-            remoteBackendAvailable ? remoteWorkload!.Backend : null);
+            remoteBackendAvailable ? remoteWorkload!.Backend : null,
+            remoteBackendAvailable ? remoteWorkload!.WorkloadId : null);
 
         try
         {

@@ -89,6 +89,9 @@ public sealed record RasterExecutionHealthSnapshot
 
     /// <summary>Stable backend identifier when remote native placement is available.</summary>
     public string? RemoteBackend { get; init; }
+
+    /// <summary>Stable native-capable workload identifier selected for remote placement.</summary>
+    public string? RemoteWorkloadId { get; init; }
 }
 
 /// <summary>Operator engine and placement controls pinned to a planning decision.</summary>
@@ -200,6 +203,9 @@ public sealed record RasterExecutionDecision
 
     /// <summary>Selected remote backend identifier, when remotely placed.</summary>
     public string? Backend { get; init; }
+
+    /// <summary>Selected remote workload identifier, when remotely placed.</summary>
+    public string? RemoteWorkloadId { get; init; }
 }
 
 /// <summary>Thrown when no semantically capable engine and placement passes admission.</summary>

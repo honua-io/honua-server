@@ -22,7 +22,8 @@ internal static class RasterExecutionPlanningRequestFactory
         RasterProcessCapability process,
         RasterExecutionPlannerOptions options,
         bool remoteBackendAvailable,
-        string? remoteBackend)
+        string? remoteBackend,
+        string? remoteWorkloadId = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(process);
@@ -58,6 +59,9 @@ internal static class RasterExecutionPlanningRequestFactory
                 RemoteNativeBackendAvailable = options.RemoteNativeBackendEnabled && remoteBackendAvailable,
                 RemoteBackend = options.RemoteNativeBackendEnabled && remoteBackendAvailable
                     ? remoteBackend
+                    : null,
+                RemoteWorkloadId = options.RemoteNativeBackendEnabled && remoteBackendAvailable
+                    ? remoteWorkloadId
                     : null,
             },
             Policy = options.ToPolicySnapshot(),

@@ -137,6 +137,9 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             Backend = selected.Placement == RasterExecutionPlacement.RemoteBackend
                 ? request.Health.RemoteBackend
                 : null,
+            RemoteWorkloadId = selected.Placement == RasterExecutionPlacement.RemoteBackend
+                ? request.Health.RemoteWorkloadId
+                : null,
         };
 
         activity?.SetTag("honua.raster.engine", decision.Engine.ToString());
@@ -242,23 +245,31 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         List<string> eliminations,
         ref bool hasRetryableBlocker)
     {
+        var withinRequest = cost.RequestExecutionAllowed
+            && cost.DecodedBytes <= request.Budgets.MaxRequestDecodedBytes
+            && cost.ExpectedScratchBytes <= request.Budgets.MaxRequestScratchBytes
+            && cost.ExpectedDatabaseWork <= request.Budgets.MaxRequestDatabaseWork;
+        var requestEligible = request.AllowRequestExecution
+            && request.Policy.AllowedPlacements.Contains(RasterExecutionPlacement.Request)
+            && PlacementMatchesPolicy(request, RasterExecutionPlacement.Request)
+            && withinRequest;
+        var withinDatabase = !cost.UsesConservativeValues
+            && cost.DecodedBytes <= request.Budgets.MaxDatabaseDecodedBytes
+            && cost.ExpectedScratchBytes <= request.Budgets.MaxDatabaseScratchBytes
+            && cost.ExpectedDatabaseWork <= request.Budgets.MaxDatabaseWork;
+        var durableEligible = request.Policy.AllowedPlacements.Contains(RasterExecutionPlacement.DurablePostgis)
+            && PlacementMatchesPolicy(request, RasterExecutionPlacement.DurablePostgis)
+            && withinDatabase;
+
         if (request.Health.Database != RasterDatabaseHealth.Healthy)
         {
-            hasRetryableBlocker = true;
+            hasRetryableBlocker |= requestEligible || durableEligible;
             eliminations.Add(
                 $"Postgis: database raster budget is '{request.Health.Database}' in health snapshot '{request.Health.Version}'.");
             return;
         }
 
-        var withinRequest = cost.RequestExecutionAllowed
-            && cost.DecodedBytes <= request.Budgets.MaxRequestDecodedBytes
-            && cost.ExpectedScratchBytes <= request.Budgets.MaxRequestScratchBytes
-            && cost.ExpectedDatabaseWork <= request.Budgets.MaxRequestDatabaseWork;
-        var requestCandidateAdded = request.AllowRequestExecution
-            && request.Policy.AllowedPlacements.Contains(RasterExecutionPlacement.Request)
-            && PlacementMatchesPolicy(request, RasterExecutionPlacement.Request)
-            && withinRequest;
-        if (requestCandidateAdded)
+        if (requestEligible)
         {
             candidates.Add(new Candidate(
                 capability,
@@ -268,14 +279,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 "PostGIS is capable and source-local, and the complete estimate fits the request and database budgets."));
         }
 
-        var withinDatabase = !cost.UsesConservativeValues
-            && cost.DecodedBytes <= request.Budgets.MaxDatabaseDecodedBytes
-            && cost.ExpectedScratchBytes <= request.Budgets.MaxDatabaseScratchBytes
-            && cost.ExpectedDatabaseWork <= request.Budgets.MaxDatabaseWork;
-        var durableCandidateAdded = request.Policy.AllowedPlacements.Contains(RasterExecutionPlacement.DurablePostgis)
-            && PlacementMatchesPolicy(request, RasterExecutionPlacement.DurablePostgis)
-            && withinDatabase;
-        if (durableCandidateAdded)
+        if (durableEligible)
         {
             candidates.Add(new Candidate(
                 capability,
@@ -285,7 +289,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 "PostGIS is capable and source-local, and the estimate fits the governed durable database budget."));
         }
 
-        if (!requestCandidateAdded && !durableCandidateAdded)
+        if (!requestEligible && !durableEligible)
         {
             eliminations.Add(cost.UsesConservativeValues
                 ? "Postgis: cost metadata is incomplete, so database admission fails closed."
@@ -315,13 +319,12 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 or RasterInputResidency.ObjectStoreZarr
                 or RasterInputResidency.StagedArtifact);
 
-        if (localAllowed && !request.Health.LocalNativeWorkerAvailable
-            || remoteAllowed && !request.Health.RemoteNativeBackendAvailable)
-        {
-            hasRetryableBlocker = true;
-        }
+        var localEligible = localAllowed && withinLocal && !external;
+        var remoteEligible = remoteAllowed;
+        hasRetryableBlocker |= localEligible && !request.Health.LocalNativeWorkerAvailable
+            || remoteEligible && !request.Health.RemoteNativeBackendAvailable;
 
-        if (localAllowed && request.Health.LocalNativeWorkerAvailable && withinLocal && !external)
+        if (localEligible && request.Health.LocalNativeWorkerAvailable)
         {
             candidates.Add(new Candidate(
                 capability,

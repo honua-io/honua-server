@@ -267,6 +267,27 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void Plan_UnhealthyLocalWorkerCannotRecoverOversizedRequest_IsNotRetryable()
+    {
+        var request = Request(
+            RasterInputResidency.Inline,
+            Cost(decodedBytes: 128 * MiB, scratchBytes: 256 * MiB, databaseWork: 100_000)) with
+        {
+            Health = Health(localAvailable: false, remoteAvailable: false),
+            Policy = Policy() with
+            {
+                AllowedPlacements = [RasterExecutionPlacement.LocalNativeWorker],
+            },
+        };
+
+        var act = () => _sut.Plan(request);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => !exception.IsRetryable)
+            .WithMessage("*no allowed available placement fits the local-worker budget*");
+    }
+
+    [Fact]
     public void Plan_UndefinedSnapshotEnum_RejectsBeforeCapabilityLookup()
     {
         var request = Request(
