@@ -52,10 +52,14 @@ either phase the job admits no new execution and is excluded from execution
 heartbeat and timeout expiry as well as requeue. During terminalization the record also persists
 the requested terminal status (`Failed` or `Cancelled`). The coordinator
 changes the canonical status only after every sink intent is committed or
-aborted. Success additionally requires the job-wide output-set manifest from
-ADR-0071 to be `Complete` for one winning attempt; individual committed sink
-records are not projected into `ArtifactReferences` before that point. Jobs
-without output intents keep the existing direct transitions.
+aborted. Pre-dispatch cancellation may conditionally change an unclaimed
+`Queued` record to canonical `Running` while entering `Terminalizing`; in that
+case `Running` is only the publication-phase carrier and does not append an
+execution attempt or imply that execution began. Success additionally requires
+the job-wide output-set manifest from ADR-0071 to be `Complete` for one winning
+attempt; individual committed sink records are not projected into
+`ArtifactReferences` before that point. Jobs without output intents keep the
+existing direct transitions.
 
 The `Running` to `Finalizing` handoff is a conditional job-store update. It
 compares the expected record version, current execution claim, attempt
@@ -154,8 +158,17 @@ Millisecond timestamps break ties within a band.
   API/worker deployments), the API checks the job's claim state:
   - **Unclaimed** (`ClaimedBy` is null): the API removes the job from the queue
     and marks it Cancelled directly when it owns no fenced output intent.
-    Otherwise it records requested status `Cancelled` and output phase
-    `Terminalizing`, aborts those intents, and then marks it Cancelled.
+    When prepared intents exist, the API instead uses a job-store
+    compare-and-set on the expected record version, canonical `Queued` status,
+    absent claim, and publication phase `None`. The winning update changes the
+    canonical status to `Running`, records requested status `Cancelled`, enters
+    `Terminalizing`, and references the already-durable intents for the fenced
+    output reconciler. It then removes any stale pending-queue member
+    idempotently. A concurrent worker claim and this cancellation update contend
+    on the same job record: if the claim wins, the API follows the actively
+    claimed branch; if cancellation wins, the queue entry is no longer eligible
+    for execution. The output reconciler aborts the referenced intents under
+    their fences before changing the canonical status to Cancelled.
   - **Actively claimed**: the API persists `CancellationRequestedAt` on the
     `ExecutionJobRecord` as a durable cancellation signal. The worker observes
     this signal during its next heartbeat read and cancels locally. If the
