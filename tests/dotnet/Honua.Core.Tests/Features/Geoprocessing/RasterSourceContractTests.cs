@@ -395,6 +395,23 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void AnalysisContentPersistencePolicy_NonGeoprocessRasterBinding_IsRejected()
+    {
+        var plan = Plan(new Dictionary<string, RasterSourceDescriptor> { ["source"] = Cog() });
+        plan = plan with
+        {
+            Steps = [plan.Steps[0] with { Kind = AnalysisPlanStepKind.Export, ProcessId = null }],
+        };
+        var package = new AnalysisPackageContent { Plan = plan };
+
+        var result = AnalysisContentRasterSourcePolicy.ValidateForPersistence(package);
+
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && error.Field == "steps[step-0].raster_sources.source");
+    }
+
+    [Fact]
     public void Validate_BoundedWindowBandsTimeAndDimensions_AreAccepted()
     {
         var descriptor = Zarr() with
