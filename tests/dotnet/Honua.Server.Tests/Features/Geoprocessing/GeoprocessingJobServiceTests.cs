@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -12,6 +13,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -179,6 +181,171 @@ public sealed class GeoprocessingJobServiceTests
         result.Warnings.Should().Contain(w => w.Contains("QueryFeatures", StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
+                && violation.FieldPath == "steps[step-raster].raster_sources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_StandaloneNativeRasterInputs_AcceptTypedDescriptors()
+    {
+        var cases = new[]
+        {
+            (ProcessId: "proximity.euclidean-distance", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "proximity.euclidean-allocation", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "gdal.gdalwarp", Inputs: new Dictionary<string, string> { ["targetSrs"] = "3857" }),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var plan = CreateTypedRasterPlan("source");
+            plan = plan with
+            {
+                Steps =
+                [
+                    plan.Steps[0] with
+                    {
+                        ProcessId = testCase.ProcessId,
+                        Inputs = testCase.Inputs,
+                    },
+                ],
+            };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                || violation.Code == "MISSING_REQUIRED_PARAMETER");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_NullRasterSources_ReportsInvalidField()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps = [plan.Steps[0] with { RasterSources = null! }],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidField
+            && violation.FieldPath == "rasterSources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.UnsafeLocator
+            && violation.FieldPath == "steps[step-raster].raster_sources.source.objectKey");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonRasterParameter_ReportsBindingFailure()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("resampling"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.resampling");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonGeoprocessStep_ReportsBindingFailure()
+    {
+        foreach (var kind in new[]
+                 {
+                     AnalysisPlanStepKind.QueryFeatures,
+                     AnalysisPlanStepKind.Aggregate,
+                     AnalysisPlanStepKind.RenderMap,
+                     AnalysisPlanStepKind.Export,
+                 })
+        {
+            var sourceStep = CreateTypedRasterPlan("source").Steps[0] with
+            {
+                Kind = kind,
+                ProcessId = null,
+            };
+            var plan = CreateValidPlan() with { Steps = [BufferStep("step-1"), sourceStep] };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.IsExecutable.Should().BeFalse();
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                && violation.FieldPath == "steps[step-raster].raster_sources.source");
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedAndLegacyRasterSource_ReportsBindingFailure()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
+                    {
+                        ["source"] = "legacy-source",
+                    },
+                },
+            ],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.source"
+            && violation.Message.Contains("both a typed reference", StringComparison.Ordinal));
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------
@@ -199,6 +366,32 @@ public sealed class GeoprocessingJobServiceTests
         result.EstimatedArtifacts.Should().Contain(ArtifactKind.FeatureLayer);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var act = () => _sut.DryRunPlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var act = () => _sut.DryRunPlan(plan, CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{RasterSourceValidationCodes.UnsafeLocator}*");
+    }
+
     // -----------------------------------------------------------------------
     // SubmitJobAsync
     // -----------------------------------------------------------------------
@@ -217,6 +410,79 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
+    {
+        var plan = CreateValidPlan();
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                    {
+                        ["source"] = new InlineRasterSourceDescriptor
+                        {
+                            Version = "inline-v1",
+                            Payload = new byte[RasterSourceValidationOptions.Default.MaxInlineBytes + 1],
+                            Content = new RasterContentIdentity
+                            {
+                                SizeBytes = RasterSourceValidationOptions.Default.MaxInlineBytes + 1,
+                                MediaType = "image/tiff",
+                                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+                            },
+                            SecurityContext = new RasterSecurityContextReference
+                            {
+                                TenantId = "tenant-a",
+                                AuthorizationSnapshotReference = "auth-snapshot-123",
+                            },
+                        },
+                    },
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain(RasterSourceValidationCodes.InlinePayloadTooLarge);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TypedRasterSource_RefusesExecutionBeforeDurablePersistence()
+    {
+        var plan = CreateTypedRasterPlan("source");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain("RASTER_SOURCE_EXECUTION_NOT_SUPPORTED");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TypedRasterBoundToNonRasterParameter_RejectsBeforePersistence()
+    {
+        var plan = CreateTypedRasterPlan("resampling");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain(RasterSourceValidationCodes.InvalidParameterBinding);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -253,6 +519,149 @@ public sealed class GeoprocessingJobServiceTests
 
         replay.OperationId.Should().Be(first.OperationId);
         replay.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_LegacyPlanOnlyFingerprintWithResourceRequest_ReturnsExistingJob()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "legacy-resource-replay";
+        var existing = CreateJobRecord(
+            GeoprocessingJobService.CreateJobId(idempotencyKey),
+            ExecutionJobStatus.Queued) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = "test-user",
+                RequestFingerprint = GeoprocessingJobService.CreateLegacyRequestFingerprint(plan),
+            },
+        };
+        _jobStore.GetAsync(existing.OperationId, Arg.Any<CancellationToken>()).Returns(existing);
+
+        var replay = await _sut.SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        replay.Should().BeSameAs(existing);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CurrentFingerprintWithoutOverrides_RejectsChangedResourceRequest()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "current-resource-conflict";
+        var existing = CreateJobRecord(
+            GeoprocessingJobService.CreateJobId(idempotencyKey),
+            ExecutionJobStatus.Queued) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = "test-user",
+                RequestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan),
+            },
+        };
+        _jobStore.GetAsync(existing.OperationId, Arg.Any<CancellationToken>()).Returns(existing);
+
+        var act = async () => await _sut.SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        await act.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentRasterReplay_ReusesPersistedDecisionWithoutReplanning()
+    {
+        ExecutionJobRecord? created = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => created);
+        var realPlanner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var planner = Substitute.For<IRasterExecutionPlanner>();
+        var planCalls = 0;
+        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>()).Returns(call =>
+        {
+            planCalls++;
+            if (planCalls > 1)
+            {
+                throw new RasterExecutionPlanningException(
+                    "changed-health",
+                    "Planner health changed after the durable decision was created.");
+            }
+
+            return realPlanner.Plan(call.Arg<RasterExecutionPlanningRequest>());
+        });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-idempotent-raster",
+            IntentId = "intent-idempotent-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var first = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+        var replay = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+
+        replay.Should().BeSameAs(first);
+        replay.Spec.RasterExecution.Should().BeSameAs(first.Spec.RasterExecution);
+        planner.Received(1).Plan(Arg.Any<RasterExecutionPlanningRequest>());
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -341,11 +750,11 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "gdal.gdalwarp",
+                    ProcessId = "conversion.raster-format",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["source"] = "AAAA",
-                        ["targetSrs"] = "3857"
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff"
                     }
                 }
             ]
@@ -354,6 +763,407 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
         job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_PersistsPlannerDecisionBeforeExecution()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var plannerOptions = new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+            new RasterExecutionPlannerOptions());
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: plannerOptions);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native-decision",
+            IntentId = "intent-native-decision",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff"
+                    }
+                }
+            ]
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Engine.Should().Be(RasterEngine.GdalNative);
+        job.Spec.RasterExecution.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.ReasonCode.Should().Be("native-local-budget");
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+        job.CurrentPhase.Should().Be("Queued: raster decision native-local-budget");
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Is<ExecutionJobRecord>(record => record.Spec.RasterExecution != null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RemoteRasterPlan_FinalizesCompatibleBackendBeforeSubmission()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-limited",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aaa-limited",
+                WorkloadName = "Limited remote raster lane",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "4096",
+                },
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-compatible",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "zzz-compatible",
+                WorkloadName = "Compatible remote raster lane",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "8192",
+                },
+            },
+        ]);
+        var limitedBackend = Substitute.For<IBatchComputeBackend>();
+        limitedBackend.BackendName.Returns("aaa-limited");
+        limitedBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        var compatibleBackend = Substitute.For<IBatchComputeBackend>();
+        compatibleBackend.BackendName.Returns("zzz-compatible");
+        compatibleBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        compatibleBackend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "remote-raster-1",
+            });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [limitedBackend, compatibleBackend],
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions
+                {
+                    RequiredPlacement = RasterExecutionPlacement.RemoteBackend,
+                }));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-remote-raster",
+            IntentId = "intent-remote-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857",
+                    },
+                },
+            ],
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Backend.Should().Be("zzz-compatible");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.Backend.Should().Be("zzz-compatible");
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Backend.Should().Be("zzz-compatible");
+        job.Spec.RasterExecution.RemoteWorkloadId.Should().Be("gp-remote-compatible");
+        await compatibleBackend.Received(1).StartAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.Spec.RasterExecution != null
+                && record.Spec.RasterExecution.Backend == "zzz-compatible"
+                && record.Spec.RasterExecution.RemoteWorkloadId == "gp-remote-compatible"),
+            Arg.Any<CancellationToken>());
+        await limitedBackend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PermanentRasterCapabilityRefusal_IsFailedPrecondition()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions());
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-unsupported-raster",
+            IntentId = "intent-unsupported-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string> { ["points"] = "e30=" },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*no kriging-capable numerical backend*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TransientRasterWorkerHealthRefusal_RemainsRetryable()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions
+        {
+            LocalNativeWorkerAvailable = false,
+        });
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-raster-health",
+            IntentId = "intent-raster-health",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        var exception = await act.Should().ThrowAsync<GeoprocessingAdmissionException>();
+        exception.Which.RetryAfterSeconds.Should().Be(30);
+        exception.Which.PolicyRef.Should().Be("raster:no-eligible-raster-placement");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ConservativeRemoteRaster_ChargesOnlyOrchestrationAdmissionWeight()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "aaa-managed-same-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Managed workload on shared backend",
+                RuntimeProfile = RuntimeProfiles.Managed,
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-native",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote native raster",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                },
+            },
+        ]);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "remote-raster-1",
+            });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend],
+            admissionEvaluator: admission,
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-conservative-remote",
+            IntentId = "intent-conservative-remote",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857",
+                    },
+                },
+            ],
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        job.Spec.RasterExecution.RemoteWorkloadId.Should().Be("gp-remote-native");
+        job.Spec.WorkloadId.Should().Be("gp-remote-native");
+        job.Spec.RasterExecution.Cost.UsesConservativeValues.Should().BeTrue();
+        job.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
+        await admission.Received(1).EvaluateAsync(
+            Arg.Is<ExecutionAdmissionRequest>(request => request.EstimatedCostWeight == 1d),
+            Arg.Any<CancellationToken>());
+        await backend.Received(1).StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_ResolvesLegacySourceBeforePlanningAndKeepsReferenceFingerprint()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        resolver.ResolveAsync(
+                Arg.Any<RasterSourceReference>(),
+                Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(RasterSourceResolution.Success(CreateTiffHeader(width: 32, height: 16, bands: 1)));
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterSourceResolver: resolver,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-catalog-reference",
+            IntentId = "intent-catalog-reference",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["rasterId"] = "42",
+                    },
+                },
+            ],
+        };
+        var referenceFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.Inline);
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"]
+            .Should().Be(CreateTiffHeaderBase64(width: 32, height: 16, bands: 1));
+        job.Audit.RequestFingerprint.Should().Be(referenceFingerprint);
+        await resolver.Received(1).ResolveAsync(
+            Arg.Any<RasterSourceReference>(),
+            Arg.Any<long>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -835,7 +1645,6 @@ public sealed class GeoprocessingJobServiceTests
                 Backend = "aws-batch",
                 WorkloadName = "Remote geoprocessing",
                 ArtifactReference = "ecr/honua-gp:latest",
-                RuntimeProfile = "py311",
                 Parameters = new Dictionary<string, string>
                 {
                     ["queue"] = "gp-primary"
@@ -942,11 +1751,10 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersBatchAndCarriesTierParams()
+    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersLowLatencyLocalForModestJob()
     {
-        // Both the always-present local baseline AND a fully-configured AWS Batch GP
-        // workload are registered. The service must prefer the Batch workload and
-        // route the job to the honua-aws-batch backend, carrying the queue + tier ARNs.
+        // A configured remote backend must not capture every ordinary job. The managed
+        // geometry operation fits the local envelope, so it stays on the low-latency queue.
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
         var batchBackend = Substitute.For<IBatchComputeBackend>();
         batchBackend.BackendName.Returns("honua-aws-batch");
@@ -1004,17 +1812,13 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
 
-        job.Spec.WorkloadId.Should().Be("geoprocessing-aws-batch");
-        job.Spec.Backend.Should().Be("honua-aws-batch");
-        job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
-        job.Spec.Parameters.Should().ContainKey("batch.job_queue_arn")
-            .WhoseValue.Should().Be("arn:aws:batch:us-east-1:123:job-queue/honua-gp");
-        job.Spec.Parameters.Should().ContainKey("batch.region").WhoseValue.Should().Be("us-east-1");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.s");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.xl");
-        await batchBackend.Received().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
-        await _jobQueue.DidNotReceive().EnqueueAsync(
-            Arg.Any<string>(),
+        job.Spec.WorkloadId.Should().Be("geoprocessing-local");
+        job.Spec.Backend.Should().Be("local");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.ReasonCode.Should().Be("gp:low-latency-local");
+        await batchBackend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+        await _jobQueue.Received().EnqueueAsync(
+            job.OperationId,
             Arg.Any<OperationPriority>(),
             Arg.Any<CancellationToken>());
     }
@@ -1034,6 +1838,10 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().ContainKey("batch.vcpus").WhoseValue.Should().Be("1");
         job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
         job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("20");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.Backend.Should().Be("honua-aws-batch");
+        job.Spec.ComputePlacement.ReasonCode.Should().Be("gp:remote-fallback");
+        job.Spec.ComputePlacement.Resources.MemoryMib.Should().Be(2048);
     }
 
     [UnitTest]
@@ -1054,6 +1862,103 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("150");
         // Unspecified dimensions still come from the derived default.
         job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.ReasonCode.Should().Be("gp:resource-threshold-offload");
+        job.Spec.ComputePlacement.Resources.Vcpus.Should().Be(8);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithAzureProviderRetries_DisablesSharedReconcilerRetries()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-azure-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AzureBatch,
+                Backend = "honua-azure-batch",
+                WorkloadName = "Geoprocessing (Azure Batch)",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Managed,
+                    [GpWorkloadPlacementParameterKeys.MaxVcpus] = "4",
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "8192",
+                    [GpWorkloadPlacementParameterKeys.MaxEphemeralGib] = "100",
+                },
+            },
+        ]);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("honua-azure-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AzureBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "azure-job-1",
+            });
+        _jobStore.TryCreateAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        var job = await sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+                [GpResourceProfile.RetryAttemptsRequestKey] = "3",
+            });
+
+        job.Spec.Parameters[GpResourceProfile.AzureRetryAttemptsKey].Should().Be("2");
+        job.RetryPolicy.Should().Be(JobRetryPolicy.None,
+            "Azure owns the canonical three-attempt budget, so the reconciler must not resubmit it");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithRawBackendResourceOverride_RejectsBeforeAdmissionOrPersistence()
+    {
+        var sut = BuildBatchWorkloadService(out var backend);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.BatchEphemeralGibKey] = "150",
+            });
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*'batch.ephemeral_gib'*'gp.resource.ephemeral_gib'*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1070,6 +1975,32 @@ public sealed class GeoprocessingJobServiceTests
 
         job.Spec.Parameters.Should().NotContainKey("batch.vcpus");
         job.Spec.Parameters.Should().NotContainKey("batch.ephemeral_gib");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithLocalTimeoutRequest_SetsDurableTimeoutPolicy()
+    {
+        _jobStore.TryCreateAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        job.TimeoutPolicy.Should().NotBeNull();
+        job.TimeoutPolicy!.MaxDuration.Should().Be(TimeSpan.FromSeconds(30));
+        job.Spec.Parameters.Should().NotContainKey(GpResourceProfile.BatchTimeoutSecondsKey,
+            "local execution uses the shared durable timeout rather than provider parameters");
     }
 
     private GeoprocessingJobService BuildBatchWorkloadService(out IBatchComputeBackend backend)
@@ -3329,12 +4260,57 @@ public sealed class GeoprocessingJobServiceTests
             "two services with the same task name must produce distinguishable process identities");
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void CreateRequestFingerprint_DifferentPlacementInputs_ProducesDifferentFingerprints()
+    {
+        var plan = CreateValidPlan();
+        var local = GeoprocessingJobService.CreateRequestFingerprint(
+            plan,
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "local",
+                [GpWorkloadPlacementParameterKeys.Affinity] = "local-disk",
+            });
+        var remote = GeoprocessingJobService.CreateRequestFingerprint(
+            plan,
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+                [GpWorkloadPlacementParameterKeys.Affinity] = "s3",
+            });
+
+        local.Should().NotBe(remote,
+            "placement inputs change durable execution behavior and cannot share an idempotency key");
+        GeoprocessingJobService.CreateRequestFingerprint(plan).Should().Be(
+            GeoprocessingJobService.CreateRequestFingerprint(plan, new Dictionary<string, string>()),
+            "requests without execution overrides share the same current-version fingerprint");
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
+
+    private GeoprocessingJobService CreateRasterPlanningService(RasterExecutionPlannerOptions options)
+        => new(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(options));
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
@@ -3348,6 +4324,77 @@ public sealed class GeoprocessingJobServiceTests
         PlanId = "plan-1",
         IntentId = "intent-1",
         Steps = [BufferStep("step-1")]
+    };
+
+    private static string CreateTiffHeaderBase64(int width, int height, int bands)
+        => Convert.ToBase64String(CreateTiffHeader(width, height, bands));
+
+    private static byte[] CreateTiffHeader(int width, int height, int bands)
+    {
+        var payload = new byte[62];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 4);
+        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: (uint)bands);
+        return payload;
+    }
+
+    private static void WriteTiffEntry(
+        byte[] payload,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 8), value);
+    }
+
+    private static AnalysisPlan CreateTypedRasterPlan(
+        string parameterName,
+        ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
+        {
+            PlanId = "plan-typed-raster",
+            IntentId = "intent-typed-raster",
+            Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-raster",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "raster.reproject",
+                Inputs = new Dictionary<string, string> { ["targetSrid"] = "3857" },
+                RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                {
+                    [parameterName] = descriptor ?? CreateObjectStoreRasterSource(),
+                },
+            },
+        ],
+        };
+
+    private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
+    {
+        Version = "object-v1",
+        StoreReference = "imagery-prod",
+        ObjectKey = "tenant/source.tif",
+        Content = new RasterContentIdentity
+        {
+            SizeBytes = 4096,
+            MediaType = "image/tiff",
+            Checksum = new RasterChecksum("sha256", new string('a', 64)),
+        },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant-a",
+            AuthorizationSnapshotReference = "untrusted-caller-hint",
+        },
     };
 
     private static AnalysisPlanStep BufferStep(string stepId) => new()

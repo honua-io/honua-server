@@ -100,6 +100,39 @@ internal sealed record GpResourceProfile
     internal const string BatchEphemeralGibKey = "batch.ephemeral_gib";
     internal const string BatchArchKey = "batch.arch";
 
+    // Provider-specific projections for the other provider-neutral compute targets. Fixed-pool
+    // dimensions (for example Azure vCPU/memory and local-process host capacity) are validated
+    // through placement.* workload declarations rather than invented as backend overrides.
+    internal const string KubernetesCpuRequestKey = "k8s.cpu_request";
+    internal const string KubernetesCpuLimitKey = "k8s.cpu_limit";
+    internal const string KubernetesMemoryRequestKey = "k8s.memory_request";
+    internal const string KubernetesMemoryLimitKey = "k8s.memory_limit";
+    internal const string KubernetesEphemeralStorageRequestKey = "k8s.ephemeral_storage_request";
+    internal const string KubernetesEphemeralStorageLimitKey = "k8s.ephemeral_storage_limit";
+    internal const string KubernetesActiveDeadlineSecondsKey = "k8s.active_deadline_seconds";
+    internal const string AzureRetryAttemptsKey = "azure.batch.max_task_retry_count";
+    internal const string AzureTimeoutMinutesKey = "azure.batch.task_timeout_minutes";
+
+    private static readonly (string BackendKey, string RequestKey)[] BackendResourceAliases =
+    [
+        (BatchVcpusKey, VcpusRequestKey),
+        (BatchMemoryMibKey, MemoryMibRequestKey),
+        (BatchGpuCountKey, GpuCountRequestKey),
+        (BatchTimeoutSecondsKey, TimeoutSecondsRequestKey),
+        (BatchRetryAttemptsKey, RetryAttemptsRequestKey),
+        (BatchEphemeralGibKey, EphemeralGibRequestKey),
+        (BatchArchKey, ArchRequestKey),
+        (KubernetesCpuRequestKey, VcpusRequestKey),
+        (KubernetesCpuLimitKey, VcpusRequestKey),
+        (KubernetesMemoryRequestKey, MemoryMibRequestKey),
+        (KubernetesMemoryLimitKey, MemoryMibRequestKey),
+        (KubernetesEphemeralStorageRequestKey, EphemeralGibRequestKey),
+        (KubernetesEphemeralStorageLimitKey, EphemeralGibRequestKey),
+        (KubernetesActiveDeadlineSecondsKey, TimeoutSecondsRequestKey),
+        (AzureRetryAttemptsKey, RetryAttemptsRequestKey),
+        (AzureTimeoutMinutesKey, TimeoutSecondsRequestKey),
+    ];
+
     // Conservative per-class default tiers (heuristic). Ephemeral GiB values line up with the
     // honua-iac job-definition pool ceilings (s=20, m=50, l=100).
     private const int ManagedVcpus = 1;
@@ -177,6 +210,26 @@ internal sealed record GpResourceProfile
     }
 
     /// <summary>
+    /// Rejects provider-specific sizing supplied by an ordinary GP request. Those values otherwise
+    /// bypass the provider-neutral profile used for workload compatibility while still winning
+    /// set-if-absent projection at submission time. Workload-owned provider defaults are merged
+    /// later and remain valid; callers express per-job requirements through <c>gp.resource.*</c>.
+    /// </summary>
+    public static void RejectBackendResourceOverrides(IReadOnlyDictionary<string, string> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        foreach (var (backendKey, requestKey) in BackendResourceAliases)
+        {
+            if (parameters.ContainsKey(backendKey))
+            {
+                throw new GeoprocessingValidationException(
+                    $"Backend resource override '{backendKey}' is not accepted in ordinary geoprocessing requests; use '{requestKey}'.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Aggregates two catalog-derived profiles by taking the heavier value of each dimension, so a
     /// single heavy step in a multi-step plan sizes the whole job. Architecture takes the
     /// other profile's value when set (the later step in the fold).
@@ -241,6 +294,78 @@ internal sealed record GpResourceProfile
             specParams.TryAdd(BatchArchKey, Arch);
         }
     }
+
+    /// <summary>
+    /// Projects dynamic dimensions understood by the selected provider. Dimensions that cannot be
+    /// overridden at submission time remain in <see cref="ExecutionPlacementDecision.Resources"/>
+    /// and are admitted only when the workload's declared capacity can satisfy them.
+    /// </summary>
+    public void ProjectOnto(IDictionary<string, string> specParams, BatchComputeTargetKind targetKind)
+    {
+        ArgumentNullException.ThrowIfNull(specParams);
+
+        switch (targetKind)
+        {
+            case BatchComputeTargetKind.AwsBatch:
+                ProjectOnto(specParams);
+                break;
+            case BatchComputeTargetKind.KubernetesJob:
+                if (Vcpus is { } vcpus)
+                {
+                    var cpu = vcpus.ToString(CultureInfo.InvariantCulture);
+                    specParams.TryAdd(KubernetesCpuRequestKey, cpu);
+                    specParams.TryAdd(KubernetesCpuLimitKey, cpu);
+                }
+
+                if (MemoryMib is { } memoryMib)
+                {
+                    var memory = memoryMib.ToString(CultureInfo.InvariantCulture) + "Mi";
+                    specParams.TryAdd(KubernetesMemoryRequestKey, memory);
+                    specParams.TryAdd(KubernetesMemoryLimitKey, memory);
+                }
+
+                if (EphemeralGib is { } ephemeralGib)
+                {
+                    var ephemeralStorage = ephemeralGib.ToString(CultureInfo.InvariantCulture) + "Gi";
+                    specParams.TryAdd(KubernetesEphemeralStorageRequestKey, ephemeralStorage);
+                    specParams.TryAdd(KubernetesEphemeralStorageLimitKey, ephemeralStorage);
+                }
+
+                Set(specParams, KubernetesActiveDeadlineSecondsKey, TimeoutSeconds);
+                break;
+            case BatchComputeTargetKind.AzureBatch:
+                if (RetryAttempts is { } totalAttempts)
+                {
+                    // The canonical profile counts the initial attempt; Azure's property counts
+                    // only retries after that first execution.
+                    Set(specParams, AzureRetryAttemptsKey, Math.Max(0, totalAttempts - 1));
+                }
+
+                if (TimeoutSeconds is { } timeoutSeconds)
+                {
+                    var minutes = Math.Max(1, (int)Math.Ceiling(timeoutSeconds / 60d));
+                    Set(specParams, AzureTimeoutMinutesKey, minutes);
+                }
+
+                break;
+            case BatchComputeTargetKind.LocalProcess:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, "Unsupported batch target kind.");
+        }
+    }
+
+    /// <summary>Converts the internal selection profile to its durable provider-neutral snapshot.</summary>
+    public ExecutionResourceRequirements ToExecutionRequirements() => new()
+    {
+        Vcpus = Vcpus,
+        MemoryMib = MemoryMib,
+        GpuCount = GpuCount,
+        TimeoutSeconds = TimeoutSeconds,
+        RetryAttempts = RetryAttempts,
+        EphemeralGib = EphemeralGib,
+        Architecture = Arch,
+    };
 
     private static void Set(IDictionary<string, string> specParams, string key, int? value)
     {

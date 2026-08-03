@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
@@ -170,6 +171,117 @@ public sealed class GdalProcessExecutorModeRegistrationTests
                 processId,
                 $"the catalog advertises native-routed '{processId}', so the GDAL worker dispatcher must route it");
         }
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_SatisfiesEveryAdvertisedGdalRasterCapability()
+    {
+        using var provider = BuildProvider(static (services, config) =>
+            services.AddGdalProcessExecutors(config));
+        var registeredIds = provider
+            .GetServices<IProcessExecutor>()
+            .SelectMany(executor => executor.ProcessIds)
+            .ToHashSet(StringComparer.Ordinal);
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+
+        var act = () => RasterEngineExecutorCoverageValidator.Validate(
+            registry,
+            RasterEngine.GdalNative,
+            registeredIds);
+
+        act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_AdvertisesEveryExecutableRasterRoute()
+    {
+        using var provider = BuildProvider(static (services, config) =>
+            services.AddGdalProcessExecutors(config));
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+        var rasterProcessIds = registry.Processes
+            .Select(process => process.ProcessId)
+            .ToHashSet(StringComparer.Ordinal);
+        var executableRoutes = provider
+            .GetServices<IProcessExecutor>()
+            .SelectMany(executor => executor.ProcessIds)
+            .Where(rasterProcessIds.Contains)
+            .Where(processId => processId != GdalRasterInterpolateJobExecutor.KrigingProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+        var advertisedRoutes = registry.Processes
+            .Where(process => process.Engines.Any(engine =>
+                engine.Engine == RasterEngine.GdalNative && engine.IsAvailable))
+            .Select(process => process.ProcessId)
+            .OrderBy(processId => processId, StringComparer.Ordinal)
+            .ToArray();
+
+        advertisedRoutes.Should().Equal(executableRoutes);
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_AdvertisesConfiguredRasterFormatInputs()
+    {
+        using var provider = BuildProvider(
+            static (services, config) => services.AddGdalProcessExecutors(config),
+            new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "TIFF",
+                ["GdalWorker:AllowedRasterInputFormats:1"] = "JPEG2000",
+                ["GdalWorker:Hardening:SkipDrivers:0"] = "VRT",
+                ["GdalWorker:Hardening:SkipDrivers:1"] = "WMS",
+            });
+
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+        var conversion = registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId)!;
+        var surface = registry.Find("surface.slope")!;
+        var clip = registry.Find(GdalRasterClipJobExecutor.HandledProcessId)!;
+        var conversionInputs = conversion.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
+        var surfaceInputs = surface.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
+        var clipInputs = clip.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
+
+        conversionInputs.Should().Equal("image/tiff", "image/jp2");
+        surfaceInputs.Should().Equal("image/tiff", "image/jp2");
+        clipInputs.Should().Equal("image/tiff", "image/jp2", "application/wkb");
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_AllowedFormatWhoseDriversRemainSkipped_FailsClosed()
+    {
+        using var provider = BuildProvider(
+            static (services, config) => services.AddGdalProcessExecutors(config),
+            new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "JPEG2000",
+            });
+
+        var act = () => provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*JPEG2000*SkipDrivers*");
+    }
+
+    [UnitTest]
+    public void Validate_MissingAdvertisedGdalExecutor_FailsWithProcessId()
+    {
+        var registry = new RasterEngineCapabilityRegistry();
+        var registeredIds = registry.Processes
+            .Where(process => process.ProcessId != "surface.slope")
+            .Select(process => process.ProcessId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var act = () => RasterEngineExecutorCoverageValidator.Validate(
+            registry,
+            RasterEngine.GdalNative,
+            registeredIds);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*surface.slope*");
     }
 
     private static string[] ExecutorTypeNames(IServiceProvider provider)

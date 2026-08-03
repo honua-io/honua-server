@@ -26,6 +26,27 @@ internal sealed class GeoprocessingExecutorOptions
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
     /// <summary>
+    /// Maximum decoded byte length accepted for a deliberately inline raster source.
+    /// Larger sources must use PostGIS, object-store, Zarr, or staged-artifact references.
+    /// The upper bound remains small so neither the web heap nor the durable job store
+    /// becomes part of the raster data plane.
+    /// </summary>
+    [Range(1024, 64 * 1024, ErrorMessage = "MaxInlineRasterSourceBytes must be between 1 KiB and 64 KiB")]
+    public int MaxInlineRasterSourceBytes { get; set; } = 64 * 1024;
+
+    /// <summary>Maximum typed raster bindings accepted across one plan.</summary>
+    [Range(1, 32, ErrorMessage = "MaxRasterSourcesPerPlan must be between 1 and 32")]
+    public int MaxRasterSourcesPerPlan { get; set; } = 32;
+
+    /// <summary>Maximum length of a typed raster process-parameter binding name.</summary>
+    [Range(1, 64, ErrorMessage = "MaxRasterSourceParameterNameLength must be between 1 and 64")]
+    public int MaxRasterSourceParameterNameLength { get; set; } = 64;
+
+    /// <summary>Maximum serialized typed raster descriptor bytes across one plan.</summary>
+    [Range(4096, 256 * 1024, ErrorMessage = "MaxRasterSourceSerializedBytesPerPlan must be between 4 KiB and 256 KiB")]
+    public int MaxRasterSourceSerializedBytesPerPlan { get; set; } = 256 * 1024;
+
+    /// <summary>
     /// Root directory under which file-sink executors may create output files.
     /// Caller-supplied sink paths are always resolved relative to this directory;
     /// absolute paths and traversal outside the root are rejected.

@@ -670,6 +670,7 @@ public sealed class GdalRasterExecutorTests
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
             "raster.clip", "raster.reproject", "raster.statistics",
             "raster.histogram", "raster.zonal-statistics",
+            "conversion.raster-format",
             // Explicit raster CRS-conversion idiom, routed by the same
             // GdalRasterReprojectCatalogJobExecutor that handles raster.reproject.
             "conversion.raster-reproject",
@@ -747,6 +748,7 @@ public sealed class GdalRasterExecutorTests
             new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),
             new GdalVectorReprojectJobExecutor(runner, options, NullLogger<GdalVectorReprojectJobExecutor>.Instance),
             new GdalVectorSourceReadJobExecutor(runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
+            new GdalRasterFormatConvertJobExecutor(runner, options, NullLogger<GdalRasterFormatConvertJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
             new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),

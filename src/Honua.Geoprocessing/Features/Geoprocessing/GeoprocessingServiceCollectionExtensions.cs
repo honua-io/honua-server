@@ -4,6 +4,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
@@ -79,6 +80,11 @@ internal static class GeoprocessingServiceCollectionExtensions
             }
         }
 
+        // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
+        // catalog so catalog definitions project the exact same immutable descriptor instances.
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(_ =>
+            CreateRasterEngineCapabilityRegistry(configuration));
+
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
 
@@ -113,6 +119,31 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
+
+        // Raster engine/placement planning (#3092). Capability metadata comes from the
+        // provider-neutral registry; operator budgets and policy remain configuration-driven.
+        // The planner is pure over immutable snapshots and never loads raster payload bytes.
+        services
+            .AddOptions<RasterExecutionPlannerOptions>()
+            .Bind(configuration.GetSection(RasterExecutionPlannerOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(
+                options => options.HasDefinedEnumValues(),
+                "Raster execution engine, placement, and database health values must be defined enum members.")
+            .ValidateOnStart();
+        services.TryAddSingleton<IRasterExecutionPlanner, RasterExecutionPlanner>();
+
+        // Per-job local/offload placement (#3093). Resource/runtime compatibility is
+        // evaluated against declarative ControlPlane workload envelopes before a durable
+        // backend choice is written; the policy never changes custom-code routing.
+        services
+            .AddOptions<GpWorkloadPlacementOptions>()
+            .Bind(configuration.GetSection(GpWorkloadPlacementOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(
+                options => options.HasDefinedEnumValues(),
+                "Geoprocessing workload-placement capacity must be a defined enum member.")
+            .ValidateOnStart();
 
         // Cohesive sub-services the shared job service delegates to (authorization/approval,
         // admission+queue+workload+backend dispatch, the custom-code submit-token gate, and
@@ -390,5 +421,29 @@ internal static class GeoprocessingServiceCollectionExtensions
         {
             services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
         }
+    }
+
+    private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
+        IConfiguration configuration)
+    {
+        var configuredFormats = configuration
+            .GetSection("GdalWorker:AllowedRasterInputFormats")
+            .GetChildren()
+            .ToArray();
+        var configuredSkippedDrivers = configuration
+            .GetSection("GdalWorker:Hardening:SkipDrivers")
+            .GetChildren()
+            .ToArray();
+        return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+            configuredFormats.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
+                : configuredFormats
+                    .Select(format => format.Value)
+                    .OfType<string>(),
+            configuredSkippedDrivers.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
+                : configuredSkippedDrivers
+                    .Select(driver => driver.Value)
+                    .OfType<string>());
     }
 }

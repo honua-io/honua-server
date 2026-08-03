@@ -15,6 +15,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
@@ -44,6 +45,7 @@ namespace Honua.Geoprocessing;
 /// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
+    private const string RequestFingerprintVersionPrefix = "gp-v2:";
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
@@ -115,7 +117,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperationGateway? operationGateway = null,
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IServiceScopeFactory? serviceScopeFactory = null)
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IRasterExecutionPlanner? rasterExecutionPlanner = null,
+        IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null,
+        IOptionsMonitor<GpWorkloadPlacementOptions>? workloadPlacementOptions = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -132,7 +137,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
                 logger),
             new GeoprocessingJobDispatcher(
-                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
+                logger,
+                executorOptions,
+                progressStore,
+                jobQueue,
+                workloadRegistry,
+                backends,
+                admissionEvaluator,
+                operationGateway,
+                rasterExecutionPlanner,
+                rasterExecutionOptions,
+                workloadPlacementOptions),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -197,6 +212,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
+        var rasterValidationViolations = _artifacts.GetRasterSourceValidationFailures(plan);
+        violations.AddRange(rasterValidationViolations);
 
         if (string.IsNullOrWhiteSpace(plan.PlanId))
         {
@@ -229,6 +246,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan);
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
+
+        // A malformed descriptor or parameter binding gets its precise diagnostics instead
+        // of the lower-value execution-boundary refusal that applies to otherwise valid
+        // direct durable references.
+        var rasterExecutionViolation = rasterValidationViolations.Count == 0
+            ? GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan)
+            : null;
+        if (rasterExecutionViolation is not null)
+        {
+            violations.Add(rasterExecutionViolation);
+        }
 
         foreach (var v in catalogViolations.Where(v => v.Code == "UNKNOWN_PROCESS"))
         {
@@ -266,7 +294,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
+        _artifacts.ValidateRasterSources(plan, CancellationToken.None);
         EnsurePlanCatalogValid(plan);
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Prefer the plan's declared outputs; when absent, derive the artifact kinds from
         // the catalog definitions of the plan's Geoprocess steps so the estimate reflects
@@ -339,6 +369,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+        _artifacts.ValidateRasterSources(plan, cancellationToken);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
@@ -370,6 +401,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             EnsurePlanCatalogValid(plan);
         }
+
+        // RAST-003 defines and projects the v2 contract, but no current local or remote
+        // worker consumes it safely. Refuse before approval proposals, fingerprints, job
+        // records, or queue dispatch until #3090 introduces authenticated source resolution.
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Evaluate the mutating-process tier unconditionally — including for custom-code
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
@@ -417,14 +453,42 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
-        var requestFingerprint = CreateRequestFingerprint(plan);
+        var requestFingerprint = CreateRequestFingerprint(plan, protocolMetadata);
+        var legacyRequestFingerprint = CreateLegacyRequestFingerprint(plan);
 
-        // Resolve any native raster/surface step that references a registered catalog
-        // raster by layerId/rasterId, materializing the bytes onto the canonical base64
-        // 'source' input the worker reads (#2264). The fingerprint above is computed on
-        // the caller's original (reference-carrying) plan so idempotency keys map to the
-        // request, not the resolved payload; the spec below carries the resolved bytes.
+        if (resolvedKey is not null)
+        {
+            // Replays reuse the exact durable raster/compute decision that was admitted on the
+            // first submission. Looking up the deterministic id before source materialization and
+            // planning prevents a later health or policy change from refusing an already-created
+            // request. The TryCreate race path below remains authoritative for concurrent callers.
+            var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                EnsureMatchingIdempotentRequest(
+                    existing,
+                    requestFingerprint,
+                    legacyRequestFingerprint,
+                    principal);
+                EnsureSubmissionDidNotRollback(existing);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return existing;
+            }
+        }
+
+        // Resolve the legacy layerId/rasterId compatibility path before planning so the planner
+        // sees the canonical inline source that the native worker will consume. The request
+        // fingerprint above remains bound to the caller's stable catalog reference rather than
+        // the materialized bytes. The planner itself still examines metadata/encoded length only;
+        // it never decodes the raster or loads GDAL into the serving process.
         plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        var rasterDefinition = !isCustomCode && plan.Steps[0].ProcessId is { } rasterProcessId
+            ? _processCatalog.GetProcess(rasterProcessId)
+            : null;
+        var rasterDecision = await _dispatcher
+            .PlanRasterExecutionAsync(plan, rasterDefinition, cancellationToken)
+            .ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
@@ -458,8 +522,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
+        if (!isCustomCode)
+        {
+            GpResourceProfile.RejectBackendResourceOverrides(specParams);
+        }
+
         var partitionKey = ResolvePartitionKey(specParams);
-        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        var costWeight = ResolveAdmissionCostWeight(plan, rasterDecision);
         var priority = ResolvePriority(specParams);
 
         var admission = await _dispatcher.EnsureAdmittedAsync(
@@ -475,19 +544,50 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
         // A custom-code job forces the custom-code runtime profile so the claim
         // fence routes it to the custom-code Batch workload (and away from the lean
         // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
         var requiredRuntimeProfile = isCustomCode
             ? CustomCodeJobContract.RuntimeProfile
-            : ResolveRequiredRuntimeProfile(plan);
+            : ResolveRequiredRuntimeProfile(plan, rasterDecision);
         // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
         // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
         // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
         // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
         var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
-        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
+        var placement = await _dispatcher
+            .ResolveWorkloadAsync(
+                isCustomCode,
+                requiredRuntimeProfile,
+                resourceProfile,
+                specParams,
+                cancellationToken,
+                rasterDecision)
+            .ConfigureAwait(false);
+        if (rasterDecision?.Placement == RasterExecutionPlacement.RemoteBackend
+            && placement.Workload is not null)
+        {
+            // Raster planning proves that remote native execution is required; workload
+            // placement then chooses the compatible provider envelope. Finalize the durable
+            // raster snapshot with that exact backend before the job record is persisted.
+            rasterDecision = rasterDecision with
+            {
+                Backend = placement.Workload.Backend,
+                RemoteWorkloadId = placement.Workload.WorkloadId,
+            };
+        }
+
+        var spec = BuildSpec(
+            plan,
+            specParams,
+            placement.Workload,
+            requiredRuntimeProfile,
+            resourceProfile,
+            rasterDecision,
+            placement.Decision);
+        var queuedPhase = rasterDecision is null
+            ? "Queued"
+            : $"Queued: raster decision {rasterDecision.ReasonCode}";
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -496,7 +596,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
-            CurrentPhase = "Queued",
+            CurrentPhase = queuedPhase,
+            RetryPolicy = ResolveRetryPolicy(resourceProfile, placement.Workload),
+            TimeoutPolicy = ResolveTimeoutPolicy(resourceProfile),
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
@@ -515,7 +617,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existing != null)
             {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                EnsureMatchingIdempotentRequest(
+                    existing,
+                    requestFingerprint,
+                    legacyRequestFingerprint,
+                    principal);
                 EnsureSubmissionDidNotRollback(existing);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existing;
@@ -526,7 +632,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         try
         {
-            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId, queuedPhase);
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -1027,6 +1133,36 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "GeoprocessingApprovalResume"));
     }
 
+    private static double ResolveAdmissionCostWeight(
+        AnalysisPlan plan,
+        RasterExecutionDecision? rasterDecision)
+    {
+        if (rasterDecision is null)
+        {
+            return Math.Max(plan.Steps.Count, 1);
+        }
+
+        if (rasterDecision.Placement == RasterExecutionPlacement.RemoteBackend)
+        {
+            // The partition cost ledger protects compute owned by the local serving/worker
+            // plane. Remote native isolation still consumes orchestration capacity, but its
+            // decoded/scratch footprint is borne by the selected batch substrate. Charging
+            // that remote footprint here would make every conservative or large offload exceed
+            // the default local admission ceiling before it could reach the remote backend.
+            return Math.Max(plan.Steps.Count, 1);
+        }
+
+        if (rasterDecision.Cost.UsesConservativeValues)
+        {
+            return 1_000d;
+        }
+
+        var decodedWeight = rasterDecision.Cost.DecodedBytes / (64d * 1024d * 1024d);
+        var scratchWeight = rasterDecision.Cost.ExpectedScratchBytes / (128d * 1024d * 1024d);
+        var databaseWeight = rasterDecision.Cost.ExpectedDatabaseWork / 10_000_000d;
+        return Math.Clamp(decodedWeight + scratchWeight + databaseWeight, 1d, 1_000d);
+    }
+
     private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
     {
         if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
@@ -1071,8 +1207,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
     /// requires a specialized profile, leaving the spec profile-agnostic.
     /// </summary>
-    private string? ResolveRequiredRuntimeProfile(AnalysisPlan plan)
+    private string? ResolveRequiredRuntimeProfile(
+        AnalysisPlan plan,
+        RasterExecutionDecision? rasterDecision = null)
     {
+        if (rasterDecision is not null)
+        {
+            return rasterDecision.Engine == RasterEngine.Postgis
+                ? RuntimeProfiles.RasterPostgis
+                : RuntimeProfiles.Native;
+        }
+
         foreach (var step in plan.Steps)
         {
             if (string.IsNullOrWhiteSpace(step.ProcessId))
@@ -1174,12 +1319,39 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return derived.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
     }
 
+    private static JobRetryPolicy? ResolveRetryPolicy(
+        GpResourceProfile resourceProfile,
+        ExecutionJobDefinition? workload)
+    {
+        if (resourceProfile.RetryAttempts is not { } totalAttempts)
+        {
+            return null;
+        }
+
+        // AWS Batch and Azure Batch receive the canonical total-attempt budget through their
+        // provider submission contracts. Disable the shared reconciler retry layer for those
+        // jobs so provider attempts are not multiplied by a second series of submissions.
+        if (workload?.TargetKind is BatchComputeTargetKind.AwsBatch or BatchComputeTargetKind.AzureBatch)
+        {
+            return JobRetryPolicy.None;
+        }
+
+        return JobRetryPolicy.Default with { MaxAttempts = totalAttempts };
+    }
+
+    private static JobTimeoutPolicy? ResolveTimeoutPolicy(GpResourceProfile resourceProfile)
+        => resourceProfile.TimeoutSeconds is { } timeoutSeconds
+            ? JobTimeoutPolicy.Default with { MaxDuration = TimeSpan.FromSeconds(timeoutSeconds) }
+            : null;
+
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile,
-        GpResourceProfile resourceProfile)
+        GpResourceProfile resourceProfile,
+        RasterExecutionDecision? rasterDecision = null,
+        ExecutionPlacementDecision? placementDecision = null)
     {
         if (workload == null)
         {
@@ -1189,7 +1361,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // plan (issue #2180). The per-job resource profile is NOT projected here: the
             // batch.* sizing keys are meaningless to the local/Kubernetes baseline and would
             // break the local-runner spec-parity invariant.
-            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
+            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(
+                plan,
+                specParams,
+                requiredRuntimeProfile,
+                rasterDecision,
+                placementDecision);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
@@ -1199,7 +1376,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Project the per-job resource profile onto the batch.* params BEFORE merging the workload
         // defaults: set-if-absent semantics make explicit request params win over the per-job
         // profile, and the per-job profile win over the workload's baseline sizing.
-        resourceProfile.ProjectOnto(specParams);
+        if (!string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            resourceProfile.ProjectOnto(specParams, workload.TargetKind);
+        }
 
         foreach (var kv in workload.Parameters)
         {
@@ -1220,7 +1400,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             RuntimeProfile = requiredRuntimeProfile ?? workload.RuntimeProfile,
             // Carry the workload's required serving↔worker job-contract version onto the spec so the
             // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
-            ContractVersion = workload.ContractVersion,
+            ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
+                plan,
+                workload.ContractVersion),
+            RasterExecution = rasterDecision,
+            ComputePlacement = placementDecision,
             Parameters = specParams
         };
     }
@@ -1375,7 +1559,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return $"gp-{Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant()}";
     }
 
-    internal static string CreateRequestFingerprint(AnalysisPlan plan)
+    internal static string CreateRequestFingerprint(
+        AnalysisPlan plan,
+        IReadOnlyDictionary<string, string>? requestParameters = null)
+    {
+        var executionParameters = ResolveFingerprintExecutionParameters(requestParameters);
+        return RequestFingerprintVersionPrefix + CreateRequestFingerprintCore(plan, executionParameters);
+    }
+
+    internal static string CreateLegacyRequestFingerprint(AnalysisPlan plan)
+        => CreateRequestFingerprintCore(plan, []);
+
+    private static string CreateRequestFingerprintCore(
+        AnalysisPlan plan,
+        List<KeyValuePair<string, string>> executionParameters)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -1383,6 +1580,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             writer.WriteStartObject();
             writer.WriteString("planId", plan.PlanId);
             writer.WriteString("intentId", plan.IntentId);
+
+            // Preserve the legacy plan-only byte shape when no placement/resource behavior was
+            // requested. When present, these values affect durable execution selection and must
+            // participate in idempotency rather than silently reusing a differently placed job.
+            if (executionParameters.Count > 0)
+            {
+                writer.WriteStartArray("executionParameters");
+                foreach (var parameter in executionParameters)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("Key", parameter.Key);
+                    writer.WriteString("Value", parameter.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+            }
 
             writer.WriteStartArray("steps");
             foreach (var step in plan.Steps)
@@ -1401,6 +1614,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     writer.WriteEndObject();
                 }
                 writer.WriteEndArray();
+
+                // Preserve the pre-raster fingerprint byte shape for legacy plans. This is a
+                // rolling-deployment contract: jobs submitted before typed raster bindings existed
+                // omitted the property, so emitting an empty array would make a retry conflict with
+                // its already-durable idempotency record.
+                if (step.RasterSources.Count > 0)
+                {
+                    writer.WriteStartArray("rasterSources");
+                    foreach (var source in step.RasterSources.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("Key", source.Key);
+                        writer.WriteString("Descriptor", RasterSourceJson.Serialize(source.Value));
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                }
 
                 writer.WriteStartArray("dependsOn");
                 foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))
@@ -1429,8 +1659,45 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))).ToLowerInvariant();
     }
 
+    private static List<KeyValuePair<string, string>> ResolveFingerprintExecutionParameters(
+        IReadOnlyDictionary<string, string>? requestParameters)
+    {
+        if (requestParameters is null)
+        {
+            return new List<KeyValuePair<string, string>>();
+        }
+
+        string[] keys =
+        [
+            GpWorkloadPlacementParameterKeys.Mode,
+            GpWorkloadPlacementParameterKeys.Backend,
+            GpWorkloadPlacementParameterKeys.Affinity,
+            GpResourceProfile.VcpusRequestKey,
+            GpResourceProfile.MemoryMibRequestKey,
+            GpResourceProfile.GpuCountRequestKey,
+            GpResourceProfile.TimeoutSecondsRequestKey,
+            GpResourceProfile.RetryAttemptsRequestKey,
+            GpResourceProfile.EphemeralGibRequestKey,
+            GpResourceProfile.ArchRequestKey,
+        ];
+        var result = new List<KeyValuePair<string, string>>(keys.Length);
+        foreach (var key in keys.OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            if (requestParameters.TryGetValue(key, out var value)
+                && !string.IsNullOrWhiteSpace(value))
+            {
+                result.Add(new KeyValuePair<string, string>(key, value.Trim()));
+            }
+        }
+
+        return result;
+    }
+
     private static void EnsureMatchingIdempotentRequest(
-        ExecutionJobRecord existing, string requestFingerprint, ClaimsPrincipal principal)
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        string legacyRequestFingerprint,
+        ClaimsPrincipal principal)
     {
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
@@ -1445,6 +1712,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var existingFingerprint = existing.Audit.RequestFingerprint;
         if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
             string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Pre-upgrade GP records carry the unversioned, plan-only digest. Accept the same
+        // logical replay even when resource/placement inputs are present now; new records are
+        // explicitly versioned, so changing those inputs still produces an idempotency conflict.
+        if (!string.IsNullOrWhiteSpace(existingFingerprint)
+            && !existingFingerprint.StartsWith(RequestFingerprintVersionPrefix, StringComparison.Ordinal)
+            && string.Equals(existingFingerprint, legacyRequestFingerprint, StringComparison.Ordinal))
         {
             return;
         }

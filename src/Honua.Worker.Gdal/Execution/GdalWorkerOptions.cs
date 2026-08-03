@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -121,14 +122,12 @@ internal sealed class GdalWorkerOptions
     /// of exactly <c>TIFF</c> — PNG and JPEG are then refused. Leaving it unset keeps the
     /// TIFF/PNG/JPEG default. This is enforced in the worker registration, which post-binds
     /// the configured values over ConfigurationBinder's append-onto-defaults behavior.
+    /// Because this list defines advertised engine capabilities, it is snapshotted at host
+    /// composition; changing it requires a coordinated server/worker restart.
     /// </para>
     /// </summary>
-    public IList<string> AllowedRasterInputFormats { get; set; } = new List<string>
-    {
-        "TIFF",
-        "PNG",
-        "JPEG",
-    };
+    public IList<string> AllowedRasterInputFormats { get; set; } =
+        new List<string>(RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames);
 
     /// <summary>
     /// Maximum number of zone features accepted in a <c>raster.zonal-statistics</c>

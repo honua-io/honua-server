@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Geoprocessing;
@@ -49,9 +50,34 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     private readonly ImmutableArray<ProcessDefinition> _all;
     private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;
 
-    public BuiltInProcessCatalog(ILogger<BuiltInProcessCatalog>? logger = null)
+    public BuiltInProcessCatalog(
+        ILogger<BuiltInProcessCatalog>? logger = null,
+        IRasterEngineCapabilityRegistry? rasterEngineCapabilities = null)
     {
         var definitions = BuildDefinitions();
+        var rasterRegistry = rasterEngineCapabilities ?? new RasterEngineCapabilityRegistry();
+        var catalogProcessIds = definitions
+            .Select(definition => definition.ProcessId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var capability in rasterRegistry.Processes)
+        {
+            if (!catalogProcessIds.Contains(capability.ProcessId))
+            {
+                throw new InvalidOperationException(
+                    $"Raster engine registry references unknown catalog process "
+                    + $"'{capability.ProcessId}'.");
+            }
+        }
+
+        for (var i = 0; i < definitions.Length; i++)
+        {
+            var capability = rasterRegistry.Find(definitions[i].ProcessId);
+            if (capability is not null)
+            {
+                definitions[i] = definitions[i] with { RasterEngineCapabilities = capability };
+            }
+        }
+
         _all = definitions.ToImmutableArray();
         _processes = definitions.ToFrozenDictionary(d => d.ProcessId, StringComparer.Ordinal);
         _byCategory = definitions
@@ -555,7 +581,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("maxDistance", "Max Distance", "Optional maximum distance to compute. Must be > 0 when supplied. Cells beyond it take the nodata value.", ProcessParameterValueType.FloatingPoint),
                 Param("distUnits", "Distance Units", "Distance units. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as targets. When omitted, all non-zero pixels are targets.", ProcessParameterValueType.Text),
@@ -571,7 +597,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("maxDistance", "Max Distance", "Optional maximum allocation distance. Must be > 0 when supplied. Cells whose nearest source is farther take the nodata value.", ProcessParameterValueType.FloatingPoint),
                 Param("distUnits", "Distance Units", "Distance units used for maxDistance. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as allocation sources. When omitted, all non-zero pixels are sources.", ProcessParameterValueType.Text),
@@ -1716,7 +1742,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "raster",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857', also written as '3857').", ProcessParameterValueType.Srid, required: true),
                 Param("sourceSrs", "Source CRS", "Optional source spatial reference override when the raster lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
             ],
@@ -1812,7 +1838,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     // all three is rejected at submit time rather than failing in the worker.
     private static readonly ProcessParameterSpec[] NativeRasterSourceParameters =
     [
-        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text),
+        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text, acceptsRasterSource: true),
         Param("layerId", "Layer", "Catalog raster layer identifier. Resolved at submit time to the layer's registered raster (newest registration when several exist). Supply this OR an inline source / rasterId.", ProcessParameterValueType.LayerId),
         Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
@@ -1824,7 +1850,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         ProcessParameterValueType valueType,
         bool required = false,
         string? defaultValue = null,
-        IReadOnlyList<string>? allowedValues = null) => new()
+        IReadOnlyList<string>? allowedValues = null,
+        bool acceptsRasterSource = false) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1832,6 +1859,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ValueType = valueType,
             Required = required,
             DefaultValue = defaultValue,
-            AllowedValues = allowedValues
+            AllowedValues = allowedValues,
+            AcceptsRasterSource = acceptsRasterSource
         };
 }

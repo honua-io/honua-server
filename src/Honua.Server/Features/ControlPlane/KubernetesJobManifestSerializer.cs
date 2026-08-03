@@ -328,9 +328,11 @@ internal static class KubernetesJobManifestSerializer
     private static void WriteResources(Utf8JsonWriter writer, KubernetesJobManifest manifest)
     {
         var hasRequests = !string.IsNullOrWhiteSpace(manifest.CpuRequest) ||
-                          !string.IsNullOrWhiteSpace(manifest.MemoryRequest);
+                          !string.IsNullOrWhiteSpace(manifest.MemoryRequest) ||
+                          !string.IsNullOrWhiteSpace(manifest.EphemeralStorageRequest);
         var hasLimits = !string.IsNullOrWhiteSpace(manifest.CpuLimit) ||
-                        !string.IsNullOrWhiteSpace(manifest.MemoryLimit);
+                        !string.IsNullOrWhiteSpace(manifest.MemoryLimit) ||
+                        !string.IsNullOrWhiteSpace(manifest.EphemeralStorageLimit);
 
         if (!hasRequests && !hasLimits)
         {
@@ -351,6 +353,11 @@ internal static class KubernetesJobManifestSerializer
                 writer.WriteString("memory", manifest.MemoryRequest);
             }
 
+            if (!string.IsNullOrWhiteSpace(manifest.EphemeralStorageRequest))
+            {
+                writer.WriteString("ephemeral-storage", manifest.EphemeralStorageRequest);
+            }
+
             writer.WriteEndObject();
         }
 
@@ -365,6 +372,11 @@ internal static class KubernetesJobManifestSerializer
             if (!string.IsNullOrWhiteSpace(manifest.MemoryLimit))
             {
                 writer.WriteString("memory", manifest.MemoryLimit);
+            }
+
+            if (!string.IsNullOrWhiteSpace(manifest.EphemeralStorageLimit))
+            {
+                writer.WriteString("ephemeral-storage", manifest.EphemeralStorageLimit);
             }
 
             writer.WriteEndObject();

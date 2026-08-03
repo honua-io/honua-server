@@ -1023,6 +1023,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
                     [KubernetesJobParameterKeys.Namespace] = "geoprocessing",
                     [KubernetesJobParameterKeys.CpuLimit] = "2",
                     [KubernetesJobParameterKeys.MemoryLimit] = "8Gi",
+                    [KubernetesJobParameterKeys.EphemeralStorageRequest] = "100Gi",
+                    [KubernetesJobParameterKeys.EphemeralStorageLimit] = "150Gi",
                     [KubernetesJobParameterKeys.NodeSelector] = "pool=heavy,disk=ssd",
                     [KubernetesJobParameterKeys.ImagePullSecrets] = "regcreds",
                     [KubernetesJobParameterKeys.ServiceAccount] = "jobs-runner",
@@ -1042,6 +1044,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
         manifest.CpuRequest.Should().Be("200m");
         manifest.CpuLimit.Should().Be("2");
         manifest.MemoryLimit.Should().Be("8Gi");
+        manifest.EphemeralStorageRequest.Should().Be("100Gi");
+        manifest.EphemeralStorageLimit.Should().Be("150Gi");
         manifest.NodeSelector.Should().ContainKey("pool").WhoseValue.Should().Be("heavy");
         manifest.NodeSelector.Should().ContainKey("disk").WhoseValue.Should().Be("ssd");
         manifest.ImagePullSecrets.Should().ContainSingle().Which.Should().Be("regcreds");
@@ -1457,6 +1461,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
             Annotations = new Dictionary<string, string> { ["honua.io/note"] = "hello" },
             CpuRequest = "250m",
             MemoryLimit = "2Gi",
+            EphemeralStorageRequest = "100Gi",
+            EphemeralStorageLimit = "150Gi",
             NodeSelector = new Dictionary<string, string> { ["pool"] = "heavy" },
             ImagePullSecrets = new[] { "regcreds" },
             ServiceAccount = "jobs-runner",
@@ -1486,7 +1492,9 @@ public sealed class KubernetesJobBatchComputeBackendTests
         container.GetProperty("imagePullPolicy").GetString().Should().Be("Always");
         container.GetProperty("env")[0].GetProperty("name").GetString().Should().Be("HONUA");
         container.GetProperty("resources").GetProperty("requests").GetProperty("cpu").GetString().Should().Be("250m");
+        container.GetProperty("resources").GetProperty("requests").GetProperty("ephemeral-storage").GetString().Should().Be("100Gi");
         container.GetProperty("resources").GetProperty("limits").GetProperty("memory").GetString().Should().Be("2Gi");
+        container.GetProperty("resources").GetProperty("limits").GetProperty("ephemeral-storage").GetString().Should().Be("150Gi");
     }
 
     [Fact]
