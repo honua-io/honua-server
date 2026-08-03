@@ -1226,9 +1226,19 @@ public sealed class GeoprocessingJobServiceTests
         var limitedBackend = Substitute.For<IBatchComputeBackend>();
         limitedBackend.BackendName.Returns("aaa-limited");
         limitedBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        limitedBackend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities
+            {
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+            });
         var compatibleBackend = Substitute.For<IBatchComputeBackend>();
         compatibleBackend.BackendName.Returns("zzz-compatible");
         compatibleBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        compatibleBackend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities
+            {
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+            });
         compatibleBackend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
             .Returns(new BatchComputeSubmissionResult
             {
@@ -1401,6 +1411,11 @@ public sealed class GeoprocessingJobServiceTests
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities
+            {
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+            });
         backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
             .Returns(new BatchComputeSubmissionResult
             {
@@ -1464,16 +1479,68 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_RasterPlan_ResolvesLegacySourceBeforePlanningAndKeepsReferenceFingerprint()
+    public async Task SubmitJob_RasterPlan_ResolvesMetadataReferenceBeforePlanningAndKeepsReferenceFingerprint()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
         var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
-        resolver.ResolveAsync(
-                Arg.Any<RasterSourceReference>(),
-                Arg.Any<long>(),
+        resolver.ResolveLayerIdAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 42),
                 Arg.Any<CancellationToken>())
-            .Returns(RasterSourceResolution.Success(CreateTiffHeader(width: 32, height: 16, bands: 1)));
+            .Returns(RasterSourceLayerResolution.Success(7));
+        resolver.ResolveAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 42 && reference.LayerId == 7),
+                Arg.Any<CancellationToken>())
+            .Returns(RasterSourceResolution.Success(CreateObjectStoreRasterSource() with
+            {
+                CatalogLayerId = 7,
+                CatalogRasterId = 42,
+                DeclaredDimensions = new RasterSourceDimensions(32, 16, 1, 64),
+                Content = new RasterContentIdentity
+                {
+                    SizeBytes = 4096,
+                    MediaType = "image/tiff",
+                    ETag = "source-etag",
+                },
+            }));
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer.AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                7,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-reference-native",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Immutable COG worker",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                },
+            },
+        ]);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities
+            {
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+            });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "reference-job-1",
+            });
         var planner = new RasterExecutionPlanner(
             new RasterEngineCapabilityRegistry(),
             NullLogger<RasterExecutionPlanner>.Instance);
@@ -1489,6 +1556,9 @@ public sealed class GeoprocessingJobServiceTests
             _jobQueue,
             resultPackageStore: _resultPackageStore,
             rasterSourceResolver: resolver,
+            layerAccessAuthorizer: layerAuthorizer,
+            workloadRegistry: workloadRegistry,
+            backends: [backend],
             rasterExecutionPlanner: planner,
             rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
                 new RasterExecutionPlannerOptions()));
@@ -1515,14 +1585,24 @@ public sealed class GeoprocessingJobServiceTests
         var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
         job.Spec.RasterExecution.Should().NotBeNull();
-        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
-        job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.Inline);
-        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"]
-            .Should().Be(CreateTiffHeaderBase64(width: 32, height: 16, bands: 1));
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        job.Spec.RasterExecution.RemoteWorkloadId.Should().Be("gp-reference-native");
+        job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.ObjectStoreCog);
+        job.Spec.Parameters.Should().NotContainKey(
+            ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source");
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
+            .Should().Contain("\"sourceType\":\"cog\"")
+            .And.Contain("\"objectKey\":\"tenant/source.tif\"")
+            .And.Contain("\"eTag\":\"source-etag\"")
+            .And.NotContain("payload");
         job.Audit.RequestFingerprint.Should().Be(referenceFingerprint);
         await resolver.Received(1).ResolveAsync(
-            Arg.Any<RasterSourceReference>(),
-            Arg.Any<long>(),
+            Arg.Is<RasterSourceReference>(reference => reference.RasterId == 42 && reference.LayerId == 7),
+            Arg.Any<CancellationToken>());
+        await backend.Received(1).StartAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.Spec.ContractVersion == RasterSourceContract.JobContractVersion
+                && record.Spec.Backend == "aws-batch"),
             Arg.Any<CancellationToken>());
     }
 
@@ -2204,7 +2284,8 @@ public sealed class GeoprocessingJobServiceTests
                 ContractVersion = RasterOutputContract.JobContractVersion,
                 Parameters = new Dictionary<string, string>
                 {
-                    ["queue"] = "gp-primary"
+                    ["queue"] = "gp-primary",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Managed,
                 }
             }
         });
