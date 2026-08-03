@@ -162,14 +162,20 @@ reconciled cross-store step. The executor may stage bytes, but it must not
 promote the artifact, commit the sink intent, report terminal execution, or
 stop its execution heartbeat until the coordinator has atomically persisted
 the attempt-fenced output intent and transitioned the durable job to canonical
-status `Running` with `OutputPublicationPhase.Finalizing`. A crash before that
-transition leaves only attempt-scoped staging for the execution reaper to
-discard; a crash after it is recovered exclusively by the output reconciler.
-There is consequently no state in which a committed object is still eligible
-for execution requeue. A job requesting registration remains in `Finalizing`
-until the matching catalog entry is durable. `Finalizing` admits no new
-execution and excludes the job from both execution-heartbeat and
-execution-timeout expiry. A separate durable publication lease,
+status `Running` with `OutputPublicationPhase.Finalizing`. That job-store
+transition is a compare-and-set on the expected record version, current
+execution claim, attempt identifier, and fencing token. A stale attempt is
+rejected without changing the phase or releasing the current claim and may not
+publish its staged output. Only the winning compare-and-set permits the
+coordinator to stop that attempt's execution heartbeat. A crash before a
+successful transition leaves only attempt-scoped staging for the execution
+reaper to discard; a crash after it is recovered exclusively by the output
+reconciler. There is
+consequently no state in which a committed object is still eligible for
+execution requeue. A job requesting registration remains in `Finalizing` until
+the matching catalog entry is durable. `Finalizing` admits no new execution and
+excludes the job from both execution-heartbeat and execution-timeout expiry. A
+separate durable publication lease,
 heartbeat/deadline, and fenced output reconciler recover stalled registration;
 that recovery never requeues raster execution. The protocol does not claim
 cross-store atomicity. Creating an object does not implicitly create or replace

@@ -54,6 +54,13 @@ the requested terminal status (`Failed` or `Cancelled`). The coordinator
 changes the canonical status only after every sink intent is committed or
 aborted. Jobs without output intents keep the existing direct transitions.
 
+The `Running` to `Finalizing` handoff is a conditional job-store update. It
+compares the expected record version, current execution claim, attempt
+identifier, and fencing token before changing the publication phase. A stale
+attempt cannot enter `Finalizing`, release the current execution claim, or
+publish; only the winning update may stop its execution heartbeat and transfer
+recovery ownership to the publication lease.
+
 ### Claim and Heartbeat
 
 - `IJobQueue.TryClaimAsync` atomically removes a job from the pending set and
@@ -197,13 +204,21 @@ Millisecond timestamps break ties within a band.
 ### Graceful Shutdown
 
 When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
-jobs are abandoned rather than marked as terminal failures. The worker itself
-transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
-`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it immediately. This applies
-both during active execution and during the pre-execution window between claim
-and Running. Shutdown requeue always succeeds regardless of the job's retry
-budget because a host shutdown is an infrastructure event, not an execution
-failure.
+jobs that are still executing (`OutputPublicationPhase.None`) are abandoned
+rather than marked as terminal failures. The worker conditionally transitions
+the job back to Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
+`LastHeartbeatAt`), and re-enqueues it immediately. This applies during active
+execution and during the pre-execution window between claim and Running.
+Shutdown requeue ignores the retry budget because a host shutdown is an
+infrastructure event, but its update is conditional on the publication phase
+remaining `None`.
+
+A job in `Finalizing` or `Terminalizing` is never returned to the execution
+queue during shutdown. The stopping worker leaves its canonical state, attempt
+fence, and sink intents unchanged and conditionally relinquishes only a
+publication lease it owns (or lets that lease expire). The fenced output
+reconciler then resumes publication or terminalization from the durable phase;
+it does not start another execution attempt.
 
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has
