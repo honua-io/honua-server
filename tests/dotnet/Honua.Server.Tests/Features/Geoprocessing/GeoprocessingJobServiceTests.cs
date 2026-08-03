@@ -12,6 +12,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -179,6 +180,170 @@ public sealed class GeoprocessingJobServiceTests
         result.Warnings.Should().Contain(w => w.Contains("QueryFeatures", StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode
+                && violation.FieldPath == "steps[step-raster].raster_sources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_StandaloneNativeRasterInputs_AcceptTypedDescriptors()
+    {
+        var cases = new[]
+        {
+            (ProcessId: "proximity.euclidean-distance", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "proximity.euclidean-allocation", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "gdal.gdalwarp", Inputs: new Dictionary<string, string> { ["targetSrs"] = "3857" }),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var plan = CreateTypedRasterPlan("source");
+            plan = plan with
+            {
+                Steps =
+                [
+                    plan.Steps[0] with
+                    {
+                        ProcessId = testCase.ProcessId,
+                        Inputs = testCase.Inputs,
+                    },
+                ],
+            };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                || violation.Code == "MISSING_REQUIRED_PARAMETER");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_NullRasterSources_ReportsInvalidField()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps = [plan.Steps[0] with { RasterSources = null! }],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidField
+            && violation.FieldPath == "rasterSources");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.UnsafeLocator
+            && violation.FieldPath == "steps[step-raster].raster_sources.source.objectKey");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonRasterParameter_ReportsBindingFailure()
+    {
+        var result = _sut.ValidatePlan(CreateTypedRasterPlan("resampling"), CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.resampling");
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonGeoprocessStep_ReportsBindingFailure()
+    {
+        foreach (var sourceStep in new[]
+                 {
+                     AnalysisPlanStepKind.QueryFeatures,
+                     AnalysisPlanStepKind.Aggregate,
+                     AnalysisPlanStepKind.RenderMap,
+                     AnalysisPlanStepKind.Export,
+                 }.Select(kind => CreateTypedRasterPlan("source").Steps[0] with
+                 {
+                     Kind = kind,
+                     ProcessId = null,
+                 }))
+        {
+            var plan = CreateValidPlan() with { Steps = [BufferStep("step-1"), sourceStep] };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.IsExecutable.Should().BeFalse();
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                && violation.FieldPath == "steps[step-raster].raster_sources.source");
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedAndLegacyRasterSource_ReportsBindingFailure()
+    {
+        var plan = CreateTypedRasterPlan("source");
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
+                    {
+                        ["source"] = "legacy-source",
+                    },
+                },
+            ],
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().ContainSingle(violation =>
+            violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+            && violation.FieldPath == "steps[step-raster].raster_sources.source"
+            && violation.Message.Contains("both a typed reference", StringComparison.Ordinal));
+        result.Violations.Should().NotContain(violation =>
+            violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
     // -----------------------------------------------------------------------
     // DryRunPlan
     // -----------------------------------------------------------------------
@@ -199,6 +364,32 @@ public sealed class GeoprocessingJobServiceTests
         result.EstimatedArtifacts.Should().Contain(ArtifactKind.FeatureLayer);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_TypedRasterSource_ReportsExecutionNotSupported()
+    {
+        var act = () => _sut.DryRunPlan(CreateTypedRasterPlan("source"), CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_UnsafeRasterObjectKey_ReportsContractFailure()
+    {
+        var plan = CreateTypedRasterPlan(
+            "source",
+            CreateObjectStoreRasterSource() with { ObjectKey = "../tenant/source.tif" });
+
+        var act = () => _sut.DryRunPlan(plan, CreatePrincipal());
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage($"*{RasterSourceValidationCodes.UnsafeLocator}*");
+    }
+
     // -----------------------------------------------------------------------
     // SubmitJobAsync
     // -----------------------------------------------------------------------
@@ -217,6 +408,79 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
+    {
+        var plan = CreateValidPlan();
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                    {
+                        ["source"] = new InlineRasterSourceDescriptor
+                        {
+                            Version = "inline-v1",
+                            Payload = new byte[RasterSourceValidationOptions.Default.MaxInlineBytes + 1],
+                            Content = new RasterContentIdentity
+                            {
+                                SizeBytes = RasterSourceValidationOptions.Default.MaxInlineBytes + 1,
+                                MediaType = "image/tiff",
+                                Checksum = new RasterChecksum("sha256", new string('a', 64)),
+                            },
+                            SecurityContext = new RasterSecurityContextReference
+                            {
+                                TenantId = "tenant-a",
+                                AuthorizationSnapshotReference = "auth-snapshot-123",
+                            },
+                        },
+                    },
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain(RasterSourceValidationCodes.InlinePayloadTooLarge);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TypedRasterSource_RefusesExecutionBeforeDurablePersistence()
+    {
+        var plan = CreateTypedRasterPlan("source");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain("RASTER_SOURCE_EXECUTION_NOT_SUPPORTED");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TypedRasterBoundToNonRasterParameter_RejectsBeforePersistence()
+    {
+        var plan = CreateTypedRasterPlan("resampling");
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain(RasterSourceValidationCodes.InvalidParameterBinding);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -3348,6 +3612,46 @@ public sealed class GeoprocessingJobServiceTests
         PlanId = "plan-1",
         IntentId = "intent-1",
         Steps = [BufferStep("step-1")]
+    };
+
+    private static AnalysisPlan CreateTypedRasterPlan(
+        string parameterName,
+        ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
+        {
+            PlanId = "plan-typed-raster",
+            IntentId = "intent-typed-raster",
+            Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-raster",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "raster.reproject",
+                Inputs = new Dictionary<string, string> { ["targetSrid"] = "3857" },
+                RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                {
+                    [parameterName] = descriptor ?? CreateObjectStoreRasterSource(),
+                },
+            },
+        ],
+        };
+
+    private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
+    {
+        Version = "object-v1",
+        StoreReference = "imagery-prod",
+        ObjectKey = "tenant/source.tif",
+        Content = new RasterContentIdentity
+        {
+            SizeBytes = 4096,
+            MediaType = "image/tiff",
+            Checksum = new RasterChecksum("sha256", new string('a', 64)),
+        },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant-a",
+            AuthorizationSnapshotReference = "untrusted-caller-hint",
+        },
     };
 
     private static AnalysisPlanStep BufferStep(string stepId) => new()
