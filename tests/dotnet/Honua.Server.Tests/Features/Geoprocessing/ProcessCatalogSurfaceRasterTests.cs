@@ -163,7 +163,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
         // 'source' input. As of #2264 the submit path can also materialize
         // 'source' from a registered catalog raster referenced by 'layerId' or
         // 'rasterId', so all three selectors are declared OPTIONAL and the
-        // "supply exactly one" rule is enforced by the validator
+        // "supply at least one" rule is enforced by the validator
         // (ValidateSharedRasterSourceSemantics) rather than the per-parameter
         // Required flag. A plan that omits all three is rejected at submit-time
         // (see Validator_SurfaceSlope_WithoutSource_... below) rather than

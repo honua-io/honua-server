@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 
@@ -16,7 +17,7 @@ namespace Honua.Core.Features.Orchestration.Abstractions;
 public interface IWorkflowJobExecutor
 {
     /// <summary>
-    /// Evaluates the execution-tier authorization required to run <paramref name="plan"/>
+    /// Evaluates the plan-scoped authorization required to run <paramref name="plan"/>
     /// against <paramref name="principal"/>, throwing when the principal lacks the grant a
     /// mutating (or otherwise elevated) step requires, or read access to a catalog layer a
     /// layer-sourced step would read. Workflow run creation calls this against the REQUESTING
@@ -24,7 +25,7 @@ public interface IWorkflowJobExecutor
     /// identity, so an <c>Execute</c>-only operator cannot schedule a workflow whose compiled
     /// steps import, mutate, or sink under an admin-bypassing system principal that never
     /// faces the mutating-process tier (#2798), nor one whose steps read a layer the operator
-    /// cannot read on any protocol surface (#2283/#3043).
+    /// cannot read on any protocol surface (#2283/#3043/#3046).
     /// </summary>
     /// <returns>
     /// The plan with the gate's per-layer bindings stamped on it. Callers MUST persist this
@@ -42,11 +43,27 @@ public interface IWorkflowJobExecutor
     /// <summary>
     /// Submits a plan for asynchronous execution.
     /// </summary>
+    /// <param name="plan">The plan to submit.</param>
+    /// <param name="idempotencyKey">Optional idempotency key.</param>
+    /// <param name="principal">The principal the submission's authorization gates evaluate against.</param>
+    /// <param name="protocolMetadata">Protocol metadata for the submission.</param>
+    /// <param name="submitterSecurityContext">
+    /// The row/field security identity to pin on the job (honua-server#3068). The orchestration
+    /// engine passes the RUN REQUESTER's snapshot here, because <paramref name="principal"/> is
+    /// the synthesized orchestrator identity carrying <c>role=admin</c> and capturing from it
+    /// would give a step job broader row/field visibility than the operator who scheduled the
+    /// run. <see langword="null"/> means the run record predates the snapshot field;
+    /// implementations MUST refuse the submission rather than fall back to capturing from
+    /// <paramref name="principal"/>, which would launder admin visibility onto every step of a
+    /// pre-upgrade run. Such runs must be resubmitted.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        JobSecurityContext? submitterSecurityContext = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

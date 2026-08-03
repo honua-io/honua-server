@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -253,6 +255,56 @@ public sealed class DagSourceReaderTests
         query.Where.Should().Be("name = 'x'");
         query.SpatialFilter.Should().NotBeNull();
         query.SpatialFilter!.Value.IsSimpleEnvelope.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_InsideJobScopeWithNoSubmitterSnapshot_RefusesTheRead()
+    {
+        // honua-server#3068 fail-closed contract. An active job scope carrying NO submitter
+        // snapshot means the read cannot be constrained to the caller: the request-scoped RLS
+        // and field-mask sources would resolve "nothing applies" and hand back every row and
+        // every attribute. The connector must refuse instead — and must refuse BEFORE touching
+        // the store, so no rows are ever read.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var reader = new HonuaLayerDagSource(store);
+
+        using var scope = JobSecurityScope.Begin(submitter: null);
+
+        var act = async () => await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42 }));
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _ = store.DidNotReceive().StreamFeaturesAsync(
+            Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_InsideJobScopeWithSubmitterSnapshot_ReadsNormally()
+    {
+        // Positive control: a job that DID capture its submitter reads exactly as before, so the
+        // guard above is a genuine fail-closed decision rather than a blanket refusal of
+        // background layer reads.
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var wkb = new WKBWriter().Write(factory.CreatePoint(new Coordinate(1, 2)));
+        var stored = new Feature
+        {
+            Id = 1,
+            Geometry = wkb,
+            Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "ok")
+        };
+
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync(stored));
+
+        var reader = new HonuaLayerDagSource(store);
+
+        using var scope = JobSecurityScope.Begin(
+            new JobSecurityContext("submitter", null, [new JobSecurityClaim("category", "test")]));
+
+        var features = await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42 }));
+
+        features.Should().HaveCount(1);
+        features[0].Attributes["name"].Should().Be("ok");
     }
 
     // -------------------------------------------------------------------------

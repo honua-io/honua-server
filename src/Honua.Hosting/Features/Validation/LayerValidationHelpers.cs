@@ -624,10 +624,10 @@ internal static class LayerValidationHelpers
     /// the lifecycle to Retired, so route resolution must 404 rather than serving the
     /// disabled layer.
     /// </summary>
-    private static bool IsRetired(MetadataV2Resource resource)
+    internal static bool IsRetired(MetadataV2Resource resource)
         => resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
 
-    private static bool IsRetired(MetadataV2Publication publication)
+    internal static bool IsRetired(MetadataV2Publication publication)
         => publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
 
     private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
@@ -644,6 +644,37 @@ internal static class LayerValidationHelpers
             MetadataV2GraphSnapshot snapshot,
             int layerId,
             string? requiredProtocol)
+        => ResolveV2TripleForTenant(
+            snapshot,
+            layerId,
+            requiredProtocol,
+            TenantScopeHelpers.ResolveRequestTenantId(context),
+            applyTenantScope: true);
+
+    /// <summary>
+    /// Request-context-free layer-triple resolution (honua-server#3046). The
+    /// <see cref="ResolveV2Triple"/> overload above is the HTTP entry point and simply
+    /// supplies the request's resolved tenant id; non-HTTP callers (the geoprocessing
+    /// submit pipeline via <see cref="Honua.Infrastructure.Authentication.LayerAccessAuthorizer"/>)
+    /// call this directly so both paths resolve a layer id through ONE implementation.
+    /// </summary>
+    /// <param name="snapshot">The Metadata v2 graph snapshot to resolve against.</param>
+    /// <param name="layerId">The layer index being resolved.</param>
+    /// <param name="requiredProtocol">Optional protocol preference for publication selection.</param>
+    /// <param name="tenantId">The tenant the resolution is scoped to, when <paramref name="applyTenantScope"/> is set.</param>
+    /// <param name="applyTenantScope">
+    /// Whether tenant visibility filtering applies. HTTP callers always pass
+    /// <see langword="true"/>. Server-internal callers running outside a request (no
+    /// tenant rail exists to resolve) pass <see langword="false"/>, which keeps
+    /// tenant-scoped layers resolvable instead of failing closed on every one of them.
+    /// </param>
+    internal static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
+        ResolveV2TripleForTenant(
+            MetadataV2GraphSnapshot snapshot,
+            int layerId,
+            string? requiredProtocol,
+            string? tenantId,
+            bool applyTenantScope)
     {
         // Resolution order (now deterministic):
         //   1. requiredProtocol matches AND publication.IsPrimary
@@ -654,11 +685,16 @@ internal static class LayerValidationHelpers
             .Where(p => p.LayerIndex == layerId)
             .Where(p =>
             {
+                if (!applyTenantScope)
+                {
+                    return true;
+                }
+
                 var resource = snapshot.ResolveResource(p);
                 var service = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var resolvedService)
                     ? resolvedService
                     : null;
-                return TenantScopeHelpers.IsPublicationVisible(context, p, resource, service);
+                return MetadataV2TenantVisibility.IsVisibleToTenant(p, resource, service, tenantId);
             })
             .ToList();
 

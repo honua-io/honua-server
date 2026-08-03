@@ -113,6 +113,43 @@ public sealed class GeoServicesErrorTelemetryTests
             .Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task WriteValidationErrorAsync_GeoServicesBypassWriter_IncrementsCounters()
+    {
+        // Arrange: the direct-to-Response writer bypasses the central FormatError
+        // dispatch and serializes the {error} envelope itself, so it must funnel
+        // telemetry through RecordErrorTelemetry independently. A silent bypass
+        // here is exactly the blind spot the #2243 release gate guards against.
+        var context = CreateContext("/rest/services/0/MapServer/0/query");
+        context.Response.Body = new MemoryStream();
+
+        using var collector = new ErrorMetricsCollector(
+            "honua_geoservices_error_total",
+            "honua_request_error_total");
+
+        // Act
+        await ValidationErrorHelpers.WriteValidationErrorAsync(
+            context,
+            StatusCodes.Status400BadRequest,
+            "Invalid where clause",
+            "The where clause could not be parsed.");
+
+        // Assert
+        collector.Match(
+                "honua_geoservices_error_total",
+                ("service_type", "MapServer"),
+                ("operation", "query"),
+                ("error_code", StatusCodes.Status400BadRequest))
+            .Should().ContainSingle("the bypassing GeoServices error writer must still emit telemetry");
+        collector.Match(
+                "honua_request_error_total",
+                ("service_type", "MapServer"),
+                ("operation", "query"),
+                ("error_code", StatusCodes.Status400BadRequest),
+                ("in_band", false))
+            .Should().ContainSingle();
+    }
+
     private static DefaultHttpContext CreateContext(string path)
     {
         var context = new DefaultHttpContext();
