@@ -370,8 +370,9 @@ internal static class RasterExecutionPlanningRequestFactory
     }
 
     private static bool RequiresDerivedOutputGrid(AnalysisPlanStep step)
-        => step.Inputs.TryGetValue("cellSize", out var cellSize)
-            && !string.IsNullOrWhiteSpace(cellSize);
+        => string.Equals(step.ProcessId, "raster.mosaic", StringComparison.Ordinal)
+            || (step.Inputs.TryGetValue("cellSize", out var cellSize)
+                && !string.IsNullOrWhiteSpace(cellSize));
 
     private static long? ResolveZoneCount(AnalysisPlanStep step)
     {
