@@ -1,0 +1,284 @@
+[
+  {
+    "id": "clip.pixel-center-boundary.v1",
+    "processId": "raster.clip",
+    "semanticVersion": "1.0.0",
+    "variant": "pixel-center",
+    "coverage": ["clip", "window-boundary", "grid", "nodata", "edge-treatment"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 2, "height": 2, "srid": 4326, "transform": [1, 1, 0, 3, 0, -1] },
+      "bands": [{ "pixelType": "8BUI", "colorInterpretation": "gray", "noData": 0, "cells": [6, 7, 10, 11] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "reproject.nearest-grid.v1",
+    "processId": "raster.reproject",
+    "semanticVersion": "1.0.0",
+    "variant": "nearest",
+    "coverage": ["crs", "grid", "pixel-center", "resampling", "nodata"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 2, "height": 2, "srid": 3857, "transform": [0, 111319.49079327357, 0, 222684.20850554405, 0, -111342.10425277203] },
+      "bands": [{ "pixelType": "8BUI", "colorInterpretation": "gray", "noData": 0, "cells": [1, 2, 3, 4] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0.000001, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "resample.bilinear-nodata-edge.v1",
+    "processId": "raster.resample",
+    "semanticVersion": "1.0.0",
+    "variant": "bilinear",
+    "coverage": ["grid", "resampling", "nodata", "edge-treatment", "rounding"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 4326, "transform": [0, 0.5, 0, 1.5, 0, -0.5] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [1, 1.5, 2, 2, null, 3, 3, 3.5, 4] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.000001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "mosaic.last-overlap-nodata.v1",
+    "processId": "raster.mosaic",
+    "semanticVersion": "1.0.0",
+    "variant": "last",
+    "coverage": ["mosaic-order", "overlap", "nodata", "grid"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 2, "srid": 4326, "transform": [0, 1, 0, 2, 0, -1] },
+      "bands": [{ "pixelType": "16BSI", "colorInterpretation": "gray", "noData": -32768, "cells": [10, 20, 20, 10, 10, 20] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "map-algebra.nodata-propagation.v1",
+    "processId": "raster.map-algebra",
+    "semanticVersion": "1.0.0",
+    "variant": "a-plus-b",
+    "coverage": ["map-algebra", "nodata", "pixel-type-promotion"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 2, "height": 2, "srid": 4326, "transform": [0, 1, 0, 2, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "undefined", "noData": -9999, "cells": [11, null, 33, 44] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.000001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "reclassify.closed-open-boundaries.v1",
+    "processId": "raster.reclassify",
+    "semanticVersion": "1.0.0",
+    "variant": "closed-open",
+    "coverage": ["reclassification", "range-boundary", "nodata", "pixel-type"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 5, "height": 1, "srid": 4326, "transform": [0, 1, 0, 1, 0, -1] },
+      "bands": [{ "pixelType": "8BUI", "colorInterpretation": "gray", "noData": 255, "cells": [1, 1, 2, 2, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "spectral-index.ndvi-zero-denominator.v1",
+    "processId": "raster.spectral-index",
+    "semanticVersion": "1.0.0",
+    "variant": "ndvi",
+    "coverage": ["spectral-index", "multi-band", "division-by-zero", "nodata", "pixel-type-promotion"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 1, "srid": 32604, "transform": [500000, 10, 0, 2200000, 0, -10] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "undefined", "noData": -9999, "cells": [0.5, null, -0.5] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.000001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "statistics.nodata-population.v1",
+    "processId": "raster.statistics",
+    "semanticVersion": "1.0.0",
+    "variant": "population",
+    "coverage": ["statistics", "nodata", "rounding", "empty-band"],
+    "outcome": "Success",
+    "expected": {
+      "bands": [],
+      "scalars": { "band.1.count": 3, "band.1.min": 1, "band.1.max": 3, "band.1.mean": 2, "band.1.stddev": 0.816496580927726 }
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0.000000001, "scalarRelative": 0.000000001 }
+  },
+  {
+    "id": "histogram.bin-boundaries.v1",
+    "processId": "raster.histogram",
+    "semanticVersion": "1.0.0",
+    "variant": "equal-width",
+    "coverage": ["histogram", "bin-boundary", "nodata", "uniform-band"],
+    "outcome": "Success",
+    "expected": {
+      "bands": [],
+      "scalars": { "band.1.bin.0.min": 0, "band.1.bin.0.max": 2, "band.1.bin.0.count": 2, "band.1.bin.1.min": 2, "band.1.bin.1.max": 4, "band.1.bin.1.count": 2 }
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0.000000001, "scalarRelative": 0.000000001 }
+  },
+  {
+    "id": "zonal-statistics.pixel-center-edge.v1",
+    "processId": "raster.zonal-statistics",
+    "semanticVersion": "1.0.0",
+    "variant": "pixel-center",
+    "coverage": ["zonal-statistics", "zone-edge", "pixel-center", "nodata", "empty-zone"],
+    "outcome": "Success",
+    "expected": {
+      "bands": [],
+      "scalars": { "zone.1.count": 2, "zone.1.min": 1, "zone.1.max": 3, "zone.1.mean": 2 }
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0.000000001, "scalarRelative": 0.000000001 }
+  },
+  {
+    "id": "surface.slope-plane-degrees.v1",
+    "processId": "surface.slope",
+    "semanticVersion": "1.0.0",
+    "variant": "degrees",
+    "coverage": ["slope", "edge-treatment", "nodata", "algorithm-definition"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [null, null, null, null, 45, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.0001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "surface.aspect-plane-degrees.v1",
+    "processId": "surface.aspect",
+    "semanticVersion": "1.0.0",
+    "variant": "degrees",
+    "coverage": ["aspect", "edge-treatment", "nodata", "algorithm-definition"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [null, null, null, null, 270, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.0001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "surface.hillshade-horn.v1",
+    "processId": "surface.hillshade",
+    "semanticVersion": "1.0.0",
+    "variant": "horn",
+    "coverage": ["hillshade", "edge-treatment", "nodata", "algorithm-definition", "rounding"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "8BUI", "colorInterpretation": "gray", "noData": 0, "cells": [null, null, null, null, 218, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 1, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "surface.roughness-three-by-three.v1",
+    "processId": "surface.roughness",
+    "semanticVersion": "1.0.0",
+    "variant": "three-by-three",
+    "coverage": ["roughness", "edge-treatment", "nodata", "algorithm-definition"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [null, null, null, null, 2, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.0001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "surface.rugosity-tri-three-by-three.v1",
+    "processId": "surface.rugosity-tri",
+    "semanticVersion": "1.0.0",
+    "variant": "three-by-three",
+    "coverage": ["rugosity", "tri", "edge-treatment", "nodata", "algorithm-definition"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [null, null, null, null, 2.449489742783178, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.0001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "surface.rugosity-tpi-three-by-three.v1",
+    "processId": "surface.rugosity-tpi",
+    "semanticVersion": "1.0.0",
+    "variant": "three-by-three",
+    "coverage": ["rugosity", "tpi", "edge-treatment", "nodata", "algorithm-definition"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 3, "height": 3, "srid": 32604, "transform": [500000, 1, 0, 2200000, 0, -1] },
+      "bands": [{ "pixelType": "32BF", "colorInterpretation": "gray", "noData": -9999, "cells": [null, null, null, null, 0, null, null, null, null] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.0001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "multiband.promotion-color.v1",
+    "processId": "raster.map-algebra",
+    "semanticVersion": "1.0.0",
+    "variant": "multiband-promotion",
+    "coverage": ["multi-band", "pixel-type-promotion", "color-interpretation", "nodata"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 1, "height": 1, "srid": 4326, "transform": [0, 1, 0, 1, 0, -1] },
+      "bands": [
+        { "pixelType": "32BF", "colorInterpretation": "red", "noData": -9999, "cells": [10.5] },
+        { "pixelType": "32BF", "colorInterpretation": "green", "noData": -9999, "cells": [20.5] },
+        { "pixelType": "32BF", "colorInterpretation": "blue", "noData": -9999, "cells": [30.5] }
+      ],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0.000001, "cellRelative": 0.000001, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "reproject.antimeridian.v1",
+    "processId": "raster.reproject",
+    "semanticVersion": "1.0.0",
+    "variant": "antimeridian",
+    "coverage": ["antimeridian", "crs", "grid", "edge-treatment"],
+    "outcome": "Success",
+    "expected": {
+      "grid": { "width": 2, "height": 1, "srid": 4326, "transform": [179, 1, 0, 1, 0, -1] },
+      "bands": [{ "pixelType": "8BUI", "colorInterpretation": "gray", "noData": 0, "cells": [1, 2] }],
+      "scalars": {}
+    },
+    "tolerance": { "gridAbsolute": 0.000000001, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "reproject.invalid-crs.v1",
+    "processId": "raster.reproject",
+    "semanticVersion": "1.0.0",
+    "variant": "invalid-crs",
+    "coverage": ["invalid-crs", "error-behavior", "partial-result-cleanup"],
+    "outcome": "Error",
+    "errorCode": "raster.invalid-crs",
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "statistics.empty-input.v1",
+    "processId": "raster.statistics",
+    "semanticVersion": "1.0.0",
+    "variant": "empty-input",
+    "coverage": ["empty-input", "error-behavior", "partial-result-cleanup"],
+    "outcome": "Error",
+    "errorCode": "raster.empty-input",
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  },
+  {
+    "id": "mosaic.cancellation.v1",
+    "processId": "raster.mosaic",
+    "semanticVersion": "1.0.0",
+    "variant": "cancellation",
+    "coverage": ["cancellation", "partial-result-cleanup"],
+    "outcome": "Cancelled",
+    "tolerance": { "gridAbsolute": 0, "cellAbsolute": 0, "cellRelative": 0, "scalarAbsolute": 0, "scalarRelative": 0 }
+  }
+]

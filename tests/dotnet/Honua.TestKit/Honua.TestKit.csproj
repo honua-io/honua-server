@@ -79,4 +79,8 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="RasterSemantics\Fixtures\*.json" />
+  </ItemGroup>
+
 </Project>

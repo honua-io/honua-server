@@ -3,7 +3,9 @@
 
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Honua.TestKit.Constants;
+using Honua.TestKit.RasterSemantics;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -113,7 +115,143 @@ internal static class GdalCli
         return File.ReadAllBytes(demPath);
     }
 
-    private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
+    /// <summary>Creates the canonical 3x3 east-rising plane used by the slope fixture.</summary>
+    public static async Task<byte[]> GenerateSemanticPlaneDemAsync(string scratch)
+    {
+        Directory.CreateDirectory(scratch);
+        var gridPath = Path.Join(scratch, "semantic-plane.asc");
+        var demPath = Path.Join(scratch, "semantic-plane.tif");
+        await File.WriteAllTextAsync(gridPath, """
+            ncols 3
+            nrows 3
+            xllcorner 500000
+            yllcorner 2199997
+            cellsize 1
+            NODATA_value -9999
+            0 1 2
+            0 1 2
+            0 1 2
+            """).ConfigureAwait(false);
+        await RunOrThrowAsync(
+            "gdal_translate",
+            ["-q", "-of", "GTiff", "-ot", "Float32", "-a_srs", "EPSG:32604", gridPath, demPath],
+            scratch).ConfigureAwait(false);
+        return await File.ReadAllBytesAsync(demPath).ConfigureAwait(false);
+    }
+
+    /// <summary>Decodes a small GeoTIFF into the provider-neutral semantic snapshot.</summary>
+    public static async Task<RasterSemanticSnapshot> InspectSmallRasterAsync(
+        byte[] payload,
+        string scratch)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        Directory.CreateDirectory(scratch);
+        var path = Path.Join(scratch, "semantic-inspect.tif");
+        await File.WriteAllBytesAsync(path, payload).ConfigureAwait(false);
+
+        var infoResult = await RunOrThrowAsync("gdalinfo", ["-json", path], scratch).ConfigureAwait(false);
+        using var info = JsonDocument.Parse(infoResult.StandardOutput);
+        var root = info.RootElement;
+        var size = root.GetProperty("size");
+        var width = size[0].GetInt32();
+        var height = size[1].GetInt32();
+        if (checked((long)width * height) > 1_048_576)
+        {
+            throw new InvalidOperationException("Semantic raster inspection is limited to 1,048,576 cells.");
+        }
+
+        var geoTransform = root.GetProperty("geoTransform")
+            .EnumerateArray()
+            .Select(value => value.GetDouble())
+            .ToArray();
+        var band = root.GetProperty("bands")[0];
+        var pixelType = band.GetProperty("type").GetString() switch
+        {
+            "Byte" => "8BUI",
+            "Int16" => "16BSI",
+            "UInt16" => "16BUI",
+            "Int32" => "32BSI",
+            "UInt32" => "32BUI",
+            "Float32" => "32BF",
+            "Float64" => "64BF",
+            var type => throw new InvalidOperationException($"Unsupported GDAL semantic pixel type '{type}'."),
+        };
+        var colorInterpretation = band.TryGetProperty("colorInterpretation", out var color)
+            ? color.GetString()?.ToLowerInvariant() ?? "undefined"
+            : "undefined";
+        var noData = band.TryGetProperty("noDataValue", out var noDataElement)
+            ? noDataElement.GetDouble()
+            : (double?)null;
+        var srsResult = await RunOrThrowAsync("gdalsrsinfo", ["-o", "epsg", path], scratch).ConfigureAwait(false);
+        var sridToken = srsResult.StandardOutput.Trim();
+        var separator = sridToken.LastIndexOf(':');
+        if (separator < 0 || !int.TryParse(sridToken[(separator + 1)..], out var srid))
+        {
+            throw new InvalidOperationException($"GDAL did not return a canonical EPSG identifier: '{sridToken}'.");
+        }
+
+        var cells = new List<double?>(checked(width * height));
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var valueResult = await RunOrThrowAsync(
+                    "gdallocationinfo",
+                    [
+                        "-valonly",
+                        "-b",
+                        "1",
+                        path,
+                        x.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        y.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ],
+                    scratch).ConfigureAwait(false);
+                if (!double.TryParse(
+                        valueResult.StandardOutput.Trim(),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var value))
+                {
+                    throw new InvalidOperationException("GDAL returned a non-numeric semantic cell value.");
+                }
+
+                cells.Add(noData is { } marker && value.Equals(marker) ? null : value);
+            }
+        }
+
+        return new RasterSemanticSnapshot
+        {
+            Grid = new RasterSemanticGrid
+            {
+                Width = width,
+                Height = height,
+                Srid = srid,
+                Transform = geoTransform,
+            },
+            Bands =
+            [
+                new RasterSemanticBand
+                {
+                    PixelType = pixelType,
+                    ColorInterpretation = colorInterpretation,
+                    NoData = noData,
+                    Cells = cells,
+                },
+            ],
+        };
+    }
+
+    /// <summary>Returns the installed GDAL CLI version string.</summary>
+    public static async Task<string> VersionAsync(string scratch)
+    {
+        var result = await RunOrThrowAsync("gdalinfo", ["--version"], scratch).ConfigureAwait(false);
+        return result.StandardOutput.Trim();
+    }
+
+    private static async Task<GdalCommandResult> RunOrThrowAsync(
+        string tool,
+        IReadOnlyList<string> args,
+        string scratch)
     {
         var runner = new ProcessGdalCommandRunner(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
@@ -124,6 +262,8 @@ internal static class GdalCli
             throw new InvalidOperationException(
                 $"Failed to synthesize sample DEM via {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
         }
+
+        return result;
     }
 }
 
