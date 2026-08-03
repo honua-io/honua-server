@@ -406,11 +406,11 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(
+    private static MetadataV2Publication[] ResolveMapServerLayerPublications(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
-        var descriptors = new List<MapServerMetadataLayerDescriptor>();
+        var publications = new List<MetadataV2Publication>();
         var seenPublicLayerIds = new HashSet<int>();
         var mapPublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Where(static publication => publication.PublicationType is (
@@ -424,8 +424,8 @@ internal static partial class MapServerEndpoints
             // A single resource can be published through several protocol adapters with the
             // same service-local numeric identifier (for example, automatic layer publishing
             // emits both an Esri feature layer and a STAC collection). MapServer must only
-            // consume Esri publications; otherwise the duplicate identifier reaches export's
-            // layer lookup and ToDictionary throws before a valid static render can begin.
+            // consume Esri publications; otherwise duplicate identifiers reach handler-specific
+            // layer lookups and can throw before valid render, query, or KML work begins.
             // Prefer an explicit Esri map publication when a graph also contains a feature
             // publication for the same id; malformed or transitional graphs remain deterministic
             // and cannot crash the renderer with duplicate dictionary keys.
@@ -433,6 +433,21 @@ internal static partial class MapServerEndpoints
             {
                 continue;
             }
+
+            publications.Add(publication);
+        }
+
+        return [.. publications];
+    }
+
+    private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var descriptors = new List<MapServerMetadataLayerDescriptor>();
+        foreach (var publication in ResolveMapServerLayerPublications(snapshot, service))
+        {
+            var publicLayerId = publication.LayerIndex!.Value;
 
             var resource = snapshot.ResolveResource(publication);
             if (resource is null)

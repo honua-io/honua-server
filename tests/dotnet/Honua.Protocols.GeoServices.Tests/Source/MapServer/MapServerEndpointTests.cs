@@ -247,7 +247,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithSameIdStacPublication_ReturnsImage()
+    public async Task MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate()
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync();
@@ -272,12 +272,29 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             Publications = snapshot.Graph.Publications.Append(stacPublication).ToArray(),
         });
 
-        var response = await _fixture.Client.GetAsync(
+        using var exportResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=png32&f=image");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
-        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+        exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        exportResponse.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
+        (await exportResponse.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+
+        var mapServerRequests = new[]
+        {
+            (Operation: "legend", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json"),
+            (Operation: "find", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json"),
+            (Operation: "identify", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json"),
+            (Operation: "generateKml", Path: $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateKml?layers={WebAppFixture.TestLayerId}&f=kml"),
+        };
+
+        foreach (var (operation, path) in mapServerRequests)
+        {
+            using var response = await _fixture.Client.GetAsync(path);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                $"MapServer {operation} should ignore non-Esri publications with the same public layer ID. Response: {content}");
+        }
     }
 
     [IntegrationTest]

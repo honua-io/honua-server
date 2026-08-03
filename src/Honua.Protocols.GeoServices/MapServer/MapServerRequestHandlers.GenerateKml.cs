@@ -335,7 +335,7 @@ internal static partial class MapServerEndpoints
         MetadataV2Service service)
     {
         var descriptors = new List<GenerateKmlLayerDescriptor>();
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        foreach (var publication in ResolveMapServerLayerPublications(snapshot, service))
         {
             if (publication.LayerIndex is not int publicLayerId)
             {
