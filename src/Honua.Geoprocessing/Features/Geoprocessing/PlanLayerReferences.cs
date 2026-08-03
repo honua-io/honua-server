@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Geoprocessing;
 
@@ -118,6 +119,11 @@ internal static class PlanLayerReferences
                         continue;
                     }
 
+                    if (!IsActiveLayerReference(step, parameter, layerId))
+                    {
+                        continue;
+                    }
+
                     seen ??= [];
                     if (!seen.Add((layerId, parameter.LayerAccess)))
                     {
@@ -136,5 +142,26 @@ internal static class PlanLayerReferences
         }
 
         return references is null ? [] : references;
+    }
+
+    /// <summary>
+    /// Returns whether a declared layer parameter reaches its executor's layer access path.
+    /// Most layer parameters are unconditional. The optional import raster target is active
+    /// only for the same positive id and supported filename combination the executor imports.
+    /// </summary>
+    private static bool IsActiveLayerReference(
+        AnalysisPlanStep step,
+        ProcessParameterSpec parameter,
+        int layerId)
+    {
+        if (!string.Equals(step.ProcessId, "import.dataset", StringComparison.Ordinal)
+            || !string.Equals(parameter.Name, "rasterLayerId", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return layerId > 0
+            && step.Inputs.TryGetValue("fileName", out var fileName)
+            && RasterImportFormatDetector.DetectFormat(fileName) is not null;
     }
 }
