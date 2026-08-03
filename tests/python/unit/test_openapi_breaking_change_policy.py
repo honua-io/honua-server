@@ -191,6 +191,32 @@ class ResolvePolicyTests(unittest.TestCase):
                     "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
                 )
 
+    def test_ReadChangedFiles_ModeOnlyDocumentationChange_IsExcluded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_diff = Path(directory) / "changed-files.raw"
+            raw_diff.write_text(
+                ":100644 100755 abcdef1 abcdef1 M\t"
+                f"{MIGRATION_GUIDE}\n",
+                encoding="utf-8",
+            )
+
+            changed_files = POLICY.read_changed_files(str(raw_diff))
+
+        self.assertEqual((), changed_files)
+
+    def test_ReadChangedFiles_ContentChangedDocumentation_IsIncluded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_diff = Path(directory) / "changed-files.raw"
+            raw_diff.write_text(
+                ":100644 100644 abcdef1 1234567 M\t"
+                f"{MIGRATION_GUIDE}\n",
+                encoding="utf-8",
+            )
+
+            changed_files = POLICY.read_changed_files(str(raw_diff))
+
+        self.assertEqual((MIGRATION_GUIDE,), changed_files)
+
     def test_ParseRepositoryOverride_InvalidValue_FailsClosed(self):
         with self.assertRaisesRegex(ValueError, "must be a boolean"):
             POLICY.resolve_policy("tru", "")

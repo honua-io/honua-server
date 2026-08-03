@@ -61,8 +61,9 @@ jobs:
           OPENAPI_PR_BODY: ${{ github.event.pull_request.body || '' }}
           OPENAPI_BASE_REF: ${{ steps.baseline.outputs.ref }}
         run: |
-          changed_files="${RUNNER_TEMP}/openapi-breaking-change-files.txt"
-          git diff --name-only --diff-filter=ACMRT "${OPENAPI_BASE_REF}...HEAD" > "${changed_files}"
+          changed_files="${RUNNER_TEMP}/openapi-breaking-change-raw-diff.txt"
+          git diff --raw --abbrev=40 --no-renames --diff-filter=ACMRT \
+            "${OPENAPI_BASE_REF}...HEAD" > "${changed_files}"
           OPENAPI_CHANGED_FILES_FILE="${changed_files}" \
             python3 scripts/ci/openapi-breaking-change-policy.py
 

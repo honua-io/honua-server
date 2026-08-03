@@ -210,13 +210,28 @@ def resolve_policy(
 
 
 def read_changed_files(path_value: str) -> tuple[str, ...]:
-    """Read the workflow-produced changed-file list, failing closed when absent."""
+    """Read paths whose blob content changed from a workflow-produced raw diff."""
 
     normalized_path = path_value.strip()
     if not normalized_path:
         return ()
 
-    return tuple(Path(normalized_path).read_text(encoding="utf-8").splitlines())
+    content_changed_paths: list[str] = []
+    for line in Path(normalized_path).read_text(encoding="utf-8").splitlines():
+        try:
+            metadata, changed_path = line.split("\t", maxsplit=1)
+        except ValueError as error:
+            raise ValueError(f"Malformed git raw-diff line: {line!r}.") from error
+
+        fields = metadata.split()
+        if len(fields) != 5 or not fields[0].startswith(":"):
+            raise ValueError(f"Malformed git raw-diff metadata: {metadata!r}.")
+
+        old_blob, new_blob = fields[2], fields[3]
+        if old_blob != new_blob:
+            content_changed_paths.append(changed_path)
+
+    return tuple(content_changed_paths)
 
 
 def append_github_outputs(output_path: Path, decision: PolicyDecision) -> None:
