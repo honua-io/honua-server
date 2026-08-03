@@ -381,6 +381,7 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.extent-discovery", "temporal", context, entitlementKey: "temporal.extent-discovery"),
             Capability("temporal.histogram", "temporal", context, entitlementKey: "temporal.histogram"),
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
+            Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
@@ -494,6 +495,7 @@ internal sealed class CapabilityManifestService(
             ["temporal.extent-discovery"] = new() { EntitlementKey = "temporal.extent-discovery" },
             ["temporal.histogram"] = new() { EntitlementKey = "temporal.histogram" },
             ["temporal.time-series-tiles"] = new() { EntitlementKey = "temporal.time-series-tiles" },
+            ["temporal.animation-api"] = new() { EntitlementKey = "temporal.animation-api" },
 
             ["sync.offline"] = new()
             {

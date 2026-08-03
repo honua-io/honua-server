@@ -4,6 +4,12 @@
 
 Accepted
 
+For raster processes, [ADR-0071](0071-raster-execution-boundary.md) is the
+controlling engine and placement decision. The PostGIS primitives introduced by
+this ADR express available canonical capabilities; they do not require every
+supported workload to execute in PostGIS. Placement is also gated by database
+resource budgets and serving SLOs.
+
 ## Context
 
 Honua needs to support both Esri GeoServices GPServer and OGC API Processes as
@@ -191,11 +197,12 @@ model. Must not add domain types to `Honua.Core`.
   For heavyweight `surface.*` and
   `raster.*` workloads this ticket adds the PostGIS-backed execution
   primitives (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`)
-  that will sit behind the canonical worker boundary; the handler/executor
-  wiring that dispatches catalog entries into those services — optionally
-  over the #727 cloud executor adapters — is follow-on work and not part of
-  this ticket, so the catalog addition still does not introduce a new
-  execution surface. Destructive
+  that will sit behind the canonical worker boundary. ADR-0071 controls whether
+  an invocation uses those primitives through the managed PostGIS raster
+  profile or uses isolated native GDAL locally or through a batch backend. The
+  handler/executor wiring that dispatches catalog entries into the selected
+  engine remains follow-on work and is not part of this ticket, so the catalog
+  addition still does not introduce a new execution surface. Destructive
   `data-management.*` ids (`delete-features`, `calculate-field`) are classified
   server-side by `ProcessDestructiveClassifier` so submission and execution
   route the plan through `OperatorApprovalGate` with `IsDestructive = true`

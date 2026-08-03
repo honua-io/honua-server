@@ -1,0 +1,146 @@
+name: GDAL Worker Image
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'docker/worker-gdal/**'
+      - 'src/Honua.Worker.Gdal/**'
+      - 'src/Honua.Analyzers/**'
+      - 'src/Honua.Geoprocessing/**'
+      - 'src/Honua.Jobs/**'
+      - 'src/Honua.Core/**'
+      - 'src/Honua.Core.Abstractions/**'
+      - 'src/Honua.Geometry/**'
+      - 'src/Honua.Hosting/**'
+      - 'src/Honua.ServiceDefaults/**'
+      - 'Honua.sln'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - '.editorconfig'
+      - '.dockerignore'
+      - 'eng/**'
+      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
+      - 'scripts/ci/verify-serving-image-boundary.py'
+      - '.github/workflows/worker-gdal-image.yml'
+  schedule:
+    - cron: '45 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: worker-gdal-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-scan:
+    name: Build, verify, and scan GDAL worker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      sarif-created: ${{ steps.sarif.outputs.created }}
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Build isolated native worker
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/worker-gdal/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: honua-worker-gdal:boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=worker-gdal-boundary
+          cache-to: type=gha,mode=max,scope=worker-gdal-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify native tools and smoke the real worker entrypoint
+        run: >-
+          python3 scripts/ci/verify-serving-image-boundary.py
+          --worker-image honua-worker-gdal:boundary
+          --worker-redis 127.0.0.1:6379
+
+      - name: Create worker vulnerability report
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: honua-worker-gdal:boundary
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+          format: sarif
+          output: trivy-worker-gdal.sarif
+          vuln-type: os,library
+
+      - name: Record worker report availability
+        id: sarif
+        if: always() && hashFiles('trivy-worker-gdal.sarif') != ''
+        shell: bash
+        run: echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Retain worker scan report
+        if: always() && steps.sarif.outputs.created == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-worker-gdal-${{ github.sha }}
+          path: trivy-worker-gdal.sarif
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce worker vulnerability policy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: honua-worker-gdal:boundary
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+  publish-sarif:
+    name: Publish GDAL worker SARIF
+    needs: build-and-scan
+    if: >-
+      always() &&
+      needs.build-and-scan.outputs.sarif-created == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Download worker scan report
+        uses: actions/download-artifact@v8
+        with:
+          name: trivy-worker-gdal-${{ github.sha }}
+
+      - name: Upload worker scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-worker-gdal.sarif
+          category: worker-gdal

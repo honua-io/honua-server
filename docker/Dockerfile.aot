@@ -30,7 +30,7 @@ RUN apk add --no-cache \
 # We copy the whole src/ tree's project files via the source checkout to avoid a
 # hand-maintained csproj copy-list that rots whenever projects are added/split
 # (e.g. the #1236 modularization). The dedicated restore layer keeps caching.
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY eng/Honua.BuildProfiles.props eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/ src/
@@ -188,7 +188,10 @@ LABEL security.non-root="true" \
       description="Honua Geospatial Feature Server" \
       org.opencontainers.image.source="https://github.com/honua/honua-server" \
       org.opencontainers.image.description="Production-ready geospatial feature server" \
-      org.opencontainers.image.licenses="Elastic-2.0"
+      org.opencontainers.image.licenses="Elastic-2.0" \
+      honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/app/Honua.Server"
 
 # Security: Minimal environment variables
 ENV ASPNETCORE_ENVIRONMENT=Production \
