@@ -122,6 +122,12 @@ public sealed record RasterExecutionPlanningRequest
     /// <summary>Canonical raster process identifier.</summary>
     public required string ProcessId { get; init; }
 
+    /// <summary>
+    /// Canonical semantic variant selected from the validated process inputs. Engines that have
+    /// not proved this exact variant are ineligible for dynamic routing.
+    /// </summary>
+    public required string SemanticVariant { get; init; }
+
     /// <summary>Residency of every raster input in stable parameter order.</summary>
     public required IReadOnlyList<RasterInputResidency> InputResidencies { get; init; }
 
@@ -160,7 +166,7 @@ public sealed record RasterExecutionPlanningRequest
 public sealed record RasterExecutionDecision
 {
     /// <summary>Version of this durable decision schema.</summary>
-    public int DecisionVersion { get; init; } = 1;
+    public int DecisionVersion { get; init; } = 2;
 
     /// <summary>Canonical process identifier.</summary>
     public required string ProcessId { get; init; }
@@ -182,6 +188,9 @@ public sealed record RasterExecutionDecision
 
     /// <summary>Engine-independent semantic contract version.</summary>
     public required string SemanticVersion { get; init; }
+
+    /// <summary>Concrete semantic variant pinned for every attempt of this job.</summary>
+    public required string SemanticVariant { get; init; }
 
     /// <summary>Selected engine implementation version.</summary>
     public required string ImplementationVersion { get; init; }

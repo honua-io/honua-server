@@ -485,7 +485,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         "raster.mosaic" => ReadOnly("default", "first", "last", "min", "max", "mean", "cancellation"),
         "raster.map-algebra" => ReadOnly("default", "allowlisted-expression", "a-plus-b", "multiband-promotion"),
         "raster.reclassify" => ReadOnly("default", "closed-open"),
-        "raster.spectral-index" => ReadOnly("default", "ndvi", "ndwi", "evi", "savi"),
+        "raster.spectral-index" => ReadOnly("default", "ndvi", "ndwi", "ndbi", "evi", "savi"),
         "raster.statistics" => ReadOnly("default", "population", "empty-input"),
         "raster.histogram" => ReadOnly("default", "equal-width"),
         "raster.zonal-statistics" => ReadOnly("default", "pixel-center"),

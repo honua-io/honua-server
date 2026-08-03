@@ -54,6 +54,17 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                     "The pinned raster decision belongs to a different process and cannot be reused.");
             }
 
+            if (!string.Equals(
+                    request.ExistingDecision.SemanticVariant,
+                    request.SemanticVariant,
+                    StringComparison.Ordinal))
+            {
+                throw Refuse(
+                    request,
+                    "mutation-semantic-variant-mismatch",
+                    "The pinned raster decision belongs to a different semantic variant and cannot be reused.");
+            }
+
             if (request.ExistingDecision.OutputSink != request.OutputSink
                 || !request.ExistingDecision.InputResidencies.SequenceEqual(request.InputResidencies))
             {
@@ -84,11 +95,20 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 request,
                 "capability-missing",
                 $"Raster process '{request.ProcessId}' has no engine capability metadata.");
+        if (!process.SemanticVariants.Contains(request.SemanticVariant, StringComparer.Ordinal))
+        {
+            throw Refuse(
+                request,
+                "semantic-variant-unknown",
+                $"Raster process '{request.ProcessId}' does not define semantic variant "
+                + $"'{request.SemanticVariant}'.");
+        }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             "raster.execution.plan",
             ActivityKind.Internal);
         activity?.SetTag("honua.raster.process_id", request.ProcessId);
+        activity?.SetTag("honua.raster.semantic_variant", request.SemanticVariant);
         activity?.SetTag("honua.raster.policy_ref", request.Policy.PolicyRef);
         activity?.SetTag("honua.raster.health_version", request.Health.Version);
 
@@ -128,6 +148,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             OutputSink = request.OutputSink,
             Cost = selected.Cost,
             SemanticVersion = process.SemanticVersion,
+            SemanticVariant = request.SemanticVariant,
             ImplementationVersion = selected.Capability.ImplementationVersion,
             ReasonCode = selected.ReasonCode,
             Reason = selected.Reason,
@@ -180,6 +201,22 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             || request.Policy.RequiredEngine is { } requiredEngine && requiredEngine != capability.Engine)
         {
             eliminations.Add($"{engineName}: disabled by operator policy '{request.Policy.PolicyRef}'.");
+            return;
+        }
+
+        if (!capability.SupportsSemanticVariant(request.SemanticVariant))
+        {
+            var semanticDetail = capability.SemanticConformance switch
+            {
+                RasterSemanticConformanceStatus.Unverified =>
+                    "semantic conformance is unverified; dynamic routing is disabled",
+                RasterSemanticConformanceStatus.Restricted when capability.KnownSemanticDivergences.Count > 0 =>
+                    $"the requested variant is excluded by: {string.Join(", ", capability.KnownSemanticDivergences)}",
+                _ => "the requested semantic variant has no conformance evidence",
+            };
+            eliminations.Add(
+                $"{engineName}: semantic variant '{request.SemanticVariant}' is not compatible; "
+                + $"{semanticDetail}.");
             return;
         }
 
@@ -420,6 +457,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         ArgumentNullException.ThrowIfNull(request.Policy.AllowedEngines);
         ArgumentNullException.ThrowIfNull(request.Policy.AllowedPlacements);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ProcessId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SemanticVariant);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Budgets.Version);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Health.Version);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Policy.PolicyRef);
@@ -478,7 +516,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         ArgumentNullException.ThrowIfNull(decision.InputResidencies);
         ArgumentNullException.ThrowIfNull(decision.Cost);
         ArgumentNullException.ThrowIfNull(decision.Cost.UnknownInputs);
-        if (decision.DecisionVersion != 1
+        if (decision.DecisionVersion != 2
             || !Enum.IsDefined(decision.Engine)
             || !Enum.IsDefined(decision.Placement)
             || !Enum.IsDefined(decision.OutputSink)
@@ -492,6 +530,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
 
         if (string.IsNullOrWhiteSpace(decision.ProcessId)
             || string.IsNullOrWhiteSpace(decision.SemanticVersion)
+            || string.IsNullOrWhiteSpace(decision.SemanticVariant)
             || string.IsNullOrWhiteSpace(decision.ImplementationVersion)
             || string.IsNullOrWhiteSpace(decision.ReasonCode)
             || string.IsNullOrWhiteSpace(decision.Reason)

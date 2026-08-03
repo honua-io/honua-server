@@ -60,6 +60,16 @@ Adding an executor therefore requires all of the following in one dependency-con
 4. set the tested upstream runtime version;
 5. record deliberate divergences as capability restrictions, never by widening tolerance.
 
+The request factory derives a bounded canonical variant from validated process inputs before the
+planner runs. Reprojection and resampling normalize their algorithm (`nearestneighbor` becomes
+`nearest`); mosaic pins overlap order; spectral index and slope pin their named mode; and operations
+with fixed contracts pin identifiers such as `pixel-center`, `closed-open`, `population`,
+`equal-width`, `horn`, or `three-by-three`. Map algebra distinguishes the executable `a-plus-b`
+golden case from the broader `allowlisted-expression` family. The chosen variant is persisted in
+decision schema version 2 and must match on every mutating retry. An input-derived variant absent
+from the process descriptor fails closed, and an engine absent from that variant's verified subset
+is eliminated before locality, cost, health, or preference can affect routing.
+
 ## Focused commands
 
 ```bash

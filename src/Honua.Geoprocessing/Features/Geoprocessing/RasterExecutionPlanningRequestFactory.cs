@@ -46,6 +46,7 @@ internal static class RasterExecutionPlanningRequestFactory
         return new RasterExecutionPlanningRequest
         {
             ProcessId = process.ProcessId,
+            SemanticVariant = ResolveSemanticVariant(step, process),
             InputResidencies = residencies,
             InputMediaTypes = mediaTypes,
             OutputSink = RasterOutputSink.JobArtifact,
@@ -70,6 +71,63 @@ internal static class RasterExecutionPlanningRequestFactory
             AllowRequestExecution = false,
         };
     }
+
+    private static string ResolveSemanticVariant(
+        AnalysisPlanStep step,
+        RasterProcessCapability process)
+    {
+        var variant = step.ProcessId switch
+        {
+            "raster.clip" => "pixel-center",
+            "raster.reproject" or "conversion.raster-reproject" =>
+                NormalizeResampling(ReadInput(step, "resampling"), "bilinear"),
+            "raster.resample" => NormalizeResampling(ReadInput(step, "resampling"), "bilinear"),
+            "raster.mosaic" => Normalize(ReadInput(step, "operator"), "last"),
+            "raster.map-algebra" => ResolveMapAlgebraVariant(ReadInput(step, "expression")),
+            "raster.reclassify" => "closed-open",
+            "raster.spectral-index" => Normalize(ReadInput(step, "index"), "default"),
+            "raster.statistics" => "population",
+            "raster.histogram" => "equal-width",
+            "raster.zonal-statistics" => "pixel-center",
+            "surface.slope" => Normalize(ReadInput(step, "units"), "degrees"),
+            "surface.aspect" => "degrees",
+            "surface.hillshade" => "horn",
+            "surface.roughness" or "surface.rugosity-tri" or "surface.rugosity-tpi" =>
+                "three-by-three",
+            _ => "default",
+        };
+
+        if (!process.SemanticVariants.Contains(variant, StringComparer.Ordinal))
+        {
+            throw new RasterExecutionPlanningException(
+                "semantic-variant-unsupported",
+                $"Raster process '{process.ProcessId}' does not advertise semantic variant '{variant}'.");
+        }
+
+        return variant;
+    }
+
+    private static string NormalizeResampling(string? value, string fallback)
+    {
+        var normalized = Normalize(value, fallback);
+        return normalized == "nearestneighbor" ? "nearest" : normalized;
+    }
+
+    private static string ResolveMapAlgebraVariant(string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return "allowlisted-expression";
+        }
+
+        var normalized = string.Concat(expression.Where(character => !char.IsWhiteSpace(character)));
+        return string.Equals(normalized, "A+B", StringComparison.OrdinalIgnoreCase)
+            ? "a-plus-b"
+            : "allowlisted-expression";
+    }
+
+    private static string Normalize(string? value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim().ToLowerInvariant();
 
     private static RasterCostEstimatorInput BuildCost(
         AnalysisPlanStep step,

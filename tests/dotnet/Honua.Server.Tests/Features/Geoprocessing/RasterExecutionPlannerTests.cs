@@ -31,6 +31,8 @@ public sealed class RasterExecutionPlannerTests
         decision.Placement.Should().Be(RasterExecutionPlacement.DurablePostgis);
         decision.ReasonCode.Should().Be("postgis-source-local");
         decision.PolicyRef.Should().Be("test-policy");
+        decision.SemanticVariant.Should().Be("pixel-center");
+        decision.DecisionVersion.Should().Be(2);
     }
 
     [Fact]
@@ -112,6 +114,61 @@ public sealed class RasterExecutionPlannerTests
 
         decision.Engine.Should().Be(RasterEngine.GdalNative);
         decision.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void Plan_PreferredEngineWithoutRequestedSemanticVariant_SelectsCompatibleEngine()
+    {
+        var planner = new RasterExecutionPlanner(
+            CreateRegistry(
+                postgisVariants: ["default"],
+                gdalVariants: ["pixel-center"]),
+            NullLogger<RasterExecutionPlanner>.Instance);
+
+        var decision = planner.Plan(Request(
+            RasterInputResidency.Postgis,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)));
+
+        decision.Engine.Should().Be(RasterEngine.GdalNative);
+        decision.SemanticVariant.Should().Be("pixel-center");
+    }
+
+    [Fact]
+    public void Plan_NoEngineSupportsRequestedSemanticVariant_RefusesActionably()
+    {
+        var planner = new RasterExecutionPlanner(
+            CreateRegistry(postgisVariants: ["default"], gdalVariants: ["default"]),
+            NullLogger<RasterExecutionPlanner>.Instance);
+
+        var act = () => planner.Plan(Request(
+            RasterInputResidency.Postgis,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)));
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => !exception.IsRetryable)
+            .WithMessage("*pixel-center*no conformance evidence*");
+    }
+
+    [Fact]
+    public void Plan_UnverifiedEngine_IsIneligibleForDynamicRouting()
+    {
+        var planner = new RasterExecutionPlanner(
+            CreateRegistry(
+                postgisStatus: RasterSemanticConformanceStatus.Unverified,
+                postgisVariants: [],
+                gdalVariants: ["default"]),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var request = Request(
+            RasterInputResidency.Postgis,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)) with
+        {
+            Policy = Policy(allowedEngines: [RasterEngine.Postgis]),
+        };
+
+        var act = () => planner.Plan(request);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .WithMessage("*semantic conformance is unverified*dynamic routing is disabled*");
     }
 
     [Fact]
@@ -207,6 +264,27 @@ public sealed class RasterExecutionPlannerTests
         };
 
         _sut.Plan(retry).Should().BeSameAs(initial);
+    }
+
+    [Fact]
+    public void Plan_MutatingRetryWithChangedSemanticVariant_RefusesPinnedDecision()
+    {
+        var initial = _sut.Plan(Request(
+            RasterInputResidency.Inline,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)));
+        var retry = Request(
+            RasterInputResidency.Inline,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)) with
+        {
+            SemanticVariant = "default",
+            ExistingDecision = initial,
+            MutatingAttemptStarted = true,
+        };
+
+        var act = () => _sut.Plan(retry);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => exception.ReasonCode == "mutation-semantic-variant-mismatch");
     }
 
     [Fact]
@@ -331,6 +409,50 @@ public sealed class RasterExecutionPlannerTests
         request.Cost.DecodedBytes.Should().BeNull();
         request.Cost.ExpectedScratchBytes.Should().BeNull();
         plan.Steps[0].Inputs.Should().NotContainKey("source");
+    }
+
+    [Fact]
+    public void RequestFactory_DerivesConcreteSemanticVariantFromValidatedInputs()
+    {
+        var source = CreateTiffHeaderBase64(width: 4, height: 4, bands: 1);
+        var cases = new (string ProcessId, Dictionary<string, string> Inputs, string Expected)[]
+        {
+            ("raster.clip", new() { ["source"] = source }, "pixel-center"),
+            ("raster.reproject", new() { ["source"] = source, ["resampling"] = "nearestneighbor" }, "nearest"),
+            ("raster.resample", new() { ["source"] = source, ["resampling"] = "cubic" }, "cubic"),
+            ("raster.mosaic", new() { ["sources"] = $"{source}|{source}", ["operator"] = "first" }, "first"),
+            ("raster.map-algebra", new() { ["sources"] = $"{source}|{source}", ["expression"] = "A + B" }, "a-plus-b"),
+            ("raster.spectral-index", new() { ["index"] = "NDBI", ["swir"] = source, ["nir"] = source }, "ndbi"),
+            ("raster.reclassify", new() { ["source"] = source }, "closed-open"),
+            ("raster.statistics", new() { ["source"] = source }, "population"),
+            ("raster.histogram", new() { ["source"] = source }, "equal-width"),
+            ("raster.zonal-statistics", new() { ["source"] = source }, "pixel-center"),
+            ("surface.slope", new() { ["source"] = source, ["units"] = "percent" }, "percent"),
+            ("surface.aspect", new() { ["source"] = source }, "degrees"),
+            ("surface.hillshade", new() { ["source"] = source }, "horn"),
+            ("surface.roughness", new() { ["source"] = source }, "three-by-three"),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var request = CreateLegacyRequest(testCase.ProcessId, testCase.Inputs);
+            request.SemanticVariant.Should().Be(testCase.Expected, testCase.ProcessId);
+        }
+    }
+
+    [Fact]
+    public void RequestFactory_UnadvertisedSemanticVariant_FailsClosed()
+    {
+        var act = () => CreateLegacyRequest(
+            "raster.reproject",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(width: 4, height: 4, bands: 1),
+                ["resampling"] = "average",
+            });
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => exception.ReasonCode == "semantic-variant-unsupported");
     }
 
     [Fact]
@@ -897,6 +1019,7 @@ public sealed class RasterExecutionPlannerTests
         RasterCostEstimatorInput cost) => new()
         {
             ProcessId = "raster.clip",
+            SemanticVariant = "pixel-center",
             InputResidencies = [residency],
             InputMediaTypes = ["image/tiff"],
             OutputSink = RasterOutputSink.JobArtifact,
@@ -961,19 +1084,26 @@ public sealed class RasterExecutionPlannerTests
             RequiredPlacement = requiredPlacement,
         };
 
-    private static RasterEngineCapabilityRegistry CreateRegistry() =>
+    private static RasterEngineCapabilityRegistry CreateRegistry(
+        RasterSemanticConformanceStatus postgisStatus = RasterSemanticConformanceStatus.Verified,
+        IReadOnlyList<string>? postgisVariants = null,
+        RasterSemanticConformanceStatus gdalStatus = RasterSemanticConformanceStatus.Verified,
+        IReadOnlyList<string>? gdalVariants = null) =>
         new RasterEngineCapabilityRegistry(
         [
             new RasterProcessCapability
             {
                 ProcessId = "raster.clip",
                 SemanticVersion = "1.0.0",
+                SemanticVariants = ["default", "pixel-center"],
                 Engines =
                 [
                     Capability(
                         RasterEngine.Postgis,
                         RasterEngineDefaultPreference.Preferred,
-                        [RasterInputResidency.Postgis]),
+                        [RasterInputResidency.Postgis],
+                        postgisStatus,
+                        postgisVariants ?? ["pixel-center"]),
                     Capability(
                         RasterEngine.GdalNative,
                         RasterEngineDefaultPreference.Fallback,
@@ -982,7 +1112,9 @@ public sealed class RasterExecutionPlannerTests
                             RasterInputResidency.ObjectStoreCog,
                             RasterInputResidency.StagedArtifact,
                             RasterInputResidency.Inline,
-                        ]),
+                        ],
+                        gdalStatus,
+                        gdalVariants ?? ["pixel-center"]),
                 ],
             },
         ]);
@@ -990,7 +1122,9 @@ public sealed class RasterExecutionPlannerTests
     private static RasterEngineCapability Capability(
         RasterEngine engine,
         RasterEngineDefaultPreference preference,
-        IReadOnlyList<RasterInputResidency> residencies) => new()
+        IReadOnlyList<RasterInputResidency> residencies,
+        RasterSemanticConformanceStatus semanticStatus,
+        IReadOnlyList<string> semanticVariants) => new()
         {
             Engine = engine,
             ImplementationVersion = $"test.{engine}@1.0.0",
@@ -1005,5 +1139,12 @@ public sealed class RasterExecutionPlannerTests
             RequestExecutionAllowed = engine == RasterEngine.Postgis,
             DefaultPreference = preference,
             IsAvailable = true,
+            SemanticConformance = semanticStatus,
+            TestedRuntimeVersion = "test-runtime-v1",
+            VerifiedSemanticVariants = semanticVariants,
+            SemanticEvidenceFixtureIds = semanticStatus == RasterSemanticConformanceStatus.Unverified
+                ? []
+                : ["clip.pixel-center-boundary.v1"],
+            KnownSemanticDivergences = [],
         };
 }
