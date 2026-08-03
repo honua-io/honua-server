@@ -3,10 +3,11 @@
 Tracking: RAST-016 / #3100
 
 Honua routes a canonical raster process between PostGIS and the isolated native GDAL worker only
-when the selected engine advertises executable evidence for the requested semantic variant. An
-available executor alone is insufficient. `unverified` implementations are eliminated before
-placement, so a newly added PostGIS executor cannot silently enter dynamic routing before parity
-evidence exists.
+when the selected engine admits the requested semantic variant under its conformance status. The
+pinned GDAL implementation is the initial `canonicalBaseline`; other engines require executable
+provider evidence before they become `verified` or `restricted`. An available executor alone is
+insufficient. `unverified` implementations are eliminated before placement, so a newly added
+PostGIS executor cannot silently enter dynamic routing before parity evidence exists.
 
 ## Pinned matrix
 
@@ -15,10 +16,12 @@ evidence exists.
 | PostGIS Raster | 3.4, 3.5, 3.6 | `Honua.Postgres.Tests` in the PostgreSQL 16/17/18 compatibility matrix |
 | GDAL | 3.12.4 | Patch-tag-pinned `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`, the `docker/worker-gdal/Dockerfile` base |
 
-PostGIS integration evidence uses real raster SQL, not mocks. Native evidence invokes the same
-`GdalSurfaceJobExecutor` and CLI runner as the worker, then decodes the resulting GeoTIFF into the
-provider-neutral oracle. The ordinary lean test runner may skip CLI tests when GDAL is absent; the
-pinned worker-image conformance lane must not.
+Current PostGIS integration evidence uses real raster SQL, not mocks, for runtime compatibility,
+population statistics, slope, and cancellation. Current native provider-runner evidence invokes
+the same `GdalSurfaceJobExecutor` and CLI runner as the worker for the slope fixture, then decodes
+the resulting GeoTIFF into the provider-neutral oracle. The ordinary lean test runner may skip CLI
+tests when GDAL is absent; the pinned worker-image conformance lane must not. The remaining manifest
+fixtures are canonical contracts, not claims that both providers already execute every operation.
 
 ## Canonical comparison
 
@@ -44,9 +47,11 @@ results bounded.
 ## Variant and divergence policy
 
 Each `RasterProcessCapability` advertises its canonical semantic variants. Each engine advertises a
-subset that has evidence. The statuses mean:
+subset admitted under its conformance status. The statuses mean:
 
-- `canonicalBaseline`: the pinned native implementation defines the initial golden result;
+- `canonicalBaseline`: the pinned native implementation defines the initial golden result; fixture
+  linkage records contract provenance, while provider-runner tests identify the currently executable
+  proof subset;
 - `verified`: all advertised variants passed cross-engine fixtures;
 - `restricted`: only the advertised subset passed, with every excluded behavior documented in
   `knownSemanticDivergences`;
@@ -83,11 +88,12 @@ dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj 
   --filter FullyQualifiedName~GdalRasterSemanticOracleTests
 ```
 
-The focused manifest covers clipping/window boundaries, reprojection and resampling, mosaic order,
-map algebra, reclassification, spectral index behavior, statistics, histograms, zonal statistics,
-slope, multiband promotion/color interpretation, antimeridian handling, invalid CRS, empty input,
-cancellation, and partial-result cleanup. Additional PostGIS executors must extend real executable
-coverage before claiming those variants.
+The focused manifest defines contracts for clipping/window boundaries, reprojection and resampling,
+mosaic order, map algebra, reclassification, spectral index behavior, statistics, histograms, zonal
+statistics, slope, multiband promotion/color interpretation, antimeridian handling, invalid CRS,
+empty input, cancellation, and partial-result cleanup. Current executable provider coverage is the
+smaller subset described above. Additional PostGIS executors must extend real executable coverage
+before claiming those variants.
 
 The focused `Raster Semantic Conformance` workflow builds only the worker Dockerfile's
 `raster-semantic-validation` stage. That stage executes the native slope fixture inside the pinned

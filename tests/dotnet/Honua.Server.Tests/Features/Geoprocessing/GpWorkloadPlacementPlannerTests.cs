@@ -406,6 +406,7 @@ public sealed class GpWorkloadPlacementPlannerTests
             RequestExecutionAllowed = false,
         },
         SemanticVersion = "raster-semantics-v1",
+        SemanticVariant = "pixel-center",
         ImplementationVersion = "gdal-native-v1",
         ReasonCode = "raster:object-store-affinity",
         Reason = "Remote raster lane selected.",

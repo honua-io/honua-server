@@ -157,16 +157,24 @@ public sealed record RasterEngineCapability
     /// </summary>
     public required string TestedRuntimeVersion { get; init; }
 
-    /// <summary>Semantic variants proved compatible with the canonical process contract.</summary>
+    /// <summary>
+    /// Semantic variants admitted under this engine's conformance status. For a canonical baseline,
+    /// these variants define the golden contract; verified and restricted engines require executable
+    /// provider evidence for every advertised variant.
+    /// </summary>
     public required IReadOnlyList<string> VerifiedSemanticVariants { get; init; }
 
-    /// <summary>Stable checked-in fixture identifiers supporting the conformance claim.</summary>
+    /// <summary>
+    /// Stable checked-in fixture identifiers supporting the conformance claim. Fixture linkage alone
+    /// is not proof that every provider runner exercised the fixture; executable tests establish that
+    /// evidence for verified and restricted engines.
+    /// </summary>
     public required IReadOnlyList<string> SemanticEvidenceFixtureIds { get; init; }
 
     /// <summary>Explicit known divergences excluded from the verified variant set.</summary>
     public required IReadOnlyList<string> KnownSemanticDivergences { get; init; }
 
-    /// <summary>Whether this engine has executable evidence for a requested semantic variant.</summary>
+    /// <summary>Whether this engine may participate for the requested variant under its conformance status.</summary>
     public bool SupportsSemanticVariant(string variant)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(variant);

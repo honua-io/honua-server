@@ -39,7 +39,7 @@ public sealed class RasterSemanticOraclePostgisTests(PostgresFixture fixture)
             WITH empty AS (
                 SELECT ST_AddBand(
                     ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
-                    '32BF', -9999, -9999) AS rast
+                    '32BF'::text, -9999::double precision, -9999::double precision) AS rast
             ), populated AS (
                 SELECT ST_SetValue(
                     ST_SetValue(
@@ -98,7 +98,7 @@ public sealed class RasterSemanticOraclePostgisTests(PostgresFixture fixture)
             WITH empty AS (
                 SELECT ST_AddBand(
                     ST_MakeEmptyRaster(3, 3, 500000, 2200000, 1, -1, 0, 0, 32604),
-                    '32BF', -9999, -9999) AS rast
+                    '32BF'::text, -9999::double precision, -9999::double precision) AS rast
             ), populated AS (
                 SELECT ST_SetValue(ST_SetValue(ST_SetValue(
                        ST_SetValue(ST_SetValue(ST_SetValue(
@@ -108,24 +108,40 @@ public sealed class RasterSemanticOraclePostgisTests(PostgresFixture fixture)
                            1, 1, 2, 0), 1, 2, 2, 1), 1, 3, 2, 2),
                            1, 1, 3, 0), 1, 2, 3, 1), 1, 3, 3, 2) AS rast
                 FROM empty
-            ), result AS (
+            ), slope AS (
                 SELECT ST_Slope(rast, 1, '32BF', 'DEGREES', 1, FALSE) AS rast
                 FROM populated
+            ), bordered AS (
+                SELECT rast,
+                       ST_Width(rast) AS width,
+                       ST_Height(rast) AS height,
+                       ST_BandNoDataValue(rast, 1) AS nodata
+                FROM slope
+            ), result AS (
+                -- ST_Slope computes edge cells; the canonical GDAL baseline keeps a one-cell NoData border.
+                SELECT ST_SetValues(
+                    ST_SetValues(
+                        ST_SetValues(
+                            ST_SetValues(rast, 1, 1, 1, width, 1, nodata),
+                            1, 1, height, width, 1, nodata),
+                        1, 1, 1, 1, height, nodata),
+                    1, width, 1, 1, height, nodata) AS rast
+                FROM bordered
             )
             SELECT ST_Width(rast),
                    ST_Height(rast),
                    ST_SRID(rast),
                    ST_UpperLeftX(rast),
-                   ST_PixelWidth(rast),
+                   ST_ScaleX(rast),
                    ST_SkewX(rast),
                    ST_UpperLeftY(rast),
                    ST_SkewY(rast),
-                   ST_PixelHeight(rast),
+                   ST_ScaleY(rast),
                    ST_BandPixelType(rast, 1),
                    ST_BandNoDataValue(rast, 1),
                    x,
                    y,
-                   ST_Value(rast, 1, x, y, FALSE)
+                   ST_Value(rast, 1, x, y, TRUE)
             FROM result
             CROSS JOIN generate_series(1, 3) AS y
             CROSS JOIN generate_series(1, 3) AS x
@@ -184,7 +200,11 @@ public sealed class RasterSemanticOraclePostgisTests(PostgresFixture fixture)
             Outcome = RasterSemanticOutcome.Success,
             Snapshot = actual,
         });
-        Assert.True(comparison.IsMatch, FormatDifferences(comparison));
+        Assert.True(
+            comparison.IsMatch,
+            $"{FormatDifferences(comparison)}{Environment.NewLine}Observed cells: "
+            + string.Join(", ", cells.Select(value => value?.ToString(
+                System.Globalization.CultureInfo.InvariantCulture) ?? "null")));
     }
 
     [IntegrationTest]
@@ -200,7 +220,11 @@ public sealed class RasterSemanticOraclePostgisTests(PostgresFixture fixture)
         command.CommandText = """
             WITH raster_work AS (
                 SELECT ST_Union(
-                    ST_AddBand(ST_MakeEmptyRaster(64, 64, 0, 64, 1, -1, 0, 0, 4326), '8BUI', i, 0),
+                    ST_AddBand(
+                        ST_MakeEmptyRaster(64, 64, 0, 64, 1, -1, 0, 0, 4326),
+                        '8BUI'::text,
+                        i::double precision,
+                        0::double precision),
                     'LAST') AS rast
                 FROM generate_series(1, 5000) AS i
             )
