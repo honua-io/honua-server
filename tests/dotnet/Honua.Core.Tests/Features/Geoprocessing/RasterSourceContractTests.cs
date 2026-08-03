@@ -98,16 +98,32 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
-    public void Deserialize_InlinePayloadWithOversizedEncodedToken_IsRejectedBeforeBase64Decode()
+    public void Deserialize_InlinePayloadWithOversizedEscapedToken_IsRejectedBeforeBase64Decode()
     {
         var document = JsonNode.Parse(RasterSourceJson.Serialize(Inline([1, 2, 3, 4])))!.AsObject();
         var maximumEncodedBytes = ((RasterSourceContract.MaximumInlinePayloadBytes + 2) / 3) * 4;
-        document["payload"] = new string('A', maximumEncodedBytes + 1);
+        document["payload"] = new string('A', (maximumEncodedBytes * 6) + 1);
 
         var exception = Assert.Throws<JsonException>(() =>
             RasterSourceJson.Deserialize(document.ToJsonString()));
 
         Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deserialize_InlinePayloadWithLegalJsonEscapes_UsesLogicalBase64Length()
+    {
+        var payload = Enumerable.Repeat(
+            byte.MaxValue,
+            RasterSourceContract.MaximumInlinePayloadBytes).ToArray();
+        var encoded = Convert.ToBase64String(payload);
+        var json = RasterSourceJson.Serialize(Inline(payload));
+        var escapedJson = json.Replace(encoded, encoded.Replace("/", "\\/", StringComparison.Ordinal));
+
+        var descriptor = RasterSourceJson.Deserialize(escapedJson);
+
+        var inline = Assert.IsType<InlineRasterSourceDescriptor>(descriptor);
+        Assert.Equal(payload, inline.Payload);
     }
 
     [Fact]
