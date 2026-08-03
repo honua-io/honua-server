@@ -10766,6 +10766,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithUnsupportedImageSr_DoesNotLeakTransformDetails",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithWideDatelineCrossingBbox_In3857_PreservesWrappedExtent",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerRenderCapacityTests.Export_WhenRasterCapacityUnavailable_ReturnsServiceUnavailable"
       ],
       "proof_ledger_surface": "map-server",
