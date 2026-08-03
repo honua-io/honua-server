@@ -299,14 +299,6 @@ public sealed class RasterExecutionPlannerTests
     {
         var smallTiff = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1);
         AssertLegacyInputsUseLocal(
-            "raster.mosaic",
-            new Dictionary<string, string>
-            {
-                ["sources"] = $"{smallTiff}|{smallTiff}",
-                ["operator"] = "last",
-            },
-            expectedSourceCount: 2);
-        AssertLegacyInputsUseLocal(
             "raster.map-algebra",
             new Dictionary<string, string>
             {
@@ -330,6 +322,29 @@ public sealed class RasterExecutionPlannerTests
                 ["points"] = "e30=",
             },
             expectedSourceCount: 1);
+    }
+
+    [Fact]
+    public void RequestFactory_MosaicWithoutTrustedUnionGrid_KeepsOutputConservativeAndOffloads()
+    {
+        var smallTiff = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1);
+        var request = CreateLegacyRequest(
+            "raster.mosaic",
+            new Dictionary<string, string>
+            {
+                ["sources"] = $"{smallTiff}|{smallTiff}",
+                ["operator"] = "last",
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.SourceCount.Should().Be(2);
+        request.Cost.InputPixels.Should().Be(1_024);
+        request.Cost.OutputPixels.Should().BeNull(
+            "input dimensions cannot bound the union grid without trusted georeferencing metadata");
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.ReasonCode.Should().Be("native-remote-conservative");
+        decision.Cost.UnknownInputs.Should().Contain("outputPixels");
     }
 
     [Fact]

@@ -1097,6 +1097,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return Math.Max(plan.Steps.Count, 1);
         }
 
+        if (rasterDecision.Placement == RasterExecutionPlacement.RemoteBackend)
+        {
+            // The partition cost ledger protects compute owned by the local serving/worker
+            // plane. Remote native isolation still consumes orchestration capacity, but its
+            // decoded/scratch footprint is borne by the selected batch substrate. Charging
+            // that remote footprint here would make every conservative or large offload exceed
+            // the default local admission ceiling before it could reach the remote backend.
+            return Math.Max(plan.Steps.Count, 1);
+        }
+
         if (rasterDecision.Cost.UsesConservativeValues)
         {
             return 1_000d;
