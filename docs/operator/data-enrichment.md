@@ -86,8 +86,10 @@ enrichment-local job lifecycle:
   instead of exhausting worker memory. The value is clamped to an operator
   ceiling of 1000000 — a caller may only lower the cap, never disable it — and it
   applies equally to a staged `input` collection. `maxCarriedMatchValues`
-  (default 20000000, likewise lower-only) additionally bounds the join itself,
-  which is a Cartesian product the per-layer caps cannot see.
+  (default 20000000, likewise lower-only) additionally bounds carried values
+  across the whole job. Join methods charge every carried match value, bounding
+  the Cartesian product the per-layer caps cannot see; nearest-neighbor charges
+  one value per `outputFields` entry for each target that finds a neighbor.
 
 ### Authorization on the async path
 

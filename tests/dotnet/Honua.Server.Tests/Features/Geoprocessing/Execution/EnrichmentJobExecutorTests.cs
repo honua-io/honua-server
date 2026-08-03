@@ -331,6 +331,27 @@ public sealed class EnrichmentJobExecutorTests
     }
 
     [UnitTest]
+    public async Task Enrich_NearestNeighborChargesCarriedValuesAgainstMatchBudget()
+    {
+        var services = DefaultServices(
+            dataset: Dataset(),
+            datasetFeatures: [PointFeature(3, 0, ("name", "near"))],
+            sourceFeatures: [PointFeature(0, 0, ("id", 1))]);
+
+        var (status, error) = await RunExpectingFailureAsync(
+            services,
+            ("datasetId", DatasetId),
+            ("layerId", SourceLayerId.ToString(CultureInfo.InvariantCulture)),
+            ("method", "nearest-neighbor"),
+            ("outputFields", "name"),
+            ("maxCarriedMatchValues", "0"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        error.Should().Contain("cumulative match budget");
+        error.Should().Contain("outputFields", "the failure should retain the actionable remedy");
+    }
+
+    [UnitTest]
     public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
     {
         // Codex P2: the budget's remedies must reach the caller verbatim rather than

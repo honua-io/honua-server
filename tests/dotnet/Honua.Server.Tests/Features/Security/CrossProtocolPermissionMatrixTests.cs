@@ -827,6 +827,32 @@ public sealed class WfsReadVisibilitySeamTests
         accessible.Should().BeFalse("no matching grant falls back to the coarse deny (no regression)");
     }
 
+    [UnitTest]
+    [Operation(Operations.GetMetadata)]
+    public async Task RepeatedServiceChecks_ResolveEffectivePermissionsOncePerRequest()
+    {
+        var context = CreateContext(
+            roles: [GrantedRole],
+            grant: new PermissionGrant { Service = "*", Layer = "*", Operation = "query" });
+
+        var first = await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context,
+            CreateResource(),
+            CreateService(coarseReadRole: "coarse-only"),
+            AuthorizationOperation.Query);
+        var second = await AccessPolicyHelpers.IsResourceAccessibleAsync(
+            context,
+            CreateResource(),
+            CreateService(coarseReadRole: "coarse-only", serviceName: "Beta Service"),
+            AuthorizationOperation.Query);
+
+        first.Should().BeTrue();
+        second.Should().BeTrue();
+        var store = context.RequestServices.GetRequiredService<IRoleStore>()
+            .Should().BeOfType<SingleGrantRoleStore>().Subject;
+        store.EffectivePermissionsCallCount.Should().Be(1);
+    }
+
     private static DefaultHttpContext CreateContext(string[] roles, PermissionGrant grant)
     {
         var services = new ServiceCollection();
@@ -856,20 +882,24 @@ public sealed class WfsReadVisibilitySeamTests
             Metadata = new MetadataV2ObjectMetadata { Id = "res-alpha", Name = "Alpha Layer" }
         };
 
-    private static MetadataV2Service CreateService(string coarseReadRole)
+    private static MetadataV2Service CreateService(string coarseReadRole, string serviceName = ServiceName)
         => new()
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-alpha", Name = ServiceName },
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-alpha", Name = serviceName },
             AccessPolicy = new AccessPolicy { AllowedRoles = [coarseReadRole] }
         };
 
     private sealed class SingleGrantRoleStore(string roleName, PermissionGrant grant) : IRoleStore
     {
+        public int EffectivePermissionsCallCount { get; private set; }
+
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
             string userId,
             IReadOnlyList<string> roles,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(new EffectivePermissions
+        {
+            EffectivePermissionsCallCount++;
+            return Task.FromResult(new EffectivePermissions
             {
                 UserId = userId,
                 Roles = roles,
@@ -877,6 +907,7 @@ public sealed class WfsReadVisibilitySeamTests
                     ? [grant]
                     : [],
             });
+        }
 
         public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<RoleDefinition>>([]);

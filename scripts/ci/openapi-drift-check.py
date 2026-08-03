@@ -27,6 +27,19 @@ declaration that no longer matches reality (route gone, or since documented)
 fails too. Absence from the bundle is therefore always a reviewable decision,
 never an oversight.
 
+One whole class of omission is *derived* rather than declared. A route
+registered only to answer ``405 Method Not Allowed`` for a non-primary verb is
+never an OpenAPI operation, and the registration is self-identifying in source::
+
+    group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
+
+``derive_method_not_allowed_routes`` reads those call sites (resolving the
+enclosing ``MapGroup`` prefix and the real verb array behind ``NonGetMethods``)
+and exempts exactly the verbs they answer, so the 60 such admin routes no longer
+need hand maintenance in the sidecar (honua-server#3063). The derivation is
+conservative: a file with an ambiguous group prefix is skipped and falls back to
+requiring an explicit declaration.
+
 Output is actionable: each drift is reported as
 ``path: METHOD [operationId]`` with one of five categories:
 
@@ -274,6 +287,97 @@ def load_undocumented_routes(spec: SpecConfig) -> set[tuple[str, str]]:
             )
         declared.add((method.lower(), normalize_route(path)))
     return declared
+
+
+# ``private static readonly string[] NonGetMethods = [ HttpMethods.Post, ... ];``
+_VERB_ARRAY_RE = re.compile(
+    r"static\s+readonly\s+string\[\]\s+(\w+)\s*=\s*\[(.*?)\]\s*;",
+    flags=re.DOTALL,
+)
+_HTTP_METHOD_RE = re.compile(r"HttpMethods\.(\w+)")
+# ``endpoints.MapGroup("/api/v{version:apiVersion}/admin")``
+_MAP_GROUP_RE = re.compile(r"\.MapGroup\(\s*\"([^\"]+)\"")
+# ``group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)``
+_MAP_METHOD_NOT_ALLOWED_RE = re.compile(
+    r"\.MapMethods\(\s*\"([^\"]+)\"\s*,\s*(\w+)\s*,\s*(\w*MethodNotAllowed)\b"
+)
+# ASP.NET route templates carry the API version as a constrained parameter; the
+# registry records the resolved v1 path.
+_API_VERSION_TOKEN_RE = re.compile(r"\{version:apiVersion\}")
+
+
+def derive_method_not_allowed_routes(
+    protocol_paths: tuple[str, ...],
+) -> set[tuple[str, str]]:
+    """Derive the ``405 Method Not Allowed`` responder routes from source.
+
+    A responder registration names its own verb set and handler, so the
+    exclusion can be computed instead of hand-declared::
+
+        group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
+
+    Returns the ``(method, path)`` pairs such a call answers, restricted to
+    ``protocol_paths``. A file whose route group prefix cannot be resolved
+    unambiguously (no ``MapGroup``, or more than one) is skipped, so the route
+    falls back to needing an explicit sidecar declaration rather than being
+    silently exempted.
+    """
+
+    derived: set[tuple[str, str]] = set()
+    for source in sorted((REPO_ROOT / "src").rglob("*.cs")):
+        text = source.read_text(encoding="utf-8")
+        if "MethodNotAllowed" not in text:
+            continue
+
+        responders = _MAP_METHOD_NOT_ALLOWED_RE.findall(text)
+        if not responders:
+            continue
+
+        groups = {
+            _API_VERSION_TOKEN_RE.sub("1", raw)
+            for raw in _MAP_GROUP_RE.findall(text)
+        }
+        if len(groups) != 1:
+            continue
+        prefix = groups.pop().rstrip("/")
+        if not any(
+            prefix == owner or prefix.startswith(owner + "/")
+            for owner in protocol_paths
+        ):
+            continue
+
+        verb_arrays = {
+            name: _HTTP_METHOD_RE.findall(body)
+            for name, body in _VERB_ARRAY_RE.findall(text)
+        }
+        for route, verb_array, _handler in responders:
+            verbs = verb_arrays.get(verb_array)
+            if not verbs:
+                continue
+            absolute = normalize_route(prefix + route)
+            derived.update((verb.lower(), absolute) for verb in verbs)
+    return derived
+
+
+def resolve_exempt_routes(
+    spec: SpecConfig, registry: Iterable[tuple[str, str]]
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    """Return ``(declared, derived)`` exemptions for a spec.
+
+    ``declared`` comes from the committed sidecar; ``derived`` is computed from
+    the ``405`` responder registrations in source. Only derivations the registry
+    actually knows about are exempted, so a derivation with no registry entry is
+    a no-op here rather than a false ``stale-exemption``.
+    """
+
+    declared = load_undocumented_routes(spec)
+    normalized_registry = normalize_registry(registry)
+    derived = {
+        route
+        for route in derive_method_not_allowed_routes(spec.protocol_paths)
+        if route in normalized_registry
+    }
+    return declared, derived
 
 
 def load_spec(spec: SpecConfig) -> dict[str, Any]:
@@ -586,7 +690,9 @@ def main() -> int:
             return 2
 
         try:
-            declared_undocumented = load_undocumented_routes(spec)
+            declared_undocumented, derived_undocumented = resolve_exempt_routes(
+                spec, registry
+            )
         except (FileNotFoundError, json.JSONDecodeError, RuntimeError) as exc:
             print(
                 f"ERROR: failed to load undocumented-route declaration for "
@@ -595,21 +701,24 @@ def main() -> int:
             )
             return 2
 
+        exempt_undocumented = declared_undocumented | derived_undocumented
+
         spec_drifts: list[Drift] = []
         spec_drifts.extend(check_refs(document, spec.name))
         spec_drifts.extend(check_schema_definitions(document, spec.name))
         spec_drifts.extend(
             check_endpoint_cross_reference(
-                spec, document, registry, declared_undocumented
+                spec, document, registry, exempt_undocumented
             )
         )
 
         op_count = sum(1 for _ in iter_spec_operations(document, resolve_prefix(spec, document)))
-        declared_note = (
-            f", {len(declared_undocumented)} declared-undocumented"
-            if declared_undocumented
-            else ""
-        )
+        notes = []
+        if declared_undocumented:
+            notes.append(f"{len(declared_undocumented)} declared-undocumented")
+        if derived_undocumented:
+            notes.append(f"{len(derived_undocumented)} derived 405-responders")
+        declared_note = (", " + ", ".join(notes)) if notes else ""
         summary.append(
             f"  {spec.name}: {op_count} operations{declared_note}, "
             f"{len(spec_drifts)} drift(s)"

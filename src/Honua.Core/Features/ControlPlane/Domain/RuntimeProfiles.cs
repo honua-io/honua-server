@@ -39,6 +39,12 @@ public static class RuntimeProfiles
     public const string Native = "native";
 
     /// <summary>
+    /// Dedicated managed profile for durable PostGIS raster work. The lightweight web
+    /// dispatcher does not claim this profile; a governed raster worker owns it.
+    /// </summary>
+    public const string RasterPostgis = "raster-postgis";
+
+    /// <summary>
     /// The accepted-profile set applied to any executor/worker that does not override
     /// it: managed/default jobs only. This keeps every existing trunk executor — and
     /// the lean dispatcher composed from them — fenced so it can never claim a

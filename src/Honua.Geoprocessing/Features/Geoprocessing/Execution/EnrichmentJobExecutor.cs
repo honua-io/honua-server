@@ -629,6 +629,9 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var output = new List<IFeature>(targets.Count);
         if (plan.Nearest)
         {
+            // Nearest-neighbor carries at most one value per requested field per target,
+            // but those values still belong to the advertised cumulative ceiling.
+            var nearestBudget = new SpatialJoinSupport.MatchBudget(plan.MaxCarriedMatchValues);
             // Index the dataset ONCE and query it per target, so nearest-neighbor is
             // O(targets · log dataset) rather than a full O(targets × dataset) scan that
             // would effectively hang on an ordinary large reference dataset.
@@ -636,7 +639,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             foreach (var target in targets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                output.Add(AnnotateNearest(target, nearestIndex, plan.CarryFields));
+                output.Add(AnnotateNearest(target, nearestIndex, plan.CarryFields, nearestBudget));
             }
 
             return output;
@@ -666,7 +669,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private static Feature AnnotateNearest(
         IFeature target,
         STRtree<IFeature> nearestIndex,
-        IReadOnlyList<string> carryFields)
+        IReadOnlyList<string> carryFields,
+        SpatialJoinSupport.MatchBudget budget)
     {
         var attributes = OverlayExecutorSupport.CopyAttributes(target);
 
@@ -686,6 +690,11 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             {
                 bestDistance = geometry.Distance(nearestGeometry);
             }
+        }
+
+        if (nearestFeature is not null)
+        {
+            budget.Charge(carryFields.Count);
         }
 
         // Carried attributes FIRST, computed fields after — same collision rule as the join
@@ -741,8 +750,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// fast instead of exhausting worker memory before the artifact-size check.
     /// </param>
     /// <param name="MaxCarriedMatchValues">
-    /// Cumulative ceiling on carried match values across the whole join, bounding the
-    /// Cartesian growth the per-layer caps cannot see.
+    /// Cumulative ceiling on carried match values across the whole operation. This bounds
+    /// join-method Cartesian growth and nearest-neighbor annotations alike.
     /// </param>
     private sealed record EnrichmentPlan(
         string MethodName,

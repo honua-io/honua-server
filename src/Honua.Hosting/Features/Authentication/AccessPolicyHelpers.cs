@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -32,6 +33,7 @@ internal static class AccessPolicyHelpers
     internal const string TenantScopeDeniedReason = "Resource is outside the request tenant scope.";
 
     private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
+    private static readonly object EffectivePermissionsTaskKey = new();
 
     /// <summary>
     /// Creates the appropriate error result for a denied access decision.
@@ -320,14 +322,36 @@ internal static class AccessPolicyHelpers
             ?? string.Empty;
         var isAuthenticated = principal.Identity?.IsAuthenticated == true;
 
-        var decision = await resolver.AuthorizeAsync(
-            userId,
-            roles,
-            serviceName,
-            layerName,
-            operation,
-            isAuthenticated,
-            cancellationToken).ConfigureAwait(false);
+        PermissionDecision decision;
+        var roleStore = context.RequestServices.GetService<IRoleStore>();
+        if (resolver is PermissionResolver && roleStore is not null)
+        {
+            // Catalog/list endpoints can evaluate many resources or services in one request.
+            // Resolve the caller-wide effective grants once, then apply the resolver's local
+            // operation matching for each item instead of repeating the same role-store query.
+            if (!context.Items.TryGetValue(EffectivePermissionsTaskKey, out var cached)
+                || cached is not Task<EffectivePermissions> effectiveTask)
+            {
+                effectiveTask = roleStore.GetEffectivePermissionsAsync(userId, roles, cancellationToken);
+                context.Items[EffectivePermissionsTaskKey] = effectiveTask;
+            }
+
+            var effectivePermissions = await effectiveTask.ConfigureAwait(false);
+            decision = resolver.Authorize(effectivePermissions, serviceName, layerName, operation);
+        }
+        else
+        {
+            // Preserve custom resolver behavior, including registrations that also expose an
+            // IRoleStore but implement additional logic in AuthorizeAsync.
+            decision = await resolver.AuthorizeAsync(
+                userId,
+                roles,
+                serviceName,
+                layerName,
+                operation,
+                isAuthenticated,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         return decision.IsAllowed ? GrantOutcome.Allow : GrantOutcome.NoGrant;
     }

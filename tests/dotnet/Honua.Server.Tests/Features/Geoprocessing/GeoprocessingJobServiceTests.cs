@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -455,6 +456,81 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentRasterReplay_ReusesPersistedDecisionWithoutReplanning()
+    {
+        ExecutionJobRecord? created = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => created);
+        var realPlanner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var planner = Substitute.For<IRasterExecutionPlanner>();
+        var planCalls = 0;
+        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>()).Returns(call =>
+        {
+            planCalls++;
+            if (planCalls > 1)
+            {
+                throw new RasterExecutionPlanningException(
+                    "changed-health",
+                    "Planner health changed after the durable decision was created.");
+            }
+
+            return realPlanner.Plan(call.Arg<RasterExecutionPlanningRequest>());
+        });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-idempotent-raster",
+            IntentId = "intent-idempotent-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var first = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+        var replay = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+
+        replay.Should().BeSameAs(first);
+        replay.Spec.RasterExecution.Should().BeSameAs(first.Spec.RasterExecution);
+        planner.Received(1).Plan(Arg.Any<RasterExecutionPlanningRequest>());
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -538,11 +614,11 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "gdal.gdalwarp",
+                    ProcessId = "conversion.raster-format",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["source"] = "AAAA",
-                        ["targetSrs"] = "3857"
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff"
                     }
                 }
             ]
@@ -551,6 +627,281 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
         job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_PersistsPlannerDecisionBeforeExecution()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var plannerOptions = new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+            new RasterExecutionPlannerOptions());
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: plannerOptions);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native-decision",
+            IntentId = "intent-native-decision",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff"
+                    }
+                }
+            ]
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Engine.Should().Be(RasterEngine.GdalNative);
+        job.Spec.RasterExecution.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.ReasonCode.Should().Be("native-local-budget");
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+        job.CurrentPhase.Should().Be("Queued: raster decision native-local-budget");
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Is<ExecutionJobRecord>(record => record.Spec.RasterExecution != null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PermanentRasterCapabilityRefusal_IsFailedPrecondition()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions());
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-unsupported-raster",
+            IntentId = "intent-unsupported-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string> { ["points"] = "e30=" },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*no kriging-capable numerical backend*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TransientRasterWorkerHealthRefusal_RemainsRetryable()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions
+        {
+            LocalNativeWorkerAvailable = false,
+        });
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-raster-health",
+            IntentId = "intent-raster-health",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        var exception = await act.Should().ThrowAsync<GeoprocessingAdmissionException>();
+        exception.Which.RetryAfterSeconds.Should().Be(30);
+        exception.Which.PolicyRef.Should().Be("raster:no-eligible-raster-placement");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ConservativeRemoteRaster_ChargesOnlyOrchestrationAdmissionWeight()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-native",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote native raster",
+            },
+        ]);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "remote-raster-1",
+            });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend],
+            admissionEvaluator: admission,
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-conservative-remote",
+            IntentId = "intent-conservative-remote",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857",
+                    },
+                },
+            ],
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        job.Spec.RasterExecution.Cost.UsesConservativeValues.Should().BeTrue();
+        job.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
+        await admission.Received(1).EvaluateAsync(
+            Arg.Is<ExecutionAdmissionRequest>(request => request.EstimatedCostWeight == 1d),
+            Arg.Any<CancellationToken>());
+        await backend.Received(1).StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_ResolvesLegacySourceBeforePlanningAndKeepsReferenceFingerprint()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        resolver.ResolveAsync(
+                Arg.Any<RasterSourceReference>(),
+                Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(RasterSourceResolution.Success(CreateTiffHeader(width: 32, height: 16, bands: 1)));
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterSourceResolver: resolver,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-catalog-reference",
+            IntentId = "intent-catalog-reference",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["rasterId"] = "42",
+                    },
+                },
+            ],
+        };
+        var referenceFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.Inline);
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"]
+            .Should().Be(CreateTiffHeaderBase64(width: 32, height: 16, bands: 1));
+        job.Audit.RequestFingerprint.Should().Be(referenceFingerprint);
+        await resolver.Received(1).ResolveAsync(
+            Arg.Any<RasterSourceReference>(),
+            Arg.Any<long>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -3533,6 +3884,23 @@ public sealed class GeoprocessingJobServiceTests
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
+    private GeoprocessingJobService CreateRasterPlanningService(RasterExecutionPlannerOptions options)
+        => new(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(options));
+
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;
@@ -3547,13 +3915,44 @@ public sealed class GeoprocessingJobServiceTests
         Steps = [BufferStep("step-1")]
     };
 
+    private static string CreateTiffHeaderBase64(int width, int height, int bands)
+        => Convert.ToBase64String(CreateTiffHeader(width, height, bands));
+
+    private static byte[] CreateTiffHeader(int width, int height, int bands)
+    {
+        var payload = new byte[62];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 4);
+        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: (uint)bands);
+        return payload;
+    }
+
+    private static void WriteTiffEntry(
+        byte[] payload,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 8), value);
+    }
+
     private static AnalysisPlan CreateTypedRasterPlan(
         string parameterName,
         ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
-        {
-            PlanId = "plan-typed-raster",
-            IntentId = "intent-typed-raster",
-            Steps =
+    {
+        PlanId = "plan-typed-raster",
+        IntentId = "intent-typed-raster",
+        Steps =
         [
             new AnalysisPlanStep
             {
@@ -3567,7 +3966,7 @@ public sealed class GeoprocessingJobServiceTests
                 },
             },
         ],
-        };
+    };
 
     private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
     {
