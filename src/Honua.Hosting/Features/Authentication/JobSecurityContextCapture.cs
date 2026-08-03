@@ -220,7 +220,8 @@ internal static class JobSecurityContextCapture
     /// fallback status. A source exception propagates so a transient identity outage cannot be
     /// mistaken for an authoritative snapshot decision. Inactive identities are returned with
     /// no roles and an <see cref="JobSecurityContextMembershipStatus.Inactive"/> status so the
-    /// deferred lane can fail closed before any authorization gate.
+    /// deferred lane can fail closed before any authorization gate. Legacy snapshots resolve a
+    /// captured stable subject claim before their older name-based principal identifier.
     /// </remarks>
     public static async Task<JobSecurityContextMembershipResult> RevalidateRoleMembershipAsync(
         JobSecurityContext context,
@@ -229,7 +230,8 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (source is null || string.IsNullOrWhiteSpace(context.PrincipalId))
+        var principalId = ResolveMembershipPrincipalId(context);
+        if (source is null || principalId is null)
         {
             return new JobSecurityContextMembershipResult(
                 context,
@@ -237,7 +239,7 @@ internal static class JobSecurityContextCapture
         }
 
         var membership = await source
-            .ResolveMembershipAsync(context.PrincipalId, cancellationToken)
+            .ResolveMembershipAsync(principalId, cancellationToken)
             .ConfigureAwait(false);
         if (membership is null)
         {
@@ -286,6 +288,27 @@ internal static class JobSecurityContextCapture
                 ? JobSecurityContextMembershipStatus.Changed
                 : JobSecurityContextMembershipStatus.Inactive,
             HasRemovedRoles: snapshotRoles.Except(currentRoles, StringComparer.OrdinalIgnoreCase).Any());
+    }
+
+    private static string? ResolveMembershipPrincipalId(JobSecurityContext context)
+    {
+        var principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "sub", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        return string.IsNullOrWhiteSpace(context.PrincipalId) ? null : context.PrincipalId;
     }
 
     private static void AppendClaims(

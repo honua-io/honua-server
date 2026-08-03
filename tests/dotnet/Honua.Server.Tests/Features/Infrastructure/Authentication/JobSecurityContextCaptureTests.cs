@@ -61,6 +61,46 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public async Task RevalidateRoleMembership_LegacySnapshot_UsesCapturedNameIdentifier()
+    {
+        var context = new JobSecurityContext(
+            "display-login",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-123"),
+                new JobSecurityClaim(ClaimTypes.Role, "workflow-author"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: false, Roles: []));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+
+        source.ResolvedPrincipalId.Should().Be("managed-user-123");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Inactive);
+        result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacySnapshot_UsesCapturedSubject()
+    {
+        var context = new JobSecurityContext(
+            "display-login",
+            TenantId: null,
+            [
+                new JobSecurityClaim("sub", "managed-user-456"),
+                new JobSecurityClaim(ClaimTypes.Role, "workflow-author"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: []));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+
+        source.ResolvedPrincipalId.Should().Be("managed-user-456");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
         var principal = BuildPrincipal(
@@ -336,9 +376,14 @@ public sealed class JobSecurityContextCaptureTests
     private sealed class FixedMembershipSource(PrincipalMembership? membership)
         : IPrincipalMembershipSource
     {
+        public string? ResolvedPrincipalId { get; private set; }
+
         public Task<PrincipalMembership?> ResolveMembershipAsync(
             string principalId,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(membership);
+        {
+            ResolvedPrincipalId = principalId;
+            return Task.FromResult(membership);
+        }
     }
 }
