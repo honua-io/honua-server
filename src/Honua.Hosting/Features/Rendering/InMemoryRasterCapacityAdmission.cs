@@ -27,7 +27,7 @@ internal sealed class InMemoryRasterCapacityAdmission : IRasterCapacityAdmission
         _budget = new RasterCapacityBudget(
             _options.MaxWebOutputCells,
             _options.MaxWebOutputBytes,
-            _options.MaxObjectRangeRequests,
+            _options.MaxObjectRequests,
             _options.MaxObjectRangeBytes,
             _options.MaxPostGisWorkUnits);
     }

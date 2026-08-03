@@ -14,7 +14,7 @@ public sealed class RasterCapacityBudgetTests
     {
         { new RasterCapacityWork(11, 0, 0, 0, 0), RasterCapacityDimension.WebOutputCells, 11, 10 },
         { new RasterCapacityWork(0, 21, 0, 0, 0), RasterCapacityDimension.WebOutputBytes, 21, 20 },
-        { new RasterCapacityWork(0, 0, 31, 0, 0), RasterCapacityDimension.ObjectRangeRequests, 31, 30 },
+        { new RasterCapacityWork(0, 0, 31, 0, 0), RasterCapacityDimension.ObjectRequests, 31, 30 },
         { new RasterCapacityWork(0, 0, 0, 41, 0), RasterCapacityDimension.ObjectRangeBytes, 41, 40 },
         { new RasterCapacityWork(0, 0, 0, 0, 51), RasterCapacityDimension.PostGisWorkUnits, 51, 50 },
     };

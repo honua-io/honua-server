@@ -211,9 +211,8 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
                 $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
         }
 
-        var encodedReadCeiling = array.Compressor is null
-            ? chunkBytes
-            : checked(chunkBytes + ZarrReadSupportMatrix.MaxEncodedChunkOverheadBytes);
+        var readEnvelope = ZarrReadSupportMatrix.GetChunkReadEnvelope(chunkBytes, array.Compressor);
+        var encodedReadCeiling = readEnvelope.RangeByteCeiling;
 
         byte[]? raw;
         try
@@ -234,7 +233,10 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             // common path avoids an extra object-store metadata request. This also
             // prevents a large encoded object whose prefix happens to decode to the
             // declared chunk from bypassing the encoded-size fence.
-            if (array.Compressor is not null && raw.LongLength == encodedReadCeiling)
+            if (ZarrReadSupportMatrix.RequiresObjectSizeProbe(
+                    array.Compressor,
+                    raw.LongLength,
+                    encodedReadCeiling))
             {
                 var objectSize = await reader.GetObjectSizeAsync(bucket, chunkPath, cancellationToken).ConfigureAwait(false);
                 if (objectSize > encodedReadCeiling)

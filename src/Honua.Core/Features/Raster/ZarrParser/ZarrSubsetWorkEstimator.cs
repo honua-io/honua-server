@@ -14,8 +14,10 @@ public static class ZarrSubsetWorkEstimator
 {
     /// <summary>
     /// Estimates synchronous work for a subset rendered into a web raster.
-    /// Object bytes conservatively count every intersecting chunk at its declared
-    /// uncompressed size; web bytes include decoded subset and RGBA output buffers.
+    /// Object bytes conservatively count every intersecting chunk at the exact
+    /// encoded range ceiling used by the reader. Object requests also reserve the
+    /// conditional object-size probe that a ceiling-sized compressed response can
+    /// trigger. Web bytes include decoded subset and RGBA output buffers.
     /// </summary>
     public static RasterCapacityWork Estimate(
         ZarrArrayMetadata array,
@@ -60,12 +62,13 @@ public static class ZarrSubsetWorkEstimator
         var decodedSubsetBytes = checked(subsetElements * elementSize);
         var outputCells = checked((long)outputWidth * outputHeight);
         var rgbaOutputBytes = checked(outputCells * 4L);
+        var readEnvelope = ZarrReadSupportMatrix.GetChunkReadEnvelope(chunkBytes, array.Compressor);
 
         return new RasterCapacityWork(
             WebOutputCells: outputCells,
             WebOutputBytes: checked(decodedSubsetBytes + rgbaOutputBytes),
-            ObjectRangeRequests: chunkCount,
-            ObjectRangeBytes: checked(chunkCount * chunkBytes),
+            ObjectRequests: checked(chunkCount * readEnvelope.MaximumObjectRequests),
+            ObjectRangeBytes: checked(chunkCount * readEnvelope.RangeByteCeiling),
             PostGisWorkUnits: 0);
     }
 }

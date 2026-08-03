@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Raster.Capacity;
 public readonly record struct RasterCapacityWork(
     long WebOutputCells,
     long WebOutputBytes,
-    long ObjectRangeRequests,
+    long ObjectRequests,
     long ObjectRangeBytes,
     long PostGisWorkUnits)
 {
@@ -27,7 +27,7 @@ public readonly record struct RasterCapacityWork(
 public readonly record struct RasterCapacityBudget(
     long MaxWebOutputCells,
     long MaxWebOutputBytes,
-    long MaxObjectRangeRequests,
+    long MaxObjectRequests,
     long MaxObjectRangeBytes,
     long MaxPostGisWorkUnits)
 {
@@ -55,9 +55,9 @@ public readonly record struct RasterCapacityBudget(
                 out dimension, out requested, out limit);
         }
 
-        if (work.ObjectRangeRequests > MaxObjectRangeRequests)
+        if (work.ObjectRequests > MaxObjectRequests)
         {
-            return Exceeded(RasterCapacityDimension.ObjectRangeRequests, work.ObjectRangeRequests, MaxObjectRangeRequests,
+            return Exceeded(RasterCapacityDimension.ObjectRequests, work.ObjectRequests, MaxObjectRequests,
                 out dimension, out requested, out limit);
         }
 
@@ -96,7 +96,7 @@ public readonly record struct RasterCapacityBudget(
     private static void ValidateNonNegative(RasterCapacityWork work)
     {
         if (work.WebOutputCells < 0 || work.WebOutputBytes < 0 ||
-            work.ObjectRangeRequests < 0 || work.ObjectRangeBytes < 0 ||
+            work.ObjectRequests < 0 || work.ObjectRangeBytes < 0 ||
             work.PostGisWorkUnits < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(work), "Raster work estimates cannot be negative.");
@@ -106,7 +106,7 @@ public readonly record struct RasterCapacityBudget(
     private static void ValidatePositiveBudget(RasterCapacityBudget budget)
     {
         if (budget.MaxWebOutputCells <= 0 || budget.MaxWebOutputBytes <= 0 ||
-            budget.MaxObjectRangeRequests <= 0 || budget.MaxObjectRangeBytes <= 0 ||
+            budget.MaxObjectRequests <= 0 || budget.MaxObjectRangeBytes <= 0 ||
             budget.MaxPostGisWorkUnits <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(budget), "Raster capacity budget limits must be positive.");
@@ -128,8 +128,11 @@ public enum RasterCapacityDimension
     /// <summary>Estimated managed bytes required to materialize the web response.</summary>
     WebOutputBytes,
 
-    /// <summary>Number of object-store range requests.</summary>
-    ObjectRangeRequests,
+    /// <summary>
+    /// Number of object-store requests, including range reads and conditional
+    /// metadata probes required to bound them.
+    /// </summary>
+    ObjectRequests,
 
     /// <summary>Conservative aggregate bytes addressed by object-store range requests.</summary>
     ObjectRangeBytes,

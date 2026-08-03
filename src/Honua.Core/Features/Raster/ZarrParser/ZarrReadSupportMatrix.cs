@@ -17,6 +17,18 @@ internal sealed record ZarrReadSupportEntry(
     string Constraint);
 
 /// <summary>
+/// Maximum object-store work one managed chunk read can issue.
+/// </summary>
+/// <param name="RangeByteCeiling">Maximum bytes addressed by the chunk range read.</param>
+/// <param name="MaximumObjectRequests">
+/// Maximum object-store requests: the range read plus a conditional object-size
+/// probe when a compressed response exactly fills its read ceiling.
+/// </param>
+internal readonly record struct ZarrChunkReadEnvelope(
+    long RangeByteCeiling,
+    int MaximumObjectRequests);
+
+/// <summary>
 /// The authoritative envelope for Zarr data that may enter Honua's pure-managed,
 /// AOT-safe web read path. Parser admission and fixture tests consume the same
 /// rules so metadata discovery cannot advertise data that downstream slice/value/
@@ -111,6 +123,34 @@ internal static class ZarrReadSupportMatrix
 
     internal static bool IsV3ChunkKeyEncodingSupported(string? encoding)
         => encoding is "default" or "v2";
+
+    /// <summary>
+    /// Returns the authoritative encoded-read and request envelope for one chunk.
+    /// Both capacity estimation and the reader consume this method so their byte
+    /// ceilings and conditional metadata-request accounting cannot drift.
+    /// </summary>
+    internal static ZarrChunkReadEnvelope GetChunkReadEnvelope(
+        long decodedChunkBytes,
+        string? compressor)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(decodedChunkBytes);
+
+        return compressor is null
+            ? new ZarrChunkReadEnvelope(decodedChunkBytes, MaximumObjectRequests: 1)
+            : new ZarrChunkReadEnvelope(
+                checked(decodedChunkBytes + MaxEncodedChunkOverheadBytes),
+                MaximumObjectRequests: 2);
+    }
+
+    /// <summary>
+    /// Whether an encoded response requires the conditional object-size probe that
+    /// disambiguates an exact-size object from a truncated ceiling-sized prefix.
+    /// </summary>
+    internal static bool RequiresObjectSizeProbe(
+        string? compressor,
+        long returnedBytes,
+        long rangeByteCeiling)
+        => compressor is not null && returnedBytes == rangeByteCeiling;
 
     private static ReadOnlyCollection<ZarrReadSupportEntry> BuildEntries()
     {

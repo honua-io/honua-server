@@ -69,7 +69,7 @@ public sealed class InMemoryRasterCapacityAdmissionTests
         {
             MaxWebOutputCells = 1_000,
             MaxWebOutputBytes = 1_000,
-            MaxObjectRangeRequests = 1_000,
+            MaxObjectRequests = 1_000,
             MaxObjectRangeBytes = maxObjectBytes,
             MaxPostGisWorkUnits = 1_000,
             MaxConcurrentRequests = maxGlobal,

@@ -22,9 +22,12 @@ public sealed class RasterCapacityOptions
     [Range(typeof(long), "1", "9223372036854775807")]
     public long MaxWebOutputBytes { get; set; } = 64L * 1024L * 1024L;
 
-    /// <summary>Maximum object-store range requests addressed by one synchronous request.</summary>
+    /// <summary>
+    /// Maximum object-store requests issued by one synchronous request, including
+    /// range reads and conditional metadata probes used to enforce byte ceilings.
+    /// </summary>
     [Range(typeof(long), "1", "9223372036854775807")]
-    public long MaxObjectRangeRequests { get; set; } = 512;
+    public long MaxObjectRequests { get; set; } = 512;
 
     /// <summary>Maximum conservative aggregate object-store range bytes per synchronous request.</summary>
     [Range(typeof(long), "1", "9223372036854775807")]
