@@ -5,7 +5,9 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Capacity;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Tiles;
@@ -82,7 +84,7 @@ internal static class ZarrEndpoints
     /// </summary>
     private const long MaxTileSliceBytes = 4L * 1024L * 1024L;
 
-    private static async Task<IResult> HandleDatacubeTile(
+    internal static async Task<IResult> HandleDatacubeTile(
         HttpContext context,
         int layerId,
         string tileMatrixSetId,
@@ -93,6 +95,8 @@ internal static class ZarrEndpoints
         [FromServices] IZarrSubsetReader subsetReader,
         [FromServices] IEnumerable<ICloudRangeReader> rangeReaders,
         [FromServices] ITileMatrixSetRegistry tileMatrixSets,
+        [FromServices] IRasterCapacityAdmission capacityAdmission,
+        [FromServices] ITenantContext tenantContext,
         ILogger<ZarrEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
@@ -169,6 +173,45 @@ internal static class ZarrEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, planError ?? "The tile could not be resolved against the coverage.");
         }
 
+        RasterCapacityWork work;
+        try
+        {
+            work = ZarrSubsetWorkEstimator.Estimate(
+                slice!.Plan.Array,
+                slice.Plan.Request,
+                ZarrTileRenderer.DefaultTileSize,
+                ZarrTileRenderer.DefaultTileSize);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or InvalidOperationException or OverflowException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(
+                context,
+                "The planned Zarr tile cannot be bounded safely. Reduce the requested slice or submit it as a durable raster process.");
+        }
+
+        // The pure plan above is the last step before object-reader resolution and the
+        // first raster-sized allocation. Admission therefore refuses/promotes excessive
+        // work before any object range is read. No GDAL/native path exists in web.
+        var admission = await capacityAdmission.TryAcquireAsync(
+                new RasterCapacityRequest(
+                    Operation: "zarr.datacube-tile",
+                    TenantPartition: tenantContext.TenantId ?? string.Empty,
+                    Work: work,
+                    OverflowAction: RasterCapacityOverflowAction.SubmitDurableJob),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!admission.IsAdmitted)
+        {
+            ZarrLog.DatacubeTileCapacityDenied(
+                logger,
+                layerId,
+                admission.Dimension.ToString(),
+                admission.Requested,
+                admission.Limit);
+            return CreateCapacityDeniedResult(context, admission);
+        }
+
+        await using var capacityLease = admission.Lease!;
         var rangeReader = rangeReaders.FirstOrDefault(reader => reader.Provider == servable.Provider);
         if (rangeReader is null)
         {
@@ -204,6 +247,29 @@ internal static class ZarrEndpoints
         var png = ZarrTileRenderer.Render(result, slice, ZarrTileRenderer.DefaultTileSize, colormap: null, fillValue: fillValue);
         ZarrLog.DatacubeTileRendered(logger, layerId, result.Variable, z, x, y, png.Length);
         return Results.Bytes(png, "image/png");
+    }
+
+    private static IResult CreateCapacityDeniedResult(
+        HttpContext context,
+        RasterCapacityAdmissionResult admission)
+    {
+        var durableGuidance = admission.OverflowAction == RasterCapacityOverflowAction.SubmitDurableJob
+            ? " Submit the work as a durable raster geoprocessing job for worker or Batch execution."
+            : string.Empty;
+
+        if (admission.DenialKind == RasterCapacityDenialKind.WorkLimitExceeded)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(
+                context,
+                $"The synchronous raster request requires {admission.Requested.ToString(CultureInfo.InvariantCulture)} " +
+                $"{admission.Dimension} but the limit is {admission.Limit.ToString(CultureInfo.InvariantCulture)}. " +
+                "Reduce the bounds or resolution." + durableGuidance);
+        }
+
+        return StandardErrorHelpers.CreateTooManyRequests(
+            context,
+            "Synchronous raster capacity is currently in use." + durableGuidance,
+            admission.RetryAfterSeconds);
     }
 
     /// <summary>
