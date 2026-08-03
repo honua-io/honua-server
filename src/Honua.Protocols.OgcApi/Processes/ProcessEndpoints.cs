@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
@@ -750,6 +751,31 @@ internal static class ProcessEndpoints
             }
         }
 
+        var rasterSources = new Dictionary<string, RasterSourceDescriptor>(StringComparer.Ordinal);
+        if (stepElement.TryGetProperty("rasterSources", out var rasterSourcesElement)
+            || stepElement.TryGetProperty("raster_sources", out rasterSourcesElement))
+        {
+            if (rasterSourcesElement.ValueKind != JsonValueKind.Object)
+            {
+                error = $"Step '{stepId}' rasterSources must be a JSON object.";
+                return false;
+            }
+
+            foreach (var property in rasterSourcesElement.EnumerateObject())
+            {
+                try
+                {
+                    rasterSources[property.Name] = RasterSourceJson.Deserialize(
+                        property.Value.GetRawText());
+                }
+                catch (JsonException)
+                {
+                    error = $"Step '{stepId}' raster source '{property.Name}' is invalid.";
+                    return false;
+                }
+            }
+        }
+
         TryGetStringProperty(stepElement, "processId", "process_id", out var stepProcessId);
 
         step = new AnalysisPlanStep
@@ -758,6 +784,7 @@ internal static class ProcessEndpoints
             Kind = stepKind,
             ProcessId = stepProcessId,
             Inputs = inputs,
+            RasterSources = rasterSources,
             DependsOn = dependsOn
         };
         return true;
