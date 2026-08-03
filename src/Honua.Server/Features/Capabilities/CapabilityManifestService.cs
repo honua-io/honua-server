@@ -216,17 +216,25 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestServerInfo BuildServerInfo()
     {
-        var assembly = typeof(CapabilityManifestService).Assembly;
-        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var identity = options.DeploymentIdentity;
         return new CapabilityManifestServerInfo
         {
-            ServerVersion = string.IsNullOrWhiteSpace(version)
-                ? assembly.GetName().Version?.ToString() ?? "0.0.0"
-                : version,
+            // serverVersion stays the mutable release version. The immutable deployment
+            // identity is a separate field so evidence consumers can bind a retained
+            // artifact to exact code/image content (#3038, REQ-004).
+            //
+            // Read through the SAME normalizer the streaming capability surface uses, rather
+            // than the raw InformationalVersion: with SourceLink or SemVer build metadata
+            // (`1.0.0+<sha>`) the two documents advertised different serverVersion values for
+            // one running server, and this one mixed immutable build identity back into the
+            // field the change documents as mutable (honua-server#3038 review).
+            ServerVersion = identity.ReleaseVersion,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName
+            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentRevision = identity.Revision,
+            DeploymentRevisionSource = identity.RevisionSource
         };
     }
 

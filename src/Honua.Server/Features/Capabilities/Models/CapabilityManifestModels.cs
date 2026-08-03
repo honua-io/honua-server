@@ -75,6 +75,20 @@ internal sealed record CapabilityManifestServerInfo
     public required string MetadataSchemaVersion { get; init; }
 
     public required string DeploymentEnvironment { get; init; }
+
+    /// <summary>
+    /// Immutable identity of the deployed code/image: a 40-character commit SHA or a
+    /// <c>sha256:&lt;64 hex&gt;</c> image digest. Null when the deployment carries no
+    /// verifiable revision; consumers that bind evidence to a deployment must fail closed
+    /// rather than substituting <c>serverVersion</c>, which is mutable across builds.
+    /// </summary>
+    public string? DeploymentRevision { get; init; }
+
+    /// <summary>
+    /// How <see cref="DeploymentRevision"/> was resolved (<c>image-digest</c>,
+    /// <c>commit-sha</c>, or <c>assembly-metadata</c>). Null when no revision resolved.
+    /// </summary>
+    public string? DeploymentRevisionSource { get; init; }
 }
 
 internal sealed record CapabilityManifestEnvironment
