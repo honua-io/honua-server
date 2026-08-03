@@ -25,6 +25,14 @@ internal static class CogServiceCollectionExtensions
         // Register the AOT-safe COG metadata reader
         services.AddSingleton<ICogMetadataReader, CogMetadataExtractor>();
 
+        // Register the AOT-safe decoded-size inspector used to bound a catalog raster's projected
+        // decoded grid at submit time, closing the COG decompression-bomb path (#3090).
+        services.TryAddSingleton<ICogDecodedSizeInspector, CogDecodedSizeInspector>();
+
+        // Bind the catalog raster-source guardrails (decoded-size ceiling).
+        services.Configure<CatalogRasterSourceOptions>(
+            configuration.GetSection(CatalogRasterSourceOptions.SectionName));
+
         // Register the tile resolver
         services.AddScoped<ICogTileResolver, CogTileResolver>();
 
