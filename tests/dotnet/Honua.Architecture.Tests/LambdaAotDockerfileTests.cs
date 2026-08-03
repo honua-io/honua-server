@@ -6,10 +6,34 @@ using FluentAssertions;
 namespace Honua.Architecture.Tests;
 
 /// <summary>
-/// Guards the RID-specific restore contract for the AWS Lambda Native AOT image.
+/// Guards the build and publishing contracts for the AWS Lambda Native AOT image.
 /// </summary>
 public sealed class LambdaAotDockerfileTests
 {
+    [ArchitectureTest]
+    public void NightlyWorkflow_LambdaAotBuild_ForwardsDeploymentRevision()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflowPath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            ".github",
+            "workflows",
+            "nightly-container-build.yml");
+        var workflow = File.ReadAllText(workflowPath);
+
+        const string jobStart = "  build-lambda-aot:";
+        const string nextJobStart = "\n  manifest-lambda-aot:";
+        var start = workflow.IndexOf(jobStart, StringComparison.Ordinal);
+        var end = workflow.IndexOf(nextJobStart, start, StringComparison.Ordinal);
+
+        start.Should().BeGreaterThanOrEqualTo(0);
+        end.Should().BeGreaterThan(start);
+        var job = workflow[start..end];
+
+        job.Should().Contain("file: docker/Dockerfile.lambda.aot");
+        job.Should().Contain("HONUA_GIT_SHA=${{ github.sha }}");
+    }
+
     [ArchitectureTest]
     public void BuildStage_RestoresRidAssetsImmediatelyBeforeNoRestorePublish()
     {
