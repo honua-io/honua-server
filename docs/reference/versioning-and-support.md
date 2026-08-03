@@ -25,7 +25,9 @@ The current and only published major version is `v1`. Within `v1`, all changes a
 
 ### Contract governance
 
-The admin OpenAPI baseline is `docs/developer/api-specs/admin-api.json`, served at runtime at `/api/v1/admin/openapi.json` ([details](openapi-and-explorer.md)). CI validates the contract shape and diffs against the baseline on every PR; breaking diffs fail by default and intentional breaks require an explicit override plus a migration-guide update in the same PR. SDK regeneration from the baseline is validated by a separate CI workflow.
+The admin OpenAPI baseline is `docs/developer/api-specs/admin-api.json`, served at runtime at `/api/v1/admin/openapi.json` ([details](openapi-and-explorer.md)). CI validates the contract shape and diffs against the baseline on every PR; breaking diffs fail by default. An intentional break must be described in the PR, update the migration/deprecation documentation, and check the exact `OPENAPI_BREAKING_CHANGE_APPROVED` marker in the PR template. CI accepts the PR marker only when the diff also updates the control-plane migration guide, versioning policy, or release checklist. The acknowledgement keeps the governance job green but emits a warning annotation and a job-summary list of every suppressed finding. SDK regeneration from the baseline is validated by a separate CI workflow.
+
+The repository-wide `OPENAPI_ALLOW_BREAKING_CHANGES` variable is a temporary pre-publication override. It produces the same visible warnings when it suppresses findings and must be `false` before the first published control-plane release; that release-time verification is tracked as the `honua-release#71` first-release gate. Once reset, acknowledgment is scoped to the PR that introduces the change rather than silently authorizing future PRs.
 
 SDK generation, usage examples, and the breaking-change upgrade flow are covered in the standalone [control plane migration guide](control-plane-migration-guide.md).
 

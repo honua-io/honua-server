@@ -16,7 +16,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 # eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
 # Directory.Build.props imports it with an Exists() guard, so omitting it
 # makes restore and publish evaluate DIFFERENT project graphs: restore sees
@@ -190,6 +190,10 @@ ENV PORT=8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
+
+LABEL honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/var/task/Honua.Server"
 
 EXPOSE 8080
 

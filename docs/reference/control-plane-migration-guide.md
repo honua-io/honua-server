@@ -92,11 +92,16 @@ Console.WriteLine(connections);
 OPENAPI_BASE_REF=origin/trunk ./scripts/ci/validate-openapi-contracts.sh
 ```
 
-2. If breakage is intentional, update:
+2. If breakage is intentional, explain it in the PR's **Breaking Changes** section,
+check the exact `OPENAPI_BREAKING_CHANGE_APPROVED` marker, and update:
 - `docs/developer/SDK_COMPATIBILITY_MATRIX.md`
 - `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`
 - `docs/operator/CONTROL_PLANE_API.md`
 - release checklist compatibility notes
+
+The marker scopes the acknowledgement to that PR. The governance job still emits a
+warning annotation and lists every suppressed finding in its job summary; a green job
+therefore does not hide the breaking diff from reviewers.
 
 3. Regenerate SDK artifacts and update client integrations.
 
@@ -107,8 +112,9 @@ OPENAPI_BASE_REF=origin/trunk ./scripts/ci/validate-openapi-contracts.sh
 Endpoints removed from the published admin OpenAPI spec because they were already
 removed at runtime (spec-vs-route honesty corrections, not live-surface removals).
 `validate-openapi-contracts.sh` reports these as breaking by design — they are
-acknowledged intentional removals; a maintainer greens the governance lane by
-running with `OPENAPI_ALLOW_BREAKING_CHANGES=true`.
+acknowledged intentional removals. The correcting PR records the removal below,
+checks `OPENAPI_BREAKING_CHANGE_APPROVED`, and retains the validator's warning
+annotation and job-summary evidence even though the governance job stays green.
 
 | Removed path/schema | Removed at runtime in | Correction | Replacement |
 |---|---|---|---|

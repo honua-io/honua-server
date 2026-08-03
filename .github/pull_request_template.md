@@ -59,4 +59,5 @@ None
 - [ ] Tests added for new functionality
 - [ ] If protocol/auth behavior changed: updated compatibility contract
 - [ ] If breaking admin/control-plane API changes: updated migration guide
+- [ ] `OPENAPI_BREAKING_CHANGE_APPROVED` — intentional Admin API break acknowledged for this PR
 - [ ] If breaking gRPC/proto wire changes: confirmed with explicit review
