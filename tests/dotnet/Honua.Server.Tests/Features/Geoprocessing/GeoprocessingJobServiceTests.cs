@@ -15,6 +15,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -22,6 +24,7 @@ using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -185,7 +188,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void ValidatePlan_TypedRasterSource_ReportsExecutionNotSupported()
+    public void ValidatePlan_DirectDurableRasterReference_RequiresAuthenticatedResolution()
     {
         var result = _sut.ValidatePlan(CreateTypedRasterPlan("source"), CreatePrincipal());
 
@@ -370,7 +373,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void DryRunPlan_TypedRasterSource_ReportsExecutionNotSupported()
+    public void DryRunPlan_DirectDurableRasterReference_RequiresAuthenticatedResolution()
     {
         var act = () => _sut.DryRunPlan(CreateTypedRasterPlan("source"), CreatePrincipal());
 
@@ -620,14 +623,15 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_TypedRasterSource_RefusesExecutionBeforeDurablePersistence()
+    public async Task SubmitJob_DirectDurableRasterReference_RejectsBeforePersistence()
     {
         var plan = CreateTypedRasterPlan("source");
 
         var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
             _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
 
-        exception.Message.Should().Contain("RASTER_SOURCE_EXECUTION_NOT_SUPPORTED");
+        exception.Message.Should().Contain(
+            GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -658,6 +662,200 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreateStablePrincipal());
 
         job.Audit.RequestedBy.Should().Be("subject-123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PinsEffectiveRequestTenantInsteadOfParsingTokenClaims()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns("tenant-from-header");
+        await using var requestServices = new ServiceCollection()
+            .AddSingleton(tenantContext)
+            .BuildServiceProvider();
+        var httpContextAccessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { RequestServices = requestServices }
+        };
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            httpContextAccessor: httpContextAccessor);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "tenant-admin"),
+                new Claim("organization_scope", "tenant-from-custom-claim"),
+                new Claim("tenant_id", "tenant-from-token")
+            ],
+            "Test"));
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, principal);
+
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be("tenant-from-header");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterIdOnly_AuthorizesOwningLayerBeforeResolvingMetadataOnlyReference()
+    {
+        var events = new List<string>();
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91 && reference.LayerId == null),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("resolve-layer");
+                return Task.FromResult(RasterSourceLayerResolution.Success(42));
+            });
+        rasterResolver
+            .ResolveAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91 && reference.LayerId == 42),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("resolve-reference");
+                return Task.FromResult(RasterSourceResolution.Success(new ObjectStoreCogRasterSourceDescriptor
+                {
+                    Version = "version-1",
+                    Provider = CloudStorageProvider.AwsS3,
+                    StoreReference = "test-bucket",
+                    ObjectKey = "test.tif",
+                    Content = new RasterContentIdentity
+                    {
+                        SizeBytes = 12_345_678,
+                        MediaType = "image/tiff",
+                        ETag = "etag-1",
+                    },
+                    SecurityContext = new RasterSecurityContextReference
+                    {
+                        TenantId = "execution",
+                        AuthorizationSnapshotReference = "catalog-registration:91",
+                    },
+                }));
+            });
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                events.Add("authorize-layer");
+                return Task.FromResult(AccessDecision.Allowed());
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var job = await sut.SubmitJobAsync(CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
+
+        events.Should().Equal("resolve-layer", "authorize-layer", "resolve-reference");
+        job.Spec.Parameters["honua.geoprocessing.step.0.layerId"].Should().Be("42");
+        job.Spec.Parameters.Should().NotContainKey("honua.geoprocessing.step.0.source");
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
+            .Should().Contain("\"sourceType\":\"cog\"")
+            .And.Contain("\"provider\":\"AwsS3\"")
+            .And.Contain("\"tenantId\":\"default\"")
+            .And.Contain($"\"authorizationSnapshotReference\":\"job:{job.OperationId}:submitter\"")
+            .And.NotContain("payload");
+        job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterIdOwningLayerDenied_DoesNotReadRasterBytes()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>())
+            .Returns(RasterSourceLayerResolution.Success(42));
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_UnknownOrMismatchedRasterReference_FailsWithoutReadingBytesOrEnumerating()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        rasterResolver
+            .ResolveLayerIdAsync(Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>())
+            .Returns(RasterSourceLayerResolution.NotFound());
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+
+        var act = async () => await sut.SubmitJobAsync(
+            CreateRasterSourcePlan(rasterId: 91, layerId: 7), null, CreatePrincipal());
+
+        var failure = (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()).Which;
+        failure.Message.Should().NotContain("91").And.NotContain("7");
+        await layerAuthorizer.DidNotReceive().AuthorizeLayerAsync(
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<int>(), Arg.Any<AuthorizationOperation>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_InlineRasterSource_DoesNotAuthorizeUnusedLayerSelector()
+    {
+        var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<int>(),
+                Arg.Any<AuthorizationOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden());
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+        var inlineSource = Convert.ToBase64String([1, 2, 3]);
+
+        var job = await sut.SubmitJobAsync(
+            CreateInlineRasterSourcePlan(inlineSource, layerId: 42), null, CreatePrincipal());
+
+        job.Spec.Parameters["honua.geoprocessing.step.0.source"].Should().Be(inlineSource);
+        await layerAuthorizer.DidNotReceive().AuthorizeLayerAsync(
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<int>(), Arg.Any<AuthorizationOperation>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveLayerIdAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
+        await rasterResolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1591,16 +1789,16 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task ResumeApprovedJob_ExecutesGatedPlan_BypassingApprovalAndMutatingGates()
+    public async Task ResumeApprovedJob_ExecutesGatedPlan_BypassingApprovalGate()
     {
         // Approving the proposal resumes execution: the plan is submitted through the
-        // normal pipeline with the approval and mutating-process gates bypassed
-        // (they were satisfied at proposal-creation time), attributing the job to the
-        // original submitter recorded in the payload.
+        // normal pipeline with the approval gate bypassed (it was satisfied at
+        // proposal-creation time), attributing the job to the original submitter recorded
+        // in the payload. The RESOURCE gates are not bypassed — they re-run against the
+        // restored submitter, who here still holds the authority (honua-server#3046 review).
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "would-block-if-not-bypassed"));
-        DenyMutatingProcessPermission();
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -1609,15 +1807,210 @@ public sealed class GeoprocessingJobServiceTests
             Plan = CreateDeleteFeaturesPlan(),
             IdempotencyKey = "idem-resume",
             RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
         };
 
         var job = await _sut.ResumeApprovedJobAsync(payload);
 
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Audit.RequestedBy.Should().Be("subject-123");
+
+        // The resumed job carries the ORIGINAL submitter's snapshot, not one recaptured from
+        // the name-only resume principal.
+        job.Audit.SubmitterSecurityContext.Should().BeSameAs(payload.SubmitterSecurityContext);
         await _jobStore.Received().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_MutatingAuthorityRevokedWhileWaiting_IsDeniedAndCreatesNoJob()
+    {
+        // A proposal can sit pending indefinitely. Treating proposal-time authorization as a
+        // durable fact let an approval granted after the submitter's update/delete authority was
+        // withdrawn execute anyway. The resource gates therefore re-run at resume time
+        // (honua-server#3046 review).
+        DenyMutatingProcessPermission();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-revoked",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        var act = async () => await _sut.ResumeApprovedJobAsync(payload);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_ResourceGatesEvaluateTheRestoredSubmitter_NotTheNameOnlyResumePrincipal()
+    {
+        // The resume principal carries only a name. Evaluating IT would deny every authorized
+        // resume (zero roles), which is why the gates were skipped outright before. They are now
+        // evaluated against the persisted submitter snapshot instead — the same identity the
+        // worker reads under — so the gate sees the submitter's real roles.
+        ClaimsPrincipal? gated = null;
+        _authEvaluator
+            .EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.Operation == OperatorOperation.ExecuteMutatingProcess),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                gated = call.Arg<ClaimsPrincipal>();
+                return Task.FromResult(AccessDecision.Allowed());
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-identity",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        await _sut.ResumeApprovedJobAsync(payload);
+
+        gated.Should().NotBeNull();
+        gated!.IsInRole("analyst").Should().BeTrue();
+        gated.FindFirst("region")?.Value.Should().Be("west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_ProposalWithoutSubmitterSecurityContext_IsRefused()
+    {
+        // A proposal persisted BEFORE the snapshot field existed cannot reconstruct the original
+        // submitter's RLS predicate or field mask. Recapturing from the resume principal would
+        // pin a name-only identity whose zero role claims match zero RLS policies, and "no
+        // matching policy" resolves to NO row filter — an unrestricted read. Fail closed
+        // instead; the proposal must be resubmitted.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-legacy",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = null,
+        };
+
+        var act = async () => await _sut.ResumeApprovedJobAsync(payload);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*predates the submitter security context*");
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_NullSnapshot_IsRefusedRatherThanCapturedFromPrincipal()
+    {
+        // The workflow reconcile loop reaches this entrypoint with the synthesized orchestrator
+        // principal (role=admin). For a run created before Audit.SubmitterSecurityContext
+        // existed the snapshot is null, and capturing from that principal would pin ADMIN
+        // row/field visibility onto every step of a pre-upgrade run.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+
+        var act = async () => await _sut.SubmitJobWithSecurityContextAsync(
+            CreateDeleteFeaturesPlan(), null, orchestratorPrincipal, null, null);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*predates the submitter security context*");
+
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_SuppliedSnapshot_IsPinnedVerbatim()
+    {
+        // The counterpart to the refusal above: when the run DOES carry a snapshot it is pinned
+        // as-is, never re-derived from the orchestrator principal.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+        var inherited = CreateSubmitterSecurityContext();
+
+        var job = await _sut.SubmitJobWithSecurityContextAsync(
+            CreateDeleteFeaturesPlan(), null, orchestratorPrincipal, null, inherited);
+
+        job.Audit.SubmitterSecurityContext.Should().BeSameAs(inherited);
+        job.Audit.SubmitterSecurityContext!.Claims.Should().NotContain(
+            claim => claim.Value == "admin",
+            "the orchestrator's admin role must never leak onto a step job's snapshot");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobWithSecurityContext_LayerGateUsesRestoredRequesterNotOrchestratorAdmin()
+    {
+        ClaimsPrincipal? gatedPrincipal = null;
+        var layerAuthorizer = Substitute.For<ILayerAccessAuthorizer>();
+        layerAuthorizer
+            .AuthorizeLayerAsync(
+                Arg.Do<ClaimsPrincipal>(principal => gatedPrincipal = principal),
+                42,
+                AuthorizationOperation.Query,
+                Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateServiceWithRasterResolver(
+            rasterResolver: null,
+            layerAuthorizer: layerAuthorizer);
+        var orchestratorPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "orchestrator"), new Claim(ClaimTypes.Role, "admin")],
+            authenticationType: "TestOrchestrator"));
+        var inherited = new JobSecurityContext(
+            "subject-123",
+            TenantId: "tenant-requester",
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
+
+        await sut.SubmitJobWithSecurityContextAsync(
+            CreateLayerSourcePlan(42), null, orchestratorPrincipal, null, inherited);
+
+        gatedPrincipal.Should().NotBeNull();
+        gatedPrincipal!.IsInRole("analyst").Should().BeTrue();
+        gatedPrincipal.IsInRole("admin").Should().BeFalse();
+        gatedPrincipal.FindFirst("tenant_id")?.Value.Should().Be("tenant-requester");
+    }
+
+    private static JobSecurityContext CreateSubmitterSecurityContext()
+        => new(
+            "subject-123",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "analyst"), new JobSecurityClaim("region", "west")]);
 
     [UnitTest]
     [Operation(Operations.Create)]
@@ -4564,6 +4957,48 @@ public sealed class GeoprocessingJobServiceTests
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(offset + 8), value);
     }
 
+    private GeoprocessingJobService CreateServiceWithRasterResolver(
+        IGeoprocessingRasterSourceResolver? rasterResolver,
+        ILayerAccessAuthorizer layerAuthorizer)
+        => new(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterSourceResolver: rasterResolver,
+            layerAccessAuthorizer: layerAuthorizer);
+
+    private static AnalysisPlan CreateRasterSourcePlan(long rasterId, int? layerId = null)
+    {
+        var inputs = new Dictionary<string, string>
+        {
+            ["rasterId"] = rasterId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        if (layerId is { } value)
+        {
+            inputs["layerId"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new AnalysisPlan
+        {
+            PlanId = "plan-raster-source",
+            IntentId = "intent-raster-source",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-raster-source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = inputs,
+                },
+            ],
+        };
+    }
+
     private static AnalysisPlan CreateTypedRasterPlan(
         string parameterName,
         ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
@@ -4586,8 +5021,56 @@ public sealed class GeoprocessingJobServiceTests
         ],
         };
 
+    private static AnalysisPlan CreateInlineRasterSourcePlan(string source, int? layerId = null)
+    {
+        var inputs = new Dictionary<string, string>
+        {
+            ["source"] = source,
+        };
+        if (layerId is { } value)
+        {
+            inputs["layerId"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new AnalysisPlan
+        {
+            PlanId = "plan-inline-raster-source",
+            IntentId = "intent-inline-raster-source",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-inline-raster-source",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = inputs,
+                },
+            ],
+        };
+    }
+
+    private static AnalysisPlan CreateLayerSourcePlan(int layerId) => new()
+    {
+        PlanId = "plan-layer-source",
+        IntentId = "intent-layer-source",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-layer-source",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "source.honua-layer",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["layerId"] = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                },
+            },
+        ],
+    };
+
     private static ObjectStoreCogRasterSourceDescriptor CreateObjectStoreRasterSource() => new()
     {
+        Provider = CloudStorageProvider.AwsS3,
         Version = "object-v1",
         StoreReference = "imagery-prod",
         ObjectKey = "tenant/source.tif",

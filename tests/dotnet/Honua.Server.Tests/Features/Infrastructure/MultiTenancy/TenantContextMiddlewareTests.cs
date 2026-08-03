@@ -55,6 +55,22 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
+    public async Task ClaimBased_CustomConfiguredClaim_PopulatesEffectiveTenantContext()
+    {
+        var principal = AuthenticatedPrincipal(claims: ("organization_scope", "tenant-custom"));
+
+        var client = await CreateAppAsync(
+            principal,
+            opt => opt.TenantClaimTypes = ["organization_scope"]);
+        var response = await client.GetAsync("/tenant");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal("Claim:tenant-custom", body);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
     public async Task HeaderOverride_AcceptedWhenPrincipalHasMultiTenantAdminRole()
     {
         var principal = AuthenticatedPrincipal(

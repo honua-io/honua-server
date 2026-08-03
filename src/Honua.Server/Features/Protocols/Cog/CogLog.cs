@@ -87,4 +87,16 @@ internal static partial class CogLog
         long registrationId,
         CogDirectReadDisposition disposition,
         CogDirectReadReason reason);
+
+    [LoggerMessage(
+        EventId = 7912,
+        Level = LogLevel.Information,
+        Message = "Resolved COG {RegistrationId} for GP from a {ObjectSize}-byte object using {RangeCount} ETag-conditional header ranges ({RequestedBytes} bytes requested, {ReceivedBytes} bytes received); no pixel payload was materialized")]
+    public static partial void RasterSourceHeaderProbed(
+        ILogger logger,
+        long registrationId,
+        long objectSize,
+        int rangeCount,
+        long requestedBytes,
+        long receivedBytes);
 }

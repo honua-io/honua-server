@@ -22,6 +22,12 @@ internal static class GdalWorkerParameterKeys
     public const string StepInputPrefix = "honua.geoprocessing.step.0.";
 
     /// <summary>
+    /// Typed raster-source prefix matching
+    /// <c>ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix</c> for step zero.
+    /// </summary>
+    public const string StepRasterSourcePrefix = "honua.geoprocessing.raster_source.0.";
+
+    /// <summary>
     /// Parameter key carrying the canonical process id list. Matches
     /// <c>ExecutionJobParameterKeys.GeoprocessingProcessDefinitions</c>.
     /// </summary>
