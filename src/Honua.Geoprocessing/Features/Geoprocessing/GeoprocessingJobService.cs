@@ -1134,7 +1134,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorOperation.Execute);
 
         var result = await JobSecurityContextCapture
-            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, cancellationToken)
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, _rbacOptions, cancellationToken)
             .ConfigureAwait(false);
 
         if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback && reportSnapshotFallback)

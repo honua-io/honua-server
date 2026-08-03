@@ -109,7 +109,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 + "security identity was recorded, so a triggered run cannot reconstruct it. "
                 + "Republish the workflow to enable scheduled and event-triggered runs.");
         var result = await JobSecurityContextCapture
-            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, cancellationToken)
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, _rbacOptions, cancellationToken)
             .ConfigureAwait(false);
 
         if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback)

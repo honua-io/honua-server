@@ -33,7 +33,8 @@ public sealed class JobSecurityContextCaptureTests
         var source = new FixedMembershipSource(
             new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
 
-        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
 
         result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
         result.HasRemovedRoles.Should().BeTrue();
@@ -54,7 +55,8 @@ public sealed class JobSecurityContextCaptureTests
 
         var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
             context,
-            new FixedMembershipSource(null));
+            new FixedMembershipSource(null),
+            new RbacOptions());
 
         result.Status.Should().Be(JobSecurityContextMembershipStatus.SnapshotFallback);
         result.Context.Should().BeSameAs(context);
@@ -73,7 +75,8 @@ public sealed class JobSecurityContextCaptureTests
         var source = new FixedMembershipSource(
             new PrincipalMembership(IsActive: false, Roles: []));
 
-        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
 
         source.ResolvedPrincipalId.Should().Be("managed-user-123");
         result.Status.Should().Be(JobSecurityContextMembershipStatus.Inactive);
@@ -93,11 +96,67 @@ public sealed class JobSecurityContextCaptureTests
         var source = new FixedMembershipSource(
             new PrincipalMembership(IsActive: true, Roles: []));
 
-        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(context, source);
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
 
         source.ResolvedPrincipalId.Should().Be("managed-user-456");
         result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
         result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacyCustomRoleClaim_RemovesRevokedRole()
+    {
+        const string configuredRoleClaimType = "roles";
+        var context = new JobSecurityContext(
+            "managed-user-789",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-789"),
+                new JobSecurityClaim(configuredRoleClaimType, "restricted-analyst"),
+                new JobSecurityClaim("region", "west"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions { RoleClaimType = configuredRoleClaimType });
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Context.RoleClaimType.Should().Be(configuredRoleClaimType);
+        result.Context.Claims.Should().NotContain(claim =>
+            claim.Type == configuredRoleClaimType && claim.Value == "restricted-analyst");
+        result.Context.Claims.Should().Contain(claim =>
+            claim.Type == configuredRoleClaimType && claim.Value == "viewer");
+        result.Context.Claims.Should().Contain(claim =>
+            claim.Type == "region" && claim.Value == "west");
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacyCustomRoleClaim_NormalizesCurrentRoleForRestore()
+    {
+        const string configuredRoleClaimType = "roles";
+        var context = new JobSecurityContext(
+            "managed-user-789",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-789"),
+                new JobSecurityClaim(configuredRoleClaimType, "viewer"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions { RoleClaimType = configuredRoleClaimType });
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+        result.Context.RoleClaimType.Should().Be(configuredRoleClaimType);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("viewer").Should().BeTrue();
     }
 
     [UnitTest]

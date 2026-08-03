@@ -226,9 +226,11 @@ internal static class JobSecurityContextCapture
     public static async Task<JobSecurityContextMembershipResult> RevalidateRoleMembershipAsync(
         JobSecurityContext context,
         IPrincipalMembershipSource? source,
+        RbacOptions options,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(options);
 
         var principalId = ResolveMembershipPrincipalId(context);
         if (source is null || principalId is null)
@@ -248,14 +250,16 @@ internal static class JobSecurityContextCapture
                 JobSecurityContextMembershipStatus.SnapshotFallback);
         }
 
-        var roleClaimType = string.IsNullOrWhiteSpace(context.RoleClaimType)
-            ? ClaimTypes.Role
-            : context.RoleClaimType;
+        var roleClaimType = options.EffectiveRoleClaimType;
         var roleClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ClaimTypes.Role,
             roleClaimType,
         };
+        if (!string.IsNullOrWhiteSpace(context.RoleClaimType))
+        {
+            roleClaimTypes.Add(context.RoleClaimType);
+        }
 
         var snapshotRoles = context.Claims
             .Where(claim => roleClaimTypes.Contains(claim.Type) && !string.IsNullOrWhiteSpace(claim.Value))
@@ -269,12 +273,7 @@ internal static class JobSecurityContextCapture
                 .ToArray()
             : [];
 
-        if (membership.IsActive && snapshotRoles.SetEquals(currentRoles))
-        {
-            return new JobSecurityContextMembershipResult(
-                context,
-                JobSecurityContextMembershipStatus.Current);
-        }
+        var membershipIsCurrent = membership.IsActive && snapshotRoles.SetEquals(currentRoles);
 
         var claims = context.Claims
             .Where(claim => !roleClaimTypes.Contains(claim.Type))
@@ -284,9 +283,11 @@ internal static class JobSecurityContextCapture
 
         return new JobSecurityContextMembershipResult(
             revalidated,
-            membership.IsActive
-                ? JobSecurityContextMembershipStatus.Changed
-                : JobSecurityContextMembershipStatus.Inactive,
+            membershipIsCurrent
+                ? JobSecurityContextMembershipStatus.Current
+                : membership.IsActive
+                    ? JobSecurityContextMembershipStatus.Changed
+                    : JobSecurityContextMembershipStatus.Inactive,
             HasRemovedRoles: snapshotRoles.Except(currentRoles, StringComparer.OrdinalIgnoreCase).Any());
     }
 
