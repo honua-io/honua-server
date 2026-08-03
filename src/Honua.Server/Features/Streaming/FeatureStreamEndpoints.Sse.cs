@@ -414,6 +414,10 @@ internal static partial class FeatureStreamEndpoints
                             session.SessionId,
                             FeatureStreamSessionManager.DefaultSubscriptionId,
                             defaultGeneration);
+                        if (liveEnvelope is null)
+                        {
+                            continue;
+                        }
 
                         await WriteSseEventAsync(
                             context.Response,

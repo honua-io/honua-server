@@ -608,15 +608,18 @@ internal static partial class FeatureStreamEndpoints
                     // Sequence is allocated after the delivery claim and immediately before
                     // the write, so numbers are never burned by filtered, deduplicated, or
                     // stale-generation frames (#3038 REQ-002).
-                    await SendStampedWebSocketJsonAsync(
-                        webSocket,
-                        session.WriteLock,
-                        message.Envelope,
-                        sessionManager,
-                        session.SessionId,
-                        subscriptionId,
-                        message.SubscriptionGeneration,
-                        cancellationToken).ConfigureAwait(false);
+                    if (!await SendStampedWebSocketJsonAsync(
+                            webSocket,
+                            session.WriteLock,
+                            message.Envelope,
+                            sessionManager,
+                            session.SessionId,
+                            subscriptionId,
+                            message.SubscriptionGeneration,
+                            cancellationToken).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
 
                     // Watermark advance after a successful live send. The bounded
                     // RecentEventIdCapacity dedup LRU only protects the most recent 128
@@ -1417,7 +1420,7 @@ internal static partial class FeatureStreamEndpoints
     /// (honua-server#3038 review). The lock already serializes the sends; moving allocation
     /// inside it makes the two orders the same order.
     /// </remarks>
-    private static async Task SendStampedWebSocketJsonAsync(
+    internal static async Task<bool> SendStampedWebSocketJsonAsync(
         WebSocket webSocket,
         SemaphoreSlim writeLock,
         FeatureStreamEnvelope envelope,
@@ -1429,7 +1432,7 @@ internal static partial class FeatureStreamEndpoints
     {
         if (webSocket.State != WebSocketState.Open)
         {
-            return;
+            return false;
         }
 
         await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1437,10 +1440,15 @@ internal static partial class FeatureStreamEndpoints
         {
             if (webSocket.State != WebSocketState.Open)
             {
-                return;
+                return false;
             }
 
             var stamped = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
+            if (stamped is null)
+            {
+                return false;
+            }
+
             var payload = JsonSerializer.SerializeToUtf8Bytes(
                 stamped, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
 
@@ -1449,6 +1457,7 @@ internal static partial class FeatureStreamEndpoints
                 WebSocketMessageType.Text,
                 endOfMessage: true,
                 cancellationToken).ConfigureAwait(false);
+            return true;
         }
         finally
         {

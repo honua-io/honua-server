@@ -106,15 +106,19 @@ internal static partial class FeatureStreamEndpoints
                 // Sequence is allocated only for frames that survive filtering and dedup, and
                 // INSIDE the write lock, so allocation order is wire order even when the writer
                 // task is draining the same subscription concurrently (#3038 REQ-002 + review).
-                await SendStampedWebSocketJsonAsync(
-                    webSocket,
-                    writeLock,
-                    envelope,
-                    sessionManager,
-                    sessionId,
-                    subscriptionId,
-                    subscriptionGeneration,
-                    cancellationToken).ConfigureAwait(false);
+                if (!await SendStampedWebSocketJsonAsync(
+                        webSocket,
+                        writeLock,
+                        envelope,
+                        sessionManager,
+                        sessionId,
+                        subscriptionId,
+                        subscriptionGeneration,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
                 delivered++;
             }
 
@@ -174,7 +178,18 @@ internal static partial class FeatureStreamEndpoints
                     continue;
                 }
 
-                envelope = StampSequence(envelope, sessionManager, sessionId, subscriptionId, subscriptionGeneration);
+                var stampedEnvelope = StampSequence(
+                    envelope,
+                    sessionManager,
+                    sessionId,
+                    subscriptionId,
+                    subscriptionGeneration);
+                if (stampedEnvelope is null)
+                {
+                    continue;
+                }
+
+                envelope = stampedEnvelope;
 
                 await WriteSseEventAsync(
                     response,
@@ -292,9 +307,11 @@ internal static partial class FeatureStreamEndpoints
     /// Stamps the next subscription-local sequence onto an envelope that is about to be
     /// written. Returns the envelope unchanged when no session manager or subscription is
     /// available (generation-less legacy/test call sites), so the field stays absent rather
-    /// than advertising a sequence the caller cannot honor.
+    /// than advertising a sequence the caller cannot honor. Returns <see langword="null"/>
+    /// when the requested subscription generation is no longer current so callers cannot
+    /// accidentally emit a stale sequence-less frame.
     /// </summary>
-    private static FeatureStreamEnvelope StampSequence(
+    private static FeatureStreamEnvelope? StampSequence(
         FeatureStreamEnvelope envelope,
         FeatureStreamSessionManager? sessionManager,
         Guid sessionId,
@@ -307,7 +324,7 @@ internal static partial class FeatureStreamEndpoints
         }
 
         var sequence = sessionManager.NextSubscriptionSequence(sessionId, subscriptionId, subscriptionGeneration);
-        return sequence < 0 ? envelope : envelope with { Sequence = sequence };
+        return sequence < 0 ? null : envelope with { Sequence = sequence };
     }
 
     internal sealed class FeatureStreamReplayWindowGapException(
