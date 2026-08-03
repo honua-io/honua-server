@@ -1025,10 +1025,15 @@ internal static class InlineRasterMetadataReader
         public static bool TryCreate(string encoded, out Base64ByteReader reader)
         {
             reader = default;
+
+            // Inline payloads can be many megabytes of base64, so both passes stay index-based over
+            // the span. LINQ filtering here would enumerate the string through CharEnumerator with a
+            // per-character interface dispatch and defeat the allocation-free admission read.
+            var source = encoded.AsSpan();
             var whitespaceCount = 0;
-            foreach (var character in encoded)
+            for (var index = 0; index < source.Length; index++)
             {
-                if (char.IsWhiteSpace(character))
+                if (char.IsWhiteSpace(source[index]))
                 {
                     whitespaceCount++;
                 }
@@ -1036,10 +1041,11 @@ internal static class InlineRasterMetadataReader
 
             if (whitespaceCount > 0)
             {
-                var normalized = GC.AllocateUninitializedArray<char>(encoded.Length - whitespaceCount);
+                var normalized = GC.AllocateUninitializedArray<char>(source.Length - whitespaceCount);
                 var destination = 0;
-                foreach (var character in encoded)
+                for (var index = 0; index < source.Length; index++)
                 {
+                    var character = source[index];
                     if (!char.IsWhiteSpace(character))
                     {
                         normalized[destination++] = character;

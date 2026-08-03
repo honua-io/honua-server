@@ -33,11 +33,15 @@ public sealed class RasterEngineCapabilityCatalogTests
 
         expected.Should().HaveCount(27);
         registered.Should().Equal(expected);
-        foreach (var processId in expected)
+        var definitions = expected
+            .Select(processId => (ProcessId: processId, Definition: _catalog.GetProcess(processId)!));
+
+        foreach (var (processId, definition) in definitions)
         {
-            var definition = _catalog.GetProcess(processId)!;
-            definition.RasterEngineCapabilities.Should().NotBeNull();
-            definition.RasterEngineCapabilities!.Engines.Should().HaveCount(2);
+            definition.RasterEngineCapabilities.Should()
+                .NotBeNull("'{0}' must advertise raster engine capabilities", processId);
+            definition.RasterEngineCapabilities!.Engines.Should()
+                .HaveCount(2, "'{0}' must advertise both raster engines", processId);
         }
     }
 

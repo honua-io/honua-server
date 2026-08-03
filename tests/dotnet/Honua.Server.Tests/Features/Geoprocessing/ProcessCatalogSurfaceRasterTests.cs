@@ -644,18 +644,21 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Catalog_NativeStandaloneRasterSources_AcceptTypedDescriptors()
     {
-        foreach (var processId in new[]
-                 {
-                     "proximity.euclidean-distance",
-                     "proximity.euclidean-allocation",
-                     "gdal.gdalwarp",
-                 })
-        {
-            var definition = _catalog.GetProcess(processId);
+        var definitions = new[]
+            {
+                "proximity.euclidean-distance",
+                "proximity.euclidean-allocation",
+                "gdal.gdalwarp",
+            }
+            .Select(processId => (ProcessId: processId, Definition: _catalog.GetProcess(processId)));
 
-            definition.Should().NotBeNull();
-            definition!.Parameters.Should().ContainSingle(parameter =>
-                parameter.Name == "source" && parameter.AcceptsRasterSource);
+        foreach (var (processId, definition) in definitions)
+        {
+            definition.Should().NotBeNull("'{0}' must be published by the catalog", processId);
+            definition!.Parameters.Should().ContainSingle(
+                parameter => parameter.Name == "source" && parameter.AcceptsRasterSource,
+                "'{0}' must expose exactly one typed raster source parameter",
+                processId);
         }
     }
 

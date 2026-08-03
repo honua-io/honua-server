@@ -289,29 +289,39 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_TypedRasterBoundToNonGeoprocessStep_ReportsBindingFailure()
     {
-        foreach (var kind in new[]
-                 {
-                     AnalysisPlanStepKind.QueryFeatures,
-                     AnalysisPlanStepKind.Aggregate,
-                     AnalysisPlanStepKind.RenderMap,
-                     AnalysisPlanStepKind.Export,
-                 })
-        {
-            var sourceStep = CreateTypedRasterPlan("source").Steps[0] with
+        var scenarios = new[]
             {
-                Kind = kind,
-                ProcessId = null,
-            };
+                AnalysisPlanStepKind.QueryFeatures,
+                AnalysisPlanStepKind.Aggregate,
+                AnalysisPlanStepKind.RenderMap,
+                AnalysisPlanStepKind.Export,
+            }
+            .Select(kind => (
+                Kind: kind,
+                SourceStep: CreateTypedRasterPlan("source").Steps[0] with
+                {
+                    Kind = kind,
+                    ProcessId = null,
+                }));
+
+        foreach (var (kind, sourceStep) in scenarios)
+        {
             var plan = CreateValidPlan() with { Steps = [BufferStep("step-1"), sourceStep] };
 
             var result = _sut.ValidatePlan(plan, CreatePrincipal());
 
-            result.IsExecutable.Should().BeFalse();
-            result.Violations.Should().ContainSingle(violation =>
-                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
-                && violation.FieldPath == "steps[step-raster].raster_sources.source");
-            result.Violations.Should().NotContain(violation =>
-                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+            result.IsExecutable.Should().BeFalse("step kind {0} must not bind a typed raster source", kind);
+            result.Violations.Should().ContainSingle(
+                violation =>
+                    violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                    && violation.FieldPath == "steps[step-raster].raster_sources.source",
+                "step kind {0} must report exactly one binding violation",
+                kind);
+            result.Violations.Should().NotContain(
+                violation =>
+                    violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode,
+                "step kind {0} must fail binding before execution support is evaluated",
+                kind);
         }
     }
 

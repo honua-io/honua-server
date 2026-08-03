@@ -362,24 +362,22 @@ internal static class RasterExecutionPlanningRequestFactory
         long total = 0;
         foreach (var source in sources)
         {
-            if (source is InlineRasterSourceDescriptor inline
-                && source.Selection?.Bands.Count is not > 0)
+            // Bind the selection through the pattern so the non-null band count is carried by a
+            // definitely-assigned local instead of a second dereference of the nullable property.
+            if (source.Selection is { Bands.Count: > 0 } selection)
             {
-                if (!InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
-                {
-                    return null;
-                }
-
-                total = SaturatingAdd(total, metadata.Bands);
+                total = SaturatingAdd(total, selection.Bands.Count);
                 continue;
             }
 
-            if (source.Selection?.Bands.Count is not > 0)
+            // No explicit band selection: only inline payloads can supply the band count.
+            if (source is not InlineRasterSourceDescriptor inline
+                || !InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
             {
                 return null;
             }
 
-            total = SaturatingAdd(total, source.Selection.Bands.Count);
+            total = SaturatingAdd(total, metadata.Bands);
         }
 
         return total;
@@ -451,8 +449,10 @@ internal static class RasterExecutionPlanningRequestFactory
             var pixels = source.Selection?.PixelWindow is { } window
                 ? SaturatingMultiply(window.Width, window.Height)
                 : SaturatingMultiply(metadata.Width, metadata.Height);
-            var bands = source.Selection?.Bands.Count is > 0
-                ? source.Selection.Bands.Count
+            // Bind the selection through the pattern so the band count is read from a
+            // definitely-assigned local instead of re-dereferencing the nullable property.
+            var bands = source.Selection is { Bands.Count: > 0 } bandSelection
+                ? bandSelection.Bands.Count
                 : metadata.Bands;
             total = SaturatingAdd(
                 total,

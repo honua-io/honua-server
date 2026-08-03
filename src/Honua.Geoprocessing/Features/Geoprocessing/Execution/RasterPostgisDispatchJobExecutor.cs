@@ -174,21 +174,21 @@ internal sealed partial class RasterPostgisDispatchJobExecutor : IJobExecutor
             return "A successful raster provider result must contain at least one immutable output reference.";
         }
 
-        foreach (var output in outputs)
+        if (outputs.Any(static output => !IsValidOutputReference(output)))
         {
-            if (output is null
-                || string.IsNullOrWhiteSpace(output.Reference)
-                || string.IsNullOrWhiteSpace(output.MediaType)
-                || output.Length is < 0
-                || output.Sha256 is not null
-                    && (output.Sha256.Length != 64 || !output.Sha256.All(Uri.IsHexDigit)))
-            {
-                return "The raster provider returned an invalid immutable output reference.";
-            }
+            return "The raster provider returned an invalid immutable output reference.";
         }
 
         return null;
     }
+
+    private static bool IsValidOutputReference(RasterProviderResultReference? output)
+        => output is not null
+            && !string.IsNullOrWhiteSpace(output.Reference)
+            && !string.IsNullOrWhiteSpace(output.MediaType)
+            && output.Length is not < 0
+            && (output.Sha256 is null
+                || (output.Sha256.Length == 64 && output.Sha256.All(Uri.IsHexDigit)));
 
     private static partial class Log
     {

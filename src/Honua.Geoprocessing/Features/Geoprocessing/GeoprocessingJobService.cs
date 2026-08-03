@@ -1698,17 +1698,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GpResourceProfile.EphemeralGibRequestKey,
             GpResourceProfile.ArchRequestKey,
         ];
-        var result = new List<KeyValuePair<string, string>>(keys.Length);
-        foreach (var key in keys.OrderBy(static key => key, StringComparer.Ordinal))
-        {
-            if (requestParameters.TryGetValue(key, out var value)
-                && !string.IsNullOrWhiteSpace(value))
-            {
-                result.Add(new KeyValuePair<string, string>(key, value.Trim()));
-            }
-        }
-
-        return result;
+        return keys
+            .Select(key => requestParameters.TryGetValue(key, out var value)
+                ? new KeyValuePair<string, string?>(key, value)
+                : new KeyValuePair<string, string?>(key, null))
+            .Where(static entry => !string.IsNullOrWhiteSpace(entry.Value))
+            .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
+            .Select(static entry => new KeyValuePair<string, string>(entry.Key, entry.Value!.Trim()))
+            .ToList();
     }
 
     private static void EnsureMatchingIdempotentRequest(
