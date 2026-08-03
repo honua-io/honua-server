@@ -517,6 +517,7 @@ internal static class RasterExecutionPlanningRequestFactory
             using var document = JsonDocument.Parse(payload);
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String
                 || !string.Equals(type.GetString(), "FeatureCollection", StringComparison.Ordinal)
                 || !document.RootElement.TryGetProperty("features", out var features)
                 || features.ValueKind != JsonValueKind.Array)
