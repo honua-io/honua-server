@@ -74,6 +74,15 @@ internal static class GdalJobInputReader
             return false;
         }
 
+        // Source selections are part of the durable contract, but the native worker does
+        // not yet project them onto every GDAL executor. Reject them instead of silently
+        // opening the full source and producing a result for the wrong pixels or bands.
+        if (descriptor.Selection is not null)
+        {
+            error = $"typed raster input '{name}' uses a source selection that is not supported by the GDAL worker";
+            return false;
+        }
+
         switch (descriptor)
         {
             case InlineRasterSourceDescriptor inline:
@@ -326,6 +335,16 @@ internal readonly record struct GdalRasterInput(
         if (DeclaredDimensions is not { } dimensions)
         {
             error = "referenced raster is missing bounded catalog dimensions";
+            return false;
+        }
+
+        // ObjectStoreCogRasterSourceDescriptor is definitionally TIFF. Apply the same
+        // positive format allowlist as inline payloads before GDAL receives the VSI path.
+        if (!GdalRasterDimensionGuard.TryAdmitContainerFormat(
+                GdalRasterDimensionGuard.RasterContainerFormat.Tiff,
+                options,
+                out error))
+        {
             return false;
         }
 

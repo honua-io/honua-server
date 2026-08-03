@@ -67,9 +67,8 @@ internal static class GdalRasterDimensionGuard
         // parses TIFF/PNG/JPEG headers — and then be opened UNBOUNDED by GDAL, a live
         // decompression-bomb → OOM vector. Refuse it here, before any subprocess spawns.
         var format = ClassifyContainer(raster);
-        if (format is not RasterContainerFormat.Unknown && !IsFormatAllowed(format, options))
+        if (!TryAdmitContainerFormat(format, options, out error))
         {
-            error = $"raster input format '{FormatName(format)}' is not in the configured AllowedRasterInputFormats allowlist";
             return false;
         }
 
@@ -81,6 +80,28 @@ internal static class GdalRasterDimensionGuard
         }
 
         return IsWithinLimits(dims, options, out error);
+    }
+
+    /// <summary>
+    /// Admits a classified raster container against the positive worker format allowlist.
+    /// Unknown inputs remain for the caller or GDAL to adjudicate, matching
+    /// <see cref="TryAdmit(ReadOnlySpan{byte}, GdalWorkerOptions, out string)"/>.
+    /// </summary>
+    internal static bool TryAdmitContainerFormat(
+        RasterContainerFormat format,
+        GdalWorkerOptions options,
+        out string error)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        error = "";
+
+        if (format is RasterContainerFormat.Unknown || IsFormatAllowed(format, options))
+        {
+            return true;
+        }
+
+        error = $"raster input format '{FormatName(format)}' is not in the configured AllowedRasterInputFormats allowlist";
+        return false;
     }
 
     /// <summary>
