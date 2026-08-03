@@ -107,6 +107,8 @@ internal sealed record GpResourceProfile
     internal const string KubernetesCpuLimitKey = "k8s.cpu_limit";
     internal const string KubernetesMemoryRequestKey = "k8s.memory_request";
     internal const string KubernetesMemoryLimitKey = "k8s.memory_limit";
+    internal const string KubernetesEphemeralStorageRequestKey = "k8s.ephemeral_storage_request";
+    internal const string KubernetesEphemeralStorageLimitKey = "k8s.ephemeral_storage_limit";
     internal const string KubernetesActiveDeadlineSecondsKey = "k8s.active_deadline_seconds";
     internal const string AzureRetryAttemptsKey = "azure.batch.max_task_retry_count";
     internal const string AzureTimeoutMinutesKey = "azure.batch.task_timeout_minutes";
@@ -124,6 +126,8 @@ internal sealed record GpResourceProfile
         (KubernetesCpuLimitKey, VcpusRequestKey),
         (KubernetesMemoryRequestKey, MemoryMibRequestKey),
         (KubernetesMemoryLimitKey, MemoryMibRequestKey),
+        (KubernetesEphemeralStorageRequestKey, EphemeralGibRequestKey),
+        (KubernetesEphemeralStorageLimitKey, EphemeralGibRequestKey),
         (KubernetesActiveDeadlineSecondsKey, TimeoutSecondsRequestKey),
         (AzureRetryAttemptsKey, RetryAttemptsRequestKey),
         (AzureTimeoutMinutesKey, TimeoutSecondsRequestKey),
@@ -318,6 +322,13 @@ internal sealed record GpResourceProfile
                     var memory = memoryMib.ToString(CultureInfo.InvariantCulture) + "Mi";
                     specParams.TryAdd(KubernetesMemoryRequestKey, memory);
                     specParams.TryAdd(KubernetesMemoryLimitKey, memory);
+                }
+
+                if (EphemeralGib is { } ephemeralGib)
+                {
+                    var ephemeralStorage = ephemeralGib.ToString(CultureInfo.InvariantCulture) + "Gi";
+                    specParams.TryAdd(KubernetesEphemeralStorageRequestKey, ephemeralStorage);
+                    specParams.TryAdd(KubernetesEphemeralStorageLimitKey, ephemeralStorage);
                 }
 
                 Set(specParams, KubernetesActiveDeadlineSecondsKey, TimeoutSeconds);

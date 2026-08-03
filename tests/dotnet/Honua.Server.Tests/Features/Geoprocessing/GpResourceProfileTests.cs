@@ -220,6 +220,8 @@ public sealed class GpResourceProfileTests
         specParams["k8s.cpu_limit"].Should().Be("4");
         specParams["k8s.memory_request"].Should().Be("8192Mi");
         specParams["k8s.memory_limit"].Should().Be("8192Mi");
+        specParams["k8s.ephemeral_storage_request"].Should().Be("100Gi");
+        specParams["k8s.ephemeral_storage_limit"].Should().Be("100Gi");
         specParams["k8s.active_deadline_seconds"].Should().Be("900");
         specParams.Should().NotContainKey("batch.ephemeral_gib");
     }

@@ -157,6 +157,16 @@ internal sealed record KubernetesJobManifest
     public string? MemoryLimit { get; init; }
 
     /// <summary>
+    /// Optional container ephemeral-storage request (for example <c>100Gi</c>).
+    /// </summary>
+    public string? EphemeralStorageRequest { get; init; }
+
+    /// <summary>
+    /// Optional container ephemeral-storage limit.
+    /// </summary>
+    public string? EphemeralStorageLimit { get; init; }
+
+    /// <summary>
     /// Optional node selector key/value pairs.
     /// </summary>
     public IReadOnlyDictionary<string, string> NodeSelector { get; init; } =

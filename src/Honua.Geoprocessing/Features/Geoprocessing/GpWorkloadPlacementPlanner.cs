@@ -68,7 +68,7 @@ internal static class GpWorkloadPlacementPlanner
 
         var fallback = intent.RequiredClass is null
             && string.IsNullOrWhiteSpace(intent.RequiredBackend)
-            && selected.IsLocal != intent.PreferLocal;
+            && (selected.IsLocal != intent.PreferLocal || selected.IsPressured);
         var reasonCode = fallback
             ? selected.IsLocal ? "gp:local-fallback" : "gp:remote-fallback"
             : intent.ReasonCode;

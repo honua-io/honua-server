@@ -298,6 +298,26 @@ public sealed class GpWorkloadPlacementPlannerTests
     }
 
     [UnitTest]
+    public void Select_PressuredLocalFinalChoicePersistsFallbackDecision()
+    {
+        var local = Local(parameters: new Dictionary<string, string>
+        {
+            [GpWorkloadPlacementParameterKeys.Capacity] = "pressured",
+        });
+        var options = new GpWorkloadPlacementOptions
+        {
+            AllowPressuredLocalFallback = true,
+        };
+
+        var result = Select([local], NativeResources(), options);
+
+        result.Workload!.WorkloadId.Should().Be("gp-local");
+        result.Decision!.FallbackApplied.Should().BeTrue();
+        result.Decision.ReasonCode.Should().Be("gp:local-fallback");
+        result.Decision.Reason.Should().Contain("Preferred execution was unavailable");
+    }
+
+    [UnitTest]
     public void Select_RasterRemoteDecisionWithBackendRequestPinsExactBackend()
     {
         var raster = RemoteRasterDecision("preliminary-backend");
