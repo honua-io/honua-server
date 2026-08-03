@@ -16,7 +16,11 @@ Infrastructure-as-code for all of these patterns ships as private Terraform modu
 | Azure Functions | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) |
 | Kubernetes (EKS/AKS) | Existing cluster estate | generic web image (multi-arch) | See [Deploy on Kubernetes](kubernetes.md) |
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). Cloud-targeted tags (`*-ecs`, `*-lambda`, `*-functions`, each with `-aot` variants) are published by CI to ECR/ACR. Prefer the AOT tags — faster start, lower memory; keep JIT tags as a debug fallback.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The unsuffixed release and trunk tags are the canonical native-AOT production artifact. The `-aot` generic tags remain compatibility aliases to the same image. JIT images are explicitly suffixed `-jit` and are development/conformance/debugging aids, not supported production serving artifacts.
+
+Cloud-targeted production tags remain explicit: `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot`; their shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases resolve to those same verified AOT images. Their JIT debugging counterparts end in `-jit` (`*-ecs-jit`, `*-lambda-jit`, `*-functions-jit`) so a production tag can never resolve to JIT.
+
+The serving-image boundary is strict: the native-AOT web images contain no GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, or .NET GDAL bindings. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
 
 ### Which tag to pull
 
@@ -24,13 +28,15 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 
 | Tag | Means | Moves when | Published by |
 |---|---|---|---|
-| `latest` / `latest-aot` | Latest stable **release** | A `v*` release tag is cut | `deploy.yml` |
-| `vX.Y.Z` / `vX.Y.Z-aot` | A specific pinned release | Never (immutable) | `deploy.yml` |
-| `trunk` / `trunk-aot` | Latest **trunk** build (HEAD of the default branch) | Every nightly build | `nightly-container-build.yml` |
-| `nightly` / `nightly-aot`, `nightly-YYYYMMDD`, `nightly-<sha>` | Same trunk build as `trunk`/`trunk-aot`, plus dated/sha-pinned variants | Every nightly build | `nightly-container-build.yml` |
+| `latest` / `latest-aot` | Latest stable native-AOT **release** (`-aot` is an alias) | A `v*` release tag is cut | `deploy.yml` |
+| `vX.Y.Z` / `vX.Y.Z-aot` | A specific native-AOT release (`-aot` is an alias) | Never (immutable) | `deploy.yml` |
+| `trunk` / `trunk-aot` | Latest native-AOT **trunk** build (`-aot` is an alias) | Every nightly build | `nightly-container-build.yml` |
+| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Native-AOT trunk build with moving, dated, and SHA-pinned variants | Every nightly build | `nightly-container-build.yml` |
+| `latest-jit`, `vX.Y.Z-jit`, `trunk-jit`, `nightly-jit*` | Non-production JIT compatibility/debug image | Corresponding release or nightly build | `deploy.yml` / `nightly-container-build.yml` |
 
-- **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
-- **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk` / `trunk-aot`. These are the documented, obviously-named moving tags for the head of the default branch and are refreshed by the nightly build. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
+- **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
+- **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
+- **Compatibility debugging only**: use an explicitly suffixed `-jit` tag. Do not promote that image into production.
 
 ## Pattern by team size
 
@@ -54,7 +60,7 @@ aws ecs describe-services --cluster honua-prod --services honua-server \
 
 ## AWS Lambda
 
-Lambda images are built from [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda) and [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot) (a `docker/Dockerfile.lambda.aot.simple` variant also exists); the Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
+Lambda production images are built from [`docker/Dockerfile.lambda.aot`](../../../docker/Dockerfile.lambda.aot); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.lambda`](../../../docker/Dockerfile.lambda). The `docker/Dockerfile.lambda.aot.simple` variant is a local diagnostic fallback and is not published. The Lambda host shim lives in [`docker/cloud`](../../../docker/cloud).
 
 - Use the `vX.Y.Z-lambda-aot` tag (arm64) from ECR behind API Gateway or a function URL.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band — concurrent cold starts must not race migrations.
@@ -68,7 +74,7 @@ aws lambda publish-version --function-name honua-prod
 
 ## Azure Container Apps
 
-- Use the generic web image (`ghcr.io/honua-io/honua-server:latest-aot` or a pinned version).
+- Use the generic web image (`ghcr.io/honua-io/honua-server:latest` or a pinned version); it is native AOT. The `latest-aot` alias is retained for compatibility.
 - Configure secrets as Container Apps secrets referenced from env vars; ingress handles TLS.
 - Rollouts use revision traffic splitting: immediate cutover or canary percentage, driven by the deploy backend `honua-azure-container-apps-revision` with a telemetry gate.
 
@@ -79,7 +85,7 @@ az containerapp update --name honua-prod --resource-group honua \
 
 ## Azure Functions
 
-Functions images are built from [`docker/Dockerfile.functions`](../../../docker/Dockerfile.functions) and [`docker/Dockerfile.functions.aot`](../../../docker/Dockerfile.functions.aot) (amd64); the Functions host shim lives in [`docker/cloud`](../../../docker/cloud).
+Functions production images are built from [`docker/Dockerfile.functions.aot`](../../../docker/Dockerfile.functions.aot) (amd64); the explicitly suffixed JIT debug image uses [`docker/Dockerfile.functions`](../../../docker/Dockerfile.functions). The Functions host shim lives in [`docker/cloud`](../../../docker/cloud).
 
 - Use the `vX.Y.Z-functions-aot` tag from ACR as a custom container.
 - Set `HONUA_SKIP_MIGRATIONS=true` and run migrations out-of-band, as with Lambda.

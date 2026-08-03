@@ -11,7 +11,7 @@ You'll run a production-shaped Honua stack on a single host: pinned image, secre
 ```bash
 mkdir -p /opt/honua && cd /opt/honua
 cat > .env <<'EOF'
-HONUA_TAG=latest-aot
+HONUA_TAG=latest
 POSTGRES_PASSWORD=replace-with-strong-db-password
 HONUA_ADMIN_PASSWORD=replace-with-strong-admin-password
 HONUA_MASTER_KEY=replace-with-random-string-of-32-plus-characters
