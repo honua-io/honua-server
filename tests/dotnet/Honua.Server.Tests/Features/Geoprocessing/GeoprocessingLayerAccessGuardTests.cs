@@ -60,6 +60,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
     /// holds it; the human requester does not.
     /// </summary>
     private const string RepointedLayerRole = "repointed-layer-reader";
+    private const string RasterEditorRole = "raster-editor";
 
     /// <summary>
     /// Regression for the #3043 review finding: <c>WorkflowOrchestrationEngine</c> submits
@@ -278,6 +279,51 @@ public sealed class GeoprocessingLayerAccessGuardTests
         result.Should().BeSameAs(plan);
     }
 
+    [UnitTest]
+    public async Task EnsureLayerWriteAccess_ConfiguredRasterTarget_DeniesReadOnlyPrincipal()
+    {
+        var accessor = new HttpContextAccessor();
+        var guard = BuildGuard(
+            out var services,
+            accessor: accessor,
+            datasetLayerWriteRoles: [RasterEditorRole]);
+        var principal = HumanRequesterPrincipal();
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = principal
+        };
+
+        var act = async () => await guard.EnsureLayerWriteAccessAsync(
+            DatasetLayerId,
+            principal,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
+            .WithMessage("*update the configured raster output layer*");
+    }
+
+    [UnitTest]
+    public async Task EnsureLayerWriteAccess_ConfiguredRasterTarget_AllowsDataEditor()
+    {
+        var accessor = new HttpContextAccessor();
+        var guard = BuildGuard(
+            out var services,
+            accessor: accessor,
+            datasetLayerWriteRoles: [RasterEditorRole]);
+        var principal = OrchestrationPrincipal(RasterEditorRole);
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = principal
+        };
+
+        await guard.EnsureLayerWriteAccessAsync(
+            DatasetLayerId,
+            principal,
+            CancellationToken.None);
+    }
+
     /// <summary>
     /// A caller-supplied binding can only ever CONSTRAIN the submission, never widen it: one
     /// that names a layer the dataset does not resolve to is refused rather than honoured, so
@@ -352,9 +398,13 @@ public sealed class GeoprocessingLayerAccessGuardTests
         out ServiceProvider services,
         IHttpContextAccessor? accessor = null,
         string[]? datasetLayerRoles = null,
+        string[]? datasetLayerWriteRoles = null,
         MutableDatasetResolver? resolver = null)
     {
-        services = BuildServices(datasetLayerRoles ?? [ReaderRole], resolver ?? new MutableDatasetResolver(DatasetLayerId));
+        services = BuildServices(
+            datasetLayerRoles ?? [ReaderRole],
+            datasetLayerWriteRoles,
+            resolver ?? new MutableDatasetResolver(DatasetLayerId));
         return new GeoprocessingLayerAccessGuard(
             accessor ?? new HttpContextAccessor(),
             services.GetRequiredService<IServiceScopeFactory>(),
@@ -368,21 +418,26 @@ public sealed class GeoprocessingLayerAccessGuardTests
     /// <see cref="AccessPolicy"/> — the same fall-through the
     /// <c>ProcessExecuteOnlyRoleStore</c> integration tests exercise.
     /// </summary>
-    private static ServiceProvider BuildServices(string[] datasetLayerRoles, MutableDatasetResolver resolver)
+    private static ServiceProvider BuildServices(
+        string[] datasetLayerRoles,
+        string[]? datasetLayerWriteRoles,
+        MutableDatasetResolver resolver)
     {
         var services = new ServiceCollection();
 
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
 
         services.AddSingleton<IMetadataV2GraphProvider>(
-            new StubGraphProvider(BuildSnapshot(datasetLayerRoles)));
+            new StubGraphProvider(BuildSnapshot(datasetLayerRoles, datasetLayerWriteRoles)));
 
         services.AddSingleton<IEnrichmentDatasetResolver>(resolver);
 
         return services.BuildServiceProvider();
     }
 
-    private static MetadataV2GraphSnapshot BuildSnapshot(string[] datasetLayerRoles)
+    private static MetadataV2GraphSnapshot BuildSnapshot(
+        string[] datasetLayerRoles,
+        string[]? datasetLayerWriteRoles)
     {
         var service = new MetadataV2Service
         {
@@ -390,7 +445,11 @@ public sealed class GeoprocessingLayerAccessGuardTests
         };
 
         var sourceResource = Resource("res-source", "source-layer", [ReaderRole]);
-        var datasetResource = Resource("res-dataset", "dataset-layer", datasetLayerRoles);
+        var datasetResource = Resource(
+            "res-dataset",
+            "dataset-layer",
+            datasetLayerRoles,
+            datasetLayerWriteRoles);
 
         // The layer an admin re-points the dataset at: readable by the orchestrator identity,
         // NOT by the human requester, so a dispatch that re-derived its own binding would
@@ -415,10 +474,18 @@ public sealed class GeoprocessingLayerAccessGuardTests
         return new MetadataV2GraphSnapshot(graph, "\"guard-tests\"", DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource Resource(string id, string name, string[] allowedRoles) => new()
+    private static MetadataV2Resource Resource(
+        string id,
+        string name,
+        string[] allowedRoles,
+        string[]? allowedWriteRoles = null) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-        AccessPolicy = new AccessPolicy { AllowedRoles = allowedRoles },
+        AccessPolicy = new AccessPolicy
+        {
+            AllowedRoles = allowedRoles,
+            AllowedWriteRoles = allowedWriteRoles
+        },
     };
 
     private static MetadataV2Publication Publication(

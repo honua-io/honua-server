@@ -18,6 +18,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
@@ -57,6 +58,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly GeoprocessingJobArtifactService _artifacts;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
+    private readonly RasterOutputPublicationOptions _rasterOutputOptions;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -74,7 +76,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IOptions<RasterOutputPublicationOptions>? rasterOutputOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -86,6 +89,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _logger = logger;
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
+        _rasterOutputOptions = rasterOutputOptions?.Value ?? new RasterOutputPublicationOptions();
         _jobStore = jobStore;
     }
 
@@ -120,7 +124,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IServiceScopeFactory? serviceScopeFactory = null,
         IRasterExecutionPlanner? rasterExecutionPlanner = null,
         IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null,
-        IOptionsMonitor<GpWorkloadPlacementOptions>? workloadPlacementOptions = null)
+        IOptionsMonitor<GpWorkloadPlacementOptions>? workloadPlacementOptions = null,
+        IOptions<RasterOutputPublicationOptions>? rasterOutputOptions = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -155,7 +160,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions)
+            limitsOptions,
+            rasterOutputOptions)
     {
     }
 
@@ -186,6 +192,39 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 cancellationToken).ConfigureAwait(false);
         }
 
+        RasterOutputPublicationPin? rasterOutputPublication = null;
+        if (RequiresRasterPublication(plan))
+        {
+            var isOrchestrationPrincipal = IsOrchestrationSystemPrincipal(principal);
+            if (isOrchestrationPrincipal && plan.RasterOutputPublication is null)
+            {
+                throw new GeoprocessingValidationException(
+                    "Workflow raster publication did not carry its requester-authorized output pin.");
+            }
+
+            var target = plan.RasterOutputPublication is { } existingPin
+                ? ValidateRasterPublicationTarget(
+                    existingPin.RegistrationTarget.Kind,
+                    existingPin.RegistrationTarget.TargetReference)
+                : ValidateRasterPublicationTarget(
+                    _rasterOutputOptions.RegistrationKind,
+                    _rasterOutputOptions.RegistrationTarget);
+            if (!isOrchestrationPrincipal
+                && TryGetMutableRasterLayerId(target, out var layerId))
+            {
+                await _authorizer.EnsureLayerWriteAccessAsync(layerId, principal, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            rasterOutputPublication = new RasterOutputPublicationPin
+            {
+                StoreReference = ValidateRasterStoreReference(
+                    plan.RasterOutputPublication?.StoreReference
+                    ?? _rasterOutputOptions.StoreReference),
+                RegistrationTarget = target
+            };
+        }
+
         // Per-layer read authorization, evaluated against the REQUESTING principal at
         // workflow-authoring time (honua-server#3043 review). The reconcile tick later
         // submits each step under the synthesized orchestrator identity, so this is the
@@ -202,8 +241,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // enforces it and a re-pointed dataset fails the step. Steps whose layerId/datasetId
         // are still unresolved workflow bindings do not resolve to a layer here and are
         // gated at submission instead.
-        return await _authorizer.EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
+        var authorizedPlan = await _authorizer
+            .EnsureLayerReadAccessAsync(plan, principal, cancellationToken)
             .ConfigureAwait(false);
+        return rasterOutputPublication is null
+            ? authorizedPlan
+            : authorizedPlan with { RasterOutputPublication = rasterOutputPublication };
     }
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
@@ -442,10 +485,49 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 .ConfigureAwait(false);
         }
 
+        var publishesRasterOutput = RequiresRasterPublication(plan);
+        RasterOutputRegistrationTarget? rasterPublicationTarget = null;
+        IReadOnlyDictionary<string, string>? effectiveProtocolMetadata = protocolMetadata;
+        if (publishesRasterOutput)
+        {
+            var isWorkflowSubmission = IsWorkflowOrchestrationSubmission(
+                protocolMetadata,
+                principal);
+            rasterPublicationTarget = ResolveSubmissionRasterPublicationTarget(
+                plan.RasterOutputPublication,
+                protocolMetadata,
+                resumingApproved,
+                isWorkflowSubmission);
+            if (!resumingApproved
+                && !isWorkflowSubmission
+                && TryGetMutableRasterLayerId(rasterPublicationTarget, out var targetLayerId))
+            {
+                await _authorizer.EnsureLayerWriteAccessAsync(
+                    targetLayerId,
+                    principal,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var pinnedMetadata = protocolMetadata is null
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal);
+            pinnedMetadata[RasterOutputWorkerContract.StoreReferenceParameter] =
+                ResolveRasterStoreReference(
+                    plan.RasterOutputPublication,
+                    protocolMetadata,
+                    resumingApproved,
+                    isWorkflowSubmission);
+            pinnedMetadata[RasterOutputWorkerContract.RegistrationKindParameter] =
+                rasterPublicationTarget.Kind.ToString();
+            pinnedMetadata[RasterOutputWorkerContract.RegistrationTargetParameter] =
+                rasterPublicationTarget.TargetReference;
+            effectiveProtocolMetadata = pinnedMetadata;
+        }
+
         if (!resumingApproved)
         {
             await EnsureApprovedAsync(
-                principal, plan, idempotencyKey, protocolMetadata, isCustomCode, cancellationToken)
+                principal, plan, idempotencyKey, effectiveProtocolMetadata, isCustomCode, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -490,8 +572,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             .PlanRasterExecutionAsync(plan, rasterDefinition, cancellationToken)
             .ConfigureAwait(false);
 
-        var specParams = protocolMetadata != null
-            ? new Dictionary<string, string>(protocolMetadata)
+        var specParams = effectiveProtocolMetadata != null
+            ? new Dictionary<string, string>(effectiveProtocolMetadata)
             : new Dictionary<string, string>();
 
         // Phase 0/1 auth spine: pin the submitter's owner snapshot when the job
@@ -584,7 +666,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             requiredRuntimeProfile,
             resourceProfile,
             rasterDecision,
-            placement.Decision);
+            placement.Decision,
+            publishesRasterOutput ? RasterOutputContract.JobContractVersion : 1);
         var queuedPhase = rasterDecision is null
             ? "Queued"
             : $"Queued: raster decision {rasterDecision.ReasonCode}";
@@ -814,6 +897,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
+        }
+
+        if (job.ArtifactReferences.Any(reference =>
+                RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+        {
+            // The execution status is terminal, but raster publication/package/progress projection
+            // is still pending. Never synthesize the private manifest marker as a caller-visible
+            // file artifact, and never expose a package whose anticipated job version was consumed
+            // by an unrelated concurrent CAS. The durable terminal callback retry clears this
+            // marker only after every required projection succeeds.
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' results are still being finalized.");
         }
 
         return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);
@@ -1351,7 +1446,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? requiredRuntimeProfile,
         GpResourceProfile resourceProfile,
         RasterExecutionDecision? rasterDecision = null,
-        ExecutionPlacementDecision? placementDecision = null)
+        ExecutionPlacementDecision? placementDecision = null,
+        int minimumContractVersion = 1)
     {
         if (workload == null)
         {
@@ -1366,7 +1462,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 specParams,
                 requiredRuntimeProfile,
                 rasterDecision,
-                placementDecision);
+                placementDecision,
+                minimumContractVersion);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
@@ -1402,7 +1499,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
             ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
                 plan,
-                workload.ContractVersion),
+                Math.Max(workload.ContractVersion, minimumContractVersion)),
             RasterExecution = rasterDecision,
             ComputePlacement = placementDecision,
             Parameters = specParams
@@ -1494,6 +1591,141 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         return kinds;
+    }
+
+    private bool RequiresRasterPublication(AnalysisPlan plan)
+    {
+        var declaredOutputKinds = plan.Outputs.Count > 0 ? plan.Outputs : DeriveArtifactKinds(plan);
+        if (!declaredOutputKinds.Contains(ArtifactKind.Raster))
+        {
+            return false;
+        }
+
+        var outputsAreAlternatives = plan.Steps.Any(step =>
+            step.Kind == AnalysisPlanStepKind.Geoprocess
+            && !string.IsNullOrWhiteSpace(step.ProcessId)
+            && _processCatalog.GetProcess(step.ProcessId) is { OutputsAreAlternatives: true });
+        return !outputsAreAlternatives
+            || (plan.Outputs.Count == 1 && plan.Outputs[0] == ArtifactKind.Raster);
+    }
+
+    private RasterOutputRegistrationTarget ResolveSubmissionRasterPublicationTarget(
+        RasterOutputPublicationPin? planPin,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool resumingApproved,
+        bool isWorkflowSubmission)
+    {
+        if (resumingApproved
+            && protocolMetadata is not null
+            && protocolMetadata.TryGetValue(
+                RasterOutputWorkerContract.RegistrationKindParameter,
+                out var pinnedKind)
+            && Enum.TryParse<RasterOutputRegistrationKind>(pinnedKind, ignoreCase: false, out var kind)
+            && protocolMetadata.TryGetValue(
+                RasterOutputWorkerContract.RegistrationTargetParameter,
+                out var pinnedTarget))
+        {
+            return ValidateRasterPublicationTarget(kind, pinnedTarget);
+        }
+
+        if (!resumingApproved && planPin is not null)
+        {
+            return ValidateRasterPublicationTarget(
+                planPin.RegistrationTarget.Kind,
+                planPin.RegistrationTarget.TargetReference);
+        }
+
+        if (resumingApproved
+            && _rasterOutputOptions.RegistrationKind is not RasterOutputRegistrationKind.ResultArtifact)
+        {
+            throw new GeoprocessingValidationException(
+                "The approved raster publication proposal did not capture its authorized output layer.");
+        }
+
+        if (isWorkflowSubmission)
+        {
+            throw new GeoprocessingValidationException(
+                "Workflow raster publication did not carry its requester-authorized output target.");
+        }
+
+        return ValidateRasterPublicationTarget(
+            _rasterOutputOptions.RegistrationKind,
+            _rasterOutputOptions.RegistrationTarget);
+    }
+
+    private string ResolveRasterStoreReference(
+        RasterOutputPublicationPin? planPin,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool resumingApproved,
+        bool isWorkflowSubmission)
+    {
+        var storeReference = resumingApproved
+            && protocolMetadata is not null
+            && protocolMetadata.TryGetValue(
+                RasterOutputWorkerContract.StoreReferenceParameter,
+                out var pinnedStoreReference)
+            ? pinnedStoreReference
+            : !resumingApproved && planPin is not null
+                ? planPin.StoreReference
+                : isWorkflowSubmission
+                    ? throw new GeoprocessingValidationException(
+                        "Workflow raster publication did not carry its requester-authorized output store.")
+                    : _rasterOutputOptions.StoreReference;
+        return ValidateRasterStoreReference(storeReference);
+    }
+
+    private static string ValidateRasterStoreReference(string storeReference)
+    {
+        if (!RasterOutputWorkerContract.IsLogicalStoreReference(storeReference))
+        {
+            throw new GeoprocessingValidationException(
+                "Raster output storage must use a configured logical store reference.");
+        }
+
+        return storeReference;
+    }
+
+    private static bool IsWorkflowOrchestrationSubmission(
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        ClaimsPrincipal principal)
+        => protocolMetadata is not null
+            && protocolMetadata.ContainsKey("orchestration.runId")
+            && IsOrchestrationSystemPrincipal(principal);
+
+    private static bool IsOrchestrationSystemPrincipal(ClaimsPrincipal principal)
+        => principal.Identities.Any(identity =>
+            string.Equals(
+                identity.AuthenticationType,
+                WorkflowOrchestrationIdentity.AuthenticationType,
+                StringComparison.Ordinal));
+
+    private static RasterOutputRegistrationTarget ValidateRasterPublicationTarget(
+        RasterOutputRegistrationKind kind,
+        string targetReference)
+    {
+        if (!Enum.IsDefined(kind)
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(targetReference)
+            || ((kind is RasterOutputRegistrationKind.CatalogObject
+                    or RasterOutputRegistrationKind.PostgisRaster)
+                && !RasterOutputRegistrationTarget.TryParseLayerReference(targetReference, out _)))
+        {
+            throw new GeoprocessingValidationException(
+                "Raster publication uses an invalid logical registration target.");
+        }
+
+        return new RasterOutputRegistrationTarget(kind, targetReference);
+    }
+
+    private static bool TryGetMutableRasterLayerId(
+        RasterOutputRegistrationTarget target,
+        out int layerId)
+    {
+        layerId = -1;
+        return (target.Kind is RasterOutputRegistrationKind.CatalogObject
+                or RasterOutputRegistrationKind.PostgisRaster)
+            && RasterOutputRegistrationTarget.TryParseLayerReference(
+                target.TargetReference,
+                out layerId);
     }
 
     /// <summary>

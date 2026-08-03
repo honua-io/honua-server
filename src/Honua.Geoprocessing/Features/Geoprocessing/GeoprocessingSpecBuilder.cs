@@ -134,12 +134,16 @@ internal static class GeoprocessingSpecBuilder
     /// </param>
     /// <param name="rasterExecution">Optional durable raster engine/placement decision.</param>
     /// <param name="computePlacement">Optional durable workload/backend placement decision.</param>
+    /// <param name="baselineContractVersion">
+    /// Minimum serving-to-worker contract required by output capabilities not represented in step inputs.
+    /// </param>
     public static ExecutionJobSpec BuildNoWorkloadSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
         string? requiredRuntimeProfile,
         RasterExecutionDecision? rasterExecution = null,
-        ExecutionPlacementDecision? computePlacement = null)
+        ExecutionPlacementDecision? computePlacement = null,
+        int baselineContractVersion = 1)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(specParams);
@@ -159,7 +163,7 @@ internal static class GeoprocessingSpecBuilder
             RuntimeProfile = requiredRuntimeProfile,
             RasterExecution = rasterExecution,
             ComputePlacement = computePlacement,
-            ContractVersion = ResolveRequiredContractVersion(plan),
+            ContractVersion = ResolveRequiredContractVersion(plan, baselineContractVersion),
             Parameters = specParams,
         };
     }
@@ -171,8 +175,12 @@ internal static class GeoprocessingSpecBuilder
     public static int ResolveRequiredContractVersion(AnalysisPlan plan, int baselineVersion = 1)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return plan.Steps.Any(step => step.RasterSources.Count > 0)
-            ? Math.Max(baselineVersion, RasterSourceContract.JobContractVersion)
+        var requiresRasterContract = plan.Steps.Any(step => step.RasterSources.Count > 0)
+            || plan.Outputs.Contains(ArtifactKind.Raster);
+        return requiresRasterContract
+            ? Math.Max(
+                baselineVersion,
+                Math.Max(RasterSourceContract.JobContractVersion, RasterOutputContract.JobContractVersion))
             : baselineVersion;
     }
 

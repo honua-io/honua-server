@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
+  <Import Project="..\..\eng\Honua.BuildProfiles.props" />
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -49,6 +51,10 @@
     <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
+    <!-- Provider SDKs remain isolated in their satellites and enter only the heavyweight GP
+         worker under the matching build profile. The AOT web image receives no GDAL dependency. -->
+    <ProjectReference Include="..\Honua.Aws\Honua.Aws.csproj" Condition="'$(HonuaIncludeAws)' == 'true'" />
+    <ProjectReference Include="..\Honua.Azure\Honua.Azure.csproj" Condition="'$(HonuaIncludeAzure)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -38,6 +39,7 @@ internal sealed partial class JobReconciliationService(
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
+    private const int TerminalProjectionRetryBatchSize = 100;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -83,6 +85,23 @@ internal sealed partial class JobReconciliationService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (job.Status is ExecutionJobStatus.Succeeded
+                    or ExecutionJobStatus.Failed
+                    or ExecutionJobStatus.Cancelled)
+            {
+                // A crash can occur after the terminal job CAS but before its indexes finish
+                // updating. The prior active membership is then the durable recovery path: a
+                // retained raster manifest proves terminal projection still needs to be driven.
+                if (job.ArtifactReferences.Any(reference =>
+                        RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+                {
+                    await RetryTerminalProjectionCallbacksAsync(job, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                continue;
+            }
+
             if (job.Status is ExecutionJobStatus.Queued)
             {
                 continue; // Not yet claimed; nothing to reconcile.
@@ -115,6 +134,60 @@ internal sealed partial class JobReconciliationService(
         // subsequent store update failed.
         await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
             .ConfigureAwait(false);
+
+        await RetryPendingTerminalProjectionsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RetryPendingTerminalProjectionsAsync(CancellationToken cancellationToken)
+    {
+        if (jobStore is not ITerminalProjectionRetryStore retryStore)
+        {
+            return;
+        }
+
+        var callbacks = terminalCallbacks.OfType<IRetryableJobTerminalCallback>().ToArray();
+        if (callbacks.Length == 0)
+        {
+            return;
+        }
+
+        var pending = await retryStore.ListTerminalProjectionsPendingAsync(
+            TerminalProjectionRetryBatchSize,
+            cancellationToken).ConfigureAwait(false);
+        foreach (var job in pending)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await RetryTerminalProjectionCallbacksAsync(job, callbacks, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private Task RetryTerminalProjectionCallbacksAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+        => RetryTerminalProjectionCallbacksAsync(
+            job,
+            terminalCallbacks.OfType<IRetryableJobTerminalCallback>().ToArray(),
+            cancellationToken);
+
+    private async Task RetryTerminalProjectionCallbacksAsync(
+        ExecutionJobRecord job,
+        IReadOnlyList<IRetryableJobTerminalCallback> callbacks,
+        CancellationToken cancellationToken)
+    {
+        foreach (var callback in callbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // The durable outbox/manifest remains until the callback explicitly acknowledges
+                // completion, so a failed attempt is safe to defer to the next sweep.
+                Log.TerminalProjectionRetryFailed(logger, job.OperationId, ex);
+            }
+        }
     }
 
     private static bool ShouldExpireHeartbeat(ExecutionJobRecord job, DateTimeOffset now)
@@ -505,5 +578,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9074, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
         public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9076, LogLevel.Warning, "Durable terminal projection retry failed for job {OperationId}; the outbox entry remains pending")]
+        public static partial void TerminalProjectionRetryFailed(ILogger logger, string operationId, Exception exception);
     }
 }

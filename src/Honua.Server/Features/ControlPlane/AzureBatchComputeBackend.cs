@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 #if !HONUA_EXCLUDE_AZURE
 namespace Honua.ControlPlane;
@@ -50,7 +51,8 @@ internal sealed partial class AzureBatchComputeBackend(
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = RasterOutputContract.JobContractVersion
         });
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
@@ -486,6 +488,36 @@ internal sealed partial class AzureBatchComputeBackend(
         ApplyEnvironmentSettings(settings, parameters, GenericEnvPrefix);
         ApplyEnvironmentSettings(settings, parameters, EnvPrefix);
 
+        // Stamp the negotiated contract after passthrough processing so a workload cannot
+        // weaken the serving-to-worker compatibility gate.
+        settings["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
+
+        if (parameters.TryGetValue(
+            RasterOutputWorkerContract.StoreReferenceParameter,
+            out var rasterOutputStoreReference))
+        {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing
+                || job.Spec.ContractVersion < RasterOutputContract.JobContractVersion)
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a versioned geoprocessing worker contract.");
+            }
+
+            if (!RasterOutputWorkerContract.IsLogicalStoreReference(rasterOutputStoreReference))
+            {
+                throw new InvalidOperationException(
+                    "Raster output publication requires a bounded logical store reference, not a URL or credential.");
+            }
+
+            settings[RasterOutputWorkerContract.ContractVersionEnvironmentVariable] =
+                RasterOutputContract.CurrentVersion.ToString(CultureInfo.InvariantCulture);
+            settings[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] = rasterOutputStoreReference;
+            settings[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, job.AttemptCount);
+            settings[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable] =
+                RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, job.AttemptCount);
+        }
+
         return settings;
     }
 
@@ -502,7 +534,9 @@ internal sealed partial class AzureBatchComputeBackend(
             }
 
             var name = key[prefix.Length..];
-            if (!string.IsNullOrWhiteSpace(name))
+            if (!string.IsNullOrWhiteSpace(name)
+                && !string.Equals(name, "HONUA_CONTRACT_VERSION", StringComparison.Ordinal)
+                && !RasterOutputWorkerContract.IsReservedEnvironmentVariable(name))
             {
                 settings[name] = value;
             }

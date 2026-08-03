@@ -101,6 +101,10 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/analysis/jobs/{jobId}/logs"),
         new("GET", "/api/v1/analysis/jobs/{jobId}/failure"),
 
+        // Stable, authenticated GP raster artifact download (#3089).
+        new("GET", "/api/v1/geoprocessing/raster-outputs/{artifactId}"),
+        new("HEAD", "/api/v1/geoprocessing/raster-outputs/{artifactId}"),
+
         // Analysis report HTTP surface (#801).
         new("GET", "/api/v1/analysis/reports/{jobId}"),
         new("GET", "/api/v1/analysis/reports/{jobId}/render"),

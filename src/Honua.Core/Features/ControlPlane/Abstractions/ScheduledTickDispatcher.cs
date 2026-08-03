@@ -60,6 +60,12 @@ public enum ScheduledTickKind
     FileStorageCleanup,
 
     /// <summary>
+    /// Referenced raster output orphan reconciliation. Deletes expired attempt staging objects and
+    /// unregistered published objects behind the same durable object lease used by publication.
+    /// </summary>
+    RasterOutputReconciliation,
+
+    /// <summary>
     /// Temporary-file cleanup (<c>TemporaryFileCleanupService.PerformCleanupAsync</c>). Cadence
     /// ~30 minutes. Deletes expired temp files; re-running is a no-op.
     /// </summary>

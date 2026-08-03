@@ -331,6 +331,48 @@ public class CloudStorageOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_AzureBlobWorkloadIdentityServiceUri_ReturnsSuccess()
+    {
+        var options = new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AzureBlob,
+            AzureBlob = new AzureBlobOptions
+            {
+                ConnectionString = "UseDevelopmentStorage=true",
+                ServiceUri = "https://account.blob.core.windows.net",
+                ContainerName = "valid-container"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [UnitTest]
+    public void Validate_AzureBlobCredentialBearingServiceUri_ReturnsFailWithoutEchoingValue()
+    {
+        var options = new CloudStorageOptions
+        {
+            Provider = CloudStorageProvider.AzureBlob,
+            AzureBlob = new AzureBlobOptions
+            {
+                ConnectionString = "UseDevelopmentStorage=true",
+                ServiceUri = "https://account.blob.core.windows.net?sig=must-not-echo",
+                ContainerName = "valid-container"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("non-secret absolute HTTPS endpoint", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Failures ?? Array.Empty<string>(), failure =>
+            failure.Contains("must-not-echo", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
     public void Validate_CleanupIntervalTooShort_ReturnsFail()
     {
         // Arrange

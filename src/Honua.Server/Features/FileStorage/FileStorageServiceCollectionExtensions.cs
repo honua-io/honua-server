@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,8 @@ public static class FileStorageServiceCollectionExtensions
         // Bind configuration
         var section = configuration.GetSection("FileStorage");
         services.Configure<CloudStorageOptions>(section);
+        services.Configure<RasterOutputPublicationOptions>(
+            configuration.GetSection(RasterOutputPublicationOptions.SectionName));
         services.PostConfigure<CloudStorageOptions>(options =>
         {
             ResolveCloudStorageSecrets(options);
@@ -75,6 +78,11 @@ public static class FileStorageServiceCollectionExtensions
         {
             case CloudStorageProvider.Local:
                 services.AddSingleton<ICloudFileStorage, LocalFileStorage>();
+                services.AddSingleton<LocalRasterOutputObjectStore>();
+                services.AddSingleton<IRasterOutputObjectStore>(providerServices =>
+                    providerServices.GetRequiredService<LocalRasterOutputObjectStore>());
+                services.AddSingleton<IRasterOutputManifestStore>(providerServices =>
+                    providerServices.GetRequiredService<LocalRasterOutputObjectStore>());
                 break;
 
             case CloudStorageProvider.AwsS3:
@@ -82,6 +90,7 @@ public static class FileStorageServiceCollectionExtensions
                 throw CreateUnavailableProviderException("AWS S3", "HonuaIncludeAws");
 #else
                 services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                services.AddAwsRasterOutputStorage();
                 break;
 #endif
 
@@ -90,6 +99,7 @@ public static class FileStorageServiceCollectionExtensions
                 throw CreateUnavailableProviderException("Azure Blob", "HonuaIncludeAzure");
 #else
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                services.AddAzureRasterOutputStorage();
                 break;
 #endif
 
@@ -102,6 +112,10 @@ public static class FileStorageServiceCollectionExtensions
         RegisterFileStorageCleanup(
             services,
             enableCleanup,
+            Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolver
+                .ShouldHostInProcessTimers(configuration));
+        RegisterRasterOutputReconciliation(
+            services,
             Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolver
                 .ShouldHostInProcessTimers(configuration));
 
@@ -153,6 +167,8 @@ public static class FileStorageServiceCollectionExtensions
         ResolveCloudStorageSecrets(options);
 
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(options));
+        services.TryAddSingleton<Microsoft.Extensions.Options.IOptions<RasterOutputPublicationOptions>>(
+            Microsoft.Extensions.Options.Options.Create(new RasterOutputPublicationOptions()));
 
         // Configure local storage options if using local provider
         if (options.Provider == CloudStorageProvider.Local && options.LocalStorage is not null)
@@ -174,6 +190,11 @@ public static class FileStorageServiceCollectionExtensions
         {
             case CloudStorageProvider.Local:
                 services.AddSingleton<ICloudFileStorage, LocalFileStorage>();
+                services.AddSingleton<LocalRasterOutputObjectStore>();
+                services.AddSingleton<IRasterOutputObjectStore>(providerServices =>
+                    providerServices.GetRequiredService<LocalRasterOutputObjectStore>());
+                services.AddSingleton<IRasterOutputManifestStore>(providerServices =>
+                    providerServices.GetRequiredService<LocalRasterOutputObjectStore>());
                 break;
 
             case CloudStorageProvider.AwsS3:
@@ -181,6 +202,7 @@ public static class FileStorageServiceCollectionExtensions
                 throw CreateUnavailableProviderException("AWS S3", "HonuaIncludeAws");
 #else
                 services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                services.AddAwsRasterOutputStorage();
                 break;
 #endif
 
@@ -189,6 +211,7 @@ public static class FileStorageServiceCollectionExtensions
                 throw CreateUnavailableProviderException("Azure Blob", "HonuaIncludeAzure");
 #else
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                services.AddAzureRasterOutputStorage();
                 break;
 #endif
 
@@ -200,8 +223,24 @@ public static class FileStorageServiceCollectionExtensions
         // programmatic/test composition path, which is always poll-style (in-process timer hosted).
         // The IConfiguration overload above is the production path that honors TriggerMode=Event.
         RegisterFileStorageCleanup(services, options.EnableAutomaticCleanup, hostInProcessTimer: true);
+        RegisterRasterOutputReconciliation(services, hostInProcessTimer: true);
 
         return services;
+    }
+
+    private static void RegisterRasterOutputReconciliation(
+        IServiceCollection services,
+        bool hostInProcessTimer)
+    {
+        services.TryAddSingleton<RasterOutputReconciliationService>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler,
+            RasterOutputReconciliationScheduledTickHandler>());
+        if (hostInProcessTimer)
+        {
+            services.AddHostedService(providerServices =>
+                providerServices.GetRequiredService<RasterOutputReconciliationService>());
+        }
     }
 
     private static void ResolveCloudStorageSecrets(CloudStorageOptions options)

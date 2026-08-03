@@ -363,6 +363,8 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Worker, ModuleRole.Abstractions),
         (ModuleRole.Worker, ModuleRole.Core),
         (ModuleRole.Worker, ModuleRole.Jobs),
+        (ModuleRole.Worker, ModuleRole.Aws),
+        (ModuleRole.Worker, ModuleRole.Azure),
 
         // Server may host a sample/demo app as static content (the StacOpsDemo
         // Blazor WASM client). Samples never reference back into the runtime.

@@ -68,6 +68,11 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string reason);
 
+    [LoggerMessage(8036, LogLevel.Warning, "Layer write access denied for raster publication: Reason={Reason}")]
+    public static partial void LayerWriteAccessDenied(
+        ILogger logger,
+        string reason);
+
     [LoggerMessage(8008, LogLevel.Information, "Job submitted (idempotent replay): JobId={JobId}")]
     public static partial void JobSubmittedIdempotent(
         ILogger logger,

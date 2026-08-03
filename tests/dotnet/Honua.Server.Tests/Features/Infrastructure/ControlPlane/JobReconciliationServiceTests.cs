@@ -4,6 +4,7 @@
 using System.Diagnostics.Metrics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.TestKit.Helpers;
 using Honua.ServiceDefaults;
@@ -103,6 +104,76 @@ public sealed class JobReconciliationServiceTests
         await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await jobQueue.DidNotReceive().RequeueAsync(
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Sweep_RedrivesOnlyRetryableCallbacksForDurableTerminalProjection()
+    {
+        var pending = CreateRunningJob("job-terminal-projection") with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = Substitute.For<IExecutionJobStore, ITerminalProjectionRetryStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([]);
+        var retryStore = (ITerminalProjectionRetryStore)jobStore;
+        retryStore.ListTerminalProjectionsPendingAsync(
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns([pending]);
+        var retryable = Substitute.For<IRetryableJobTerminalCallback>();
+        var ordinary = Substitute.For<IJobTerminalCallback>();
+        var service = new JobReconciliationService(
+            jobStore,
+            Substitute.For<IJobQueue>(),
+            Substitute.For<IQueueClaimReconciler>(),
+            new ExecutionJobCancellationTokens(),
+            [retryable, ordinary],
+            null,
+            NullLogger<JobReconciliationService>.Instance);
+
+        await RunSingleSweepAsync(service, CancellationToken.None);
+
+        await retryable.Received(1).OnTerminalAsync(pending, Arg.Any<CancellationToken>());
+        await ordinary.DidNotReceiveWithAnyArgs().OnTerminalAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task Sweep_RedrivesTerminalManifestLeftInActiveIndexByInterruptedIndexUpdate()
+    {
+        var pending = CreateRunningJob("job-terminal-index-recovery") with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences =
+            [
+                RasterOutputArtifactReference.CreateManifest(
+                    "gp-results",
+                    RasterOutputWorkerContract.BuildManifestObjectKey(
+                        "job-terminal-index-recovery",
+                        1))
+            ]
+        };
+        var jobStore = Substitute.For<IExecutionJobStore, ITerminalProjectionRetryStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([pending]);
+        ((ITerminalProjectionRetryStore)jobStore)
+            .ListTerminalProjectionsPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        var retryable = Substitute.For<IRetryableJobTerminalCallback>();
+        var service = new JobReconciliationService(
+            jobStore,
+            Substitute.For<IJobQueue>(),
+            Substitute.For<IQueueClaimReconciler>(),
+            new ExecutionJobCancellationTokens(),
+            [retryable],
+            null,
+            NullLogger<JobReconciliationService>.Instance);
+
+        await RunSingleSweepAsync(service, CancellationToken.None);
+
+        await retryable.Received(1).OnTerminalAsync(pending, Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

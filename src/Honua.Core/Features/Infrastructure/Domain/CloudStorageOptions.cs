@@ -175,6 +175,12 @@ public sealed record AzureBlobOptions
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional Blob service URI used with workload identity when no connection string is
+    /// supplied (for example <c>https://account.blob.core.windows.net</c>).
+    /// </summary>
+    public string? ServiceUri { get; set; }
+
+    /// <summary>
     /// Container name for storing files
     /// </summary>
     public string ContainerName { get; set; } = string.Empty;
