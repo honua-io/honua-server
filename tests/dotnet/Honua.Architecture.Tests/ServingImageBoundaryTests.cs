@@ -298,6 +298,10 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("paths:");
 
         var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
+        functionsDockerfile.Should().Contain("-p:HonuaSkipOracleForAotVerification=true", Exactly.Thrice());
+        functionsDockerfile.Should().Contain("-p:HonuaSkipSnowflakeForAotVerification=true", Exactly.Thrice());
+        functionsDockerfile.Should().Contain("-p:IlcSingleThreaded=true");
+        functionsDockerfile.Should().Contain("ARG AOT_PUBLISH_MAX_ATTEMPTS=3");
         foreach (var project in new[]
                  {
                      "Honua.Redshift",

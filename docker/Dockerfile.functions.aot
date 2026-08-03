@@ -97,31 +97,62 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID"
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaSkipOracleForAotVerification=true \
+      -p:HonuaSkipSnowflakeForAotVerification=true
 
 COPY . .
 
 ARG CONFIGURATION=Release
+# Oracle.ManagedDataAccess and Snowflake.Data are not NativeAOT-compatible: both
+# emit fatal IL3000 diagnostics while reading Assembly.Location from a
+# single-file app. Keep the Functions image aligned with the Lambda AOT image by
+# excluding those optional providers from both restore and publish. NativeAOT
+# linking is also single-threaded and retried to stay below hosted-runner memory
+# limits and tolerate an intermittent compiler kill.
+ARG AOT_PUBLISH_MAX_ATTEMPTS=3
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
-      amd64) RUNTIME_ID="linux-x64" ; ILC_SINGLE_THREADED="false" ;; \
-      arm64) RUNTIME_ID="linux-arm64" ; ILC_SINGLE_THREADED="true" ;; \
+      amd64) RUNTIME_ID="linux-x64" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    dotnet publish src/Honua.Server/Honua.Server.csproj \
-      --configuration "$CONFIGURATION" \
-      --runtime "$RUNTIME_ID" \
-      --no-restore \
-      --self-contained true \
-      --output /out/app \
-      -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:PublishAot=true \
-      -p:DebugType=None \
-      -p:DebugSymbols=false \
-      -p:StripSymbols=true \
-      -p:OptimizationPreference=Speed \
-      -p:IlcOptimizationPreference=Speed \
-      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
+    attempt=1 && \
+    max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
+    until \
+        sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+          --runtime "$RUNTIME_ID" \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:HonuaSkipOracleForAotVerification=true \
+          -p:HonuaSkipSnowflakeForAotVerification=true && \
+        dotnet publish src/Honua.Server/Honua.Server.csproj \
+          --configuration "$CONFIGURATION" \
+          --runtime "$RUNTIME_ID" \
+          --no-restore \
+          --self-contained true \
+          --output /out/app \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:PublishAot=true \
+          -p:DebugType=None \
+          -p:DebugSymbols=false \
+          -p:StripSymbols=true \
+          -p:OptimizationPreference=Speed \
+          -p:IlcOptimizationPreference=Speed \
+          -p:IlcSingleThreaded=true \
+          -p:HonuaSkipOracleForAotVerification=true \
+          -p:HonuaSkipSnowflakeForAotVerification=true ; \
+    do \
+        status=$? ; \
+        if [ "$attempt" -ge "$max_attempts" ]; then \
+            echo "AOT restore+publish failed after ${attempt} attempts (last exit ${status})" >&2 ; \
+            exit "$status" ; \
+        fi ; \
+        echo "AOT restore+publish attempt ${attempt} failed (exit ${status}); retrying after backoff..." >&2 ; \
+        sleep $((attempt * 15)) ; \
+        attempt=$((attempt + 1)) ; \
+    done && \
     rm -rf /out/app/BlazorDebugProxy /out/app/wwwroot && \
     find /out/app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
