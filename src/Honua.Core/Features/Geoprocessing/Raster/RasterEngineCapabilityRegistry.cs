@@ -13,6 +13,7 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 /// </summary>
 public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabilityRegistry
 {
+    private const string RasterFormatConversionProcessId = "conversion.raster-format";
     private const string SemanticVersion = "1.0.0";
     private const string PostgisUnavailableReason =
         "No canonical PostGIS raster IProcessExecutor is registered for this process; "
@@ -56,6 +57,57 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         _byProcessId = ordered.ToFrozenDictionary(
             capability => capability.ProcessId,
             StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Creates the built-in registry with the GDAL raster-format conversion inputs projected
+    /// from the worker's effective input allowlist.
+    /// </summary>
+    /// <param name="allowedRasterInputFormats">
+    /// GDAL format names admitted by the worker, such as <c>TIFF</c>, <c>PNG</c>, or
+    /// <c>JPEG2000</c>.
+    /// </param>
+    /// <returns>A registry whose native conversion metadata matches the supplied allowlist.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the allowlist contains no recognized raster format.
+    /// </exception>
+    public static RasterEngineCapabilityRegistry CreateForGdalRasterInputFormats(
+        IEnumerable<string> allowedRasterInputFormats)
+    {
+        ArgumentNullException.ThrowIfNull(allowedRasterInputFormats);
+
+        var inputMediaTypes = allowedRasterInputFormats
+            .Where(format => !string.IsNullOrWhiteSpace(format))
+            .Select(ToRasterInputMediaType)
+            .Where(mediaType => mediaType is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (inputMediaTypes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "GdalWorker:AllowedRasterInputFormats must contain at least one recognized "
+                + "raster format.");
+        }
+
+        var configured = BuildBuiltIns().Select(process =>
+            process.ProcessId != RasterFormatConversionProcessId
+                ? process
+                : process with
+                {
+                    Engines = process.Engines
+                        .Select(engine => engine.Engine != RasterEngine.GdalNative
+                            ? engine
+                            : engine with
+                            {
+                                Formats = engine.Formats with
+                                {
+                                    InputMediaTypes = inputMediaTypes,
+                                },
+                            })
+                        .ToArray(),
+                });
+        return new RasterEngineCapabilityRegistry(configured);
     }
 
     /// <inheritdoc />
@@ -465,6 +517,19 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                 $"Raster estimator field '{fieldName}' cannot be negative.");
         }
     }
+
+    private static string? ToRasterInputMediaType(string format) => format.Trim().ToUpperInvariant() switch
+    {
+        "TIFF" => "image/tiff",
+        "PNG" => "image/png",
+        "JPEG" => "image/jpeg",
+        "JPEG2000" => "image/jp2",
+        "GIF" => "image/gif",
+        "BMP" => "image/bmp",
+        "NITF" => "application/vnd.nitf",
+        "HFA" => "application/x-erdas-hfa",
+        _ => null,
+    };
 
     private static ReadOnlyCollection<T> ReadOnly<T>(params T[] values)
         => Array.AsReadOnly(values);

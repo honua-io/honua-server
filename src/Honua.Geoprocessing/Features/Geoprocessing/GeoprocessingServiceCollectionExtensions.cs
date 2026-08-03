@@ -82,7 +82,8 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
         // catalog so catalog definitions project the exact same immutable descriptor instances.
-        services.TryAddSingleton<IRasterEngineCapabilityRegistry, RasterEngineCapabilityRegistry>();
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(_ =>
+            CreateRasterEngineCapabilityRegistry(configuration));
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
@@ -395,5 +396,23 @@ internal static class GeoprocessingServiceCollectionExtensions
         {
             services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
         }
+    }
+
+    private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
+        IConfiguration configuration)
+    {
+        var configuredFormats = configuration
+            .GetSection("GdalWorker:AllowedRasterInputFormats")
+            .GetChildren()
+            .ToArray();
+        if (configuredFormats.Length == 0)
+        {
+            return new RasterEngineCapabilityRegistry();
+        }
+
+        return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+            configuredFormats
+                .Select(format => format.Value)
+                .OfType<string>());
     }
 }

@@ -164,8 +164,11 @@ public static class GdalWorkerServiceCollectionExtensions
         // will admit. The native dispatcher also validates advertised GdalNative entries
         // against the actual IProcessExecutor route table.
         services.TryAddSingleton<IRasterEngineCapabilityRegistry>(provider =>
-            CreateRasterEngineCapabilityRegistry(
-                provider.GetRequiredService<IOptions<GdalWorkerOptions>>().Value));
+            RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+                provider
+                    .GetRequiredService<IOptions<GdalWorkerOptions>>()
+                    .Value
+                    .AllowedRasterInputFormats));
 
         // Restrictive-by-default GDAL runtime hardening (#2765): the driver-skip and
         // remote-VSI-disable policy every GDAL/OGR subprocess inherits. Bound here so
@@ -297,56 +300,6 @@ public static class GdalWorkerServiceCollectionExtensions
             }
         }
     }
-
-    private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
-        GdalWorkerOptions options)
-    {
-        var inputMediaTypes = options.AllowedRasterInputFormats
-            .Select(ToRasterInputMediaType)
-            .Where(mediaType => mediaType is not null)
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (inputMediaTypes.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"{GdalWorkerOptions.SectionName}:{nameof(GdalWorkerOptions.AllowedRasterInputFormats)} "
-                + "must contain at least one recognized raster format.");
-        }
-
-        var builtIns = new RasterEngineCapabilityRegistry();
-        var configured = builtIns.Processes.Select(process =>
-            process.ProcessId != GdalRasterFormatConvertJobExecutor.HandledProcessId
-                ? process
-                : process with
-                {
-                    Engines = process.Engines
-                        .Select(engine => engine.Engine != RasterEngine.GdalNative
-                            ? engine
-                            : engine with
-                            {
-                                Formats = engine.Formats with
-                                {
-                                    InputMediaTypes = inputMediaTypes,
-                                },
-                            })
-                        .ToArray(),
-                });
-        return new RasterEngineCapabilityRegistry(configured);
-    }
-
-    private static string? ToRasterInputMediaType(string format) => format.Trim().ToUpperInvariant() switch
-    {
-        "TIFF" => "image/tiff",
-        "PNG" => "image/png",
-        "JPEG" => "image/jpeg",
-        "JPEG2000" => "image/jp2",
-        "GIF" => "image/gif",
-        "BMP" => "image/bmp",
-        "NITF" => "application/vnd.nitf",
-        "HFA" => "application/x-erdas-hfa",
-        _ => null,
-    };
 
     private static IGdalCommandRunner MaterializeInner(IServiceProvider sp, ServiceDescriptor inner)
     {
