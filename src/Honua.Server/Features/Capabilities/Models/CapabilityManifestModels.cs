@@ -169,6 +169,16 @@ internal sealed record CapabilityManifestTransportState
     public string? ReasonCode { get; init; }
 
     public string? MessageKey { get; init; }
+
+    /// <summary>
+    /// The rolled-up wire-contract version advertised for this surface (for example the
+    /// GeoServices REST, OGC API, or STAC API contract version), or <c>null</c> for
+    /// transports that carry no versioned wire contract of their own. ADR-0058: the
+    /// protocol surface owns the constant (<c>GeoServicesContract</c>/<c>OgcContract</c>/
+    /// <c>StacContract</c>) and the manifest projects it so the surface advertises a real
+    /// contract version instead of nothing.
+    /// </summary>
+    public string? ContractVersion { get; init; }
 }
 
 internal sealed record CapabilityManifestLimits

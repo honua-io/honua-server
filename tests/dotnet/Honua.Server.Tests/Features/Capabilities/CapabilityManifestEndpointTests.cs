@@ -14,6 +14,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
 using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -144,6 +147,48 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Should().Be("/api/v1/streaming/features/capabilities");
         GetTransport(root, "mcp").GetProperty("available").GetBoolean().Should().BeTrue();
         GetTransport(root, "qgis").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AdvertisesRolledUpContractVersionsForProtocolSurfaces()
+    {
+        // honua-release#32 / ADR-0058: the GeoServices/OGC/STAC surfaces must advertise a
+        // real rolled-up wire-contract version (instead of nothing, which the platform
+        // manifest was pinning at v0). The version is owned by the protocol assembly that
+        // owns the surface, projected onto the manifest transport entry.
+        using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var root = document.RootElement;
+
+        GetTransport(root, "geoservices-rest").GetProperty("contractVersion").GetString()
+            .Should().Be(GeoServicesContract.Version);
+        GetTransport(root, "ogc-http").GetProperty("contractVersion").GetString()
+            .Should().Be(OgcContract.Version);
+        GetTransport(root, "stac").GetProperty("contractVersion").GetString()
+            .Should().Be(StacContract.Version);
+
+        // No surface may advertise an empty/placeholder ("v0"/nothing) contract version.
+        foreach (var surface in new[] { "geoservices-rest", "ogc-http", "stac" })
+        {
+            var version = GetTransport(root, surface).GetProperty("contractVersion").GetString();
+            version.Should().NotBeNullOrWhiteSpace();
+            version.Should().NotBe("v0");
+        }
+
+        // Transports with no versioned wire contract of their own omit the field entirely
+        // (DefaultIgnoreCondition.WhenWritingNull), so consumers can tell "unversioned"
+        // from "advertises a real version".
+        GetTransport(root, "grpc").TryGetProperty("contractVersion", out _).Should().BeFalse();
+
+        // The rolled-up contract version is NOT an ArcGIS Server/Portal version: the
+        // GeoServices wire models still carry no currentVersion/fullVersion
+        // (NoArcGisServerVersionTests), and this field lives on the capability manifest,
+        // not on any GeoServices service-info response.
+        GetTransport(root, "geoservices-rest").TryGetProperty("currentVersion", out _).Should().BeFalse();
+        GetTransport(root, "geoservices-rest").TryGetProperty("fullVersion", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
