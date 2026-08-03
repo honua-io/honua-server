@@ -59,11 +59,14 @@ internal sealed class GeoprocessingJobAuthorizer
     /// middleware. Keeping this behind the authorization collaborator avoids adding another
     /// cross-cutting dependency to the job lifecycle service.
     /// </summary>
-    public JobSecurityContext CaptureSecurityContext(ClaimsPrincipal principal, RbacOptions options)
+    public JobSecurityContext CaptureSecurityContext(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        bool membershipManaged = false)
     {
         var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
             .GetService<ITenantContext>();
-        return JobSecurityContextCapture.Capture(principal, options, tenantContext);
+        return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
     }
 
     /// <summary>

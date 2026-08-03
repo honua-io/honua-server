@@ -289,6 +289,57 @@ public sealed class JobSecurityContextCaptureTests
     }
 
     [UnitTest]
+    public async Task IsManagedMembership_ResolvableManagedIdentity_ReturnsTrue()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "managed-user-1"));
+        var managed = await JobSecurityContextCapture.IsManagedMembershipAsync(
+            principal,
+            new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])));
+        managed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task IsManagedMembership_UnresolvedOrNoSource_ReturnsFalse()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "federated-user"));
+        (await JobSecurityContextCapture.IsManagedMembershipAsync(principal, new FixedMembershipSource(null)))
+            .Should().BeFalse();
+        (await JobSecurityContextCapture.IsManagedMembershipAsync(principal, source: null))
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Capture_MembershipManaged_StampsMarkerThatDrivesFailClosed()
+    {
+        // The producer path: when the source owns this principal, Capture records the marker, and a
+        // later unresolved revalidation then fails closed end to end.
+        var principal = BuildPrincipal(
+            (ClaimTypes.NameIdentifier, "managed-user-2"),
+            (ClaimTypes.Role, "restricted-analyst"));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal, new RbacOptions(), tenantContext: null, membershipManaged: true);
+
+        captured.Claims.Should().Contain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker
+            && claim.Value == JobSecurityContextClaimTypes.ManagedMembershipMarkerValue);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured, new FixedMembershipSource(null), new RbacOptions());
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+    }
+
+    [UnitTest]
+    public void Capture_MembershipUnmanaged_DoesNotStampMarker()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "federated-user"));
+        var captured = JobSecurityContextCapture.Capture(
+            principal, new RbacOptions(), tenantContext: null, membershipManaged: false);
+        captured.Claims.Should().NotContain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker);
+    }
+
+    [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
         var principal = BuildPrincipal(

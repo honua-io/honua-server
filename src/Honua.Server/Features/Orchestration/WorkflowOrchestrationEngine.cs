@@ -93,8 +93,13 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         {
             var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
                 .GetService<ITenantContext>();
+            // Record managed provenance now, while the author is resolvable, so a later triggered
+            // run on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
             return new JobSecurityContextMembershipResult(
-                JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext),
+                JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext, membershipManaged),
                 JobSecurityContextMembershipStatus.Current);
         }
 

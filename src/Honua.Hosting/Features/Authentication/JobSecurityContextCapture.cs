@@ -123,11 +123,20 @@ internal static class JobSecurityContextCapture
     /// authoritative over raw token claims, including an accepted admin header override or a
     /// custom configured tenant-claim type.
     /// </param>
+    /// <param name="membershipManaged">
+    /// Whether the configured live membership source positively resolved this principal at capture
+    /// time (a managed SCIM/OIDC identity). When true the durable snapshot is stamped with the
+    /// managed-membership marker so a later replica that cannot re-resolve the principal fails
+    /// closed instead of trusting the captured roles (honua-server#3081). Compute it with
+    /// <see cref="IsManagedMembershipAsync"/> from the same source the deferred lane revalidates
+    /// against.
+    /// </param>
     /// <returns>The captured snapshot.</returns>
     public static JobSecurityContext Capture(
         ClaimsPrincipal principal,
         RbacOptions options,
-        ITenantContext? tenantContext = null)
+        ITenantContext? tenantContext = null,
+        bool membershipManaged = false)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
@@ -152,6 +161,18 @@ internal static class JobSecurityContextCapture
         AppendClaims(
             principal, captured, seen, exemptClaimTypes, includeMatching: false,
             limit: captured.Count + MaxCapturedNonRoleClaims);
+
+        // Stamp the managed-membership marker when the source owns this principal's roles. It is
+        // budget-exempt (see BudgetExemptClaimTypes) so it is captured here in full and can never
+        // be truncated into a fail-open (honua-server#3081).
+        if (membershipManaged &&
+            !captured.Any(claim => string.Equals(
+                claim.Type, JobSecurityContextClaimTypes.ManagedMembershipMarker, StringComparison.Ordinal)))
+        {
+            captured.Add(new JobSecurityClaim(
+                JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                JobSecurityContextClaimTypes.ManagedMembershipMarkerValue));
+        }
 
         var tenantId = tenantContext is null
             ? principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType)
@@ -350,6 +371,45 @@ internal static class JobSecurityContextCapture
     /// owned by the live membership source (a managed SCIM/OIDC identity). Drives the fail-closed
     /// decision when that source can no longer resolve the principal (honua-server#3081).
     /// </summary>
+    /// <summary>
+    /// Whether the configured membership source positively resolves this live principal — i.e. the
+    /// source authoritatively owns its role membership (a managed SCIM/OIDC identity). Callers pass
+    /// the result to <see cref="Capture"/> so the durable snapshot records managed provenance,
+    /// enabling the deferred lane to fail closed on a later unresolved revalidation
+    /// (honua-server#3081). Best-effort: a null source, an unidentifiable principal, or a source
+    /// error yields <see langword="false"/> (unmarked → documented snapshot fallback, never a new
+    /// denial); cancellation propagates.
+    /// </summary>
+    public static async Task<bool> IsManagedMembershipAsync(
+        ClaimsPrincipal principal,
+        IPrincipalMembershipSource? source,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        if (source is null)
+        {
+            return false;
+        }
+
+        var principalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("sub")
+            ?? principal.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(principalId))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await source.ResolveMembershipAsync(principalId, cancellationToken).ConfigureAwait(false)
+                is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     private static bool SnapshotIndicatesManagedMembership(JobSecurityContext context) =>
         context.Claims.Any(claim =>
             string.Equals(

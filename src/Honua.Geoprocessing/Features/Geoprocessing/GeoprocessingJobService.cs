@@ -1120,8 +1120,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         if (!inherits)
         {
+            // Record managed provenance while the submitter is resolvable, so a deferred approval
+            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
             return new JobSecurityContextMembershipResult(
-                _authorizer.CaptureSecurityContext(principal, _rbacOptions),
+                _authorizer.CaptureSecurityContext(principal, _rbacOptions, membershipManaged),
                 JobSecurityContextMembershipStatus.Current);
         }
 
