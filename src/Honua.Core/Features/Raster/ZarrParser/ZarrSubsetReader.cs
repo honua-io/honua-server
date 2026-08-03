@@ -164,49 +164,21 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     /// </summary>
     internal static int ResolveElementSize(string dtype)
     {
-        var span = dtype.AsSpan();
-        if (span.IsEmpty)
+        ArgumentNullException.ThrowIfNull(dtype);
+
+        if (ZarrReadSupportMatrix.TryGetElementSize(dtype, out var elementSize))
         {
-            throw new InvalidDataException("Zarr dtype is empty.");
+            return elementSize;
         }
 
-        // dtype follows numpy convention: [<|>|=][kind][bytes], e.g. <f4, |u1, >i8.
-        var endian = span[0];
-        if (endian is not ('<' or '>' or '|' or '='))
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' has unrecognized byte-order prefix.");
-        }
-        if (endian == '>')
+        if (dtype.Length > 0 && dtype[0] == '>')
         {
             throw new InvalidOperationException($"Zarr dtype '{dtype}' is big-endian; only little-endian dtypes are supported by the MVP reader.");
         }
 
-        if (span.Length < 3)
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' is too short to interpret.");
-        }
-
-        var kind = span[1];
-        if (kind is not ('f' or 'i' or 'u' or 'b'))
-        {
-            throw new InvalidOperationException($"Zarr dtype kind '{kind}' is not supported by the MVP reader (use f, i, u, or b).");
-        }
-
-        if (!int.TryParse(span[2..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) || bytes <= 0)
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' has an invalid element size suffix.");
-        }
-
-        // All supported numeric dtypes fit within 16 bytes (f16 / complex128 is the largest).
-        // Reject unrealistic values early to prevent oversized allocation.
-        const int MaxSupportedElementBytes = 16;
-        if (bytes > MaxSupportedElementBytes)
-        {
-            throw new InvalidDataException(
-                $"Zarr dtype '{dtype}' has an element size of {bytes} bytes, which exceeds the maximum of {MaxSupportedElementBytes}.");
-        }
-
-        return bytes;
+        throw new InvalidOperationException(
+            $"Zarr dtype '{dtype}' is outside the managed direct-read support matrix. " +
+            "Use bool, 8/16/32/64-bit signed or unsigned integers, or float32/float64 with explicit little-endian encoding.");
     }
 
     private static async Task CopyChunkIntoSubsetAsync(
@@ -376,6 +348,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
                 break;
             case "|u1":
             case "<u1":
+            case "|b1":
                 scratch[0] = (byte)value;
                 break;
             default:

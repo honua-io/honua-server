@@ -229,16 +229,16 @@ public class ZarrSubsetReaderTests
     }
 
     /// <summary>
-    /// Regression test for BH-017: ResolveElementSize must reject unrealistically
-    /// large element-size suffixes (> 16) before any array-wide computation occurs.
+    /// Regression test for BH-017: ResolveElementSize must reject data types outside
+    /// the executable direct-read matrix before any array-wide computation occurs.
     /// </summary>
     [Fact]
     public void ResolveElementSize_ElementSizeExceedsMaxSupported_Throws()
     {
         var act = () => ZarrSubsetReader.ResolveElementSize("<f32");
 
-        act.Should().Throw<InvalidDataException>()
-            .WithMessage("*element size*exceeds*");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*support matrix*");
     }
 
     /// <summary>
