@@ -942,6 +942,12 @@ assert_descriptor \
   "false" \
   "Server Features Admin Release Control"
 assert_descriptor \
+  "deploy-control-includes-admin-authorization" \
+  "src/Honua.Server/Features/Admin/DeployControlEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Authorization"
+assert_descriptor \
   "secure-connection-targeted" \
   "src/Honua.Server/Features/Admin/SecureConnectionEndpoints.cs" \
   "targeted" \
@@ -971,6 +977,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "alert-admin-includes-admin-authorization" \
+  "src/Honua.Server/Features/Admin/AlertAdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Authorization"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
 # maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
@@ -1059,6 +1071,10 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Authentication" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Authorization" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
