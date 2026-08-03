@@ -364,6 +364,88 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void RequestFactory_MapAlgebra_SizesSingleBandOutputOnFirstSourceGrid()
+    {
+        var source = CreateTiffHeaderBase64(
+            width: 32,
+            height: 16,
+            bands: 1,
+            bitsPerSample: 8);
+        var request = CreateLegacyRequest(
+            "raster.map-algebra",
+            new Dictionary<string, string>
+            {
+                ["sources"] = string.Join('|', source, source, source, source),
+                ["expression"] = "A+B+C+D",
+                ["dataType"] = "Byte",
+            });
+
+        request.Cost.SourceCount.Should().Be(4);
+        request.Cost.BandCount.Should().Be(4, "input work still scans four source bands");
+        request.Cost.InputPixels.Should().Be(2_048);
+        request.Cost.OutputPixels.Should().Be(512, "gdal_calc emits one first-source-sized grid");
+        request.Cost.DecodedBytes.Should().Be(2_560, "four inputs and one output are resident");
+        request.Cost.ExpectedScratchBytes.Should().Be(5_120);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void RequestFactory_CalcRequestedFloat64_ChargesEightByteOutputSamples()
+    {
+        var source = CreateTiffHeaderBase64(
+            width: 100,
+            height: 50,
+            bands: 1,
+            bitsPerSample: 8);
+        var mapAlgebra = CreateLegacyRequest(
+            "raster.map-algebra",
+            new Dictionary<string, string>
+            {
+                ["sources"] = $"{source}|{source}",
+                ["expression"] = "A+B",
+                ["dataType"] = "Float64",
+            });
+        var reclassify = CreateLegacyRequest(
+            "raster.reclassify",
+            new Dictionary<string, string>
+            {
+                ["source"] = source,
+                ["remap"] = "0..10:1",
+                ["dataType"] = "Float64",
+            });
+
+        mapAlgebra.Cost.OutputPixels.Should().Be(5_000);
+        mapAlgebra.Cost.DecodedBytes.Should().Be(50_000,
+            "two 5,000-byte inputs plus one 40,000-byte Float64 output are resident");
+        reclassify.Cost.DecodedBytes.Should().Be(45_000,
+            "one 5,000-byte input plus one 40,000-byte Float64 output are resident");
+    }
+
+    [Fact]
+    public void RequestFactory_SpectralIndex_ChargesFixedFloat32SingleBandOutput()
+    {
+        var source = CreateTiffHeaderBase64(
+            width: 100,
+            height: 50,
+            bands: 1,
+            bitsPerSample: 8);
+        var request = CreateLegacyRequest(
+            "raster.spectral-index",
+            new Dictionary<string, string>
+            {
+                ["index"] = "NDVI",
+                ["nir"] = source,
+                ["red"] = source,
+            });
+
+        request.Cost.BandCount.Should().Be(2, "input work scans both band-role rasters");
+        request.Cost.InputPixels.Should().Be(10_000);
+        request.Cost.OutputPixels.Should().Be(5_000);
+        request.Cost.DecodedBytes.Should().Be(30_000,
+            "two byte inputs plus the fixed Float32 output are resident");
+    }
+
+    [Fact]
     public void RequestFactory_MosaicWithoutTrustedUnionGrid_KeepsOutputConservativeAndOffloads()
     {
         var smallTiff = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1);

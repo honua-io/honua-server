@@ -79,29 +79,42 @@ internal static class RasterExecutionPlanningRequestFactory
         var sourceCount = legacy?.SourceCount ?? sources.Length;
         var bandCount = legacy?.BandCount ?? TrySumBands(sources);
         var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
-        var sampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
+        var inputSampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
+        var outputSampleBytes = ResolveOutputSampleBytes(step, inputSampleBytes);
+        var outputBandCount = IsCalcFamily(step.ProcessId) ? 1 : bandCount;
         var zonePayloadBytes = ResolveZonePayloadBytes(step);
         var zoneCount = ResolveZoneCount(step);
         var boundaryPayloadBytes = ResolveClipBoundaryPayloadBytes(step);
         var outputPixels = TryReadOutputPixels(step) ?? TryDeriveResampleOutputPixels(step, sources);
         if (outputPixels is null && !RequiresDerivedOutputGrid(step))
         {
-            outputPixels = legacy?.DefaultOutputPixels ?? inputPixels;
+            outputPixels = IsMultiSourceCalc(step.ProcessId)
+                ? legacy?.DefaultOutputPixels ?? TryReadFirstSelectedPixels(sources)
+                : legacy?.DefaultOutputPixels ?? inputPixels;
         }
 
-        long? decodedBytes = legacy?.DecodedBytes;
+        long? decodedBytes = legacy?.DecodedBytes ?? TrySumInlineDecodedBytes(sources);
 
         if (decodedBytes is null && inputPixels is { } pixels && bandCount is { } bands)
         {
-            decodedBytes = SaturatingMultiply(SaturatingMultiply(pixels, bands), sampleBytes);
+            decodedBytes = SaturatingMultiply(SaturatingMultiply(pixels, bands), inputSampleBytes);
         }
 
-        if (decodedBytes is not null && outputPixels is { } output && bandCount is { } outputBands)
+        if (decodedBytes is not null
+            && outputPixels is { } output
+            && outputBandCount is { } outputBands
+            && outputSampleBytes is { } outputBytesPerSample)
         {
             var outputBytes = SaturatingMultiply(
                 SaturatingMultiply(output, outputBands),
-                sampleBytes);
-            decodedBytes = Math.Max(decodedBytes.Value, outputBytes);
+                outputBytesPerSample);
+            decodedBytes = IsCalcFamily(step.ProcessId)
+                ? SaturatingAdd(decodedBytes.Value, outputBytes)
+                : Math.Max(decodedBytes.Value, outputBytes);
+        }
+        else if (IsCalcFamily(step.ProcessId) && outputSampleBytes is null)
+        {
+            decodedBytes = null;
         }
 
         var secondaryGeometryBytes = SaturatingMultiply(
@@ -143,7 +156,12 @@ internal static class RasterExecutionPlanningRequestFactory
             || string.Equals(processId, "raster.map-algebra", StringComparison.Ordinal))
         {
             var payloads = ReadSeparatedPayloads(step, "sources");
-            return BuildRasterPayloadMetadata(payloads);
+            return BuildRasterPayloadMetadata(
+                payloads,
+                outputUsesFirstRasterGrid: string.Equals(
+                    processId,
+                    "raster.map-algebra",
+                    StringComparison.Ordinal));
         }
 
         if (string.Equals(processId, "raster.spectral-index", StringComparison.Ordinal))
@@ -153,7 +171,7 @@ internal static class RasterExecutionPlanningRequestFactory
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Cast<string>()
                 .ToArray();
-            return BuildRasterPayloadMetadata(payloads);
+            return BuildRasterPayloadMetadata(payloads, outputUsesFirstRasterGrid: true);
         }
 
         if (string.Equals(processId, "raster.interpolate-idw", StringComparison.Ordinal)
@@ -191,7 +209,9 @@ internal static class RasterExecutionPlanningRequestFactory
         return BuildRasterPayloadMetadata(string.IsNullOrWhiteSpace(source) ? [] : [source]);
     }
 
-    private static LegacyRasterMetadata BuildRasterPayloadMetadata(string[] payloads)
+    private static LegacyRasterMetadata BuildRasterPayloadMetadata(
+        string[] payloads,
+        bool outputUsesFirstRasterGrid = false)
     {
         if (payloads.Length == 0)
         {
@@ -202,6 +222,7 @@ internal static class RasterExecutionPlanningRequestFactory
         long inputPixels = 0;
         long decodedBytes = 0;
         long sampleBytes = 0;
+        long? firstRasterPixels = null;
         foreach (var payload in payloads)
         {
             if (!InlineRasterMetadataReader.TryReadBase64(payload, out var metadata))
@@ -210,6 +231,7 @@ internal static class RasterExecutionPlanningRequestFactory
             }
 
             var pixels = SaturatingMultiply(metadata.Width, metadata.Height);
+            firstRasterPixels ??= pixels;
             bandCount = SaturatingAdd(bandCount, metadata.Bands);
             inputPixels = SaturatingAdd(inputPixels, pixels);
             sampleBytes = Math.Max(sampleBytes, metadata.SampleBytes);
@@ -224,8 +246,47 @@ internal static class RasterExecutionPlanningRequestFactory
             BandCount: bandCount,
             InputPixels: inputPixels,
             DecodedBytes: decodedBytes,
-            DefaultOutputPixels: null,
+            DefaultOutputPixels: outputUsesFirstRasterGrid ? firstRasterPixels : null,
             SampleBytes: sampleBytes);
+    }
+
+    private static bool IsCalcFamily(string? processId)
+        => string.Equals(processId, "raster.map-algebra", StringComparison.Ordinal)
+            || string.Equals(processId, "raster.spectral-index", StringComparison.Ordinal)
+            || string.Equals(processId, "raster.reclassify", StringComparison.Ordinal);
+
+    private static bool IsMultiSourceCalc(string? processId)
+        => string.Equals(processId, "raster.map-algebra", StringComparison.Ordinal)
+            || string.Equals(processId, "raster.spectral-index", StringComparison.Ordinal);
+
+    private static long? ResolveOutputSampleBytes(AnalysisPlanStep step, long inputSampleBytes)
+    {
+        if (string.Equals(step.ProcessId, "raster.spectral-index", StringComparison.Ordinal))
+        {
+            return 4;
+        }
+
+        if (!string.Equals(step.ProcessId, "raster.map-algebra", StringComparison.Ordinal)
+            && !string.Equals(step.ProcessId, "raster.reclassify", StringComparison.Ordinal))
+        {
+            return inputSampleBytes;
+        }
+
+        var dataType = ReadInput(step, "dataType")?.Trim();
+        if (string.IsNullOrWhiteSpace(dataType))
+        {
+            // gdal_calc.py's default output type is Float32 when --type is omitted.
+            return 4;
+        }
+
+        return dataType.ToUpperInvariant() switch
+        {
+            "BYTE" => 1,
+            "INT16" or "UINT16" => 2,
+            "INT32" or "UINT32" or "FLOAT32" => 4,
+            "FLOAT64" => 8,
+            _ => null,
+        };
     }
 
     private static string[] ReadSeparatedPayloads(AnalysisPlanStep step, string key)
@@ -347,6 +408,55 @@ internal static class RasterExecutionPlanningRequestFactory
             }
 
             total = SaturatingAdd(total, SaturatingMultiply(metadata.Width, metadata.Height));
+        }
+
+        return total;
+    }
+
+    private static long? TryReadFirstSelectedPixels(RasterSourceDescriptor[] sources)
+    {
+        if (sources.Length == 0)
+        {
+            return null;
+        }
+
+        var source = sources[0];
+        if (source.Selection?.PixelWindow is { } window)
+        {
+            return SaturatingMultiply(window.Width, window.Height);
+        }
+
+        return source is InlineRasterSourceDescriptor inline
+            && InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata)
+                ? SaturatingMultiply(metadata.Width, metadata.Height)
+                : null;
+    }
+
+    private static long? TrySumInlineDecodedBytes(RasterSourceDescriptor[] sources)
+    {
+        if (sources.Length == 0)
+        {
+            return null;
+        }
+
+        long total = 0;
+        foreach (var source in sources)
+        {
+            if (source is not InlineRasterSourceDescriptor inline
+                || !InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
+            {
+                return null;
+            }
+
+            var pixels = source.Selection?.PixelWindow is { } window
+                ? SaturatingMultiply(window.Width, window.Height)
+                : SaturatingMultiply(metadata.Width, metadata.Height);
+            var bands = source.Selection?.Bands.Count is > 0
+                ? source.Selection.Bands.Count
+                : metadata.Bands;
+            total = SaturatingAdd(
+                total,
+                SaturatingMultiply(SaturatingMultiply(pixels, bands), metadata.SampleBytes));
         }
 
         return total;
