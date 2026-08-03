@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -53,10 +54,13 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var principal = _httpContextAccessor.HttpContext?.User;
+        var principal = ResolvePrincipal();
         if (principal is null)
         {
-            // No request context (e.g. background job) — masking is request-scoped.
+            // No request context and no job-security scope (e.g. tile seeding, an import
+            // worker, a scheduler) — there is no caller whose masks could apply. Geoprocessing
+            // reads never land here: JobSecurityScope is active for the whole job dispatch, so
+            // they either resolve the submitter or fail closed below.
             return ImmutableArray<string>.Empty;
         }
 
@@ -148,4 +152,37 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
+    /// <summary>
+    /// Resolves the principal masking is evaluated against: the live request user when one
+    /// exists, otherwise the submitter snapshot pinned on the executing background job
+    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
+    /// server-internal read with no caller whose masks could apply.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
+    /// cannot be masked for the submitting caller, so it is refused rather than silently
+    /// returning every attribute unmasked.
+    /// </exception>
+    private ClaimsPrincipal? ResolvePrincipal()
+    {
+        var requestPrincipal = _httpContextAccessor.HttpContext?.User;
+        if (requestPrincipal is not null)
+        {
+            return requestPrincipal;
+        }
+
+        var scope = JobSecurityScope.Current;
+        if (scope is null)
+        {
+            return null;
+        }
+
+        if (scope.Submitter is null)
+        {
+            throw new UnauthorizedAccessException(
+                "This job carries no submitter security context, so field masking cannot be enforced on its reads.");
+        }
+
+        return JobSecurityContextCapture.Restore(scope.Submitter);
+    }
 }
