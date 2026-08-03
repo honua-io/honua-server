@@ -108,12 +108,22 @@ Contract details:
   distinct edit.
 - Only requests that committed rows are recorded; a fully-failed/no-op request is not
   recorded, so it can be retried fresh.
-- The store is Redis-backed when an `IDistributedCache` is configured (durable across
-  replicas) and falls back to an in-process window on a single node. Because
-  `IDistributedCache` exposes no atomic reserve, two *truly concurrent* identical requests
-  can both miss the window before either records its response; the header guarantees
-  at-most-once for the common *sequential-retry* pattern, not for simultaneous in-flight
-  duplicates.
+- The store is Redis-backed when Redis is configured (durable and atomic across replicas)
+  and falls back to an in-process window otherwise. While an edit is executing, its key is
+  *reserved*: a second request carrying the same key while the first is still in flight is
+  rejected with error code `409` instead of executing a duplicate edit. The reserve is
+  atomic across replicas on Redis (`SET NX`) and atomic within a single process on the
+  fallback, so a multi-replica deployment without Redis keeps only the single-node
+  guarantee.
+- A reservation is released when the request is known to have changed no rows — for example,
+  an exception before write dispatch, an explicit read-only provider rejection, a
+  `rollbackOnFailure` validation failure, a confirmed rollback, or a completed write that
+  changed no rows. A sequential retry then re-attempts the edit instead of colliding with a
+  finished request's leftover reservation. If a write was dispatched but failed without a
+  definitive outcome (for example, cancellation or a transport fault part-way through a
+  non-transactional batch), the reservation is retained until it expires and an immediate
+  same-key retry receives `409`; this safety bias prevents duplicating rows that may already
+  have committed (#3052).
 
 ### applyEdits per-feature error codes
 
