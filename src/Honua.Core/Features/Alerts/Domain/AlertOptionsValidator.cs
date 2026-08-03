@@ -14,9 +14,9 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
     /// <inheritdoc />
     protected override void PerformFeatureSpecificValidation(AlertOptions options, List<string> errors)
     {
-        if (!Enum.IsDefined(options.Edition))
+        if (options.Edition is { } editionCap && !Enum.IsDefined(editionCap))
         {
-            errors.Add($"{nameof(AlertOptions.Edition)} has an unsupported value '{options.Edition}'.");
+            errors.Add($"{nameof(AlertOptions.Edition)} has an unsupported value '{editionCap}'.");
         }
 
         ValidateDataAnnotations(options.Evaluation, errors, nameof(AlertOptions.Evaluation));

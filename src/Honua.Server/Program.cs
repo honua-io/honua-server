@@ -200,6 +200,9 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
+var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.ShouldUseRedisOutputCache(
+    redisCacheEntitled,
+    redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -765,7 +768,7 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
-builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddServerFeatures(builder.Configuration, redisCacheEntitled);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration);
@@ -1332,8 +1335,17 @@ app.UseLimitsEnforcement();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
-// Enable output caching middleware
-app.UseOutputCache();
+// Enable output caching only for requests covered by the live entitlements required by the
+// selected backend (#2998). The backend is fixed at startup, but its output-cache entitlement and,
+// for Redis, caching.redis entitlement are rechecked per request. A runtime license replacement
+// therefore cannot keep either capability active after it is removed. Without the branch,
+// endpoint CacheOutput metadata is inert, so unentitled deployments serve identical responses —
+// just uncached.
+app.UseWhen(
+    context => ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements(
+        context.RequestServices,
+        redisOutputCacheConfigured),
+    static entitled => entitled.UseOutputCache());
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";

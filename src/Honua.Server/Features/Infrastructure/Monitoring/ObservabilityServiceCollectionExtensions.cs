@@ -2,13 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -19,12 +23,15 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal static class ObservabilityServiceCollectionExtensions
 {
-    public static IServiceCollection AddObservability(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddObservability(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool redisCacheEntitled = false)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        ConfigureOutputCaching(services, configuration);
+        ConfigureOutputCaching(services, configuration, redisCacheEntitled);
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
@@ -121,7 +128,10 @@ internal static class ObservabilityServiceCollectionExtensions
     }
 
     // Configure output caching for metadata endpoints
-    private static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration)
+    internal static void ConfigureOutputCaching(
+        IServiceCollection services,
+        IConfiguration configuration,
+        bool redisCacheEntitled = false)
     {
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
@@ -630,7 +640,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         var redisConnectionString = configuration.GetConnectionString("redis")
             ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (!string.IsNullOrWhiteSpace(redisConnectionString))
+        if (ShouldUseRedisOutputCache(redisCacheEntitled, redisConnectionString))
         {
             var cacheKeyPrefix = configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
             services.AddStackExchangeRedisOutputCache(options =>
@@ -641,16 +651,33 @@ internal static class ObservabilityServiceCollectionExtensions
         }
     }
 
+    internal static bool ShouldUseRedisOutputCache(
+        bool redisCacheEntitled,
+        string? redisConnectionString)
+        => redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString);
+
+    /// <summary>
+    /// Checks the live entitlements required by the output-cache backend selected at startup.
+    /// A local store requires only output caching; a Redis store requires both output caching
+    /// and Redis on every request so a hot license replacement cannot retain Redis access.
+    /// </summary>
+    internal static bool HasLiveOutputCacheEntitlements(
+        IServiceProvider services,
+        bool redisOutputCacheConfigured)
+        => LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OutputCacheKey)
+            && (!redisOutputCacheConfigured
+                || LicenseGate.HasLiveEntitlement(services, FeatureCatalog.RedisCacheKey));
+
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
 
     /// <summary>
-    /// Resolves a license fingerprint (edition + validation state) for the output
+    /// Resolves a license fingerprint (edition + validation state + active entitlements) for the output
     /// cache vary-by so license-tier-filtered metadata responses never share a cache
     /// entry across editions (#1983). Falls back to a stable sentinel when the license
     /// provider is unavailable so caching still functions in minimal hosts.
     /// </summary>
-    private static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
+    internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
     {
         var provider = context.RequestServices.GetService<ILicenseStatusProvider>();
         if (provider is null)
@@ -661,9 +688,10 @@ internal static class ObservabilityServiceCollectionExtensions
         try
         {
             var status = provider.GetCurrentStatus();
+            var entitlementFingerprint = ComputeActiveEntitlementFingerprint(status.Entitlements);
             return new KeyValuePair<string, string>(
                 "license",
-                $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}");
+                $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}:{entitlementFingerprint}");
         }
         // Intentional catch-all: this is a per-request output-cache-key resolver invoked
         // on the request-handling path. Never let cache-key resolution fault a request;
@@ -672,6 +700,21 @@ internal static class ObservabilityServiceCollectionExtensions
         {
             return new KeyValuePair<string, string>("license", "<unknown>");
         }
+    }
+
+    private static string ComputeActiveEntitlementFingerprint(IReadOnlyList<Entitlement>? entitlements)
+    {
+        var canonicalKeys = entitlements is null
+            ? string.Empty
+            : string.Join(
+                '\n',
+                entitlements
+                    .Where(static entitlement => entitlement.IsActive)
+                    .Select(static entitlement => entitlement.Key.Trim())
+                    .Where(static key => key.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Order(StringComparer.OrdinalIgnoreCase));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalKeys)));
     }
     // Test isolation (#1851): fold the per-test schema header into the output cache key so the
     // schema-routed integration server cannot replay one test's (or license-tier fixture's)

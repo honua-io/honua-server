@@ -36,8 +36,31 @@ public interface IPortalCredentialVerifier
 /// <param name="DisplayName">Display name surfaced through the issued token's hydrated principal.</param>
 /// <param name="TenantId">Tenant scope to attach to the issued token, or <see langword="null"/>.</param>
 /// <param name="Roles">Roles granted for the lifetime of the issued token.</param>
+/// <param name="RolesRequireClaimsMappingEntitlement">
+/// True when <paramref name="Roles"/> were produced with the Enterprise
+/// <c>identity.claims-mapping</c> entitlement active and would differ without it. The issued
+/// token persists these roles, and the restore path never re-runs the claims transformation, so
+/// this flag is what lets the restore revalidate them against the LIVE entitlement instead of
+/// honouring a snapshot taken while the license was valid (honua-server#2997 review).
+/// </param>
+/// <param name="TenantRequiresClaimsMappingEntitlement">
+/// True when <paramref name="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and
+/// therefore also depends on the Enterprise <c>identity.claims-mapping</c> entitlement. Roles
+/// are not the only authorization claim a mapping can produce: a mapping targeting
+/// <c>tenant_id</c> selects the tenant scope, so without this the restore dropped
+/// mapping-derived roles while a mapping-derived tenant kept granting cross-tenant access
+/// (honua-server#2997 review).
+/// </param>
+/// <param name="RolesWithoutClaimsMapping">
+/// Exact fallback roles that remain valid without <c>identity.claims-mapping</c>, or
+/// <see langword="null"/> when the full role set is entitlement-independent. An empty list is
+/// a known empty fallback; null provenance on a persisted legacy record remains fail-closed.
+/// </param>
 public sealed record PortalCredentialPrincipal(
     string PrincipalId,
     string? DisplayName,
     string? TenantId,
-    IReadOnlyList<string> Roles);
+    IReadOnlyList<string> Roles,
+    bool RolesRequireClaimsMappingEntitlement = false,
+    bool TenantRequiresClaimsMappingEntitlement = false,
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);

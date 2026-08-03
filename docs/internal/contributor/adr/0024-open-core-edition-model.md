@@ -229,3 +229,98 @@ License checks must be:
 - ADR-0020 (MVP Operational Deferrals): the deferrals described there (rate
   limiting, audit logs, compliance) are now scoped to the Enterprise tier rather
   than being indefinitely deferred.
+
+## Amendments
+
+### 2026-07-27 — OIDC, Alerts/Channels, and output-cache enforcement (#2997, #2998)
+
+The 2026-07-22 local entitlement sweep (#2980) found three declared-but-unenforced
+areas. Decisions, all "gate as declared" (no tier changes):
+
+- **OIDC (#2997).** The provider admin surface (`/api/v1/admin/oidc/providers`)
+  now gates `identity.oidc` (Pro) at the endpoint group, mirroring the #2978
+  SAML/SCIM shape. Creating a provider when one already exists additionally
+  requires `identity.oidc-multi-provider` (Enterprise), and that check runs
+  first so the 402 names the entitlement actually being exceeded. Scoping: the
+  JWT bearer / token-validation pipeline (`OidcAuthenticationExtensions`) is
+  deliberately **not** gated — token validation for already-configured providers
+  keeps working regardless of edition, and no eager boot-time validator is
+  introduced. `identity.claims-mapping` (Enterprise) has no admin DTO surface;
+  it is enforced as a config-driven soft-degrade in `OidcClaimsTransformation`:
+  configured `CustomMappings`/`AdditionalRoleClaimTypes` are skipped (default
+  claims normalization still runs) when the entitlement is missing, so
+  authentication never fails on edition.
+  **A non-default `ClaimsMapping:RoleClaimType` is a custom mapping too**, and is
+  gated with them — treating the primary role-claim setting as an ungated
+  exception would let an unentitled deployment point it at a provider claim such
+  as `groups` and have raw group values read as roles and match `AdminRoles`.
+  Gating the claim *gathering* is not sufficient on its own: the JWT/OIDC handlers
+  install the configured type as `TokenValidationParameters.RoleClaimType`, so the
+  identity resolves `IsInRole`/`[Authorize(Roles=…)]` against that claim directly
+  and never consults the normalized `ClaimTypes.Role` claims. The transformation
+  therefore **re-homes the identity onto `ClaimTypes.Role`** whenever a custom type
+  is configured — per request, so the gate stays live rather than restart-scoped.
+  Do not remove that re-home during later authentication work: it is also what
+  makes the *entitled* path correct, since the `admin` role synthesized from
+  `AdminRoles` is written as a `ClaimTypes.Role` claim that an identity keyed on
+  `groups` could never resolve.
+  **Roles that outlive the request are revalidated, not trusted.** The ArcGIS
+  portal token exchange persists the transformed roles into a durable record and
+  the restore path never re-runs the transformation, so a token minted while the
+  entitlement was valid would keep satisfying role authorization after it expired.
+  The transformation marks a principal whose roles depended on claims mapping, the
+  exchange persists that provenance, and `PortalTokenIssuer` re-checks the live
+  entitlement on every restore and introspection — dropping those roles when it is
+  no longer active.
+- **Alerts/Channels (#2998).** The standalone `Alerts:Edition` knob no longer
+  defines the alert tier. `IAlertEditionPolicy` derives allowed triggers and
+  channels from the active license entitlements
+  (`alerts.enter-exit`/`alerts.evaluation`/`channels.webhook` = Pro;
+  `alerts.dwell`/`alerts.threshold` and the remaining channels = Enterprise).
+  `Alerts:Edition` is retained **only as a downward operational cap** (nullable,
+  default null = license-derived); it can restrict below the license-derived
+  tier but never grants above it. The tier itself (`EffectiveEdition`) comes from
+  the edition the license snapshot declares, not from probing individual keys as
+  tier proxies — signed payloads enumerate entitlement keys independently, so an
+  Enterprise license granting `alerts.threshold` but not `alerts.dwell` must still
+  resolve to Enterprise. Per-key entitlement is enforced separately for each
+  trigger and channel. Admin rule mutations blocked by entitlement now return
+  HTTP 402 naming each missing key; `POST /rules/test` gates `alerts.evaluation`.
+  Like the OIDC gates, these checks read `ILicenseEntitlementService` at the point
+  of use, so a license applied or expired at runtime changes alert behavior
+  without a restart.
+  **The two denial causes stay distinguishable.** `IAlertEditionPolicy` reports an
+  `AlertEditionDenialReason` (`MissingEntitlement` vs `EditionCap`) alongside its
+  allow predicates, because the remedies differ: a missing entitlement is fixed by
+  a license, an `Alerts:Edition` cap by configuration. Only `MissingEntitlement`
+  produces the 402 naming the key — a cap denial on a license that *does* grant the
+  feature (e.g. an Enterprise license with `Alerts:Edition=Pro` requesting
+  `alerts.dwell`) falls through to the ordinary configured-edition validation `400`,
+  whose message says the cap is the cause. Reporting a cap denial as a missing key
+  would send an operator to purchase or reinstall a license they already own. The
+  same split drives the per-channel `unauthorized` validation messages, and it is
+  the only way the `POST /rules/test` surface — which never runs the 402 gate — can
+  attribute a denial at all.
+- **Output cache (#2998).** `caching.output-cache` (Pro) is evaluated **live, per
+  request**, not captured at boot. `Program` wires `app.UseOutputCache()` inside
+  an `app.UseWhen(...)` branch whose predicate is
+  `LicenseGate.HasLiveEntitlement(context.RequestServices, FeatureCatalog.OutputCacheKey)`;
+  that helper resolves `ILicenseEntitlementService` from the request container and
+  reads `GetSnapshot().HasEntitlement(...)` on every request. **Applying or expiring
+  a license therefore takes effect without a restart** — a Community process
+  upgraded through `ILicenseManager.ApplyLicenseAsync` starts caching on the next
+  request, and (the direction that matters) a Pro license that lapses at runtime
+  stops serving cached responses immediately, because
+  `FileBackedLicenseService.GetSnapshot` performs the lazy expiry transition and
+  republishes an expired Community snapshot in place. Entries already written to
+  the output-cache store are simply no longer read once the branch stops running;
+  they age out on their own TTL. Unlike the `caching.redis` gate — which must run
+  before DI exists and so consults the bootstrap snapshot helper — this gate needs
+  no boot-time probe: it reads the same runtime `ILicenseEntitlementService` as
+  every other entitlement check, so a `Licensing:DevGrantEdition` grant outside
+  Production (#1787, registered last and therefore winning resolution) and a
+  license loaded through the license-content secret resolvers (#1755) are both
+  honored automatically. The predicate fails closed: a host with no licensing
+  services registered does not cache. `AddOutputCache` registration remains
+  unconditional, so when the branch is skipped the endpoint `CacheOutput` metadata
+  is inert and Community deployments serve identical, uncached responses.

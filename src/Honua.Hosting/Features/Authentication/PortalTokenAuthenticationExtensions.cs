@@ -4,6 +4,9 @@
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -84,7 +87,11 @@ public static class PortalTokenAuthenticationExtensions
     {
         if (!services.Any(d => d.ServiceType == typeof(IPortalTokenIssuer)))
         {
-            services.AddSingleton<IPortalTokenIssuer, PortalTokenIssuer>();
+            services.AddSingleton<IPortalTokenIssuer>(sp => new PortalTokenIssuer(
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<ILogger<PortalTokenIssuer>>(),
+                sp.GetService<IDistributedCache>(),
+                sp));
         }
     }
 

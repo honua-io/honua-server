@@ -99,6 +99,56 @@ public sealed class AlertDispatchBackgroundServiceTests
             dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task Dispatcher_WhenChannelEditionIsInactive_ReschedulesWithoutConsumingRetryBudget()
+    {
+        const long eventId = 400;
+        const long dispatchId = 4000;
+
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var lifecycleStore = Substitute.For<IAlertLifecycleStore>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        editionPolicy.IsChannelAllowed(AlertChannelType.Webhook).Returns(false);
+
+        ReturnBatchOnce(dispatchStore, new[] { DispatchItem(dispatchId, eventId) });
+        var deferred = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var decisionStartedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset? retryAt = null;
+        dispatchStore
+            .RescheduleAsync(dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                retryAt = call.ArgAt<DateTimeOffset>(1);
+                deferred.TrySetResult();
+                return Task.CompletedTask;
+            });
+
+        var sink = new RecordingSink();
+        await RunDispatcherAsync(
+            dispatchStore,
+            eventStore,
+            lifecycleStore,
+            sink,
+            stopWhen: () => deferred.Task.IsCompleted,
+            editionPolicy: editionPolicy,
+            settleDelayMs: 50);
+
+        sink.Delivered.Should().BeEmpty("an inactive channel entitlement defers delivery until it can become active again");
+        await dispatchStore.Received(1).RescheduleAsync(
+            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        retryAt.Should().NotBeNull();
+        retryAt!.Value.Should().BeCloseTo(
+            decisionStartedAt.AddMinutes(5),
+            TimeSpan.FromSeconds(5),
+            "the queue needs a bounded delay rather than an immediate entitlement spin");
+        await dispatchStore.DidNotReceive().MarkFailedAsync(
+            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await dispatchStore.DidNotReceive().MarkDeliveredAsync(
+            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await eventStore.DidNotReceive().GetAsync(eventId, Arg.Any<CancellationToken>());
+    }
+
     private static void ReturnBatchOnce(IAlertDispatchStore dispatchStore, IReadOnlyList<AlertDispatchItem> batch)
     {
         var served = 0;
@@ -116,6 +166,7 @@ public sealed class AlertDispatchBackgroundServiceTests
         IAlertLifecycleStore lifecycleStore,
         IAlertDeliverySink sink,
         Func<bool> stopWhen,
+        IAlertEditionPolicy? editionPolicy = null,
         IOptions<AlertOptions>? options = null,
         AlertChannelCircuitBreaker? breaker = null,
         int settleDelayMs = 2000)
@@ -127,6 +178,10 @@ public sealed class AlertDispatchBackgroundServiceTests
         services.AddScoped(_ => dispatchStore);
         services.AddScoped(_ => eventStore);
         services.AddScoped(_ => lifecycleStore);
+        if (editionPolicy is not null)
+        {
+            services.AddScoped<IAlertEditionPolicy>(_ => editionPolicy);
+        }
         await using var provider = services.BuildServiceProvider();
 
         var dispatcher = new AlertDispatchBackgroundService(

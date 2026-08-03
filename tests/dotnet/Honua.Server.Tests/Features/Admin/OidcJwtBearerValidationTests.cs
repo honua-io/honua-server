@@ -88,6 +88,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 builder.UseSetting("Oidc:Generic:Enabled", "true");
                 builder.UseSetting("Oidc:Generic:Authority", _issuer);
                 builder.UseSetting("Oidc:Generic:ClientId", ClientId);
+                // #2997: GET /api/v1/admin/oidc/providers is now gated on identity.oidc (Pro);
+                // grant it so the accept-valid path reaches the endpoint past the gate.
+                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })
             .ConfigureServices(services =>
             {

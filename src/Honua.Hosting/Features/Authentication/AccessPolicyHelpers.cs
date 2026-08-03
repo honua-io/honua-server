@@ -310,7 +310,7 @@ internal static class AccessPolicyHelpers
 
         var principal = context.User;
         var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
-        var roles = EnumeratePrincipalRoles(principal, options);
+        var roles = RbacRoleClaims.Enumerate(principal, options, context.RequestServices);
         if (roles.Count == 0)
         {
             // No roles to resolve grants from — defer to the coarse policy.
@@ -354,24 +354,6 @@ internal static class AccessPolicyHelpers
         }
 
         return decision.IsAllowed ? GrantOutcome.Allow : GrantOutcome.NoGrant;
-    }
-
-    private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
-    {
-        var roles = new List<string>();
-        roles.AddRange(principal.FindAll(ClaimTypes.Role)
-            .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
-            .Select(claim => claim.Value));
-
-        var roleClaimType = options.EffectiveRoleClaimType;
-        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
-        {
-            roles.AddRange(principal.FindAll(roleClaimType)
-                .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
-                .Select(claim => claim.Value));
-        }
-
-        return roles;
     }
 
     private enum GrantOutcome

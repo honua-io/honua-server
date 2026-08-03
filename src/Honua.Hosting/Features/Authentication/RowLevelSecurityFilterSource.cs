@@ -67,7 +67,10 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             return null;
         }
 
-        var roles = EnumeratePrincipalRoles(principal, _rbacOptions);
+        var roles = RbacRoleClaims.Enumerate(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -261,24 +264,4 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
-    {
-        var roles = new List<string>();
-
-        foreach (var claim in principal.FindAll(ClaimTypes.Role).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
-        {
-            roles.Add(claim.Value);
-        }
-
-        var roleClaimType = options.EffectiveRoleClaimType;
-        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
-        {
-            foreach (var claim in principal.FindAll(roleClaimType).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
-            {
-                roles.Add(claim.Value);
-            }
-        }
-
-        return roles;
-    }
 }

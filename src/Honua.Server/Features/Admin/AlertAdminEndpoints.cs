@@ -8,9 +8,11 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
@@ -79,7 +81,21 @@ internal static class AlertAdminEndpoints
 
         group.MapPost("/rules/test", HandleTestRule)
             .WithDisplayName("Test Alert Rule")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // #2998: on-demand rule evaluation is the Pro alerts.evaluation surface; the
+            // background evaluation pipeline enforces per-rule entitlements through
+            // IAlertEditionPolicy instead of a boot-time gate.
+            .AddEndpointFilter((invocationContext, next) =>
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    invocationContext.HttpContext,
+                    FeatureCatalog.AlertsEvaluationKey,
+                    "Alert rule evaluation");
+
+                return gate is null
+                    ? next(invocationContext)
+                    : ValueTask.FromResult<object?>(gate);
+            });
 
         group.MapPut("/rules/{ruleId:long}", HandleUpdateRule)
             .WithDisplayName("Update Alert Rule")
@@ -233,6 +249,11 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
+        if (RequireRuleEntitlements(context, rule, editionPolicy) is { } entitlementBlock)
+        {
+            return entitlementBlock;
+        }
+
         var validation = await ValidateRuleDraftAsync(
             rule,
             draftZone: null,
@@ -306,6 +327,11 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
+        if (RequireRuleEntitlements(context, rule, editionPolicy) is { } entitlementBlock)
+        {
+            return entitlementBlock;
+        }
+
         var validation = await ValidateRuleDraftAsync(
             rule,
             draftZone: null,
@@ -347,6 +373,11 @@ internal static class AlertAdminEndpoints
         var requested = existing with { IsActive = request.Enabled };
         if (request.Enabled)
         {
+            if (RequireRuleEntitlements(context, requested, editionPolicy) is { } entitlementBlock)
+            {
+                return entitlementBlock;
+            }
+
             var validation = await ValidateRuleDraftAsync(
                 requested,
                 draftZone: null,
@@ -590,6 +621,107 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
+    /// <summary>
+    /// #2998: license-entitlement gate for alert-rule mutations. Collects every
+    /// <c>alerts.*</c>/<c>channels.*</c> entitlement the rule requires but the active license does
+    /// not carry, and returns the standard 402 payment-required response naming each missing key
+    /// (one <c>entitlement: {key}</c> detail per key, mirroring <c>LicenseGate.RequireEntitlement</c>)
+    /// so the block is observable as an entitlement denial. Returns null when nothing is missing.
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="AlertEditionDenialReason.MissingEntitlement"/> produces the 402. A denial
+    /// caused by the downward-only <c>Alerts:Edition</c> cap
+    /// (<see cref="AlertEditionDenialReason.EditionCap"/>) is a configuration problem on a license
+    /// that already grants the feature, so naming the key here would tell an operator to buy or
+    /// reinstall a license they already own; those denials fall through to the draft validation's
+    /// configured-edition 400 instead. Channels without a catalog key of their own (WebSocket)
+    /// likewise fall through to that 400.
+    /// </remarks>
+    private static IResult? RequireRuleEntitlements(
+        HttpContext context,
+        AlertRuleDefinition rule,
+        IAlertEditionPolicy editionPolicy)
+    {
+        var deniedKeys = new List<string>();
+
+        void DenyIfMissing(string entitlementKey)
+        {
+            if (editionPolicy.GetEntitlementDenialReason(entitlementKey) == AlertEditionDenialReason.MissingEntitlement
+                && !deniedKeys.Contains(entitlementKey))
+            {
+                deniedKeys.Add(entitlementKey);
+            }
+        }
+
+        // alerts.evaluation (Pro) licenses the evaluation engine every rule ultimately runs on, so
+        // IsRuleAllowed requires it. Name it here rather than letting its absence be misattributed
+        // to the trigger key below.
+        DenyIfMissing(FeatureCatalog.AlertsEvaluationKey);
+
+        // Probe the trigger entitlement on its own so a rule that is blocked purely by its own
+        // EditionRequired declaration (trigger key entitled, tier declaration above the effective
+        // edition) falls through to the draft validation's 400 instead of a 402 naming a key the
+        // license actually includes.
+        DenyIfMissing(AlertEntitlementMap.GetTriggerEntitlementKey(rule.TriggerType));
+
+        if (!rule.Channels.IsDefaultOrEmpty)
+        {
+            foreach (var channel in rule.Channels)
+            {
+                if (editionPolicy.GetChannelDenialReason(channel) != AlertEditionDenialReason.MissingEntitlement)
+                {
+                    continue;
+                }
+
+                var entitlementKey = AlertEntitlementMap.GetChannelEntitlementKey(channel);
+                if (entitlementKey is not null && !deniedKeys.Contains(entitlementKey))
+                {
+                    deniedKeys.Add(entitlementKey);
+                }
+            }
+        }
+
+        if (deniedKeys.Count == 0)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreatePaymentRequired(
+            context,
+            "The active license does not include the entitlements this alert rule requires.",
+            deniedKeys.Select(key => $"entitlement: {key}").ToArray());
+    }
+
+    /// <summary>
+    /// #2998: describes why <see cref="IAlertEditionPolicy.IsRuleAllowed"/> rejected a rule,
+    /// keeping an <c>Alerts:Edition</c> cap denial distinguishable from a missing entitlement in
+    /// the validation error an operator reads. <c>POST /rules/test</c> reaches this without the
+    /// 402 gate ever running, so this message carries both cases.
+    /// </summary>
+    private static string DescribeRuleDenial(AlertRuleDefinition rule, IAlertEditionPolicy editionPolicy)
+    {
+        var evaluation = editionPolicy.GetEntitlementDenialReason(FeatureCatalog.AlertsEvaluationKey);
+        var trigger = editionPolicy.GetEntitlementDenialReason(
+            AlertEntitlementMap.GetTriggerEntitlementKey(rule.TriggerType));
+
+        if (evaluation == AlertEditionDenialReason.MissingEntitlement
+            || trigger == AlertEditionDenialReason.MissingEntitlement)
+        {
+            return "The active license does not include this rule trigger or the alert evaluation " +
+                "engine it needs.";
+        }
+
+        if (evaluation == AlertEditionDenialReason.EditionCap || trigger == AlertEditionDenialReason.EditionCap)
+        {
+            return "The configured alert edition cap does not allow this rule trigger or the alert " +
+                "evaluation engine it needs, even though the active license includes it.";
+        }
+
+        // Trigger and engine are both permitted, so the rule's own declared tier is what does not
+        // fit within the effective edition.
+        return "The configured edition does not allow this rule's declared tier requirement.";
+    }
+
     private static async Task<RuleValidationResult> ValidateRuleDraftAsync(
         AlertRuleDefinition rule,
         AlertZoneRequest? draftZone,
@@ -603,7 +735,7 @@ internal static class AlertAdminEndpoints
 
         if (!editionPolicy.IsRuleAllowed(rule))
         {
-            errors.Add("The configured edition does not allow this rule trigger or tier requirement.");
+            errors.Add(DescribeRuleDenial(rule, editionPolicy));
         }
 
         var channelValidation = BuildChannelValidation(rule, editionPolicy);
@@ -727,7 +859,8 @@ internal static class AlertAdminEndpoints
         var results = new List<AlertChannelValidationResponse>(rule.Channels.Length);
         foreach (var channel in rule.Channels)
         {
-            var isAllowed = editionPolicy.IsChannelAllowed(channel);
+            var denialReason = editionPolicy.GetChannelDenialReason(channel);
+            var isAllowed = denialReason == AlertEditionDenialReason.None;
             var isConfigured = isAllowed && editionPolicy.IsChannelConfigured(channel);
             string status;
             string message;
@@ -735,7 +868,12 @@ internal static class AlertAdminEndpoints
             if (!isAllowed)
             {
                 status = ChannelStatusUnauthorized;
-                message = $"The configured edition does not allow the '{channel.ToExternalName()}' delivery channel.";
+
+                // #2998: an Alerts:Edition cap and a missing entitlement have different remedies
+                // (configuration vs licensing), so they must not share one message.
+                message = denialReason == AlertEditionDenialReason.EditionCap
+                    ? $"The configured alert edition cap does not allow the '{channel.ToExternalName()}' delivery channel, even though the active license includes it."
+                    : $"The active license does not include the '{channel.ToExternalName()}' delivery channel.";
             }
             else if (!isConfigured)
             {

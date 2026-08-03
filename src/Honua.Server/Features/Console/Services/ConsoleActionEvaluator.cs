@@ -22,7 +22,8 @@ namespace Honua.Server.Features.Console.Services;
 internal sealed class ConsoleActionEvaluator(
     IRoleStore roleStore,
     IOptions<RbacOptions> rbacOptions,
-    ILogger<ConsoleActionEvaluator> logger) : IConsoleActionEvaluator
+    ILogger<ConsoleActionEvaluator> logger,
+    IServiceProvider? serviceProvider = null) : IConsoleActionEvaluator
 {
     private static readonly IReadOnlyList<ConsoleContentAction> AllActions =
     [
@@ -251,12 +252,10 @@ internal sealed class ConsoleActionEvaluator(
         // comparisons and capability lookups.
         var userId = ConsolePrincipal.ResolveActorId(principal) ?? string.Empty;
 
-        var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        var roles = new List<string>();
+        var roles = RbacRoleClaims.Enumerate(principal, rbacOptions.Value, serviceProvider);
         var teamScopes = new List<string>();
-        var isAdmin = false;
+        var isAdmin = roles.Any(role =>
+            string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
 
         foreach (var claim in principal.Claims)
         {
@@ -264,21 +263,7 @@ internal sealed class ConsoleActionEvaluator(
                 && !string.IsNullOrWhiteSpace(claim.Value))
             {
                 teamScopes.Add(claim.Value);
-                continue;
             }
-
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-
-            if (!isRoleClaim || string.IsNullOrWhiteSpace(claim.Value))
-                continue;
-
-            if (string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                isAdmin = true;
-            }
-
-            roles.Add(claim.Value);
         }
 
         var capabilities = new HashSet<string>(StringComparer.Ordinal);

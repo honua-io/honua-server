@@ -164,4 +164,14 @@ internal static partial class OidcAuthenticationLog
         Message = "OIDC token rejected: replay protection cache is unavailable and ReplayProtectionFailClosed is enabled.")]
     public static partial void TokenReplayProtectionUnavailableFailClosed(ILogger logger);
 
+    /// <summary>
+    /// Logs when configured custom claims mappings (CustomMappings / AdditionalRoleClaimTypes)
+    /// are skipped because the identity.claims-mapping entitlement is not active (#2997).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4218,
+        Level = LogLevel.Debug,
+        Message = "OIDC custom claims mapping is configured but the identity.claims-mapping entitlement is not active; applying default claims normalization only.")]
+    public static partial void CustomClaimsMappingNotEntitled(ILogger logger);
+
 }

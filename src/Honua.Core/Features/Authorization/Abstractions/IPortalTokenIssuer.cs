@@ -104,6 +104,32 @@ public sealed record PortalTokenIntrospection(
 /// <param name="ClientType">Whether the binding is a referer or an IP address.</param>
 /// <param name="BindingValue">Bound referer URL or client IP address.</param>
 /// <param name="ExpiresAt">Absolute expiry instant for the token.</param>
+/// <param name="RolesRequireClaimsMappingEntitlement">
+/// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+/// entitlement. The issuer persists it and revalidates the roles against the live entitlement
+/// on every restore, so an expired license cannot keep honouring roles it would no longer
+/// grant.
+/// <para>
+/// Nullable only so the OAuth exchange can forward the UNKNOWN provenance of a cached
+/// authorization code or refresh token that predates the field; unknown is treated exactly
+/// like <see langword="true"/> and fails closed. It defaults to <see langword="false"/>, not
+/// null, because every other caller mints from a live verification where the provenance is
+/// known — defaulting to unknown there would strip roles from ordinary tokens that never
+/// touched claims mapping (honua-server#2997 review).
+/// </para>
+/// </param>
+/// <param name="TenantRequiresClaimsMappingEntitlement">
+/// Whether <paramref name="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
+/// also depends on the entitlement. A token whose tenant can no longer be validated is refused
+/// outright on restore rather than degraded, because silently dropping the tenant would
+/// re-evaluate the caller against whatever scope an absent tenant resolves to
+/// (honua-server#2997 review). Nullable on the same terms as the roles flag.
+/// </param>
+/// <param name="RolesWithoutClaimsMapping">
+/// Exact fallback roles to restore when <c>identity.claims-mapping</c> is inactive. Null means
+/// the fallback is unknown (legacy persisted provenance) and therefore fails closed; an empty
+/// list is a known role-free fallback.
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -111,7 +137,10 @@ public sealed record PortalTokenIssueRequest(
     IReadOnlyList<string> Roles,
     PortalTokenClientType ClientType,
     string BindingValue,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    bool? RolesRequireClaimsMappingEntitlement = false,
+    bool? TenantRequiresClaimsMappingEntitlement = false,
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);
 
 /// <summary>
 /// Token issuance result.
