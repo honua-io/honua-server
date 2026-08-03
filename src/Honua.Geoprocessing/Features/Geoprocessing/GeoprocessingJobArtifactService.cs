@@ -107,7 +107,8 @@ internal sealed class GeoprocessingJobArtifactService
                 continue;
             }
 
-            var definition = string.IsNullOrWhiteSpace(step.ProcessId)
+            var definition = step.Kind != AnalysisPlanStepKind.Geoprocess
+                || string.IsNullOrWhiteSpace(step.ProcessId)
                 ? null
                 : _processCatalog.GetProcess(step.ProcessId);
             foreach (var source in step.RasterSources)
@@ -134,13 +135,16 @@ internal sealed class GeoprocessingJobArtifactService
 
                 var parameter = definition?.Parameters.FirstOrDefault(candidate =>
                     string.Equals(candidate.Name, source.Key, StringComparison.Ordinal));
-                if (definition is not null && parameter?.AcceptsRasterSource != true)
+                if (step.Kind != AnalysisPlanStepKind.Geoprocess
+                    || definition is null
+                    || parameter?.AcceptsRasterSource != true)
                 {
                     failures.Add(new GeoprocessingValidationFailure
                     {
                         Code = RasterSourceValidationCodes.InvalidParameterBinding,
-                        Message = $"Step '{step.StepId}' raster source '{source.Key}' is invalid: the process "
-                            + "catalog does not declare that parameter as a raster source input.",
+                        Message = $"Step '{step.StepId}' raster source '{source.Key}' is invalid: typed raster "
+                            + "sources require a geoprocess step whose catalog process explicitly declares "
+                            + "that parameter as a raster source input.",
                         FieldPath = fieldPath,
                     });
                 }

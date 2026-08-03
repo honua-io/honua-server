@@ -199,6 +199,43 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_StandaloneNativeRasterInputs_AcceptTypedDescriptors()
+    {
+        var cases = new[]
+        {
+            (ProcessId: "proximity.euclidean-distance", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "proximity.euclidean-allocation", Inputs: new Dictionary<string, string>()),
+            (ProcessId: "gdal.gdalwarp", Inputs: new Dictionary<string, string> { ["targetSrs"] = "3857" }),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var plan = CreateTypedRasterPlan("source");
+            plan = plan with
+            {
+                Steps =
+                [
+                    plan.Steps[0] with
+                    {
+                        ProcessId = testCase.ProcessId,
+                        Inputs = testCase.Inputs,
+                    },
+                ],
+            };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                || violation.Code == "MISSING_REQUIRED_PARAMETER");
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_NullRasterSources_ReportsInvalidField()
     {
         var plan = CreateTypedRasterPlan("source");
@@ -247,6 +284,37 @@ public sealed class GeoprocessingJobServiceTests
             && violation.FieldPath == "steps[step-raster].raster_sources.resampling");
         result.Violations.Should().NotContain(violation =>
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_TypedRasterBoundToNonGeoprocessStep_ReportsBindingFailure()
+    {
+        foreach (var kind in new[]
+                 {
+                     AnalysisPlanStepKind.QueryFeatures,
+                     AnalysisPlanStepKind.Aggregate,
+                     AnalysisPlanStepKind.RenderMap,
+                     AnalysisPlanStepKind.Export,
+                 })
+        {
+            var sourceStep = CreateTypedRasterPlan("source").Steps[0] with
+            {
+                Kind = kind,
+                ProcessId = null,
+            };
+            var plan = CreateValidPlan() with { Steps = [BufferStep("step-1"), sourceStep] };
+
+            var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+            result.IsExecutable.Should().BeFalse();
+            result.Violations.Should().ContainSingle(violation =>
+                violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
+                && violation.FieldPath == "steps[step-raster].raster_sources.source");
+            result.Violations.Should().NotContain(violation =>
+                violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
+        }
     }
 
     [UnitTest]

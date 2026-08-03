@@ -14,6 +14,7 @@ public sealed class BoundedInlineRasterPayloadJsonConverter : JsonConverter<byte
 {
     private const int MaximumEncodedBytes =
         ((RasterSourceContract.MaximumInlinePayloadBytes + 2) / 3) * 4;
+    private const int MaximumEscapedTokenBytes = MaximumEncodedBytes * 6;
 
     public BoundedInlineRasterPayloadJsonConverter()
     {
@@ -32,7 +33,10 @@ public sealed class BoundedInlineRasterPayloadJsonConverter : JsonConverter<byte
         var encodedLength = reader.HasValueSequence
             ? reader.ValueSequence.Length
             : reader.ValueSpan.Length;
-        if (encodedLength > MaximumEncodedBytes)
+        // A legal JSON string can spell one logical base64 character as a six-byte Unicode
+        // escape (for example '=' as "\u003d"). Bound that worst case before asking the reader
+        // to unescape/decode, then enforce the authoritative decoded-byte ceiling below.
+        if (encodedLength > MaximumEscapedTokenBytes)
         {
             throw new JsonException(
                 $"Inline raster payload exceeds the {RasterSourceContract.MaximumInlinePayloadBytes}-byte contract ceiling.");

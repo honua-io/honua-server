@@ -579,6 +579,15 @@ public static class RasterSourcePlanValidator
                     break;
                 }
 
+                if (step.Kind != AnalysisPlanStepKind.Geoprocess)
+                {
+                    errors.Add(new RasterSourceValidationError(
+                        RasterSourceValidationCodes.InvalidParameterBinding,
+                        sourcePath,
+                        $"Step '{step.StepId}' raster source '{source.Key}' is invalid: typed raster "
+                            + "sources can only bind parameters on geoprocess steps."));
+                }
+
                 if (!IsSafeParameterName(source.Key, options.MaxParameterNameLength))
                 {
                     errors.Add(new RasterSourceValidationError(
