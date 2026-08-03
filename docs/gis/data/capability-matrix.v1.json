@@ -1266,10 +1266,10 @@
       "displayName": "COG Serving",
       "category": "Raster",
       "edition": "Pro",
-      "entryCount": 5,
-      "provingTestCount": 11,
+      "entryCount": 7,
+      "provingTestCount": 14,
       "maturity": {
-        "implemented": 5
+        "implemented": 7
       },
       "noSurface": null,
       "cite": [],
