@@ -1130,6 +1130,42 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    public async Task Checkpoint_DraftDeletedDuringVersionSave_ReturnsNotFoundAndKeepsCursorUnadvanced()
+    {
+        var store = new DeleteDuringVersionSaveStore(new InMemoryStudioPackageStore());
+        using var factory = CreateFactory(restartDurableOperationLog: true, studioStore: store);
+        using var client = CreateAdminClient(factory);
+
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+        await AppendOperationAsync(
+            client, mapId, "op-view", "SetViewport", baseCursor: 0,
+            payload: """{"center":[-157.8583,21.3069],"zoom":12,"crs":"EPSG:4326"}""");
+
+        // The store lets the checkpoint apply land, then deletes the draft after the lifecycle
+        // version-save reads that generation but before its validation update. The endpoint must
+        // map the resulting KeyNotFoundException rather than leaking it through the global 500.
+        store.ArmOnce();
+        using var content = new StringContent(
+            """{"changeNote":"deletion race"}""", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+        var responseText = await response.Content.ReadAsStringAsync();
+
+        store.DeleteWasTriggered.Should().BeTrue();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, "checkpoint response body: {0}", responseText);
+        responseText.Should().Contain("Studio package draft was not found.");
+        responseText.Should().NotContain("KeyNotFoundException");
+
+        // A failed version save must not acknowledge the replayed operation. Even though the
+        // draft is gone, the durable log still proves the cursor was left pending.
+        var operationLog = factory.Services.GetRequiredService<SavedMapCheckpointOperationLog>();
+        var pending = await operationLog.ReplayPendingAsync(mapId, CancellationToken.None);
+        pending.Operations.Should().ContainSingle();
+        pending.HeadCursor.Value.Should().Be(1);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable()

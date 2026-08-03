@@ -330,6 +330,13 @@ internal static class CollaborationCheckpointEndpoints
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(context, ex.Message);
         }
+        catch (KeyNotFoundException)
+        {
+            // The draft can be deleted after SaveDraftAsVersionAsync reads it but before its
+            // validation update or immutable-version write. Match the null read path above and
+            // leave the operation cursor pending so the failed checkpoint acknowledges nothing.
+            return StandardErrorHelpers.CreateNotFound(context, "Studio package draft was not found.");
+        }
         catch (InvalidOperationException ex)
         {
             // Draft generation conflict or family/lifecycle invariant surfaced by the canonical
