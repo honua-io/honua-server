@@ -2,10 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Security.Claims;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
+/// <summary>
+/// Node-local saved-map collaboration session state: per-map presence channels, bounded
+/// per-participant outboxes, and the per-map strictly monotonic envelope sequence that stamps
+/// every emitted <see cref="CollaborationEventEnvelope"/> (honua-server#2999).
+/// </summary>
+/// <remarks>
+/// Multi-node scoping: the sequence counter is node-local and backplane broadcasts carry the
+/// origin node's sequence unchanged, so strict per-map envelope monotonicity requires
+/// single-writer-per-map routing (node affinity). See the remarks on
+/// <see cref="CollaborationEventEnvelope"/> for the degradation contract without affinity.
+/// </remarks>
 internal sealed class InMemoryCollaborationSessionService
 {
     // Per-participant outbox cap. Outboxes are only drained by the participant's own poll; a
@@ -18,16 +30,36 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
     private readonly ICollaborationSessionBackplane _backplane;
+    private readonly CollaborationCapabilitySource? _capabilities;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
-        ICollaborationSessionBackplane? backplane = null)
+        ICollaborationSessionBackplane? backplane = null,
+        CollaborationCapabilitySource? capabilities = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
+        // Advertised capabilities must match what the endpoints will actually accept: when the
+        // deployment fails edits closed, the stream must not claim operations are available
+        // (honua-server#2999 review).
+        _capabilities = capabilities;
     }
+
+    /// <summary>
+    /// Capabilities advertised to every joining participant. Read paths must gate on the same
+    /// flags they advertise: a surface that answers a request it declared unavailable is worse
+    /// than one that refuses it, because the client cannot tell the answer is untrustworthy
+    /// (honua-server#2999 review).
+    /// </summary>
+    /// <remarks>
+    /// Read through the source on every access rather than captured at construction: this
+    /// service is resolved by the Redis backplane's own <c>StartAsync</c>, BEFORE that method
+    /// marks the backplane active, so a captured value pinned the pre-activation answer for the
+    /// life of the process (honua-server#2999 review).
+    /// </remarks>
+    public CollaborationCapabilities Capabilities => _capabilities?.Current ?? CollaborationCapabilities.Default;
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
         string mapId,
@@ -59,7 +91,7 @@ internal sealed class InMemoryCollaborationSessionService
             LastSeenAt = now
         };
 
-        CollaborationSessionSnapshot snapshot;
+        CollaborationSnapshot snapshot;
         CollaborationEventEnvelope joined;
         while (true)
         {
@@ -78,14 +110,18 @@ internal sealed class InMemoryCollaborationSessionService
                 channel.Participants.Add(sessionId, new ParticipantState(participant));
                 _sessionMapIndex[sessionId] = mapId;
 
-                joined = CreateEvent(
-                    CollaborationSessionEventTypes.ParticipantJoined,
-                    mapId,
-                    participant,
-                    now) with
-                { Participant = participant };
+                joined = CreateEnvelopeLocked(
+                    channel,
+                    participant.SessionId,
+                    participant.ParticipantId,
+                    now,
+                    new CollaborationSessionEvent
+                    {
+                        Type = CollaborationSessionEventTypes.ParticipantJoined,
+                        Participant = CollaborationParticipantWire.FromPresence(participant)
+                    });
                 FanOutLocked(channel, joined, excludeSessionId: sessionId);
-                snapshot = CreateSnapshotLocked(channel, now);
+                snapshot = CreateSnapshotLocked(channel);
                 break;
             }
         }
@@ -97,43 +133,59 @@ internal sealed class InMemoryCollaborationSessionService
             Authorization = authorization,
             Response = new CollaborationJoinResponse
             {
+                MapId = mapId,
                 SessionId = sessionId,
-                Participant = participant,
+                ParticipantId = participant.ParticipantId,
+                Capabilities = Capabilities,
+                Participant = CollaborationParticipantWire.FromPresence(participant),
                 Snapshot = snapshot
             }
         };
     }
 
-    public CollaborationSessionSnapshot GetSnapshot(string mapId)
+    public CollaborationSnapshot GetSnapshot(string mapId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
-        var now = _clock.UtcNow;
         // A read must not register a channel: a GetOrAdd here would leave an empty MapChannel in
         // _channels for every map id ever queried (nothing removes channels that never had a
         // participant), growing the singleton without bound.
         if (!_channels.TryGetValue(mapId, out var channel))
         {
-            return new CollaborationSessionSnapshot
+            return new CollaborationSnapshot
             {
                 MapId = mapId,
-                Participants = [],
-                GeneratedAt = now
+                Sequence = 0,
+                Capabilities = Capabilities
             };
         }
 
         lock (channel.Sync)
         {
-            return CreateSnapshotLocked(channel, now);
+            return CreateSnapshotLocked(channel);
         }
     }
 
-    public CollaborationFanOutResult Heartbeat(Guid sessionId)
+    /// <summary>
+    /// Refreshes the participant's liveness timestamp. Heartbeats are intentionally not fanned
+    /// out: the SDK event union has no heartbeat event, and presence freshness is re-established
+    /// by snapshots.
+    /// </summary>
+    public void Heartbeat(Guid sessionId)
     {
-        return UpdateParticipant(
-            sessionId,
-            CollaborationSessionEventTypes.ParticipantHeartbeat,
-            static (presence, now) => presence with { LastSeenAt = now },
-            static (ev, _) => ev);
+        if (!TryResolveSession(sessionId, out _, out var channel))
+        {
+            throw new KeyNotFoundException($"Collaboration session '{sessionId}' was not found.");
+        }
+
+        lock (channel.Sync)
+        {
+            if (!channel.Participants.TryGetValue(sessionId, out var state))
+            {
+                throw new KeyNotFoundException($"Collaboration session '{sessionId}' was not found.");
+            }
+
+            state.Presence = state.Presence with { LastSeenAt = _clock.UtcNow };
+        }
     }
 
     public CollaborationFanOutResult UpdateCursor(Guid sessionId, CollaborationCursor cursor)
@@ -141,9 +193,13 @@ internal sealed class InMemoryCollaborationSessionService
         ArgumentNullException.ThrowIfNull(cursor);
         return UpdateParticipant(
             sessionId,
-            CollaborationSessionEventTypes.CursorUpdated,
             (presence, now) => presence with { LastSeenAt = now, Cursor = cursor },
-            (ev, _) => ev with { Cursor = cursor });
+            presence => new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Cursor,
+                ParticipantId = presence.ParticipantId,
+                Cursor = cursor
+            });
     }
 
     public CollaborationFanOutResult UpdateSelection(Guid sessionId, CollaborationSelection selection)
@@ -151,9 +207,13 @@ internal sealed class InMemoryCollaborationSessionService
         ArgumentNullException.ThrowIfNull(selection);
         return UpdateParticipant(
             sessionId,
-            CollaborationSessionEventTypes.SelectionUpdated,
             (presence, now) => presence with { LastSeenAt = now, Selection = selection },
-            (ev, _) => ev with { Selection = selection });
+            presence => new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Selection,
+                ParticipantId = presence.ParticipantId,
+                Selection = selection
+            });
     }
 
     public CollaborationFanOutResult Follow(Guid sessionId, Guid targetSessionId)
@@ -170,7 +230,7 @@ internal sealed class InMemoryCollaborationSessionService
                 throw new KeyNotFoundException($"Collaboration session '{sessionId}' was not found.");
             }
 
-            if (!channel.Participants.ContainsKey(targetSessionId))
+            if (!channel.Participants.TryGetValue(targetSessionId, out var target))
             {
                 throw new KeyNotFoundException(
                     $"Collaboration follow target '{targetSessionId}' was not found in map '{mapId}'.");
@@ -180,19 +240,26 @@ internal sealed class InMemoryCollaborationSessionService
             var updatedPresence = state.Presence with
             {
                 LastSeenAt = now,
-                Follow = new CollaborationFollowState { FollowingSessionId = targetSessionId }
+                FollowingSessionId = targetSessionId
             };
             state.Presence = updatedPresence;
 
-            var ev = CreateEvent(
-                CollaborationSessionEventTypes.FollowUpdated,
-                mapId,
-                updatedPresence,
-                now) with
-            {
-                Participant = updatedPresence,
-                Follow = updatedPresence.Follow
-            };
+            var ev = CreateEnvelopeLocked(
+                channel,
+                updatedPresence.SessionId,
+                updatedPresence.ParticipantId,
+                now,
+                new CollaborationSessionEvent
+                {
+                    Type = CollaborationSessionEventTypes.Follow,
+                    ParticipantId = updatedPresence.ParticipantId,
+                    Follow = new CollaborationFollowTarget
+                    {
+                        TargetParticipantId = target.Presence.ParticipantId,
+                        Following = true,
+                        UpdatedAt = now
+                    }
+                });
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
             return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
         }
@@ -202,18 +269,41 @@ internal sealed class InMemoryCollaborationSessionService
     {
         return UpdateParticipant(
             sessionId,
-            CollaborationSessionEventTypes.FollowCleared,
             static (presence, now) => presence with
             {
                 LastSeenAt = now,
-                Follow = new CollaborationFollowState()
+                FollowingSessionId = null
             },
-            static (ev, presence) => ev with { Follow = presence.Follow });
+            presence => new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Follow,
+                ParticipantId = presence.ParticipantId,
+                Follow = new CollaborationFollowTarget { Following = false, UpdatedAt = presence.LastSeenAt }
+            });
     }
 
-    public bool Leave(Guid sessionId, string? reason = null)
+    /// <summary>
+    /// Removes a participant session. When <paramref name="requiredMapId"/> and/or
+    /// <paramref name="requiredOwner"/> are supplied (the REST leave path), the session must
+    /// belong to that map and to the same resolved user identity that joined it — participant
+    /// ids equal the session id, so possession of the id is visible to every participant via
+    /// snapshots and is NOT proof of ownership (honua-server#2999 review). A scope mismatch
+    /// returns <see langword="false"/>, deliberately indistinguishable from an unknown session
+    /// so probing cannot confirm a session exists. Server-internal callers (socket cleanup,
+    /// pruning) omit the constraints.
+    /// </summary>
+    public bool Leave(
+        Guid sessionId,
+        string? reason = null,
+        string? requiredMapId = null,
+        ClaimsPrincipal? requiredOwner = null)
     {
         if (!TryResolveSession(sessionId, out var mapId, out var channel))
+        {
+            return false;
+        }
+
+        if (requiredMapId is not null && !string.Equals(mapId, requiredMapId, StringComparison.Ordinal))
         {
             return false;
         }
@@ -221,6 +311,19 @@ internal sealed class InMemoryCollaborationSessionService
         CollaborationEventEnvelope left;
         lock (channel.Sync)
         {
+            if (requiredOwner is not null &&
+                channel.Participants.TryGetValue(sessionId, out var owned))
+            {
+                // Fail closed: without a resolvable, matching user identity the caller cannot
+                // prove it owns this session.
+                var callerUserId = ResolveUserId(requiredOwner);
+                if (callerUserId is null ||
+                    !string.Equals(owned.Presence.UserId, callerUserId, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
             if (!channel.Participants.Remove(sessionId, out var state))
             {
                 _sessionMapIndex.TryRemove(sessionId, out _);
@@ -231,13 +334,19 @@ internal sealed class InMemoryCollaborationSessionService
             // terminate promptly instead of blocking until its next idle timeout.
             state.OutboxSignal.Set();
             _sessionMapIndex.TryRemove(sessionId, out _);
-            ClearFollowsTargetingLocked(channel, mapId, sessionId, _clock.UtcNow);
-            left = CreateEvent(
-                CollaborationSessionEventTypes.ParticipantLeft,
-                mapId,
-                state.Presence,
-                _clock.UtcNow) with
-            { Participant = state.Presence };
+            var now = _clock.UtcNow;
+            ClearFollowsTargetingLocked(channel, sessionId, now);
+            left = CreateEnvelopeLocked(
+                channel,
+                state.Presence.SessionId,
+                state.Presence.ParticipantId,
+                now,
+                new CollaborationSessionEvent
+                {
+                    Type = CollaborationSessionEventTypes.ParticipantLeft,
+                    ParticipantId = state.Presence.ParticipantId,
+                    SessionId = state.Presence.SessionId.ToString("N")
+                });
             FanOutLocked(channel, left, excludeSessionId: sessionId);
             RemoveChannelIfEmpty(mapId, channel);
         }
@@ -276,14 +385,19 @@ internal sealed class InMemoryCollaborationSessionService
                     state.OutboxSignal.Set();
                     _sessionMapIndex.TryRemove(sessionId, out _);
                     removed++;
-                    ClearFollowsTargetingLocked(channel, mapId, sessionId, now);
+                    ClearFollowsTargetingLocked(channel, sessionId, now);
 
-                    var left = CreateEvent(
-                        CollaborationSessionEventTypes.ParticipantLeft,
-                        mapId,
-                        state.Presence,
-                        now) with
-                    { Participant = state.Presence };
+                    var left = CreateEnvelopeLocked(
+                        channel,
+                        state.Presence.SessionId,
+                        state.Presence.ParticipantId,
+                        now,
+                        new CollaborationSessionEvent
+                        {
+                            Type = CollaborationSessionEventTypes.ParticipantLeft,
+                            ParticipantId = state.Presence.ParticipantId,
+                            SessionId = state.Presence.SessionId.ToString("N")
+                        });
                     FanOutLocked(channel, left, excludeSessionId: sessionId);
                     publishQueue.Add(left);
                 }
@@ -298,6 +412,90 @@ internal sealed class InMemoryCollaborationSessionService
         }
 
         return removed;
+    }
+
+    /// <summary>
+    /// Fans a committed op-log operation out to every participant of its map (including the
+    /// submitter — the socket echoes the committed op so all clients apply the same server order)
+    /// and broadcasts it to peer nodes. The op-log server cursor inside
+    /// <paramref name="operation"/> is the authoritative edit order; the envelope sequence orders
+    /// the local stream.
+    /// </summary>
+    public CollaborationEventEnvelope PublishOperation(string mapId, CollaborationOperationWire operation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
+        ArgumentNullException.ThrowIfNull(operation);
+
+        var now = _clock.UtcNow;
+        var ev = new CollaborationSessionEvent
+        {
+            Type = CollaborationSessionEventTypes.OperationAppended,
+            Operation = operation
+        };
+
+        CollaborationEventEnvelope envelope;
+        if (_channels.TryGetValue(mapId, out var channel))
+        {
+            lock (channel.Sync)
+            {
+                envelope = CreateEnvelopeLocked(channel, sessionId: null, operation.AuthorId, now, ev);
+                FanOutLocked(channel, envelope, excludeSessionId: Guid.Empty);
+            }
+        }
+        else
+        {
+            // No local participants: still broadcast for peer nodes, sequencing off the op-log
+            // cursor so the envelope remains ordered for any remote consumer.
+            envelope = new CollaborationEventEnvelope
+            {
+                MapId = mapId,
+                EventId = Guid.NewGuid().ToString("N"),
+                Sequence = operation.Sequence,
+                Cursor = operation.Cursor,
+                ServerTime = now,
+                ActorId = operation.AuthorId,
+                Event = ev
+            };
+        }
+
+        _backplane.Publish(envelope);
+        return envelope;
+    }
+
+    /// <summary>
+    /// Stamps a locally-delivered envelope (status/error/snapshot handshake frames) with the next
+    /// per-map sequence. Falls back to a zero-sequence envelope when the map has no channel (the
+    /// caller's session raced a prune); the reducer treats it as pre-snapshot and drops it.
+    /// </summary>
+    public CollaborationEventEnvelope StampEnvelope(
+        string mapId,
+        Guid? sessionId,
+        string? actorId,
+        CollaborationSessionEvent ev)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
+        ArgumentNullException.ThrowIfNull(ev);
+
+        var now = _clock.UtcNow;
+        if (_channels.TryGetValue(mapId, out var channel))
+        {
+            lock (channel.Sync)
+            {
+                return CreateEnvelopeLocked(channel, sessionId, actorId, now, ev);
+            }
+        }
+
+        return new CollaborationEventEnvelope
+        {
+            MapId = mapId,
+            EventId = Guid.NewGuid().ToString("N"),
+            Sequence = 0,
+            Cursor = "0",
+            ServerTime = now,
+            SessionId = sessionId?.ToString("N"),
+            ActorId = actorId,
+            Event = ev
+        };
     }
 
     public CollaborationEventEnvelope[] DrainEvents(Guid sessionId)
@@ -360,7 +558,13 @@ internal sealed class InMemoryCollaborationSessionService
     /// Applies a collaboration event that originated on another node (delivered over the Redis
     /// backplane) to the local participant outboxes for its map. Remote events are never
     /// re-published, preventing fan-out loops between nodes. The actor's own session is excluded
-    /// so a participant does not receive an echo of its own action from a peer node.
+    /// so a participant does not receive an echo of its own action from a peer node. The envelope
+    /// is re-stamped with THIS node's next per-map sequence before fan-out: the origin sequence
+    /// is only monotonic on the origin node, and local clients — already past a higher local
+    /// sequence from their own join/status/snapshot frames — would drop a lower-sequenced remote
+    /// envelope per the v1 reducer contract, losing cross-replica operations (honua-server#2999).
+    /// The event payload (including the authoritative op-log cursor inside operation events) is
+    /// preserved unchanged.
     /// </summary>
     public void ApplyRemoteEvent(CollaborationEventEnvelope ev)
     {
@@ -371,6 +575,13 @@ internal sealed class InMemoryCollaborationSessionService
             return;
         }
 
+        var excludeSessionId = Guid.Empty;
+        if (ev.SessionId is { Length: > 0 } sessionText &&
+            Guid.TryParseExact(sessionText, "N", out var parsed))
+        {
+            excludeSessionId = parsed;
+        }
+
         lock (channel.Sync)
         {
             if (channel.Removed)
@@ -378,7 +589,18 @@ internal sealed class InMemoryCollaborationSessionService
                 return;
             }
 
-            FanOutLocked(channel, ev, excludeSessionId: ev.SessionId ?? Guid.Empty);
+            // Advance past BOTH streams before stamping: past this node's own sequence so local
+            // clients (already beyond their snapshot sequence) accept the event, and past the
+            // origin sequence so later local envelopes also stay ahead of anything a client may
+            // have observed with origin stamping.
+            var sequence = Math.Max(channel.LastSequence, ev.Sequence) + 1;
+            channel.LastSequence = sequence;
+            var restamped = ev with
+            {
+                Sequence = sequence,
+                Cursor = sequence.ToString(CultureInfo.InvariantCulture)
+            };
+            FanOutLocked(channel, restamped, excludeSessionId);
         }
     }
 
@@ -394,11 +616,10 @@ internal sealed class InMemoryCollaborationSessionService
 
     private CollaborationFanOutResult UpdateParticipant(
         Guid sessionId,
-        string eventType,
         Func<CollaborationParticipantPresence, DateTimeOffset, CollaborationParticipantPresence> update,
-        Func<CollaborationEventEnvelope, CollaborationParticipantPresence, CollaborationEventEnvelope> enrich)
+        Func<CollaborationParticipantPresence, CollaborationSessionEvent> createEvent)
     {
-        if (!TryResolveSession(sessionId, out var mapId, out var channel))
+        if (!TryResolveSession(sessionId, out _, out var channel))
         {
             throw new KeyNotFoundException($"Collaboration session '{sessionId}' was not found.");
         }
@@ -414,9 +635,12 @@ internal sealed class InMemoryCollaborationSessionService
             var updatedPresence = update(state.Presence, now);
             state.Presence = updatedPresence;
 
-            var ev = enrich(
-                CreateEvent(eventType, mapId, updatedPresence, now) with { Participant = updatedPresence },
-                updatedPresence);
+            var ev = CreateEnvelopeLocked(
+                channel,
+                updatedPresence.SessionId,
+                updatedPresence.ParticipantId,
+                now,
+                createEvent(updatedPresence));
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
             return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
         }
@@ -452,29 +676,67 @@ internal sealed class InMemoryCollaborationSessionService
                 continue;
             }
 
+            // Presence frames are disposable, but a committed operation (or a not-yet-delivered
+            // resync notice) falling off the bounded outbox would permanently desync the client:
+            // later operations keep arriving while a cursor range silently vanishes
+            // (honua-server#2999). Turn any such eviction into an explicit resync-required error
+            // so the client replays the op log from its last known cursor.
+            var operationEvicted = false;
             while (state.Outbox.Count >= MaxOutboxDepth)
             {
-                state.Outbox.Dequeue();
+                operationEvicted |= IsOperationBearing(state.Outbox.Dequeue());
             }
 
+            // Queue order must stay sequence order: `ev` is already stamped, so the resync
+            // notice — which necessarily draws a HIGHER sequence — has to follow it. Queuing the
+            // notice first would hand the client S+1 before S, and the monotonic v1 reducer
+            // would discard `ev` itself; for a cursor/selection/presence frame that loss is not
+            // recoverable by replaying the operation log (honua-server#2999 review).
             state.Outbox.Enqueue(ev);
+
+            if (operationEvicted)
+            {
+                // Keep the outbox at its cap now that the notice is being added as well.
+                if (state.Outbox.Count >= MaxOutboxDepth)
+                {
+                    _ = IsOperationBearing(state.Outbox.Dequeue());
+                }
+
+                state.Outbox.Enqueue(CreateEnvelopeLocked(
+                    channel,
+                    state.Presence.SessionId,
+                    state.Presence.ParticipantId,
+                    ev.ServerTime,
+                    new CollaborationSessionEvent
+                    {
+                        Type = CollaborationSessionEventTypes.Error,
+                        Code = CollaborationErrorCodes.ResyncRequired,
+                        Message = "Committed operations were evicted from the delivery buffer before this client drained them; replay the operation log from your last cursor.",
+                        Terminal = false,
+                        ResyncRequired = true
+                    }));
+            }
+
             state.OutboxSignal.Set();
             delivered++;
         }
 
         return delivered;
+
+        static bool IsOperationBearing(CollaborationEventEnvelope evicted) =>
+            evicted.Event.Type == CollaborationSessionEventTypes.OperationAppended ||
+            evicted.Event.ResyncRequired == true;
     }
 
     private static int ClearFollowsTargetingLocked(
         MapChannel channel,
-        string mapId,
         Guid targetSessionId,
         DateTimeOffset now)
     {
         var cleared = 0;
         foreach (var state in channel.Participants.Values)
         {
-            if (state.Presence.Follow.FollowingSessionId != targetSessionId)
+            if (state.Presence.FollowingSessionId != targetSessionId)
             {
                 continue;
             }
@@ -482,18 +744,20 @@ internal sealed class InMemoryCollaborationSessionService
             var updatedPresence = state.Presence with
             {
                 LastSeenAt = now,
-                Follow = new CollaborationFollowState()
+                FollowingSessionId = null
             };
             state.Presence = updatedPresence;
-            var ev = CreateEvent(
-                CollaborationSessionEventTypes.FollowCleared,
-                mapId,
-                updatedPresence,
-                now) with
-            {
-                Participant = updatedPresence,
-                Follow = updatedPresence.Follow
-            };
+            var ev = CreateEnvelopeLocked(
+                channel,
+                updatedPresence.SessionId,
+                updatedPresence.ParticipantId,
+                now,
+                new CollaborationSessionEvent
+                {
+                    Type = CollaborationSessionEventTypes.Follow,
+                    ParticipantId = updatedPresence.ParticipantId,
+                    Follow = new CollaborationFollowTarget { Following = false, UpdatedAt = now }
+                });
             FanOutLocked(channel, ev, excludeSessionId: Guid.Empty);
             cleared++;
         }
@@ -501,34 +765,73 @@ internal sealed class InMemoryCollaborationSessionService
         return cleared;
     }
 
-    private static CollaborationSessionSnapshot CreateSnapshotLocked(MapChannel channel, DateTimeOffset now)
+    private CollaborationSnapshot CreateSnapshotLocked(MapChannel channel)
     {
-        return new CollaborationSessionSnapshot
+        var ordered = channel.Participants.Values
+            .Select(static state => state.Presence)
+            .OrderBy(static presence => presence.JoinedAt)
+            .ThenBy(static presence => presence.ParticipantId, StringComparer.Ordinal)
+            .ToArray();
+
+        var cursors = new Dictionary<string, CollaborationCursor>(StringComparer.Ordinal);
+        var selections = new Dictionary<string, CollaborationSelection>(StringComparer.Ordinal);
+        var followTargets = new Dictionary<string, CollaborationFollowTarget>(StringComparer.Ordinal);
+        foreach (var presence in ordered)
+        {
+            if (presence.Cursor is not null)
+            {
+                cursors[presence.ParticipantId] = presence.Cursor;
+            }
+
+            if (presence.Selection is not null)
+            {
+                selections[presence.ParticipantId] = presence.Selection;
+            }
+
+            if (presence.FollowingSessionId is { } target)
+            {
+                followTargets[presence.ParticipantId] = new CollaborationFollowTarget
+                {
+                    TargetParticipantId = target.ToString("N"),
+                    Following = true
+                };
+            }
+        }
+
+        return new CollaborationSnapshot
         {
             MapId = channel.MapId,
-            Participants = channel.Participants.Values
-                .Select(static state => state.Presence)
-                .OrderBy(static presence => presence.JoinedAt)
-                .ThenBy(static presence => presence.ParticipantId, StringComparer.Ordinal)
-                .ToArray(),
-            GeneratedAt = now
+            Sequence = channel.LastSequence,
+            Capabilities = Capabilities,
+            Participants = ordered.Select(CollaborationParticipantWire.FromPresence).ToArray(),
+            Cursors = cursors,
+            Selections = selections,
+            FollowTargets = followTargets
         };
     }
 
-    private static CollaborationEventEnvelope CreateEvent(
-        string type,
-        string mapId,
-        CollaborationParticipantPresence participant,
-        DateTimeOffset now)
+    /// <summary>
+    /// Builds a v1 envelope stamped with the channel's next strictly monotonic sequence. Callers
+    /// must hold <c>channel.Sync</c> so sequence assignment and outbox delivery are atomic.
+    /// </summary>
+    private static CollaborationEventEnvelope CreateEnvelopeLocked(
+        MapChannel channel,
+        Guid? sessionId,
+        string? actorId,
+        DateTimeOffset now,
+        CollaborationSessionEvent ev)
     {
+        var sequence = ++channel.LastSequence;
         return new CollaborationEventEnvelope
         {
-            Type = type,
-            EventId = Guid.NewGuid(),
-            MapId = mapId,
-            SessionId = participant.SessionId,
-            ActorParticipantId = participant.ParticipantId,
-            Timestamp = now
+            MapId = channel.MapId,
+            EventId = Guid.NewGuid().ToString("N"),
+            Sequence = sequence,
+            Cursor = sequence.ToString(CultureInfo.InvariantCulture),
+            ServerTime = now,
+            SessionId = sessionId?.ToString("N"),
+            ActorId = actorId,
+            Event = ev
         };
     }
 
@@ -564,10 +867,24 @@ internal sealed class InMemoryCollaborationSessionService
         return $"participant-{sessionId:N}"[..44];
     }
 
+    /// <summary>
+    /// Resolves the stable identity used to decide who owns a presence record, most-specific
+    /// first.
+    /// </summary>
+    /// <remarks>
+    /// <c>api_key_id</c> must be preferred over <see cref="ClaimTypes.Name"/>:
+    /// <c>ApiKeyAuthenticationHandler</c> gives EVERY full-admin API key the literal name
+    /// <c>"admin"</c> and no <see cref="ClaimTypes.NameIdentifier"/>/<c>sub</c>, so falling
+    /// through to the name collapses distinct admin collaborators onto one identity — and the
+    /// ownership check on leave would then let one of them act on another's presence record.
+    /// <c>api_key_id</c> is unique per key, so it separates them (honua-server#2999 review).
+    /// The name stays as a last resort for principals that carry nothing more specific.
+    /// </remarks>
     private static string? ResolveUserId(ClaimsPrincipal principal)
     {
         return NormalizeOptional(principal.FindFirstValue(ClaimTypes.NameIdentifier)) ??
             NormalizeOptional(principal.FindFirstValue("sub")) ??
+            NormalizeOptional(principal.FindFirstValue("api_key_id")) ??
             NormalizeOptional(principal.FindFirstValue(ClaimTypes.Name));
     }
 
@@ -588,6 +905,13 @@ internal sealed class InMemoryCollaborationSessionService
         public object Sync { get; } = new();
 
         public Dictionary<Guid, ParticipantState> Participants { get; } = new();
+
+        /// <summary>
+        /// Last stamped envelope sequence for this map on this node. Mutated only under
+        /// <see cref="Sync"/>, which makes every locally emitted envelope strictly monotonic
+        /// per map.
+        /// </summary>
+        public long LastSequence { get; set; }
 
         /// <summary>
         /// Set under <see cref="Sync"/> when the channel has been unregistered from the channel

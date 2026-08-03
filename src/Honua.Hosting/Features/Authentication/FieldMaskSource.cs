@@ -64,7 +64,10 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
             return ImmutableArray<string>.Empty;
         }
 
-        var roles = PrincipalRoleSnapshot.Enumerate(principal, _rbacOptions);
+        var roles = RbacRoleClaims.Enumerate(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))

@@ -15,6 +15,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Identity.Abstractions;
@@ -206,6 +207,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
+        var rasterValidationViolations = _artifacts.GetRasterSourceValidationFailures(plan);
+        violations.AddRange(rasterValidationViolations);
 
         if (string.IsNullOrWhiteSpace(plan.PlanId))
         {
@@ -238,6 +241,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan);
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
+
+        // A malformed descriptor or parameter binding gets its precise diagnostics instead
+        // of the lower-value execution-boundary refusal that applies to otherwise valid
+        // direct durable references.
+        var rasterExecutionViolation = rasterValidationViolations.Count == 0
+            ? GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan)
+            : null;
+        if (rasterExecutionViolation is not null)
+        {
+            violations.Add(rasterExecutionViolation);
+        }
 
         foreach (var v in catalogViolations.Where(v => v.Code == "UNKNOWN_PROCESS"))
         {
@@ -275,7 +289,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
+        _artifacts.ValidateRasterSources(plan, CancellationToken.None);
         EnsurePlanCatalogValid(plan);
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Prefer the plan's declared outputs; when absent, derive the artifact kinds from
         // the catalog definitions of the plan's Geoprocess steps so the estimate reflects
@@ -390,6 +406,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+        _artifacts.ValidateRasterSources(plan, cancellationToken);
 
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
@@ -429,6 +446,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // rasterId/layerId mismatches fail through the same generic authorization channel.
         plan = await _artifacts.BindRasterSourceLayerIdsAsync(plan, cancellationToken)
             .ConfigureAwait(false);
+
+        // RAST-003 defines and projects the v2 contract, but no current local or remote
+        // worker consumes it safely. Refuse before approval proposals, fingerprints, job
+        // records, or queue dispatch until #3090 introduces authenticated source resolution.
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Evaluate the mutating-process tier unconditionally — including for custom-code
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
@@ -1423,7 +1445,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             RuntimeProfile = requiredRuntimeProfile ?? workload.RuntimeProfile,
             // Carry the workload's required serving↔worker job-contract version onto the spec so the
             // dispatcher can gate submission against the target backend's supported version (ADR-0060 #3b).
-            ContractVersion = workload.ContractVersion,
+            ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
+                plan,
+                workload.ContractVersion),
             Parameters = specParams
         };
     }
@@ -1604,6 +1628,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     writer.WriteEndObject();
                 }
                 writer.WriteEndArray();
+
+                // Preserve the pre-raster fingerprint byte shape for legacy plans. This is a
+                // rolling-deployment contract: jobs submitted before typed raster bindings existed
+                // omitted the property, so emitting an empty array would make a retry conflict with
+                // its already-durable idempotency record.
+                if (step.RasterSources.Count > 0)
+                {
+                    writer.WriteStartArray("rasterSources");
+                    foreach (var source in step.RasterSources.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("Key", source.Key);
+                        writer.WriteString("Descriptor", RasterSourceJson.Serialize(source.Value));
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                }
 
                 writer.WriteStartArray("dependsOn");
                 foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))

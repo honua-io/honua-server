@@ -208,27 +208,37 @@ public static class ToolboxTranslationValidator
             // the probe, which unmapped parameters it can actually require under some admissible
             // branch instead of treating every optional omission as one: the submit path accepts
             // geometry.dissolve without 'groupKeys', so downgrading that mapping would report an
-            // executable tool as unproven. The probe still answers pessimistically wherever a
-            // discriminator's legal values are not enumerable (analytics.cluster-managed requires
-            // 'k' only when algorithm=kmeans, and the catalog declares no allowedValues for
-            // 'algorithm'), because certifying an unproven branch over-claims executability.
-            IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
-                    definition.ProcessId, suppliedNames)
-                // With no probe the two cases cannot be told apart, so the pessimistic answer
-                // stands rather than guessing which omissions are branch-dependent.
-                ?? definition.Parameters
-                    .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
-                    .Select(parameter => parameter.Name)
-                    .ToArray();
+            // executable tool as unproven.
+            //
+            // Where the discriminator's domain IS published (#3048), the probe enumerates every
+            // branch and the answer is exact: 'k' is required under algorithm=kmeans and under
+            // nothing else, so the report names the branch instead of shrugging. The conservative
+            // downgrade survives only for a genuinely unenumerable domain
+            // (transform.computed-field's 'op'), where certifying an unvisited branch would
+            // over-claim executability.
+            missingRequired = AddConditionalBranchIssues(
+                definition, conditionalInputProbe, suppliedNames, issues);
 
-            if (unverifiable.Count > 0)
+            if (!missingRequired)
             {
-                issues.Add(new ToolboxTranslationIssue
+                IReadOnlyList<string> unverifiable = conditionalInputProbe?.FindUnverifiableConditionalParameters(
+                        definition.ProcessId, suppliedNames)
+                    // With no probe the two cases cannot be told apart, so the pessimistic answer
+                    // stands rather than guessing which omissions are branch-dependent.
+                    ?? definition.Parameters
+                        .Where(parameter => parameter.DefaultValue is null && !mappedTargets.Contains(parameter.Name))
+                        .Select(parameter => parameter.Name)
+                        .ToArray();
+
+                if (unverifiable.Count > 0)
                 {
-                    Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
-                    Message = $"Parameter(s) {string.Join(", ", unverifiable)} of process '{definition.ProcessId}' are neither mapped nor defaulted and the canonical validator can require them on a branch this report cannot pin down, so execution cannot be proven for every caller-supplied value; review before treating this tool as executable.",
-                    ParameterName = unverifiable[0]
-                });
+                    issues.Add(new ToolboxTranslationIssue
+                    {
+                        Code = ToolboxTranslationIssueCodes.UnverifiableConditionalBranches,
+                        Message = $"Parameter(s) {string.Join(", ", unverifiable)} of process '{definition.ProcessId}' are neither mapped nor defaulted and the canonical validator can require them on a branch this report cannot pin down, so execution cannot be proven for every caller-supplied value; review before treating this tool as executable.",
+                        ParameterName = unverifiable[0]
+                    });
+                }
             }
         }
 
@@ -241,6 +251,160 @@ public static class ToolboxTranslationValidator
                 : ToolboxToolClassifications.Translated;
 
         return BuildResult(descriptor, classification, definition.ProcessId, bindings, issues);
+    }
+
+    /// <summary>
+    /// Adds one exact, branch-qualified issue per unmapped parameter the canonical validator
+    /// requires on an enumerable discriminator branch. Grouped by parameter so a domain that
+    /// spells the same branch several ways (<c>kmeans</c> / <c>k-means</c>) reads as one gap
+    /// with several triggering values rather than as several gaps.
+    /// </summary>
+    private static bool AddConditionalBranchIssues(
+        ProcessDefinition definition,
+        IProcessConditionalInputProbe? conditionalInputProbe,
+        IReadOnlyCollection<string> suppliedNames,
+        List<ToolboxTranslationIssue> issues)
+    {
+        var requirements = conditionalInputProbe?.FindConditionalBranchRequirements(
+            definition.ProcessId, suppliedNames);
+        if (requirements is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        // "Constrain the source value instead of mapping" is only sound advice when some
+        // admissible discriminator value is left with no gap. Gaps are reported per PARAMETER,
+        // so each group individually looks escapable even when the groups TOGETHER cover every
+        // branch — e.g. a mapping supplying only `input` and `algorithm` omits `eps`/`minPoints`
+        // on dbscan and `k` on kmeans, and then no value of `algorithm` executes at all.
+        // Coverage is therefore computed across ALL requirements before the claim is made
+        // (honua-server#3048 review).
+        var (remedy, exhaustsAllBranches) = DescribeBranchRemedy(definition, requirements);
+
+        foreach (var group in requirements.GroupBy(
+            requirement => requirement.ParameterName, StringComparer.OrdinalIgnoreCase))
+        {
+            var branches = group
+                .Select(requirement => requirement.Branch)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            issues.Add(new ToolboxTranslationIssue
+            {
+                Code = ToolboxTranslationIssueCodes.ConditionalBranchRequirement,
+                Message = $"Parameter '{group.Key}' of process '{definition.ProcessId}' is neither mapped nor defaulted and the canonical validator requires it on branch(es) {string.Join("; ", branches)}. {remedy}",
+                ParameterName = group.Key
+            });
+        }
+
+        return exhaustsAllBranches;
+    }
+
+    /// <summary>
+    /// Decides which remedy the branch-requirement issues may honestly recommend, by testing
+    /// whether every assignment in the finite discriminator domain is covered by some gap.
+    /// </summary>
+    private static (string Remedy, bool ExhaustsAllBranches) DescribeBranchRemedy(
+        ProcessDefinition definition,
+        IReadOnlyList<ProcessBranchRequirement> requirements)
+    {
+        const string MapOrConstrain =
+            "At least one admissible branch is not covered by these gaps, so map it (or constrain the source to an uncovered branch) to certify this tool.";
+        const string MapOnly =
+            "Every admissible discriminator assignment has an unmapped requirement, so constraining the source value cannot certify this tool - the parameter must be mapped or defaulted.";
+        const string MapUnqualified =
+            "Map it, or constrain the source value to a branch that does not require it, to certify this tool.";
+
+        var coveredBranches = new List<Dictionary<string, string>>(requirements.Count);
+        var discriminatorNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var requirement in requirements)
+        {
+            var assignments = requirement.Branch.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (assignments.Length == 0)
+            {
+                return (MapUnqualified, false);
+            }
+
+            var branch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var branchAssignment in assignments)
+            {
+                var separator = branchAssignment.IndexOf('=', StringComparison.Ordinal);
+                if (separator <= 0)
+                {
+                    return (MapUnqualified, false);
+                }
+
+                var name = branchAssignment[..separator].Trim();
+                var value = branchAssignment[(separator + 1)..].Trim();
+                if (name.Length == 0 || value.Length == 0 || !branch.TryAdd(name, value))
+                {
+                    return (MapUnqualified, false);
+                }
+
+                discriminatorNames.Add(name);
+            }
+
+            coveredBranches.Add(branch);
+        }
+
+        var domains = new List<(string Name, IReadOnlyList<string> Values)>(discriminatorNames.Count);
+        long assignmentCount = 1;
+        foreach (var name in discriminatorNames)
+        {
+            // Only a declared domain makes "every admissible value" a decidable claim; without
+            // AllowedValues the branch space is open and no exhaustion can be proven.
+            if (FindParameter(definition, name)?.AllowedValues is not { Count: > 0 } allowed)
+            {
+                return (MapUnqualified, false);
+            }
+
+            if (coveredBranches.Any(branch =>
+                    branch.TryGetValue(name, out var value) &&
+                    !allowed.Contains(value, StringComparer.OrdinalIgnoreCase)))
+            {
+                return (MapUnqualified, false);
+            }
+
+            assignmentCount *= allowed.Count;
+            if (assignmentCount > 4096)
+            {
+                // Catalog domains are normally tiny. Refuse an exponential proof rather than
+                // overclaiming when an extension publishes an unexpectedly large product.
+                return (MapUnqualified, false);
+            }
+
+            domains.Add((name, allowed));
+        }
+
+        var assignment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return EveryAssignmentCovered(0)
+            ? (MapOnly, true)
+            : (MapOrConstrain, false);
+
+        bool EveryAssignmentCovered(int domainIndex)
+        {
+            if (domainIndex == domains.Count)
+            {
+                return coveredBranches.Any(branch => branch.All(pair =>
+                    assignment.TryGetValue(pair.Key, out var value) &&
+                    string.Equals(value, pair.Value, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            var (name, values) = domains[domainIndex];
+            foreach (var value in values)
+            {
+                assignment[name] = value;
+                if (!EveryAssignmentCovered(domainIndex + 1))
+                {
+                    assignment.Remove(name);
+                    return false;
+                }
+            }
+
+            assignment.Remove(name);
+            return true;
+        }
     }
 
     private static ProcessParameterSpec? FindParameter(ProcessDefinition definition, string name)

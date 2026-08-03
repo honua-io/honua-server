@@ -70,7 +70,10 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             return null;
         }
 
-        var roles = PrincipalRoleSnapshot.Enumerate(principal, _rbacOptions);
+        var roles = RbacRoleClaims.Enumerate(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Abstractions;
@@ -53,8 +54,24 @@ public static class StudioCompositionBodyEditor
 
         try
         {
-            return body.Deserialize(StudioJsonContext.Default.StudioCompositionBody)
-                ?? StudioCompositionBody.Empty;
+            var composition = body.Deserialize(StudioJsonContext.Default.StudioCompositionBody);
+            if (composition is null)
+            {
+                return StudioCompositionBody.Empty;
+            }
+
+            // Normalize the collections before handing the body to any caller. The
+            // source-generated converter assigns only members PRESENT in the payload, so a body
+            // that simply omits "layers" or "widgets" -- the legal `{}`, or a view-only document --
+            // comes back with those properties NULL rather than with their Array.Empty
+            // initializers. Every consumer here and in the collaboration appliers dereferences
+            // them directly (Any, ToList, ToDictionary, .Count), so without this a `{}` body turns
+            // the next composition edit into an unmapped NullReferenceException.
+            return composition with
+            {
+                Layers = composition.Layers ?? [],
+                Widgets = composition.Widgets ?? [],
+            };
         }
         catch (JsonException ex)
         {
@@ -64,15 +81,130 @@ public static class StudioCompositionBodyEditor
     }
 
     /// <summary>
-    /// Writes a composition body back onto an envelope's <see cref="StudioPackageEnvelope.Body"/>.
+    /// Writes a composition body back onto an envelope's <see cref="StudioPackageEnvelope.Body"/>,
+    /// preserving any members of the stored document this projection does not model.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
+    /// <c>layers</c>, <c>view</c> and <c>widgets</c> and nothing else — but a canonical map package
+    /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
+    /// <c>sourceBindings</c> and <c>initialView</c> (all required by <c>MapGenerationSchema</c>).
+    /// Serializing the projection straight over the body therefore DELETED every unmodelled field
+    /// on the first edit, silently, through both round trips that use this editor: the
+    /// collaboration checkpoint applier and the MCP Studio composition tools. Overlaying only the
+    /// projected keys onto the original object keeps the round trip lossless
+    /// (honua-server#2999 review).
+    /// </para>
+    /// <para>
+    /// The merged object is emitted with <see cref="Utf8JsonWriter"/> rather than by serializing a
+    /// <c>Dictionary&lt;string, JsonElement&gt;</c>. The published Honua.Server image builds with
+    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c> and
+    /// <see cref="StudioJsonContext"/> registers no dictionary metadata, so the reflection-based
+    /// overload threw at runtime for EVERY MCP or checkpoint mutation of an existing object body —
+    /// the exact path this merge exists to serve (honua-server#2999 review). Writing the DOM
+    /// directly needs no serializer metadata at all.
+    /// </para>
+    /// </remarks>
+    /// <summary>
+    /// The stored member name for <see cref="StudioCompositionBody.View"/>, matching its
+    /// <c>JsonPropertyName</c>. It is the only projected member that can be absent from the
+    /// serialized projection, because layers and widgets always serialize (as arrays).
+    /// </summary>
+    private const string ViewMemberName = "view";
+
+    /// <summary>
+    /// Replaces the composition projection WHOLESALE, clearing projected members the replacement
+    /// omits, while leaving every unmodelled member of the stored document untouched.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="WriteBody"/> overlays only the keys the serialized projection actually emits,
+    /// and <c>StudioJsonContext</c> writes with <c>WhenWritingNull</c> — so a replacement with no
+    /// <c>view</c> never overwrote the stored one and the "wholesale" replacement silently kept
+    /// the previous viewport. That overlay behaviour is correct for the incremental edits
+    /// (add-layer, set-style, set-viewport) that share the editor, so replacement gets its own
+    /// seam rather than changing theirs (honua-server#2999 review).
+    /// </remarks>
+    /// <param name="envelope">The stored envelope.</param>
+    /// <param name="body">The replacement composition.</param>
+    /// <returns>The envelope with its composition projection replaced.</returns>
+    public static StudioPackageEnvelope ReplaceComposition(
+        StudioPackageEnvelope envelope,
+        StudioCompositionBody body)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(body);
+
+        var written = WriteBody(envelope, body);
+        if (body.View is not null || written.Body is not { ValueKind: JsonValueKind.Object } merged)
+        {
+            return written;
+        }
+
+        // The replacement carries no view, so the stored one must go rather than survive.
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var member in merged.EnumerateObject())
+            {
+                if (string.Equals(member.Name, ViewMemberName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                writer.WritePropertyName(member.Name);
+                member.Value.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return written with { Body = document.RootElement.Clone() };
+    }
+
     public static StudioPackageEnvelope WriteBody(StudioPackageEnvelope envelope, StudioCompositionBody body)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentNullException.ThrowIfNull(body);
 
         var json = JsonSerializer.SerializeToElement(body, StudioJsonContext.Default.StudioCompositionBody);
-        return envelope with { Body = json };
+        if (envelope.Body is not { ValueKind: JsonValueKind.Object } original)
+        {
+            return envelope with { Body = json };
+        }
+
+        var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var member in original.EnumerateObject())
+        {
+            merged[member.Name] = member.Value;
+        }
+
+        // The projection wins for the keys it owns; everything else survives untouched.
+        foreach (var member in json.EnumerateObject())
+        {
+            merged[member.Name] = member.Value;
+        }
+
+        // Reflection-free by construction: no JsonSerializer metadata exists (or is needed) for
+        // Dictionary<string, JsonElement>, so the merged object is written straight to the DOM.
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var (name, value) in merged)
+            {
+                writer.WritePropertyName(name);
+                value.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        // Clone so the returned envelope stays valid after this JsonDocument is disposed.
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return envelope with { Body = document.RootElement.Clone() };
     }
 
     /// <summary>

@@ -20,12 +20,27 @@ public sealed class AlertOptions
     /// <summary>
     /// Enables alert processing workers.
     /// </summary>
-    public bool Enabled { get; init; }
+    /// <remarks>
+    /// This property deliberately uses a setter because the source-generated configuration binder cannot
+    /// assign init-only properties when binding an existing options instance.
+    /// </remarks>
+    public bool Enabled { get; set; }
 
     /// <summary>
-    /// Active edition used for feature gating.
+    /// Optional downward-only cap on the license-derived alert edition (#2998). When null
+    /// (the default), the allowed alert triggers and delivery channels derive solely from the
+    /// active license entitlements (<c>alerts.*</c>/<c>channels.*</c> keys). When set, the
+    /// effective tier is the minimum of the license-derived tier and this value — the cap can
+    /// only restrict features below what the license grants; it never unlocks features the
+    /// license does not include.
     /// </summary>
-    public AlertEdition Edition { get; init; } = AlertEdition.Pro;
+    /// <remarks>
+    /// Declared <c>set</c> rather than <c>init</c> deliberately: the configuration binding
+    /// source generator (<c>EnableConfigurationBindingGenerator</c>) does not assign init-only
+    /// properties when binding an existing options instance, so an init-only cap would silently
+    /// stay null no matter what an operator configured. Covered by AlertOptionsBindingTests.
+    /// </remarks>
+    public AlertEdition? Edition { get; set; }
 
     /// <summary>
     /// Evaluator worker settings.

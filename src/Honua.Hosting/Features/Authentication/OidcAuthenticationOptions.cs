@@ -244,9 +244,23 @@ public sealed class ClaimsMappingOptions
     public string NameClaimType { get; set; } = "name";
 
     /// <summary>
+    /// The role claim type every deployment gets without an entitlement. Pointing
+    /// <see cref="RoleClaimType"/> anywhere else is a custom claims mapping.
+    /// </summary>
+    internal const string DefaultRoleClaimType = "roles";
+
+    /// <summary>
     /// Gets or sets the claim type to use for role.
     /// </summary>
-    public string RoleClaimType { get; set; } = "roles";
+    /// <remarks>
+    /// Setting this to a provider-specific claim (Okta <c>groups</c>, an Auth0 namespaced
+    /// claim) is a CUSTOM claims mapping and is gated by <c>identity.claims-mapping</c>
+    /// (Enterprise) exactly like <see cref="CustomMappings"/> and
+    /// <see cref="AdditionalRoleClaimTypes"/>. Without the gate, an unentitled deployment
+    /// could point this at <c>groups</c> and have raw provider group values satisfy
+    /// <c>AdminRoles</c> (honua-server#2997 review).
+    /// </remarks>
+    public string RoleClaimType { get; set; } = DefaultRoleClaimType;
 
     /// <summary>
     /// Gets or sets the claim type to use for email.

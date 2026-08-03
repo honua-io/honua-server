@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Middleware;
-using Honua.Server.Features.Studio;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 using Moq;
 

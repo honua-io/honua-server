@@ -225,7 +225,7 @@
       "category": "Alerts",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 39,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 18
       },
@@ -621,10 +621,10 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "entryCount": 7,
-      "provingTestCount": 17,
+      "entryCount": 9,
+      "provingTestCount": 60,
       "maturity": {
-        "implemented": 7
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],
@@ -658,7 +658,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 13,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 2
       },
@@ -782,7 +782,7 @@
       "category": "Editing",
       "edition": "Pro",
       "entryCount": 7,
-      "provingTestCount": 84,
+      "provingTestCount": 94,
       "maturity": {
         "implemented": 7
       },
@@ -967,7 +967,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 13,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 6
       },
@@ -1613,7 +1613,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 317,
+      "provingTestCount": 318,
       "maturity": {
         "implemented": 45
       },
@@ -2321,7 +2321,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 2,
-      "provingTestCount": 43,
+      "provingTestCount": 64,
       "maturity": {
         "implemented": 2
       },

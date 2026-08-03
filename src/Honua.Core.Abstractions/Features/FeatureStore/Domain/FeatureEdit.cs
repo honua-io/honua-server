@@ -243,6 +243,17 @@ public readonly record struct FeatureEditResult
     public bool WasRolledBack { get; init; }
 
     /// <summary>
+    /// Gets whether this result represents rows that committed or an operation whose commit
+    /// outcome is unknown. A zero success count is not sufficient proof that no write occurred:
+    /// an auto-commit statement may commit before its acknowledgement is lost.
+    /// </summary>
+    public bool MayHaveCommitted => !WasRolledBack &&
+        (CreatedCount + UpdatedCount + DeletedCount > 0 ||
+         CreateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
+         UpdateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
+         DeleteResults.Any(static result => result.IsCommitOutcomeUnknown));
+
+    /// <summary>
     /// Creates a successful edit result
     /// </summary>
     /// <param name="createdCount">Number of features created</param>
@@ -296,6 +307,30 @@ public readonly record struct FeatureEditResult
             UpdateResults = NormalizeRollbackResults(updateResults, includeObjectId: true),
             DeleteResults = NormalizeRollbackResults(deleteResults, includeObjectId: true),
             WasRolledBack = true
+        };
+
+    /// <summary>
+    /// Creates a failed edit result for a transaction whose commit acknowledgement was lost.
+    /// The transaction may have committed, so callers must not release an idempotency reservation.
+    /// </summary>
+    /// <param name="createResults">Create failures marked with an unknown commit outcome</param>
+    /// <param name="updateResults">Update failures marked with an unknown commit outcome</param>
+    /// <param name="deleteResults">Delete failures marked with an unknown commit outcome</param>
+    /// <returns>Edit result instance whose commit outcome remains unknown</returns>
+    public static FeatureEditResult FailureWithUnknownCommitOutcome(
+        ImmutableArray<EditOperationResult> createResults = default,
+        ImmutableArray<EditOperationResult> updateResults = default,
+        ImmutableArray<EditOperationResult> deleteResults = default)
+        => new()
+        {
+            CreatedCount = 0,
+            UpdatedCount = 0,
+            DeletedCount = 0,
+            CreatedIds = ImmutableArray<long>.Empty,
+            CreateResults = createResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : createResults,
+            UpdateResults = updateResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : updateResults,
+            DeleteResults = deleteResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : deleteResults,
+            WasRolledBack = false
         };
 
     /// <summary>
@@ -384,6 +419,13 @@ public readonly record struct EditOperationResult
     public bool IsPreconditionFailure { get; init; }
 
     /// <summary>
+    /// Whether the provider could not determine if this failed operation committed before the
+    /// failure was observed. Callers that enforce at-most-once behavior must retain their
+    /// idempotency reservation while this is <see langword="true"/>.
+    /// </summary>
+    public bool IsCommitOutcomeUnknown { get; init; }
+
+    /// <summary>
     /// Initializes a new EditOperationResult with default values
     /// </summary>
     public EditOperationResult()
@@ -418,6 +460,26 @@ public readonly record struct EditOperationResult
             IsSuccess = false,
             ErrorMessage = errorMessage,
             ErrorCode = errorCode
+        };
+
+    /// <summary>
+    /// Creates a failed operation result whose database commit outcome is unknown.
+    /// </summary>
+    /// <param name="errorMessage">Error message</param>
+    /// <param name="errorCode">Error code</param>
+    /// <param name="objectId">Object ID if known</param>
+    /// <returns>Operation result flagged with an unknown commit outcome</returns>
+    public static EditOperationResult FailureWithUnknownCommitOutcome(
+        string errorMessage,
+        int errorCode = 1000,
+        long? objectId = null)
+        => new()
+        {
+            ObjectId = objectId,
+            IsSuccess = false,
+            ErrorMessage = errorMessage,
+            ErrorCode = errorCode,
+            IsCommitOutcomeUnknown = true
         };
 
     /// <summary>

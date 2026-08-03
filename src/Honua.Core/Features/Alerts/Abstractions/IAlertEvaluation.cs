@@ -38,11 +38,23 @@ public interface IAlertEvaluator
 public interface IAlertEditionPolicy
 {
     /// <summary>
-    /// Returns true when the active edition permits rule creation/execution.
+    /// Returns true when the active edition permits rule creation/execution. This requires the
+    /// trigger's entitlement, the alert-evaluation engine entitlement, and a rule tier that fits
+    /// within the effective edition.
     /// </summary>
     /// <param name="rule">Rule to validate</param>
     /// <returns>True when the active edition can use the rule</returns>
     bool IsRuleAllowed(AlertRuleDefinition rule);
+
+    /// <summary>
+    /// Returns true when the active edition permits the specified trigger type on its own,
+    /// independent of the evaluation-engine entitlement and of any rule's self-declared tier.
+    /// Admin surfaces use this to attribute an entitlement denial to the exact key that is
+    /// missing instead of blaming the trigger for an unrelated gap.
+    /// </summary>
+    /// <param name="triggerType">Trigger type to check</param>
+    /// <returns>True when the trigger's entitlement key is active and within the edition cap</returns>
+    bool IsTriggerAllowed(AlertTriggerType triggerType);
 
     /// <summary>
     /// Returns true when the active edition permits the specified channel.
@@ -57,6 +69,24 @@ public interface IAlertEditionPolicy
     /// <param name="channelType">Delivery channel</param>
     /// <returns>True when the channel is configured for delivery</returns>
     bool IsChannelConfigured(AlertChannelType channelType);
+
+    /// <summary>
+    /// Explains why an <c>alerts.*</c>/<c>channels.*</c> entitlement key is not permitted:
+    /// the license does not carry it, or the downward-only <c>Alerts:Edition</c> cap excludes
+    /// the tier it belongs to. Admin surfaces use this so a cap-only denial is not reported as
+    /// a missing entitlement (#2998).
+    /// </summary>
+    /// <param name="entitlementKey">An <c>alerts.*</c> or <c>channels.*</c> entitlement key.</param>
+    /// <returns>The denial reason, or <see cref="AlertEditionDenialReason.None"/> when permitted.</returns>
+    AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey);
+
+    /// <summary>
+    /// Explains why a delivery channel is not permitted, including channels with no catalog key
+    /// of their own (WebSocket), which are gated by the effective edition rather than a key.
+    /// </summary>
+    /// <param name="channelType">Delivery channel</param>
+    /// <returns>The denial reason, or <see cref="AlertEditionDenialReason.None"/> when permitted.</returns>
+    AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType);
 }
 
 /// <summary>

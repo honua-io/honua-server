@@ -138,6 +138,13 @@ public sealed record ProcessParameterSpec
     public IReadOnlyList<string>? AllowedValues { get; init; }
 
     /// <summary>
+    /// Whether this parameter may be bound through
+    /// <see cref="AnalysisPlanStep.RasterSources"/>. This marker is distinct from the
+    /// legacy string value type so arbitrary text parameters cannot receive descriptors.
+    /// </summary>
+    public bool AcceptsRasterSource { get; init; }
+
+    /// <summary>
     /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, what the process does to
     /// the layer — which is what decides the authorization operation the submit-time gate
     /// requires for it. Ignored for every other value type.

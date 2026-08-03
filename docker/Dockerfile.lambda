@@ -73,17 +73,31 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeStacOpsDemo=false
+      -p:HonuaIncludeStacOpsDemo=false \
+      -p:PublishAot=false \
+      -p:SelfContained=true
 
 COPY . .
 
 ARG CONFIGURATION=Release
+# A remote BuildKit layer can preserve project.assets.json without the mutable
+# NuGet cache mount. Force the exact JIT graph back into that mount in this
+# source layer before the no-restore publish consumes it.
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
       amd64) RUNTIME_ID="linux-x64" ;; \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      --force \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeStacOpsDemo=false \
+      -p:PublishAot=false \
+      -p:SelfContained=true && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
@@ -99,6 +113,12 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM ${LAMBDA_RUNTIME_IMAGE} AS runtime
+
+# Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
+# changes do not invalidate publish layers; the pushed image digest is injected by deployment.
+ARG HONUA_GIT_SHA=
+LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
+ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
 

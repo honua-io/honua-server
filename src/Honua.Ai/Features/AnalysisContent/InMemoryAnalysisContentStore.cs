@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 
@@ -28,6 +29,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(version);
+        EnsureRasterSourcesCanPersist(version);
 
         lock (_gate)
         {
@@ -60,6 +62,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(version);
+        EnsureRasterSourcesCanPersist(version);
 
         lock (_gate)
         {
@@ -89,6 +92,21 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         }
 
         return Task.FromResult(version);
+    }
+
+    private static void EnsureRasterSourcesCanPersist(AnalysisContentVersion version)
+    {
+        if (version.AnalysisPackage is not { } package)
+        {
+            return;
+        }
+
+        var validation = AnalysisContentRasterSourcePolicy.ValidateForPersistence(package);
+        if (!validation.IsValid)
+        {
+            var failure = validation.Errors[0];
+            throw new AnalysisContentStoreValidationException(failure.Message, failure.Code);
+        }
     }
 
     public Task<AnalysisContentVersion?> GetVersionAsync(
