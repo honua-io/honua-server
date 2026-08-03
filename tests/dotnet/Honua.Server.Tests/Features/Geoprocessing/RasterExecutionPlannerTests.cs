@@ -386,6 +386,27 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void RequestFactory_ReprojectWithoutTrustedTargetGrid_KeepsOutputConservativeAndOffloads()
+    {
+        var request = CreateLegacyRequest(
+            "raster.reproject",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                ["targetSrid"] = "3857",
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.InputPixels.Should().Be(512);
+        request.Cost.OutputPixels.Should().BeNull(
+            "a target CRS can produce a materially different grid even when source dimensions are known");
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.ReasonCode.Should().Be("native-remote-conservative");
+        decision.Cost.UnknownInputs.Should().Contain("outputPixels");
+    }
+
+    [Fact]
     public void RequestFactory_UnrecognizedInlineRaster_DoesNotTrustEncodedSizeMultiplier()
     {
         var request = CreateLegacyRequest(
@@ -446,6 +467,28 @@ public sealed class RasterExecutionPlannerTests
         var decision = _builtInPlanner.Plan(request);
         decision.Cost.UnknownInputs.Should().BeEmpty();
         decision.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void RequestFactory_ResampleWithLateFirstIfd_ReadsOnlyDeclaredMetadataRanges()
+    {
+        var request = CreateLegacyRequest(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateGeoTiffHeaderBase64(
+                    width: 1_000,
+                    height: 500,
+                    scaleX: 30,
+                    scaleY: 20,
+                    ifdOffset: 70 * 1024),
+                ["cellSize"] = "60",
+                ["cellSizeY"] = "10",
+            });
+
+        request.Cost.InputPixels.Should().Be(500_000);
+        request.Cost.OutputPixels.Should().Be(500_000);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
     }
 
     private void AssertLegacyInputsUseLocal(
@@ -518,23 +561,24 @@ public sealed class RasterExecutionPlannerTests
         int width,
         int height,
         double scaleX,
-        double scaleY)
+        double scaleY,
+        int ifdOffset = 8)
     {
-        const int pixelScaleOffset = 74;
+        var pixelScaleOffset = checked(ifdOffset + 66);
         var payload = new byte[pixelScaleOffset + sizeof(double) * 3];
         payload[0] = (byte)'I';
         payload[1] = (byte)'I';
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 5);
-        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
-        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
-        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: 64);
-        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: 1);
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(58), 33550);
-        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(60), 12);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(62), 3);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(66), pixelScaleOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), checked((uint)ifdOffset));
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset), 5);
+        WriteTiffEntry(payload, ifdOffset + 2, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, ifdOffset + 14, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, ifdOffset + 26, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, ifdOffset + 38, tag: 277, type: 3, value: 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset + 50), 33550);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(ifdOffset + 52), 12);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(ifdOffset + 54), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(ifdOffset + 58), checked((uint)pixelScaleOffset));
         WriteDouble(payload, pixelScaleOffset, scaleX);
         WriteDouble(payload, pixelScaleOffset + sizeof(double), scaleY);
         WriteDouble(payload, pixelScaleOffset + sizeof(double) * 2, 0);

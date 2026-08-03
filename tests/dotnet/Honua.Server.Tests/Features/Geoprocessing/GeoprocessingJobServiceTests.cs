@@ -407,11 +407,11 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "gdal.gdalwarp",
+                    ProcessId = "conversion.raster-format",
                     Inputs = new Dictionary<string, string>
                     {
                         ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
-                        ["targetSrs"] = "3857",
+                        ["targetFormat"] = "GTiff",
                     },
                 },
             ],
@@ -515,11 +515,11 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "gdal.gdalwarp",
+                    ProcessId = "conversion.raster-format",
                     Inputs = new Dictionary<string, string>
                     {
                         ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
-                        ["targetSrs"] = "3857"
+                        ["targetFormat"] = "GTiff"
                     }
                 }
             ]
@@ -565,11 +565,11 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "gdal.gdalwarp",
+                    ProcessId = "conversion.raster-format",
                     Inputs = new Dictionary<string, string>
                     {
                         ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
-                        ["targetSrs"] = "3857"
+                        ["targetFormat"] = "GTiff"
                     }
                 }
             ]

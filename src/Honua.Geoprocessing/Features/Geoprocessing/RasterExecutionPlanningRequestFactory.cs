@@ -372,6 +372,9 @@ internal static class RasterExecutionPlanningRequestFactory
     private static bool RequiresDerivedOutputGrid(AnalysisPlanStep step)
         => string.Equals(step.ProcessId, "raster.mosaic", StringComparison.Ordinal)
             || string.Equals(step.ProcessId, "raster.resample", StringComparison.Ordinal)
+            || string.Equals(step.ProcessId, "raster.reproject", StringComparison.Ordinal)
+            || string.Equals(step.ProcessId, "conversion.raster-reproject", StringComparison.Ordinal)
+            || string.Equals(step.ProcessId, "gdal.gdalwarp", StringComparison.Ordinal)
             || (string.Equals(step.ProcessId, "conversion.rasterize", StringComparison.Ordinal)
                 && step.Inputs.TryGetValue("cellSize", out var cellSize)
                 && !string.IsNullOrWhiteSpace(cellSize));
