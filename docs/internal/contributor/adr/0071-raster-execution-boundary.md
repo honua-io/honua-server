@@ -251,14 +251,29 @@ a layer.
 - After every required sink member and registration is durably committed in
   its private state, one PostGIS transaction makes every PostGIS member in the
   winning set promotion-ready while it remains hidden by the incomplete
-  manifest. Only then may the coordinator use the final job-store CAS to change
-  that manifest to `Complete`, project the full reference set, and mark the job
-  `Succeeded`. This CAS is the single product-visibility fence and contends with
-  cancellation on the same job record. Object/result readers and PostGIS
-  catalog readers all consult it, so its success exposes the already-ready set
-  together without claiming a cross-store transaction. A crash or cancellation
-  before that final CAS leaves every new PostGIS member hidden; terminalization
-  aborts or quarantines those staged versions without altering the previously
+  manifest. The coordinator also persists a `PromotionReady` copy of the full
+  manifest in a publication store whose retention matches the outputs (the
+  catalog database for registered outputs, or a stable object manifest for an
+  object-only set). Only then may the coordinator use the final job-store CAS
+  to change the live manifest to `Complete`, create an immutable completion
+  token, project the full reference set, and mark the job `Succeeded`. This CAS
+  is the orchestration visibility decision and contends with cancellation on
+  the same job record. During durable-manifest reconciliation, object/result
+  readers and PostGIS catalog readers require that completed live decision plus
+  the matching promotion-ready durable manifest, so its success exposes the
+  already-ready set together without claiming a cross-store transaction.
+- A completed visibility decision is never retained solely in the expiring job
+  record. The success CAS places the job under a retention hold instead of the
+  normal Redis TTL. Using its completion token, the output reconciler
+  conditionally changes the durable `PromotionReady` manifest to `Complete`;
+  only that exact winning set can be acknowledged. After the durable state is
+  readable, the reconciler records the acknowledgement and releases the job to
+  its ordinary retention policy. Long-lived catalog, tile, coverage, object,
+  and result readers then use the durable `Complete` manifest and do not depend
+  on the execution job still existing. A crash leaves the held job and ready
+  manifest recoverable. If cancellation wins the job CAS, no completion token
+  exists, the durable manifest cannot become `Complete`, and terminalization
+  aborts or quarantines the staged versions without altering the previously
   published raster.
 - Object outputs remain at immutable attempt-scoped keys. The stable object is
   a small intent/commit marker: the coordinator creates or advances the intent
