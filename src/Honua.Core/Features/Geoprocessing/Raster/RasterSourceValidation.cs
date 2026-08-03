@@ -13,8 +13,11 @@ public sealed record RasterSourceValidationOptions
     /// <summary>Default validation limits.</summary>
     public static RasterSourceValidationOptions Default { get; } = new();
 
-    /// <summary>Maximum decoded bytes accepted in an inline descriptor.</summary>
-    public int MaxInlineBytes { get; init; } = 64 * 1024;
+    /// <summary>
+    /// Maximum decoded bytes accepted in an inline descriptor, capped by the absolute
+    /// <see cref="RasterSourceContract.MaximumInlinePayloadBytes"/> wire-contract limit.
+    /// </summary>
+    public int MaxInlineBytes { get; init; } = RasterSourceContract.MaximumInlinePayloadBytes;
 
     /// <summary>Maximum band indexes accepted in one bounded selection.</summary>
     public int MaxBandSelections { get; init; } = 256;
@@ -181,6 +184,9 @@ public static class RasterSourceDescriptorValidator
                 break;
 
             case InlineRasterSourceDescriptor inline:
+                var maximumInlineBytes = Math.Min(
+                    options.MaxInlineBytes,
+                    RasterSourceContract.MaximumInlinePayloadBytes);
                 if (inline.Payload is null || inline.Payload.Length == 0)
                 {
                     Add(errors, RasterSourceValidationCodes.InvalidField, "payload",
@@ -188,10 +194,10 @@ public static class RasterSourceDescriptorValidator
                 }
                 else
                 {
-                    if (inline.Payload.Length > options.MaxInlineBytes)
+                    if (inline.Payload.Length > maximumInlineBytes)
                     {
                         Add(errors, RasterSourceValidationCodes.InlinePayloadTooLarge, "payload",
-                            $"Inline raster payload exceeds the configured {options.MaxInlineBytes}-byte ceiling.");
+                            $"Inline raster payload exceeds the effective {maximumInlineBytes}-byte ceiling.");
                     }
 
                     if (content is not null && content.SizeBytes != inline.Payload.LongLength)
@@ -295,15 +301,18 @@ public static class RasterSourceDescriptorValidator
                 "Band selection exceeds the configured count limit.");
         }
 
-        var seenBands = new HashSet<int>();
-        foreach (var band in bands)
+        if (bands.Count <= options.MaxBandSelections)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (band <= 0 || !seenBands.Add(band))
+            var seenBands = new HashSet<int>();
+            foreach (var band in bands)
             {
-                Add(errors, RasterSourceValidationCodes.InvalidField, "selection.bands",
-                    "Band indexes must be unique positive integers.");
-                break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (band <= 0 || !seenBands.Add(band))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "selection.bands",
+                        "Band indexes must be unique positive integers.");
+                    break;
+                }
             }
         }
 
@@ -327,20 +336,23 @@ public static class RasterSourceDescriptorValidator
                 "Dimension selection exceeds the configured count limit.");
         }
 
-        var seenDimensions = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var dimension in dimensions)
+        if (dimensions.Count <= options.MaxDimensionSelections)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (dimension is null
-                || !IsOpaqueReference(dimension.Dimension)
-                || dimension.Start < 0
-                || dimension.Stop <= dimension.Start
-                || dimension.Step <= 0
-                || !seenDimensions.Add(dimension.Dimension))
+            var seenDimensions = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var dimension in dimensions)
             {
-                Add(errors, RasterSourceValidationCodes.InvalidField, "selection.dimensions",
-                    "Dimension slices require unique names and a bounded positive half-open range.");
-                break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (dimension is null
+                    || !IsOpaqueReference(dimension.Dimension)
+                    || dimension.Start < 0
+                    || dimension.Stop <= dimension.Start
+                    || dimension.Step <= 0
+                    || !seenDimensions.Add(dimension.Dimension))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "selection.dimensions",
+                        "Dimension slices require unique names and a bounded positive half-open range.");
+                    break;
+                }
             }
         }
     }
@@ -545,6 +557,7 @@ public static class RasterSourcePlanValidator
             foreach (var source in step.RasterSources)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var sourcePath = $"steps[{step.StepId}].raster_sources.{source.Key}";
                 sourceCount++;
                 if (sourceCount > options.MaxSourcesPerPlan)
                 {
@@ -554,6 +567,15 @@ public static class RasterSourcePlanValidator
                         $"Plan contains more than the configured maximum of {options.MaxSourcesPerPlan} raster sources."));
                     sourceLimitExceeded = true;
                     break;
+                }
+
+                if (step.Kind != AnalysisPlanStepKind.Geoprocess)
+                {
+                    errors.Add(new RasterSourceValidationError(
+                        RasterSourceValidationCodes.InvalidParameterBinding,
+                        sourcePath,
+                        $"Step '{step.StepId}' raster source '{source.Key}' is invalid: typed raster "
+                            + "sources can only bind parameters on geoprocess steps."));
                 }
 
                 if (!IsSafeParameterName(source.Key, options.MaxParameterNameLength))
@@ -568,15 +590,17 @@ public static class RasterSourcePlanValidator
                 {
                     errors.Add(new RasterSourceValidationError(
                         RasterSourceValidationCodes.InvalidField,
-                        source.Key,
+                        sourcePath,
                         "Raster source descriptor is required."));
                     continue;
                 }
 
                 errors.AddRange(RasterSourceDescriptorValidator.Validate(
-                    source.Value,
-                    options,
-                    cancellationToken).Errors);
+                        source.Value,
+                        options,
+                        cancellationToken)
+                    .Errors
+                    .Select(error => error with { Field = $"{sourcePath}.{error.Field}" }));
                 if (!serializedBudgetExceeded)
                 {
                     try
@@ -587,7 +611,7 @@ public static class RasterSourcePlanValidator
                     {
                         errors.Add(new RasterSourceValidationError(
                             RasterSourceValidationCodes.InvalidField,
-                            source.Key,
+                            sourcePath,
                             "Raster source descriptor type cannot be serialized by this contract version."));
                     }
 

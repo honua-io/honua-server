@@ -1,5 +1,5 @@
 # Development Dockerfile for Honua Server
-# Auxiliary developer image; the canonical runtime web image lives at /Dockerfile.
+# Auxiliary developer image; the canonical runtime web image is Dockerfile.aot.
 # Optimized for development workflow with hot reload and debugging.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0

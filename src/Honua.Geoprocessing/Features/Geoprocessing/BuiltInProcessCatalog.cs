@@ -409,7 +409,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("where", "Where", "ArcGIS SQL filter applied to the source layer. Valid ONLY with the 'layerId' source — a staged 'input' FeatureCollection is enriched verbatim, so supplying this alongside 'input' is rejected rather than silently ignored.", ProcessParameterValueType.Text),
                 Param("bbox", "BBox", "Bounding-box filter applied to the source layer, as minx,miny,maxx,maxy in EPSG:4326 (exactly four numeric ordinates). Valid ONLY with the 'layerId' source — a staged 'input' FeatureCollection is enriched verbatim, so supplying this alongside 'input' is rejected rather than silently ignored.", ProcessParameterValueType.Text),
                 Param("maxInputFeatures", "Max Input Features", "Per-layer admission cap enforced while streaming, so an oversized selection fails fast instead of exhausting worker memory. Defaults to 250000 and is clamped to an operator ceiling of 1000000 — a caller may only LOWER the cap, never disable the guard. Applies equally to a staged 'input' collection.", ProcessParameterValueType.WholeNumber, defaultValue: "250000"),
-                Param("maxCarriedMatchValues", "Max Carried Match Values", "Cumulative ceiling on carried match values across the whole join, bounding the Cartesian growth the per-layer caps cannot see. Defaults to 20000000 and may only be LOWERED by the caller.", ProcessParameterValueType.WholeNumber, defaultValue: "20000000"),
+                Param("maxCarriedMatchValues", "Max Carried Match Values", "Cumulative ceiling on carried match values across the whole operation. Join methods charge every carried match value, bounding the Cartesian growth the per-layer caps cannot see; nearest-neighbor charges one value per output field for each annotated target. Defaults to 20000000 and may only be LOWERED by the caller.", ProcessParameterValueType.WholeNumber, defaultValue: "20000000"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -555,7 +555,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the proximity targets. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("maxDistance", "Max Distance", "Optional maximum distance to compute. Must be > 0 when supplied. Cells beyond it take the nodata value.", ProcessParameterValueType.FloatingPoint),
                 Param("distUnits", "Distance Units", "Distance units. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as targets. When omitted, all non-zero pixels are targets.", ProcessParameterValueType.Text),
@@ -571,7 +571,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes whose non-zero (or 'values'-listed) pixels are the allocation sources carrying the ids to assign. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("maxDistance", "Max Distance", "Optional maximum allocation distance. Must be > 0 when supplied. Cells whose nearest source is farther take the nodata value.", ProcessParameterValueType.FloatingPoint),
                 Param("distUnits", "Distance Units", "Distance units used for maxDistance. Allowed values: GEO, PIXEL. Defaults to GEO.", ProcessParameterValueType.Text, defaultValue: "GEO"),
                 Param("values", "Target Values", "Optional comma-separated list of integer source pixel values to treat as allocation sources. When omitted, all non-zero pixels are sources.", ProcessParameterValueType.Text),
@@ -1716,7 +1716,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "raster",
             Parameters =
             [
-                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true),
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true, acceptsRasterSource: true),
                 Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857', also written as '3857').", ProcessParameterValueType.Srid, required: true),
                 Param("sourceSrs", "Source CRS", "Optional source spatial reference override when the raster lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
             ],

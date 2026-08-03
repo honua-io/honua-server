@@ -37,9 +37,9 @@ jobs:
       matrix:
         include:
           - image_key: ecs-jit
-            image_name: ECS JIT Image
+            image_name: ECS Development JIT Image
             dockerfile: Dockerfile
-            tag_suffix: -ecs
+            tag_suffix: -ecs-jit
             cache_scope: release-ecs-jit
             sarif_output: trivy-results-ecs
             sarif_category: trivy-ecs
@@ -61,9 +61,9 @@ jobs:
             provenance: true
             sbom: true
           - image_key: lambda-jit
-            image_name: Lambda JIT Image
+            image_name: Lambda Development JIT Image
             dockerfile: docker/Dockerfile.lambda
-            tag_suffix: -lambda
+            tag_suffix: -lambda-jit
             cache_scope: release-lambda-jit
             sarif_output: trivy-results-lambda
             sarif_category: trivy-lambda
@@ -85,9 +85,9 @@ jobs:
             provenance: false
             sbom: false
           - image_key: functions-jit
-            image_name: Functions JIT Image
+            image_name: Functions Development JIT Image
             dockerfile: docker/Dockerfile.functions
-            tag_suffix: -functions
+            tag_suffix: -functions-jit
             cache_scope: release-functions-jit
             sarif_output: trivy-results-functions
             sarif_category: trivy-functions
@@ -261,9 +261,52 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build native-AOT platform candidate by digest
+        id: aot_candidate
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          provenance: ${{ matrix.provenance }}
+          sbom: ${{ matrix.sbom }}
+
+      - name: Verify native-AOT platform candidate before registry publication
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified native-AOT platform architecture tags
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
+
+      - name: Build and push JIT platform image
         id: build
-        if: ${{ env.PUBLISH_IMAGES == 'true' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -302,7 +345,7 @@ jobs:
         shell: bash
         env:
           PUBLISH_IMAGES: ${{ env.PUBLISH_IMAGES }}
-          SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ contains(matrix.image_key, 'aot') && steps.aot_candidate.outputs.digest || steps.build.outputs.digest }}
           SCAN_LOCAL: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail
@@ -311,6 +354,10 @@ jobs:
             docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           fi
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce native-AOT boundary for scan-only build
+        if: ${{ env.PUBLISH_IMAGES != 'true' && contains(matrix.image_key, 'aot') }}
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image "${{ steps.scan_prep.outputs.scan_local }}"
 
       # Always generate an SPDX SBOM artifact for every platform image, even
       # when matrix.sbom is false (Lambda images skip the OCI SBOM
@@ -328,11 +375,28 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
-      # Restrict SARIF generation to HIGH/CRITICAL so the per-image category in the
-      # GitHub Security tab only carries actionable findings. The SARIF uploaded below
-      # is produced by this filtered run, so lower severities are intentionally not
-      # retained by this workflow; re-introduce them by removing `--severity` here.
-      - name: Run Trivy vulnerability scanner
+      # Two passes over the same image, because "what is worth paging on" and
+      # "what is worth recording" are different questions (honua-server#3036):
+      #
+      #   1. Actionable -> GitHub Security tab. HIGH/CRITICAL *with an upstream fix
+      #      available* (`--ignore-unfixed`). This is the only lane that raises code
+      #      scanning alerts, so it is restricted to findings this repo can actually
+      #      close by bumping a package or a base image. It matches the posture the
+      #      blocking CI gate already uses ("Trivy image scan (full CI, HIGH/CRITICAL,
+      #      fixed only)" in ci.yml, `ignore-unfixed: true`); the per-image SARIF was
+      #      previously the one lane that did *not*, which is how distro won't-fix
+      #      records came to be ~99% of this repo's open scan volume and drowned out
+      #      genuinely new criticals.
+      #   2. Inventory -> build artifact. The same severities with NO
+      #      `--ignore-unfixed`, so nothing is hidden. A vulnerability whose distro
+      #      has not shipped a fix stays fully recorded here, and moves into pass 1
+      #      (and therefore onto the Security tab) the moment upstream publishes one.
+      #
+      # Neither pass honours `.trivyignore`. That file includes advisories suppressed
+      # because no upstream fix exists: applying it to pass 1 would keep those findings
+      # hidden after a fix ships, while applying it to pass 2 would make the inventory
+      # incomplete. Both passes must therefore rely only on their explicit filters.
+      - name: Run Trivy vulnerability scanner (actionable, fixed only)
         shell: bash
         env:
           SARIF_OUTPUT: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
@@ -349,8 +413,34 @@ jobs:
             --scanners vuln \
             --skip-version-check \
             --severity HIGH,CRITICAL \
+            --ignore-unfixed \
             --format sarif \
             --output "/work/$SARIF_OUTPUT" \
+            "$SCAN_LOCAL"
+
+      # Deliberately NO --ignorefile in either pass. Trivy excludes anything the ignore file
+      # names, including after a fix ships, so applying it here would make the inventory
+      # incomplete and applying it above would defeat the automatic move into actionable SARIF.
+      - name: Run Trivy vulnerability scanner (full inventory, including unfixed)
+        if: always() && steps.scan_prep.outcome == 'success'
+        shell: bash
+        env:
+          INVENTORY_OUTPUT: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}.json
+          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$TRIVY_CACHE_DIR"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" \
+            -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --skip-version-check \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output "/work/$INVENTORY_OUTPUT" \
             "$SCAN_LOCAL"
 
       - name: Upload Trivy scan results to GitHub Security
@@ -359,6 +449,14 @@ jobs:
         with:
           sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
+
+      - name: Upload Trivy unfixed-inclusive inventory
+        uses: actions/upload-artifact@v7
+        if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
+        with:
+          name: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}
+          path: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}.json
+          retention-days: 90
 
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest
@@ -369,24 +467,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: ECS JIT Image
-            tag_suffix: -ecs
+          - image_name: ECS Development JIT Image
+            tag_suffix: -ecs-jit
             source_arches: "arm64"
+            publish_aot_alias: false
           - image_name: ECS AOT Image
             tag_suffix: -ecs-aot
             source_arches: "arm64"
-          - image_name: Lambda JIT Image
-            tag_suffix: -lambda
+            publish_aot_alias: true
+          - image_name: Lambda Development JIT Image
+            tag_suffix: -lambda-jit
             source_arches: "arm64"
+            publish_aot_alias: false
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
             source_arches: "arm64"
-          - image_name: Functions JIT Image
-            tag_suffix: -functions
+            publish_aot_alias: true
+          - image_name: Functions Development JIT Image
+            tag_suffix: -functions-jit
             source_arches: "amd64"
+            publish_aot_alias: false
           - image_name: Functions AOT Image
             tag_suffix: -functions-aot
             source_arches: "amd64"
+            publish_aot_alias: true
     permissions:
       contents: read
       id-token: write
@@ -517,6 +621,7 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           SOURCE_ARCHES: ${{ matrix.source_arches }}
+          PUBLISH_AOT_ALIAS: ${{ matrix.publish_aot_alias }}
         run: |
           set -euo pipefail
           read -r -a source_arches <<< "$SOURCE_ARCHES"
@@ -532,5 +637,9 @@ jobs:
               refs+=("${tag}-${arch}")
             done
 
-            docker buildx imagetools create -t "$tag" "${refs[@]}"
+            targets=(-t "$tag")
+            if [[ "$PUBLISH_AOT_ALIAS" == "true" ]]; then
+              targets+=(-t "${tag%-aot}")
+            fi
+            docker buildx imagetools create "${targets[@]}" "${refs[@]}"
           done
