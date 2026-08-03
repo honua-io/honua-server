@@ -791,10 +791,13 @@ public sealed class GrpcProcessServiceTests
         var protoPlan = CreateValidPlan();
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
 
+        var legacy = GeoprocessingJobService.CreateLegacyRequestFingerprint(domainPlan);
         var actual = GeoprocessingJobService.CreateRequestFingerprint(domainPlan);
 
-        actual.Should().Be(ComputeExpectedFingerprint(protoPlan),
+        legacy.Should().Be(ComputeExpectedFingerprint(protoPlan),
             "rolling deployment retries for legacy plans must match fingerprints written before typed raster sources existed");
+        actual.Should().Be("gp-v2:" + legacy,
+            "versioned fingerprints must keep the legacy plan-only digest as their payload when no execution parameters are supplied");
     }
 
     [UnitTest]
