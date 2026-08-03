@@ -78,7 +78,7 @@ internal static class GdalNoData
         try
         {
             var args = new List<string> { "-json" };
-            GdalRasterInput.Referenced(inputPath, expectedETag ?? "").AddReadPin(args);
+            GdalRasterInput.AddReadPin(args, expectedETag);
             args.Add(inputPath);
             result = await runner.RunAsync("gdalinfo", args, workspace, linked.Token).ConfigureAwait(false);
         }

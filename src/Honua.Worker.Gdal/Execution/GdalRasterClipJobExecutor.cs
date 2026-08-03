@@ -132,8 +132,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (sourceInput.InlineBytes is { } sourceBytes
-                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }

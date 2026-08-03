@@ -25,13 +25,46 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
     public CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
     /// <inheritdoc />
-    public async Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        CancellationToken cancellationToken = default)
+        => ReadRangeCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return ReadRangeCoreAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+    }
+
+    private async Task<byte[]> ReadRangeCoreAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
         var response = await blobClient.DownloadStreamingAsync(
-            new BlobDownloadOptions { Range = range },
+            new BlobDownloadOptions
+            {
+                Range = range,
+                Conditions = string.IsNullOrWhiteSpace(expectedETag)
+                    ? null
+                    : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
+            },
             cancellationToken).ConfigureAwait(false);
 
         using var ms = new MemoryStream(length);

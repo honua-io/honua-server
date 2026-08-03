@@ -168,6 +168,16 @@ public static class RasterSourceDescriptorValidator
             case ObjectStoreCogRasterSourceDescriptor cog:
                 ValidateOpaqueReference(cog.StoreReference, "storeReference", errors);
                 ValidateRelativeLocator(cog.ObjectKey, "objectKey", errors);
+                if (cog.DeclaredDimensions is { } dimensions
+                    && (dimensions.Width <= 0
+                        || dimensions.Height <= 0
+                        || dimensions.BandCount <= 0
+                        || dimensions.BitsPerSample <= 0))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredDimensions",
+                        "Declared raster dimensions must all be positive when supplied.");
+                }
+
                 break;
 
             case ObjectStoreZarrRasterSourceDescriptor zarr:

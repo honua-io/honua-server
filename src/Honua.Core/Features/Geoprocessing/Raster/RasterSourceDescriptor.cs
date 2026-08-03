@@ -94,7 +94,24 @@ public sealed record ObjectStoreCogRasterSourceDescriptor : RasterSourceDescript
 
     /// <summary>Relative object key within the registered store.</summary>
     public required string ObjectKey { get; init; }
+
+    /// <summary>
+    /// Dimensions read from a bounded header probe of the same immutable object version.
+    /// Catalog resolution must populate this before a native worker can open the reference.
+    /// </summary>
+    public RasterSourceDimensions? DeclaredDimensions { get; init; }
 }
+
+/// <summary>Bounded raster dimensions used for pre-GDAL resource admission.</summary>
+/// <param name="Width">Declared base-image width in pixels.</param>
+/// <param name="Height">Declared base-image height in pixels.</param>
+/// <param name="BandCount">Declared samples/bands per pixel.</param>
+/// <param name="BitsPerSample">Largest declared sample width across bands.</param>
+public sealed record RasterSourceDimensions(
+    long Width,
+    long Height,
+    int BandCount,
+    int BitsPerSample);
 
 /// <summary>References an immutable Zarr hierarchy and array in a registered object store.</summary>
 public sealed record ObjectStoreZarrRasterSourceDescriptor : RasterSourceDescriptor

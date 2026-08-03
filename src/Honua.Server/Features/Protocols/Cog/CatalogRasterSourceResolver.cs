@@ -9,8 +9,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
@@ -23,7 +26,9 @@ namespace Honua.Server.Features.Protocols.Cog;
 /// service scope so there is no captive-dependency violation. When no COG store is
 /// configured the resolver returns a clear failure rather than throwing.
 /// </summary>
-internal sealed class CatalogRasterSourceResolver(IServiceScopeFactory scopeFactory)
+internal sealed class CatalogRasterSourceResolver(
+    IServiceScopeFactory scopeFactory,
+    ILogger<CatalogRasterSourceResolver>? logger = null)
     : IGeoprocessingRasterSourceResolver
 {
     /// <inheritdoc />
@@ -123,6 +128,36 @@ internal sealed class CatalogRasterSourceResolver(IServiceScopeFactory scopeFact
                 "the resolved raster object has no ETag and cannot be opened with a conditional worker read.");
         }
 
+        CogRasterHeaderProbeResult probe;
+        try
+        {
+            // A HEAD pin bounds identity and size, but cannot defend the native worker from a
+            // tiny compressed TIFF that declares an enormous decoded grid. Read only the capped
+            // base-image header/IFD fields required for worker resource admission; never read
+            // tile-offset arrays or pixel content in the serving process.
+            probe = await CogRasterHeaderProbe
+                .ReadAsync(
+                    reader,
+                    registration.Bucket,
+                    registration.ObjectKey,
+                    metadata.ETag,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested is false)
+        {
+            return RasterSourceResolution.Failure(
+                "the resolved raster header could not be bounded for native-worker admission.");
+        }
+
+        CogLog.RasterSourceHeaderProbed(
+            logger ?? NullLogger<CatalogRasterSourceResolver>.Instance,
+            registration.Id,
+            metadata.SizeBytes,
+            probe.RangeCount,
+            probe.RequestedBytes,
+            probe.ReceivedBytes);
+
         var immutableVersion = FirstNonEmpty(metadata.Version, metadata.ETag)!;
 
         var mediaType = string.IsNullOrWhiteSpace(metadata.MediaType)
@@ -140,6 +175,7 @@ internal sealed class CatalogRasterSourceResolver(IServiceScopeFactory scopeFact
             ObjectKey = registration.ObjectKey,
             CatalogLayerId = registration.LayerId,
             CatalogRasterId = registration.Id,
+            DeclaredDimensions = probe.Dimensions,
             Version = immutableVersion,
             Content = new RasterContentIdentity
             {

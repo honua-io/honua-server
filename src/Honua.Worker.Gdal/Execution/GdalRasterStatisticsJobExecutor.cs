@@ -94,8 +94,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             // Bound the DECLARED pixel footprint before gdalinfo -stats forces a
             // full-raster read, so a compressible GeoTIFF declaring enormous
             // dimensions cannot force a decompression-bomb allocation (#2766).
-            if (sourceInput.InlineBytes is { } sourceBytes
-                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
                 return JobExecutionResult.Failed($"Invalid {processId} inputs: {dimensionError}");

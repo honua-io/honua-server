@@ -272,6 +272,12 @@ internal static class GdalRasterDimensionGuard
         ArgumentNullException.ThrowIfNull(options);
         error = "";
 
+        if (dims.Width <= 0 || dims.Height <= 0 || dims.Bands <= 0 || dims.BitsPerSample <= 0)
+        {
+            error = "declared raster dimensions must all be positive";
+            return false;
+        }
+
         if (dims.Width > options.MaxRasterWidth)
         {
             error = $"declared raster width {dims.Width.ToString(CultureInfo.InvariantCulture)} exceeds configured MaxRasterWidth={options.MaxRasterWidth.ToString(CultureInfo.InvariantCulture)}";

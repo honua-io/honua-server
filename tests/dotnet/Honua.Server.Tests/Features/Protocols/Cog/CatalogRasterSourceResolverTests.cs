@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Raster;
@@ -49,7 +50,7 @@ public sealed class CatalogRasterSourceResolverTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_ProjectsImmutableReferenceWithoutReadingAnyObjectRange()
+    public async Task ResolveAsync_ProjectsImmutableReferenceWithBoundedHeaderProbe()
     {
         var store = Substitute.For<ICogStore>();
         store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
@@ -62,6 +63,14 @@ public sealed class CatalogRasterSourceResolverTests
                 Version = "s3-version-9",
                 ETag = "etag-9",
             });
+        reader.ReadRangeAsync(
+                "test-bucket",
+                "test.tif",
+                0,
+                4096,
+                "etag-9",
+                Arg.Any<CancellationToken>())
+            .Returns(BuildMinimalTiffHeader(width: 4096, height: 2048, bands: 3, bitsPerSample: 16));
         await using var services = BuildServices(store, BuildSnapshot((42, 900)), reader);
         var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
 
@@ -74,8 +83,99 @@ public sealed class CatalogRasterSourceResolverTests
         descriptor.ObjectKey.Should().Be("test.tif");
         descriptor.Version.Should().Be("s3-version-9");
         descriptor.Content.SizeBytes.Should().Be(9_876_543_210);
-        await reader.DidNotReceiveWithAnyArgs().ReadRangeAsync(default!, default!, default, default, default);
+        descriptor.DeclaredDimensions.Should().Be(new RasterSourceDimensions(4096, 2048, 3, 16));
+        await reader.Received(1).ReadRangeAsync(
+            "test-bucket",
+            "test.tif",
+            0,
+            4096,
+            "etag-9",
+            Arg.Any<CancellationToken>());
+        await reader.DidNotReceiveWithAnyArgs().ReadRangeAsync(
+            default!, default!, default, default, default(CancellationToken));
         await reader.DidNotReceiveWithAnyArgs().ReadRangeStreamAsync(default!, default!, default, default, default);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_HeaderExceedingProbeCap_FailsClosedWithoutObjectStream()
+    {
+        var store = Substitute.For<ICogStore>();
+        store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
+        var reader = Substitute.For<ICloudRangeReader>();
+        reader.Provider.Returns(CloudStorageProvider.AwsS3);
+        reader.GetObjectMetadataAsync("test-bucket", "test.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata
+            {
+                SizeBytes = 9_876_543_210,
+                Version = "s3-version-9",
+                ETag = "etag-9",
+            });
+        reader.ReadRangeAsync(
+                "test-bucket",
+                "test.tif",
+                0,
+                4096,
+                "etag-9",
+                Arg.Any<CancellationToken>())
+            .Returns(BuildOversizedIfdHeader());
+        await using var services = BuildServices(store, BuildSnapshot((42, 900)), reader);
+        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await resolver.ResolveAsync(new RasterSourceReference(900, 91));
+
+        result.Found.Should().BeFalse();
+        result.FailureReason.Should().Contain("could not be bounded");
+        await reader.Received(1).ReadRangeAsync(
+            "test-bucket",
+            "test.tif",
+            0,
+            4096,
+            "etag-9",
+            Arg.Any<CancellationToken>());
+        await reader.DidNotReceiveWithAnyArgs().ReadRangeAsync(
+            default!, default!, default, default, default(CancellationToken));
+        await reader.DidNotReceiveWithAnyArgs().ReadRangeStreamAsync(default!, default!, default, default, default);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_ObjectChangedAfterMetadataRead_FailsClosed()
+    {
+        var store = Substitute.For<ICogStore>();
+        store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
+        var reader = Substitute.For<ICloudRangeReader>();
+        reader.Provider.Returns(CloudStorageProvider.AwsS3);
+        reader.GetObjectMetadataAsync("test-bucket", "test.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata
+            {
+                SizeBytes = 9_876_543_210,
+                Version = "s3-version-9",
+                ETag = "etag-9",
+            });
+        reader.ReadRangeAsync(
+                "test-bucket",
+                "test.tif",
+                0,
+                4096,
+                "etag-9",
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]>(
+                new InvalidOperationException("object precondition failed")));
+        await using var services = BuildServices(store, BuildSnapshot((42, 900)), reader);
+        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await resolver.ResolveAsync(new RasterSourceReference(900, 91));
+
+        result.Found.Should().BeFalse();
+        result.FailureReason.Should().Contain("could not be bounded");
+        await reader.Received(1).ReadRangeAsync(
+            "test-bucket",
+            "test.tif",
+            0,
+            4096,
+            "etag-9",
+            Arg.Any<CancellationToken>());
+        await reader.DidNotReceiveWithAnyArgs().ReadRangeAsync(
+            default!, default!, default, default, default(CancellationToken));
     }
 
     [UnitTest]
@@ -189,6 +289,54 @@ public sealed class CatalogRasterSourceResolverTests
         ObjectKey = "test.tif",
         CreatedAt = DateTimeOffset.UtcNow,
     };
+
+    private static byte[] BuildMinimalTiffHeader(
+        uint width,
+        uint height,
+        ushort bands,
+        ushort bitsPerSample)
+    {
+        const int ifdOffset = 8;
+        const ushort entryCount = 4;
+        var bytes = new byte[ifdOffset + 2 + (entryCount * 12) + 4];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(ifdOffset), entryCount);
+
+        var entryOffset = ifdOffset + 2;
+        WriteClassicTiffEntry(bytes, entryOffset, tag: 256, type: 4, value: width);
+        WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, value: height);
+        WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, value: bitsPerSample);
+        WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, value: bands);
+        return bytes;
+    }
+
+    private static byte[] BuildOversizedIfdHeader()
+    {
+        const int ifdOffset = 8;
+        var bytes = new byte[ifdOffset + sizeof(ushort)];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(ifdOffset), 6_000);
+        return bytes;
+    }
+
+    private static void WriteClassicTiffEntry(
+        byte[] bytes,
+        int offset,
+        ushort tag,
+        ushort type,
+        uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset + 4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset + 8), value);
+    }
 
     private sealed class StubGraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
     {

@@ -76,4 +76,16 @@ internal static partial class CogLog
         Level = LogLevel.Debug,
         Message = "COG {RegistrationId} cannot satisfy requested format {RequestedFormat} with native tile content type {ContentType}.")]
     public static partial void UnsupportedTileFormat(ILogger logger, long registrationId, string requestedFormat, string contentType);
+
+    [LoggerMessage(
+        EventId = 7911,
+        Level = LogLevel.Information,
+        Message = "Resolved COG {RegistrationId} for GP from a {ObjectSize}-byte object using {RangeCount} ETag-conditional header ranges ({RequestedBytes} bytes requested, {ReceivedBytes} bytes received); no pixel payload was materialized")]
+    public static partial void RasterSourceHeaderProbed(
+        ILogger logger,
+        long registrationId,
+        long objectSize,
+        int rangeCount,
+        long requestedBytes,
+        long receivedBytes);
 }

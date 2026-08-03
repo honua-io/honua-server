@@ -123,8 +123,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 // Bound the DECLARED pixel footprint before writing the file or
                 // invoking GDAL so a compressible GeoTIFF declaring enormous
                 // dimensions cannot force a decompression-bomb allocation (#2766).
-                if (rasterInput.InlineBytes is { } bytes
-                    && !GdalRasterDimensionGuard.TryAdmit(bytes, opts, out var dimensionError))
+                if (!rasterInput.TryAdmit(opts, out var dimensionError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, dimensionError);
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {dimensionError}");

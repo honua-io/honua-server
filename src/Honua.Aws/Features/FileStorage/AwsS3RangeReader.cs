@@ -24,13 +24,41 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
     public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
     /// <inheritdoc />
-    public async Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        CancellationToken cancellationToken = default)
+        => ReadRangeCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return ReadRangeCoreAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+    }
+
+    private async Task<byte[]> ReadRangeCoreAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         var request = new GetObjectRequest
         {
             BucketName = bucket,
             Key = key,
-            ByteRange = new ByteRange(offset, offset + length - 1)
+            ByteRange = new ByteRange(offset, offset + length - 1),
+            EtagToMatch = expectedETag,
         };
 
         using var response = await _client.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);

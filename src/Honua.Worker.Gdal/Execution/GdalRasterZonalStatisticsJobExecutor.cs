@@ -180,8 +180,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
-            if (sourceInput.InlineBytes is { } sourceBytes
-                && !GdalRasterDimensionGuard.TryAdmit(sourceBytes, opts, out var dimensionError))
+            if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 Log.InvalidInputs(logger, job.OperationId, dimensionError);
                 return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {dimensionError}");

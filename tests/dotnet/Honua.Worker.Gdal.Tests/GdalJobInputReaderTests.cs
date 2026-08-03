@@ -32,6 +32,7 @@ public sealed class GdalJobInputReaderTests
             Provider = CloudStorageProvider.AwsS3,
             StoreReference = "imagery-prod",
             ObjectKey = "tenant/dem.tif",
+            DeclaredDimensions = new RasterSourceDimensions(2048, 1024, 1, 16),
             Version = "version-7",
             Content = new RasterContentIdentity
             {
@@ -61,6 +62,7 @@ public sealed class GdalJobInputReaderTests
         ok.Should().BeTrue(error);
         input.InlineBytes.Should().BeNull();
         input.ReferencedPath.Should().Be("/vsis3/imagery-prod/tenant/dem.tif");
+        input.TryAdmit(new GdalWorkerOptions(), out error).Should().BeTrue(error);
         var arguments = new List<string>();
         input.AddReadPin(arguments);
         arguments.Should().Equal("--config", "GDAL_HTTP_HEADERS", "If-Match: etag-7");
@@ -101,6 +103,85 @@ public sealed class GdalJobInputReaderTests
 
         ok.Should().BeFalse();
         error.Should().Contain("requires an ETag");
+    }
+
+    [UnitTest]
+    public void TryGetRasterInput_CogWithoutBoundedDimensions_FailsClosed()
+    {
+        var descriptor = new ObjectStoreCogRasterSourceDescriptor
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            StoreReference = "imagery-prod",
+            ObjectKey = "tenant/dem.tif",
+            Version = "version-7",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 4096,
+                MediaType = "image/tiff",
+                ETag = "etag-7",
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "catalog-registration:91",
+            },
+        };
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor),
+        };
+
+        var ok = GdalJobInputReader.TryGetRasterInput(
+            parameters,
+            "source",
+            maxInlineBytes: 64 * 1024,
+            out _,
+            out var error);
+
+        ok.Should().BeFalse();
+        error.Should().Contain("requires bounded catalog dimensions");
+    }
+
+    [UnitTest]
+    public void TryGetRasterInput_PinnedCogWithOversizedDimensions_FailsAdmissionBeforeGdal()
+    {
+        var descriptor = new ObjectStoreCogRasterSourceDescriptor
+        {
+            Provider = CloudStorageProvider.AwsS3,
+            StoreReference = "imagery-prod",
+            ObjectKey = "tenant/dem.tif",
+            DeclaredDimensions = new RasterSourceDimensions(200_000, 1, 1, 8),
+            Version = "version-7",
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 4096,
+                MediaType = "image/tiff",
+                ETag = "etag-7",
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "catalog-registration:91",
+            },
+        };
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor),
+        };
+
+        var parsed = GdalJobInputReader.TryGetRasterInput(
+            parameters,
+            "source",
+            maxInlineBytes: 64 * 1024,
+            out var input,
+            out var parseError);
+        var admitted = input.TryAdmit(new GdalWorkerOptions(), out var admissionError);
+
+        parsed.Should().BeTrue(parseError);
+        admitted.Should().BeFalse();
+        admissionError.Should().Contain("MaxRasterWidth");
     }
 
     [UnitTest]
