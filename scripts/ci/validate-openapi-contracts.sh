@@ -8,12 +8,14 @@ set -euo pipefail
 #   OPENAPI_BASE_REF=HEAD~1
 OPENAPI_BASE_REF="${OPENAPI_BASE_REF:-}"
 
-# Set true to allow intentional breaking changes in a controlled rollout.
-# The script will still print the detected breakages.
+# Set true only through the policy resolver used by the governance workflow.
+# Suppressed findings remain visible as an Actions warning and job summary.
 OPENAPI_ALLOW_BREAKING_CHANGES="${OPENAPI_ALLOW_BREAKING_CHANGES:-false}"
+OPENAPI_BREAKING_CHANGE_SOURCE="${OPENAPI_BREAKING_CHANGE_SOURCE:-unspecified override}"
 
 export OPENAPI_BASE_REF
 export OPENAPI_ALLOW_BREAKING_CHANGES
+export OPENAPI_BREAKING_CHANGE_SOURCE
 
 # Resolve a Python 3 that actually runs (see scripts/ci/lib/python-resolve.sh);
 # the Windows Store python3 alias satisfies `command -v` but does not run (#2886).
@@ -30,6 +32,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +48,60 @@ def fail(message: str) -> None:
 
 def note_breaking(message: str) -> None:
     breaking_changes.append(message)
+
+
+def escape_workflow_command(message: str) -> str:
+    """Escape an Actions workflow-command message."""
+
+    return (
+        message.replace("%", "%25")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+    )
+
+
+def emit_breaking_change_suppression_notice(
+    changes: list[str], acknowledgement_source: str
+) -> None:
+    """Make an allowed breaking diff visible in the PR check and summary."""
+
+    headline = (
+        f"OpenAPI breaking-change enforcement was suppressed by {acknowledgement_source}: "
+        f"{len(changes)} finding(s) require review."
+    )
+    print(f"WARNING: {headline}")
+    print(
+        "The acknowledgement keeps this check green, but does not make the contract "
+        "change backward-compatible. Verify migration and deprecation documentation."
+    )
+
+    if os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true":
+        print(
+            "::warning title=OpenAPI breaking-change suppression active::"
+            f"{escape_workflow_command(headline)}"
+        )
+
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "").strip()
+    if not summary_path:
+        return
+
+    try:
+        with Path(summary_path).open("a", encoding="utf-8") as summary:
+            summary.write("## ⚠️ Admin OpenAPI breaking changes acknowledged\n\n")
+            summary.write(f"**Acknowledgement:** {escape(acknowledgement_source)}\n\n")
+            summary.write(
+                "The contract-governance check found breaking changes and kept the job "
+                "green only because this acknowledgement is active. Review every finding "
+                "and the corresponding migration/deprecation documentation.\n\n"
+            )
+            for change in changes:
+                summary.write(f"- {escape(change)}\n")
+            summary.write("\nTracking: honua-server#3065; release gate: honua-release#71.\n")
+    except OSError as exc:
+        print(
+            f"WARNING: could not append OpenAPI suppression details to {summary_path}: {exc}",
+            file=sys.stderr,
+        )
 
 
 def load_json(path: Path) -> dict[str, Any] | None:
@@ -428,6 +486,9 @@ if tiles_doc is not None:
 base_ref = os.environ.get("OPENAPI_BASE_REF", "").strip()
 allow_breaking_raw = os.environ.get("OPENAPI_ALLOW_BREAKING_CHANGES", "false").strip().lower()
 allow_breaking = allow_breaking_raw in {"1", "true", "yes", "on"}
+breaking_change_source = os.environ.get(
+    "OPENAPI_BREAKING_CHANGE_SOURCE", "unspecified override"
+).strip() or "unspecified override"
 
 if base_ref and admin_doc is not None:
     baseline_admin_doc = load_json_from_git(base_ref, "docs/developer/api-specs/admin-api.json")
@@ -447,7 +508,12 @@ if breaking_changes:
     if not allow_breaking:
         fail(
             "Breaking Admin API changes were detected. "
-            "If intentional, rerun with OPENAPI_ALLOW_BREAKING_CHANGES=true and update migration/deprecation docs."
+            "If intentional, check OPENAPI_BREAKING_CHANGE_APPROVED in the PR body and "
+            "update migration/deprecation docs."
+        )
+    else:
+        emit_breaking_change_suppression_notice(
+            breaking_changes, breaking_change_source
         )
 
 if errors:

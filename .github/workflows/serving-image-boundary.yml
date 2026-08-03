@@ -1,0 +1,198 @@
+name: Serving Image Boundary
+
+# Native-AOT container builds are intentionally isolated from the required,
+# lean PR Gate. Release, deploy, and nightly workflows also enforce this same
+# final-rootfs boundary; this path-filtered PR workflow supplies earlier image
+# feedback without lengthening the required merge-train floor.
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/**'
+      - 'eng/**'
+      - 'samples/Honua.StacOpsDemo/**'
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/developer/api-specs/admin-api.json'
+      - 'tests/fixtures/ai-builder/**'
+      - 'Honua.sln'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - '.editorconfig'
+      - '.dockerignore'
+      - 'docker/Dockerfile.aot'
+      - 'docker/Dockerfile.lambda.aot'
+      - 'docker/Dockerfile.functions.aot'
+      - 'docker/cloud/azure-functions/**'
+      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
+      - 'scripts/ci/verify-serving-image-boundary.py'
+      - 'scripts/ci/fixtures/validate-serving-image-boundary.py'
+      - '.github/workflows/serving-image-boundary.yml'
+      - '.github/workflows/release-bundle.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/deploy-platform-images.yml'
+      - '.github/workflows/nightly-container-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: serving-image-boundary-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-verify:
+    name: Build and verify AOT serving images
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect serving-image boundary impact
+        id: impact
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "generic=true" >> "$GITHUB_OUTPUT"
+            echo "lambda=true" >> "$GITHUB_OUTPUT"
+            echo "functions=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          generic=false
+          lambda=false
+          functions=false
+
+          # Each production AOT image publishes the same Honua.Server graph, so
+          # common source/build inputs invalidate all variants. Dockerfile-only
+          # changes retain variant-level selectivity.
+          while IFS= read -r path; do
+            case "$path" in
+              src/*|eng/*|samples/Honua.StacOpsDemo/*|docs/gis/data/feature-catalog.json|docs/developer/api-specs/admin-api.json|tests/fixtures/ai-builder/*|Honua.sln|global.json|Directory.Build.props|Directory.Build.targets|Directory.Packages.props|NuGet.config|.editorconfig|.dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml|.github/workflows/release-bundle.yml|.github/workflows/deploy.yml|.github/workflows/deploy-platform-images.yml|.github/workflows/nightly-container-build.yml)
+                generic=true
+                lambda=true
+                functions=true
+                ;;
+              docker/Dockerfile.aot)
+                generic=true
+                ;;
+              docker/Dockerfile.lambda.aot)
+                lambda=true
+                ;;
+              docker/Dockerfile.functions.aot|docker/cloud/azure-functions/*)
+                functions=true
+                ;;
+            esac
+          done <<< "$changed"
+
+          echo "generic=$generic" >> "$GITHUB_OUTPUT"
+          echo "lambda=$lambda" >> "$GITHUB_OUTPUT"
+          echo "functions=$functions" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Build canonical native-AOT serving image
+        if: steps.impact.outputs.generic == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify canonical serving-image contents
+        if: steps.impact.outputs.generic == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:aot-boundary
+
+      - name: Build Lambda native-AOT serving image
+        if: steps.impact.outputs.lambda == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.lambda.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:lambda-aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-lambda-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-lambda-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify Lambda serving-image contents
+        if: steps.impact.outputs.lambda == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:lambda-aot-boundary
+
+      - name: Build Azure Functions native-AOT serving image
+        if: steps.impact.outputs.functions == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: docker/Dockerfile.functions.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:functions-aot-boundary
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=pr-functions-aot-boundary
+          cache-to: type=gha,mode=max,scope=pr-functions-aot-boundary
+          provenance: false
+          sbom: false
+
+      - name: Verify Azure Functions serving-image contents
+        if: steps.impact.outputs.functions == 'true'
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image honua-server:functions-aot-boundary
+
+      - name: Smoke-test canonical serving image
+        if: steps.impact.outputs.generic == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d \
+            --name honua-aot-boundary \
+            --network host \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e HONUA_SKIP_MIGRATIONS=true \
+            -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
+            -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
+            -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
+            honua-server:aot-boundary
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8080/healthz/live >/dev/null; then
+              echo "Native-AOT serving container passed its liveness probe."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs honua-aot-boundary
+          exit 1
+
+      - name: Clean up serving-image smoke container
+        if: always() && steps.impact.outputs.generic == 'true'
+        run: docker rm -f honua-aot-boundary || true
