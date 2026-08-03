@@ -164,7 +164,8 @@ ADR gives the registry, and the manifest lever the Console release gate
 > mean on-by-default; it means no longer hidden/unadvertised.
 
 > **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
-> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`;
+> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`,
+> `temporal.animation-api`;
 > `/api/v1/temporal/*` plus the FeatureServer `temporalExtent`/`queryDateBins`/
 > time-series-tile surfaces) was promoted from `experimental` to `Implemented`
 > (GA). It is therefore no longer part of the registry-flag experimental roster

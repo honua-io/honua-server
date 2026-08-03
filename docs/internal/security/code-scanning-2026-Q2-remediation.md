@@ -18,8 +18,8 @@ so the dashboard only carries actionable findings going forward.
 | `Dockerfile` | runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine` | `@sha256:27b6b84beeede74fd16886177d360799c8e4299ceadfbd64eef57bafead7878a` |
 | `docker/Dockerfile.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0-alpine` | `@sha256:d8ee39817ca03a3757288e83c37ed73cc969a286c603b827c7cbe33add1c2d1c` |
 | `docker/Dockerfile.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine` | `@sha256:ad7cd1ed2e913fbd806f8ecc0e8bb8e9e8fb7cfd4d3fa43be9aa0b4cd8008bf5` |
-| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/base:4-appservice` | `@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9` |
-| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/base:4-appservice` | `@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9` |
+| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73` |
+| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73` |
 | `docker/Dockerfile.lambda` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
 | `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:6228848061d53f16eb774d4f1ddfce45c973376ad38da844dff144cc3e11e517` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
@@ -91,8 +91,8 @@ other link generator.
 | Code | Line | Disposition | Rationale |
 | --- | --- | --- | --- |
 | DL3008 | `Dockerfile` apt-get install | suppressed | SDK base image is digest-pinned; pinning apt versions here forces a parallel update on every digest bump. |
-| DL3008 | `docker/Dockerfile.functions{,.aot}` apt-get install | suppressed | The Functions base is digest-pinned, while the final runtime layer deliberately resolves the newest Bullseye security revisions available at build time. |
-| DL3005 | `docker/Dockerfile.functions{,.aot}` apt-get upgrade | suppressed | The current Microsoft base digest lags its Debian security repositories; applying those compatible Bullseye updates removes repository-fixable runtime CVEs. |
+| DL3008 | `docker/Dockerfile.functions{,.aot}` apt-get install | suppressed | The Functions base is digest-pinned, while the final runtime layer deliberately resolves the newest Debian security revisions available at build time. |
+| DL3005 | `docker/Dockerfile.functions{,.aot}` apt-get upgrade | suppressed | The Microsoft base digest lags its Debian security repositories; applying those compatible updates removes repository-fixable runtime CVEs. |
 | DL3041 | `docker/Dockerfile.lambda` dnf upgrade/install | suppressed | The Lambda base is digest-pinned, while the final runtime layer deliberately resolves the newest compatible Amazon Linux security revisions and required runtime libraries available at build time. |
 | SC2086 | `Dockerfile` dotnet restore | suppressed | `EXTRA_MSBUILD_ARGS` must word-split into separate `-p:` args; quoting it produces an invalid single argument. |
 | SC2086 | `Dockerfile` dotnet publish | suppressed | Same as above. |
@@ -202,36 +202,44 @@ should reference this row.
   A weekly schedule and the manual `scan_only` input build local images without
   registry authentication or publishing, then upload those same categories.
   This lets a fresh scan retire stale findings even when ECR or ACR publishing
-  credentials are unavailable.
+  credentials are unavailable. That step is now the *actionable* half of a
+  two-pass scan — see "Actionable vs. recorded" below for the `--ignore-unfixed`
+  split and the unfixed-inclusive inventory artifact that accompanies it.
 
 Re-introduce MEDIUM severity on the Security tab by removing the new
 `severity` inputs / `--severity` flag; the gating Trivy steps will continue
 to fail on HIGH/CRITICAL regardless. If MEDIUM/LOW retention for ops triage
 becomes a hard requirement, add a separate unfiltered Trivy step whose output
 is uploaded only as an `actions/upload-artifact` artifact (not to Code
-Scanning) — that is intentionally out of scope for this remediation pass.
+Scanning) — that is intentionally out of scope for this remediation pass. The
+platform-image inventory pass added for #3036 is that shape but not that scope:
+it drops `--ignore-unfixed` while keeping `--severity HIGH,CRITICAL`, so it
+retains unfixed findings, not MEDIUM/LOW ones.
 
 ## Inherited findings deferred upstream
 
-The Functions runtime layer now applies all available Bullseye package updates,
+The Functions runtime layer applies all available distro package updates,
 removes `libc6-dev` and `linux-libc-dev` (compile-only packages in the final
-custom-handler image), and removes the preloaded v2/v3 Functions extension
-bundles. Honua's `host.json` requires the v4 bundle range, so the older bundles
-cannot be selected at runtime.
+custom-handler image), and removes every non-4.x Functions extension bundle.
+Honua's `host.json` requires the v4 bundle range, so the older bundles cannot be
+selected at runtime.
 
 A controlled Trivy 0.68.1 scan on 2026-07-24 measured the effect against the
-exact pinned Functions base:
+then-pinned **bullseye** Functions base (`azure-functions/base:4-appservice`):
 
 - Pinned upstream base: 784 HIGH/CRITICAL package records.
 - After removing compile-only headers and unused bundles: 105 records.
 - After applying available Bullseye security updates: 51 records.
 
-Of the remaining 51 records, 45 have no fixed Debian package and six belong to
+Of the remaining 51 records, 45 had no fixed Debian package and six belonged to
 the Microsoft-owned v4 extension bundle (`MessagePack` and `System.Text.Json`).
-They cannot be upgraded independently without replacing files owned and loaded
-by the Functions host. Those findings remain visible so a future Microsoft base
-or extension-bundle refresh retires them rather than masking them with an
-ignore.
+Those numbers are the *pre-bookworm* baseline: the base is now
+`dotnet-isolated:4-dotnet-isolated9.0-appservice` (see "Moving the Functions base
+off EOL Debian 11" below), which retires the bullseye won't-fix class outright.
+The residual extension-bundle records cannot be upgraded independently without
+replacing files owned and loaded by the Functions host; they are neither
+`.trivyignore`d nor dismissed, so a future Microsoft base or extension-bundle
+refresh retires them on its own.
 
 The exact pinned Lambda base reported nine HIGH records on the same date: seven
 for `glib2` and two for `libacl`. Trivy names fixed versions, but `dnf upgrade`
@@ -240,27 +248,119 @@ runtime layer now invokes `dnf upgrade` so those advisories retire as soon as
 Amazon publishes the packages; until then they remain visible rather than being
 ignored.
 
-### Why the Functions base is not moved off Debian 11
+### Moving the Functions base off EOL Debian 11 (corrects an earlier conclusion)
 
-Issue [#3036](https://github.com/honua-io/honua-server/issues/3036) proposes
-bumping the platform-scan image "off EOL Debian 11 (bullseye) to a supported
-base". That is not achievable for this lane today: on 2026-07-30 every published
-flavour of the Azure Functions host base — `azure-functions/base:4`,
-`:4-slim`, and `:4-appservice` — resolves to an image whose first layer is
-`debian.sh --arch 'amd64' out/ 'bullseye'` (host version 4.636.2). Microsoft
-publishes no bookworm/trixie variant, so there is no newer base to pin to; the
-`.NET runtime-deps` image suggested in that issue is not a substitute because
-the custom-handler lane needs the Functions host itself.
+An earlier revision of this note recorded the Debian 11 base bump requested by
+[#3036](https://github.com/honua-io/honua-server/issues/3036) as **blocked
+upstream**, on the basis that `azure-functions/base:4`, `:4-slim`, and
+`:4-appservice` all resolve to a bullseye image and that "Microsoft publishes no
+bookworm/trixie variant". The first half is true; the conclusion drawn from it
+was wrong, and it is corrected here.
 
-The achievable subset — which is what this pass ships — is to slim the runtime
-layer and apply the Debian security updates the base has not picked up, taking
-the measured HIGH/CRITICAL record count from 784 to 51. The base bump stays
-blocked upstream and should be re-checked whenever Microsoft republishes the
-Functions host image; #3036's remaining acceptance criteria are tracked there,
-not here. That issue also proposes enabling Trivy's `ignore-unfixed` for OS
-packages; this pass deliberately does not, for the same reason the rest of the
-note gives — an advisory with no upstream fix is still the signal that tells us
-when the fix finally lands.
+The mistake was searching one repository instead of the image family.
+`azure-functions/base` is **abandoned**, not merely behind: its newest published
+tags are host `4.636.2` (`:4`, `:4-appservice`, `:4-slim`, pushed 2025-03-06)
+and host `4.637.1` (`:4-nightly*`, pushed 2025-04-22), and its highest
+version-style tag, `4.1036.0.1-appservice`, is a 2024 image carrying host
+`4.635.1`. Every one of them is `debian.sh --arch 'amd64' out/ 'bullseye'`.
+
+The Functions **host** is not abandoned — Microsoft only republishes it under
+the language-worker repositories, and those have moved to Debian 12. Manifests
+resolved from MCR on 2026-07-31:
+
+| Image | Base layer | `HOST_VERSION` | Published |
+| --- | --- | --- | --- |
+| `azure-functions/base:4-appservice` (previous pin) | bullseye | 4.636.2 | 2025-03-06 |
+| `azure-functions/base:4-nightly-appservice` | bullseye | 4.637.1 | 2025-04-22 |
+| `azure-functions/node:4-node20-appservice` | bullseye | 4.1051.300.6 | 2026-07-29 |
+| `azure-functions/python:4-python3.12-appservice` | **bookworm** | 4.1048.200.18 | 2026-07-29 |
+| `azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` (**new pin**) | **bookworm** | 4.1051.300.6 | 2026-07-29 |
+
+`dotnet-isolated:4-dotnet-isolated9.0-appservice` is the pin this repo now uses.
+It is the same host on a supported distro: identical
+`ENTRYPOINT ["/azure-functions-host/start.sh"]`, identical
+`AzureWebJobsScriptRoot=/home/site/wwwroot` and
+`ASPNETCORE_CONTENTROOT=/azure-functions-host`, ~15 months newer, and it already
+prunes the 2.x/3.x extension bundles upstream. Custom handlers are a *host*
+feature selected by `FUNCTIONS_WORKER_RUNTIME=custom`, which
+`docker/Dockerfile.functions{,.aot}` sets in the runtime layer, so the bundled
+dotnet-isolated worker is never loaded — the language-worker repository is just
+where Microsoft ships the maintained host today.
+
+Runtime-dependency continuity was checked against both image histories before
+the swap, because a missing native dependency here fails at *startup*, not at
+build time, and CI's image build would not catch it:
+
+| Dependency | `base:4-appservice` (old) | `dotnet-isolated:4-dotnet-isolated9.0-appservice` (new) |
+| --- | --- | --- |
+| ICU (`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false`, honua-server#1369) | `libicu67` | `libicu72` — still present |
+| `libssl` | `libssl1.1` | `libssl3` |
+| `libgssapi-krb5-2` | in base | **not** in base — already installed by our runtime layer |
+| `libstdc++6`, `zlib1g` | in base | in base, and also installed by our runtime layer |
+| .NET | host-bundled | `aspnetcore-runtime-10.0` from packages.microsoft.com |
+| `libc-dev` (pulls `libc6-dev` + `linux-libc-dev`) | installed by base | still installed by base — the purge below remains load-bearing |
+
+Two consequences of the swap are handled explicitly in the Dockerfiles:
+
+- The new base sets `ASPNETCORE_HTTP_PORTS=8080`, which is the port `handler.sh`
+  binds Honua to. `ASPNETCORE_URLS` takes precedence over `ASPNETCORE_HTTP_PORTS`
+  and the base sets it to `http://+:80`, so the host still binds `:80` — but the
+  runtime layer now pins `ASPNETCORE_URLS=http://+:80` itself rather than
+  inheriting it, so a future base reshuffle cannot silently collide the host with
+  the handler it supervises.
+- The extension-bundle prune is now matched by major version
+  (`! -name '4.*'`) instead of the hardcoded `2.34.0` / `3.35.0` paths, so it
+  keeps holding across base refreshes that ship different bundle versions.
+
+The `.NET runtime-deps` image floated in #3036 is still not a substitute — the
+custom-handler lane needs the Functions host itself, not just a runtime.
+
+Retained from the previous pass, and still correct: the runtime layer applies
+available distro security updates, removes `libc6-dev` / `linux-libc-dev`
+(compile-only in a published custom-handler image), and removes non-4.x
+extension bundles. The controlled Trivy 0.68.1 measurement on 2026-07-24 against
+the *old* bullseye pin was 784 HIGH/CRITICAL package records unmodified, 105
+after the header and bundle removal, and 51 after applying available Bullseye
+security updates.
+
+### Actionable vs. recorded: `ignore-unfixed` on the platform-image SARIF
+
+The previous revision declined #3036's `ignore-unfixed` request outright, on the
+grounds that "an advisory with no upstream fix is still the signal that tells us
+when the fix finally lands". That objection is sound and is preserved — but it
+argues for *retaining* unfixed findings, not for *paging* on them, and the two
+were being conflated.
+
+`deploy-platform-images.yml` now runs Trivy twice over the same image:
+
+1. **Actionable** — `--severity HIGH,CRITICAL --ignore-unfixed`. This is the only
+   pass whose SARIF reaches GitHub Code Scanning, so the Security tab carries
+   only findings this repo can close by bumping a package or a base image. This
+   is not a new posture: the blocking full-CI gate in `ci.yml` ("Trivy image scan
+   (full CI, HIGH/CRITICAL, fixed only)") has always used `ignore-unfixed: true`.
+   The per-image SARIF was the single lane that did not, which is precisely how
+   distro won't-fix records grew to ~99% of the repository's open scan volume and
+   masked anything genuinely new.
+2. **Inventory** — the same severities with **no** `--ignore-unfixed`, retained
+   for 90 days as the `trivy-inventory-<image>-<arch>` build artifact. Nothing is
+   hidden. A vulnerability whose distro fix has not shipped stays fully recorded,
+   and it moves into pass 1 — and therefore onto the Security tab — the moment
+   upstream publishes a fix. That is a strictly better "tell me when the fix
+   lands" signal than an alert that is already open and already ignored.
+
+Neither pass honours `.trivyignore`. The repository-wide file currently carries
+an advisory precisely because no patched version exists. Applying it to the
+actionable pass would keep that advisory suppressed after a fix ships, defeating
+the automatic transition promised above; applying it to the inventory pass would
+make the complete register incomplete. The file remains in use by the separate,
+out-of-scope gates listed below. No CVE was added to `.trivyignore` for this
+change and no alert was dismissed in the UI.
+
+Deliberately out of scope: the gating Trivy steps in `security-nightly.yml` and
+`ci.yml` are untouched (changing a gate's pass criteria is a different decision
+from changing what the dashboard pages on), and `deploy.yml`'s `trivy`/`trivy-aot`
+categories are untouched because those lanes scan Alpine-based images and
+contributed none of the 588 alerts audited on 2026-07-30.
 
 ## Before / after alert counts
 
