@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
+using Honua.Postgres.Features.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -178,6 +179,32 @@ public sealed class RasterExecutionPlannerTests
 
         decision.Engine.Should().Be(RasterEngine.GdalNative);
         decision.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void Plan_Rast011ProviderDeclaration_CannotSelectIncompletePostgisRoute()
+    {
+        var provider = new PostgisSurfaceZonalRasterProviderExecutor();
+        var registry = RasterEngineCapabilityRegistry.CreateForProviderCapabilities(
+            provider.Capabilities,
+            RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames,
+            RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames);
+        var planner = new RasterExecutionPlanner(
+            registry,
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var request = Request(
+            RasterInputResidency.Postgis,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)) with
+        {
+            ProcessId = PostgisSurfaceZonalExecutionContract.SlopeProcessId,
+            Policy = Policy(requiredEngine: RasterEngine.Postgis),
+        };
+
+        var act = () => planner.Plan(request);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => exception.ReasonCode == "capability-unavailable")
+            .WithMessage("*authenticated typed-source admission*");
     }
 
     [Fact]
