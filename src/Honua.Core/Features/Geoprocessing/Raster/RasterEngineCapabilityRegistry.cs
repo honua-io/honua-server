@@ -26,7 +26,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         ReadOnly("image/tiff", "application/wkb");
     private static readonly IReadOnlyList<string> GeoJson = ReadOnly("application/geo+json");
     private static readonly IReadOnlyList<string> Json = ReadOnly("application/json");
-    private static readonly IReadOnlyList<string> RasterExportFormats =
+    private static readonly IReadOnlyList<string> DefaultRasterFormats =
         ReadOnly("image/tiff", "image/png", "image/jpeg");
 
     private readonly FrozenDictionary<string, RasterProcessCapability> _byProcessId;
@@ -144,7 +144,11 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     [
         // Raster-bearing conversion processes. Broad external format conversion stays GDAL-first.
         Create("conversion.polygonize", "raster.polygonize", GeoTiff, GeoJson),
-        Create("conversion.raster-format", "raster.format-convert", GeoTiff, RasterExportFormats),
+        Create(
+            "conversion.raster-format",
+            "raster.format-convert",
+            DefaultRasterFormats,
+            DefaultRasterFormats),
         Create(
             "conversion.raster-reproject",
             "raster.reproject",

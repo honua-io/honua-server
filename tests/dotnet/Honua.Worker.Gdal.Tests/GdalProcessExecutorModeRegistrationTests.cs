@@ -219,6 +219,24 @@ public sealed class GdalProcessExecutorModeRegistrationTests
     }
 
     [UnitTest]
+    public void AddGdalProcessExecutors_AdvertisesConfiguredRasterFormatInputs()
+    {
+        using var provider = BuildProvider(
+            static (services, config) => services.AddGdalProcessExecutors(config),
+            new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "TIFF",
+                ["GdalWorker:AllowedRasterInputFormats:1"] = "JPEG2000",
+            });
+
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+        var capability = registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId);
+        var gdal = capability!.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
+
+        gdal.Formats.InputMediaTypes.Should().Equal("image/tiff", "image/jp2");
+    }
+
+    [UnitTest]
     public void Validate_MissingAdvertisedGdalExecutor_FailsWithProcessId()
     {
         var registry = new RasterEngineCapabilityRegistry();

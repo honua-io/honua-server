@@ -48,6 +48,18 @@ public sealed class RasterEngineCapabilityRegistryTests
     }
 
     [Fact]
+    public void BuiltInCapabilities_RasterFormatConversionAdvertisesDefaultInputs()
+    {
+        var capability = new RasterEngineCapabilityRegistry().Find("conversion.raster-format");
+
+        Assert.NotNull(capability);
+        Assert.All(capability.Engines, engine =>
+            Assert.Equal(
+                new[] { "image/tiff", "image/png", "image/jpeg" },
+                engine.Formats.InputMediaTypes));
+    }
+
+    [Fact]
     public void Estimate_UnknownMetadata_SaturatesAndRefusesRequestExecution()
     {
         var registry = new RasterEngineCapabilityRegistry();
