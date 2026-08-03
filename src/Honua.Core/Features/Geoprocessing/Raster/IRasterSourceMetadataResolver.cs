@@ -149,6 +149,10 @@ public static class RasterSourceMetadataAdmission
         }
 
         if (descriptorContent.SizeBytes != metadata.Content.SizeBytes
+            || !string.Equals(
+                descriptorContent.MediaType,
+                metadata.Content.MediaType,
+                StringComparison.OrdinalIgnoreCase)
             || !ChecksumMatches(descriptorContent.Checksum, metadata.Content.Checksum))
         {
             return RasterSourceMetadataResolution.Failure(

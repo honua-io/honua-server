@@ -50,6 +50,26 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Deserialize_SourceTypeAfterDescriptorProperties_IsAccepted()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        MoveSourceTypeToEnd(document);
+
+        var descriptor = RasterSourceJson.Deserialize(document.ToJsonString());
+
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
+    }
+
+    [Fact]
+    public void Deserialize_OmittedSourceContractVersion_IsRejected()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
+        Assert.True(document.Remove("sourceContractVersion"));
+
+        Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(document.ToJsonString()));
+    }
+
+    [Fact]
     public void Validate_FutureContractVersion_IsRejectedForRollingUpgradeSafety()
     {
         var descriptor = Cog() with
@@ -75,6 +95,40 @@ public sealed class RasterSourceContractTests
             """;
 
         Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(json));
+    }
+
+    [Fact]
+    public void Deserialize_InlinePayloadWithOversizedEncodedToken_IsRejectedBeforeBase64Decode()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Inline([1, 2, 3, 4])))!.AsObject();
+        var maximumEncodedBytes = ((RasterSourceContract.MaximumInlinePayloadBytes + 2) / 3) * 4;
+        document["payload"] = new string('A', maximumEncodedBytes + 1);
+
+        var exception = Assert.Throws<JsonException>(() =>
+            RasterSourceJson.Deserialize(document.ToJsonString()));
+
+        Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnalysisContentJsonContext_InlinePayloadAboveDecodedCeiling_IsRejected()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor>
+            {
+                ["source"] = Inline([1, 2, 3, 4]),
+            }),
+        };
+        var document = JsonNode.Parse(
+            JsonSerializer.Serialize(package, AnalysisContentJsonContext.Default.AnalysisPackageContent))!;
+        document["plan"]!["steps"]![0]!["rasterSources"]!["source"]!["payload"] =
+            Convert.ToBase64String(new byte[RasterSourceContract.MaximumInlinePayloadBytes + 1]);
+
+        var exception = Assert.Throws<JsonException>(() => JsonSerializer.Deserialize(
+            document.ToJsonString(), AnalysisContentJsonContext.Default.AnalysisPackageContent));
+
+        Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -149,6 +203,17 @@ public sealed class RasterSourceContractTests
         var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
 
         Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
+    }
+
+    [Fact]
+    public void Validate_ConfiguredInlineCeilingCannotExceedWireContractLimit()
+    {
+        var descriptor = Inline(new byte[RasterSourceContract.MaximumInlinePayloadBytes + 1]);
+        var options = RasterSourceValidationOptions.Default with { MaxInlineBytes = int.MaxValue };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
     }
 
@@ -239,6 +304,23 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void ValidatePlan_DescriptorFailure_ReportsStepBindingAndFieldPath()
+    {
+        var result = RasterSourcePlanValidator.Validate(Plan(new Dictionary<string, RasterSourceDescriptor>
+        {
+            ["source"] = Cog(),
+            ["mask"] = Cog() with { ObjectKey = "../tenant/mask.tif" },
+        }));
+
+        Assert.Contains(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "steps[step-0].raster_sources.mask.objectKey");
+        Assert.DoesNotContain(result.Errors, error =>
+            error.Code == RasterSourceValidationCodes.UnsafeLocator
+            && error.Field == "objectKey");
+    }
+
+    [Fact]
     public void SecurityContext_CallerCannotMarkReferenceTrusted()
     {
         var document = JsonNode.Parse(RasterSourceJson.Serialize(Cog()))!.AsObject();
@@ -262,6 +344,25 @@ public sealed class RasterSourceContractTests
 
         var source = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(source);
+    }
+
+    [Fact]
+    public void AnalysisContentJsonContext_SourceTypeAfterDescriptorProperties_IsAccepted()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor> { ["source"] = Cog() }),
+        };
+        var document = JsonNode.Parse(
+            JsonSerializer.Serialize(package, AnalysisContentJsonContext.Default.AnalysisPackageContent))!;
+        var source = document["plan"]!["steps"]![0]!["rasterSources"]!["source"]!.AsObject();
+        MoveSourceTypeToEnd(source);
+
+        var roundTrip = JsonSerializer.Deserialize(
+            document.ToJsonString(), AnalysisContentJsonContext.Default.AnalysisPackageContent);
+
+        var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
+        Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);
     }
 
     [Fact]
@@ -299,6 +400,30 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Validate_SelectionCountCeilings_DoNotEnumerateOversizedCollections()
+    {
+        var descriptor = Zarr() with
+        {
+            Selection = new RasterSourceSelection
+            {
+                Bands = new ThrowingReadOnlyList<int>(2),
+                Dimensions = new ThrowingReadOnlyList<RasterDimensionSlice>(2),
+            },
+        };
+        var options = RasterSourceValidationOptions.Default with
+        {
+            MaxBandSelections = 1,
+            MaxDimensionSelections = 1,
+        };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
+        Assert.Equal(2, result.Errors.Count(error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && error.Message.Contains("configured count limit", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task ResolveAsync_MetadataMatchesPinnedDescriptor_ReturnsAvailable()
     {
         var descriptor = Cog();
@@ -331,6 +456,23 @@ public sealed class RasterSourceContractTests
         var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
 
         Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_MediaTypeDoesNotMatch_ReturnsIntegrityMismatch()
+    {
+        var descriptor = Cog();
+        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
+            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
+            {
+                Version = descriptor.Version,
+                Content = descriptor.Content with { MediaType = "application/octet-stream" },
+            })));
+
+        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
+
+        Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
+        Assert.Equal("source_integrity_mismatch", result.FailureCode);
     }
 
     [Fact]
@@ -421,6 +563,13 @@ public sealed class RasterSourceContractTests
         SecurityContext = Security(),
     };
 
+    private static void MoveSourceTypeToEnd(JsonObject source)
+    {
+        var sourceType = source["sourceType"]!.GetValue<string>();
+        Assert.True(source.Remove("sourceType"));
+        source["sourceType"] = sourceType;
+    }
+
     private static AnalysisPlan Plan(IReadOnlyDictionary<string, RasterSourceDescriptor> rasterSources) => new()
     {
         PlanId = "plan-raster-contract",
@@ -457,5 +606,17 @@ public sealed class RasterSourceContractTests
         public Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
             RasterSourceDescriptor descriptor,
             CancellationToken cancellationToken = default) => callback(descriptor, cancellationToken);
+    }
+
+    private sealed class ThrowingReadOnlyList<T>(int count) : IReadOnlyList<T>
+    {
+        public int Count { get; } = count;
+
+        public T this[int index] => throw new InvalidOperationException("Oversized collection was indexed.");
+
+        public IEnumerator<T> GetEnumerator() =>
+            throw new InvalidOperationException("Oversized collection was enumerated.");
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
