@@ -185,6 +185,7 @@ COPY --from=build /app /var/task
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgssapi-krb5-2 fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/* && \
+    test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
     chmod +x /var/task/Honua.Server && \
     skia_linkage="$(ldd -r /var/task/libSkiaSharp.so 2>&1)" && \
     printf '%s\n' "$skia_linkage" && \
@@ -195,6 +196,7 @@ RUN apt-get update && \
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
+    HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
