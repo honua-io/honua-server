@@ -23,6 +23,36 @@ public sealed class FeatureDataAccessCommitClassificationTests
     }
 
     [Fact]
+    public async Task CommitEditTransactionAsync_FatalAdminShutdown_WrapsAmbiguousAcknowledgement()
+    {
+        var fatalShutdown = PostgresFailure(
+            "terminating connection due to administrator command",
+            "FATAL",
+            PostgresErrorCodes.AdminShutdown);
+        var transaction = new StubDbTransaction(_ => Task.FromException(fatalShutdown));
+
+        var thrown = await Assert.ThrowsAsync<FeatureEditCommitOutcomeUnknownException>(
+            () => FeatureDataAccess.CommitEditTransactionAsync(transaction, CancellationToken.None));
+
+        thrown.InnerException.Should().BeSameAs(fatalShutdown);
+    }
+
+    [Fact]
+    public async Task CommitEditTransactionAsync_TransactionResolutionUnknown_WrapsAmbiguousAcknowledgement()
+    {
+        var unknownResolution = PostgresFailure(
+            "transaction resolution is unknown",
+            "ERROR",
+            PostgresErrorCodes.TransactionResolutionUnknown);
+        var transaction = new StubDbTransaction(_ => Task.FromException(unknownResolution));
+
+        var thrown = await Assert.ThrowsAsync<FeatureEditCommitOutcomeUnknownException>(
+            () => FeatureDataAccess.CommitEditTransactionAsync(transaction, CancellationToken.None));
+
+        thrown.InnerException.Should().BeSameAs(unknownResolution);
+    }
+
+    [Fact]
     public async Task CommitEditTransactionAsync_ConnectionFailure_WrapsAmbiguousAcknowledgement()
     {
         var connectionFailure = new NpgsqlException("Connection was lost while awaiting COMMIT.");
@@ -35,11 +65,22 @@ public sealed class FeatureDataAccessCommitClassificationTests
     }
 
     private static PostgresException DeferredConstraintViolation() =>
+        PostgresFailure(
+            "check constraint was violated at commit",
+            "ERROR",
+            PostgresErrorCodes.CheckViolation,
+            constraintName: "features_deferred_check");
+
+    private static PostgresException PostgresFailure(
+        string messageText,
+        string severity,
+        string sqlState,
+        string? constraintName = null) =>
         new(
-            messageText: "check constraint was violated at commit",
-            severity: "ERROR",
-            invariantSeverity: "ERROR",
-            sqlState: PostgresErrorCodes.CheckViolation,
+            messageText: messageText,
+            severity: severity,
+            invariantSeverity: severity,
+            sqlState: sqlState,
             detail: null,
             hint: null,
             position: 0,
@@ -50,7 +91,7 @@ public sealed class FeatureDataAccessCommitClassificationTests
             tableName: "features",
             columnName: null,
             dataTypeName: null,
-            constraintName: "features_deferred_check",
+            constraintName: constraintName,
             file: null,
             line: null,
             routine: null);

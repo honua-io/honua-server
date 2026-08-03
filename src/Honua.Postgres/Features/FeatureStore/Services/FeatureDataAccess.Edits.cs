@@ -804,16 +804,17 @@ internal sealed partial class FeatureDataAccess
         CancellationToken cancellationToken)
     {
         // Do not start COMMIT after caller cancellation, and never pass a live token once it does
-        // start. A server error response proves PostgreSQL rejected the commit. Other provider
-        // failures remain ambiguous because the commit may have completed before the connection
-        // or acknowledgement was lost.
+        // start. A non-terminal ERROR response outside the connection and operator-intervention
+        // classes proves PostgreSQL rejected the commit. FATAL/PANIC responses and connection-class
+        // errors can instead arrive while the server or connection is terminating, after the commit
+        // became durable but before its acknowledgement reached the client.
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         }
-        catch (PostgresException)
+        catch (PostgresException ex) when (IsConfirmedCommitRejection(ex))
         {
             throw;
         }
@@ -822,6 +823,11 @@ internal sealed partial class FeatureDataAccess
             throw new FeatureEditCommitOutcomeUnknownException(ex);
         }
     }
+
+    private static bool IsConfirmedCommitRejection(PostgresException exception)
+        => string.Equals(exception.InvariantSeverity, "ERROR", StringComparison.Ordinal) &&
+            !exception.SqlState.StartsWith("08", StringComparison.Ordinal) &&
+            !exception.SqlState.StartsWith("57", StringComparison.Ordinal);
 
     private static async Task RollbackIfNeededAsync(NpgsqlTransaction transaction)
     {
