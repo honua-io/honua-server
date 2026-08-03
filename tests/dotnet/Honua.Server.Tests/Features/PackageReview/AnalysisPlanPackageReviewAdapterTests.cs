@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
 using Honua.PackageReview;
@@ -82,10 +83,64 @@ public sealed class AnalysisPlanPackageReviewAdapterTests
         capturedPrincipal.Claims.Should().Contain(c => c.Type == "tenant_id" && c.Value == "tenant-a");
     }
 
-    private static PackageReviewRequest CreateRequest(bool includePreview = false)
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ReviewAsync_WithRasterSource_PreservesTypedBindingForValidation()
     {
-        using var document = JsonDocument.Parse(
+        AnalysisPlan? capturedPlan = null;
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.ValidatePlan(Arg.Do<AnalysisPlan>(plan => capturedPlan = plan), Arg.Any<ClaimsPrincipal>())
+            .Returns(new PlanValidationResult { IsExecutable = true });
+        var adapter = new AnalysisPlanPackageReviewAdapter(jobService);
+
+        await adapter.ReviewAsync(CreateRequest(includeRasterSource: true), CreateContext(), CancellationToken.None);
+
+        capturedPlan.Should().NotBeNull();
+        var source = capturedPlan!.Steps.Should().ContainSingle().Subject.RasterSources
+            .Should().ContainSingle().Subject.Value;
+        source.Should().BeOfType<ObjectStoreCogRasterSourceDescriptor>()
+            .Which.ObjectKey.Should().Be("tenant-a/imagery/source.tif");
+    }
+
+    private static PackageReviewRequest CreateRequest(bool includePreview = false, bool includeRasterSource = false)
+    {
+        var payload = includeRasterSource
+            ? """
+            {
+              "planId": "plan-1",
+              "intentId": "intent-1",
+              "steps": [
+                {
+                  "stepId": "step-1",
+                  "kind": "Geoprocess",
+                  "processId": "raster.clip",
+                  "rasterSources": {
+                    "source": {
+                      "sourceContractVersion": 1,
+                      "version": "object-version-1",
+                      "content": {
+                        "sizeBytes": 4096,
+                        "mediaType": "image/tiff",
+                        "checksum": {
+                          "algorithm": "sha256",
+                          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        }
+                      },
+                      "securityContext": {
+                        "tenantId": "tenant-a",
+                        "authorizationSnapshotReference": "auth-snapshot-123"
+                      },
+                      "storeReference": "imagery-prod",
+                      "objectKey": "tenant-a/imagery/source.tif",
+                      "sourceType": "cog"
+                    }
+                  }
+                }
+              ],
+              "outputs": [ "FeatureLayer" ]
+            }
             """
+            : """
             {
               "planId": "plan-1",
               "intentId": "intent-1",
@@ -98,7 +153,8 @@ public sealed class AnalysisPlanPackageReviewAdapterTests
               ],
               "outputs": [ "FeatureLayer" ]
             }
-            """);
+            """;
+        using var document = JsonDocument.Parse(payload);
 
         return new PackageReviewRequest
         {

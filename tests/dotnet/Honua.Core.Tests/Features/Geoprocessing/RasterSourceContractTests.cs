@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.AnalysisContent;
@@ -329,6 +330,30 @@ public sealed class RasterSourceContractTests
     }
 
     [Fact]
+    public void Validate_SelectionAboveCountLimits_DoesNotEnumerateOversizedCollections()
+    {
+        var descriptor = Cog() with
+        {
+            Selection = new RasterSourceSelection
+            {
+                Bands = new ThrowingOversizedReadOnlyList<int>(2),
+                Dimensions = new ThrowingOversizedReadOnlyList<RasterDimensionSlice>(2),
+            },
+        };
+        var options = RasterSourceValidationOptions.Default with
+        {
+            MaxBandSelections = 1,
+            MaxDimensionSelections = 1,
+        };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
+        Assert.Equal(2, result.Errors.Count(error =>
+            error.Code == RasterSourceValidationCodes.InvalidField
+            && (error.Field == "selection.bands" || error.Field == "selection.dimensions")));
+    }
+
+    [Fact]
     public async Task ResolveAsync_MetadataMatchesPinnedDescriptor_ReturnsAvailable()
     {
         var descriptor = Cog();
@@ -511,5 +536,17 @@ public sealed class RasterSourceContractTests
         public Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
             RasterSourceDescriptor descriptor,
             CancellationToken cancellationToken = default) => callback(descriptor, cancellationToken);
+    }
+
+    private sealed class ThrowingOversizedReadOnlyList<T>(int count) : IReadOnlyList<T>
+    {
+        public int Count => count;
+
+        public T this[int index] => throw new InvalidOperationException("Oversized collection must not be indexed.");
+
+        public IEnumerator<T> GetEnumerator()
+            => throw new InvalidOperationException("Oversized collection must not be enumerated.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
