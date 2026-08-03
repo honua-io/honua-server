@@ -25,7 +25,8 @@ APPROVAL_PATTERN = re.compile(
 )
 HTML_COMMENT_PATTERN = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 FENCE_START_PATTERN = re.compile(
-    r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
+    r"^[ ]{0,3}(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?"
+    r"(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
 )
 RAW_HTML_CONTAINER_START_PATTERN = re.compile(
     r"^[ ]{0,3}<(?P<tag>pre|script|style|textarea)(?:[ \t]|>|$)",

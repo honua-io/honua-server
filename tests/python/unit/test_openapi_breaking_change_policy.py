@@ -75,6 +75,8 @@ class ResolvePolicyTests(unittest.TestCase):
         bodies = {
             "backtick fence": f"```markdown\n{marker}\n```",
             "tilde fence": f"~~~markdown\n{marker}\n~~~",
+            "backtick fence nested in list": f"- ```markdown\n  {marker}\n  ```",
+            "tilde fence nested in ordered list": f"1. ~~~markdown\n   {marker}\n   ~~~",
             "unclosed fence": f"```markdown\n{marker}",
             "single-line HTML comment": f"<!-- {marker} -->",
             "multiline HTML comment": f"<!--\n{marker}\n-->",
@@ -104,6 +106,19 @@ class ResolvePolicyTests(unittest.TestCase):
             "```\n"
             "<!-- another non-approval example -->\n"
             "   - [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval",
+        )
+
+        self.assertTrue(decision.allow_breaking_changes)
+        self.assertEqual(
+            decision.source,
+            "pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED",
+        )
+
+    def test_ResolvePolicy_RenderedMarkerAfterListNestedFence_AllowsBreakingChanges(self):
+        marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - reviewed approval"
+        decision = POLICY.resolve_policy(
+            "false",
+            f"- ```markdown\n  {marker} - example only\n  ```\n\n{marker}",
         )
 
         self.assertTrue(decision.allow_breaking_changes)
