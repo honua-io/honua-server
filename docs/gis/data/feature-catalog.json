@@ -5189,6 +5189,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_UnsubscribeReservedDefaultId_ReturnsErrorAndPreservesPolling",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_DeltaModeDefault_EmitsNoSnapshotFrames",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_EmptyReplayBeforeDurableHead_EndsBeforeLiveHandoff",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayBatchWithInteriorGap_EndsBeforeSendingAnyDelta",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayWindowTrimmedAfterBaseline_EndsBeforeSendingPostGapDelta",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_ReplayWindowTrimmedPastBaseline_MarksBaselineIncomplete",
@@ -5204,6 +5205,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_SnapshotMode_SequenceIsContiguousWhenGlobalCursorSkipsFilteredEvents",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Sse_UnknownMode_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_ReplayBatchWithInteriorGap_ClosesBeforeSendingAnyDelta",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_ShortReplayBeforeDurableHead_ClosesAfterContiguousPrefix",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot"
       ],
