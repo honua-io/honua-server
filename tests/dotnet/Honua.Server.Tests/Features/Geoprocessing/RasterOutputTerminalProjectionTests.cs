@@ -172,11 +172,16 @@ public sealed class RasterOutputTerminalProjectionTests
                     CreatedAt = Stage.CreatedAt,
                     Outputs = [Stage]
                 }));
-            registry.AcquireObjectLeaseAsync(
+            // NSubstitute consumes the first ValueTask only to identify the configured call;
+            // the callback returns a fresh instance for every runtime invocation.
+#pragma warning disable CA2012
+            SubstituteExtensions.Returns(
+                registry.AcquireObjectLeaseAsync(
                     Arg.Any<string>(),
                     Arg.Any<string>(),
-                    Arg.Any<CancellationToken>())
-                .Returns(ValueTask.FromResult<IAsyncDisposable>(NoopLease.Instance));
+                    Arg.Any<CancellationToken>()),
+                _ => ValueTask.FromResult<IAsyncDisposable>(NoopLease.Instance));
+#pragma warning restore CA2012
             ObjectStore.PublishAsync(
                     Arg.Any<RasterObjectPublicationRequest>(),
                     Arg.Any<CancellationToken>())

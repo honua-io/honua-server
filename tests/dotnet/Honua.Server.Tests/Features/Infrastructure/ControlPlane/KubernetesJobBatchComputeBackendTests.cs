@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -136,7 +137,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
                 ContractVersion = RasterOutputContract.JobContractVersion,
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "tenant-results",
                     ["env." + RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] =
                         "https://attacker.example/signed?secret=yes",
                     ["env." + RasterOutputWorkerContract.StagingPrefixEnvironmentVariable] =
@@ -153,11 +154,15 @@ public sealed class KubernetesJobBatchComputeBackendTests
             Arg.Is<KubernetesJobManifest>(manifest =>
                 manifest.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "2"
                 && manifest.EnvironmentVariables[RasterOutputWorkerContract.ContractVersionEnvironmentVariable] == "1"
-                && manifest.EnvironmentVariables[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] == "gp-results"
+                && manifest.EnvironmentVariables[RasterOutputWorkerContract.StoreReferenceEnvironmentVariable] == "tenant-results"
                 && manifest.EnvironmentVariables[RasterOutputWorkerContract.StagingPrefixEnvironmentVariable]
                     == RasterOutputWorkerContract.BuildStagingPrefix(job.OperationId, 4)
                 && manifest.EnvironmentVariables[RasterOutputWorkerContract.ManifestKeyEnvironmentVariable]
                     == RasterOutputWorkerContract.BuildManifestObjectKey(job.OperationId, 4)
+                && manifest.EnvironmentVariables["FileStorage__Provider"] == "AwsS3"
+                && manifest.EnvironmentVariables["FileStorage__AwsS3__BucketName"] == "honua-gp-tests"
+                && !manifest.EnvironmentVariables.ContainsKey("FileStorage__AwsS3__AccessKeyId")
+                && !manifest.EnvironmentVariables.ContainsKey("FileStorage__AwsS3__SecretAccessKey")
                 && !manifest.EnvironmentVariables.Values.Any(value =>
                     value.Contains("attacker", StringComparison.OrdinalIgnoreCase)
                     || value.Contains("credential", StringComparison.OrdinalIgnoreCase)
@@ -188,6 +193,145 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         await action.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*logical store reference*");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task StartAsync_AzureRasterProjectsWorkloadIdentityUriWithoutConnectionString()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Created });
+        var backend = CreateBackend(
+            client,
+            storage: new CloudStorageOptions
+            {
+                Provider = CloudStorageProvider.AzureBlob,
+                AzureBlob = new AzureBlobOptions
+                {
+                    ConnectionString =
+                        "DefaultEndpointsProtocol=https;AccountName=honuatest;AccountKey=not-projected;EndpointSuffix=core.windows.net",
+                    ContainerName = "gp-results",
+                    BlobPrefix = "tenant-a"
+                }
+            });
+        var initial = CreateJob("job-raster-azure", image: "honua/worker:1.0.0");
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
+                }
+            }
+        };
+
+        await backend.StartAsync(job);
+
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(manifest =>
+                manifest.EnvironmentVariables["FileStorage__Provider"] == "AzureBlob"
+                && manifest.EnvironmentVariables["FileStorage__AzureBlob__ServiceUri"]
+                    == "https://honuatest.blob.core.windows.net"
+                && manifest.EnvironmentVariables["FileStorage__AzureBlob__ContainerName"] == "gp-results"
+                && !manifest.EnvironmentVariables.ContainsKey("FileStorage__AzureBlob__ConnectionString")
+                && !manifest.EnvironmentVariables.Values.Any(value =>
+                    value.Contains("not-projected", StringComparison.Ordinal))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterRejectsStorageSecretsInDurableJobParameters()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(client);
+        var initial = CreateJob("job-raster-secret", image: "honua/worker:1.0.0");
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results",
+                    ["env.FileStorage__AwsS3__SecretAccessKey"] = "must-not-project"
+                }
+            }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*cannot be supplied through durable job parameters*");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterRejectsCredentialBearingS3ServiceUrl()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(
+            client,
+            storage: new CloudStorageOptions
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                AwsS3 = new AwsS3Options
+                {
+                    BucketName = "gp-results",
+                    Region = "us-west-2",
+                    ServiceUrl = "https://s3.example.test?token=must-not-project"
+                }
+            });
+        var initial = CreateJob("job-raster-secret-url", image: "honua/worker:1.0.0");
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
+                }
+            }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*non-secret HTTP(S) service URL*");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task StartAsync_RasterRejectsPodLocalOutputStorage()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(
+            client,
+            storage: new CloudStorageOptions
+            {
+                Provider = CloudStorageProvider.Local,
+                LocalStorage = new LocalStorageOptions { BasePath = "/tmp/honua-gp" }
+            });
+        var initial = CreateJob("job-raster-local", image: "honua/worker:1.0.0");
+        var job = initial with
+        {
+            Spec = initial.Spec with
+            {
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
+                }
+            }
+        };
+
+        var action = async () => await backend.StartAsync(job);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*pod-local raster output is not publishable*");
         await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!, default);
     }
 
@@ -1630,7 +1774,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
     private static KubernetesJobBatchComputeBackend CreateBackend(
         IKubernetesJobClient client,
-        KubernetesExecutionOptions? options = null)
+        KubernetesExecutionOptions? options = null,
+        CloudStorageOptions? storage = null)
     {
         var monitor = Substitute.For<IOptionsMonitor<KubernetesExecutionOptions>>();
         monitor.CurrentValue.Returns(options ?? new KubernetesExecutionOptions
@@ -1640,6 +1785,17 @@ public sealed class KubernetesJobBatchComputeBackendTests
         return new KubernetesJobBatchComputeBackend(
             client,
             monitor,
+            Options.Create(storage ?? new CloudStorageOptions
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                AwsS3 = new AwsS3Options
+                {
+                    BucketName = "honua-gp-tests",
+                    Region = "us-west-2",
+                    AccessKeyId = "server-access-must-not-project",
+                    SecretAccessKey = "server-secret-must-not-project"
+                }
+            }),
             NullLogger<KubernetesJobBatchComputeBackend>.Instance);
     }
 

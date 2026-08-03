@@ -108,6 +108,9 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
                 }
             }
 
+            await WriteExpiryMetadataAsync(destination, descriptor.ExpiresAt, cancellationToken)
+                .ConfigureAwait(false);
+
             return Stored(descriptor, descriptor.ObjectKey, RasterStoredObjectState.Staged, descriptor.CreatedAt);
         }
         finally
@@ -132,6 +135,7 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
         }
 
         var identity = await HashFileAsync(path, "sha256", cancellationToken).ConfigureAwait(false);
+        var state = StateFor(objectKey);
         return new RasterStoredObject
         {
             StoreReference = _storeReference,
@@ -143,8 +147,11 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
                 MediaType = InferMediaType(objectKey),
                 Checksum = new RasterChecksum("sha256", identity.Checksum)
             },
-            State = StateFor(objectKey),
-            LastModifiedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero)
+            State = state,
+            LastModifiedAt = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero),
+            ExpiresAt = state == RasterStoredObjectState.Staged
+                ? await TryReadStageExpiryAsync(objectKey, path, cancellationToken).ConfigureAwait(false)
+                : null
         };
     }
 
@@ -190,6 +197,8 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
                 File.Delete(source);
             }
 
+            DeleteExpiryMetadata(source);
+
             return Stored(
                 request.Stage,
                 request.DestinationObjectKey,
@@ -217,6 +226,7 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             }
         }
 
+        DeleteExpiryMetadata(source);
         File.SetLastWriteTimeUtc(destination, request.PublishedAt.UtcDateTime);
         return Stored(
             request.Stage,
@@ -231,15 +241,21 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumCount);
-        if (!Directory.Exists(_root))
+        var rasterRoot = Path.Combine(_root, "raster");
+        if (!Directory.Exists(rasterRoot))
         {
             yield break;
         }
 
         var count = 0;
-        foreach (var path in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+        foreach (var path in Directory.EnumerateFiles(rasterRoot, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (path.EndsWith(RasterOutputWorkerContract.LocalExpiryMetadataSuffix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (File.GetLastWriteTimeUtc(path) >= olderThan.UtcDateTime)
             {
                 continue;
@@ -271,6 +287,8 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
         {
             File.Delete(path);
         }
+
+        DeleteExpiryMetadata(path);
 
         return Task.CompletedTask;
     }
@@ -354,8 +372,110 @@ internal sealed class LocalRasterOutputObjectStore : IRasterOutputObjectStore, I
             ObjectVersion = stage.Content.Checksum!.Algorithm + ":" + stage.Content.Checksum.Value.ToLowerInvariant(),
             Content = stage.Content,
             State = state,
-            LastModifiedAt = lastModifiedAt
+            LastModifiedAt = lastModifiedAt,
+            ExpiresAt = state == RasterStoredObjectState.Staged ? stage.ExpiresAt : null
         };
+
+    private async Task<DateTimeOffset?> TryReadStageExpiryAsync(
+        string objectKey,
+        string objectPath,
+        CancellationToken cancellationToken)
+    {
+        var metadataPath = ExpiryMetadataPath(objectPath);
+        if (File.Exists(metadataPath))
+        {
+            if (new FileInfo(metadataPath).Length > RasterOutputWorkerContract.MaximumLocalExpiryMetadataBytes)
+            {
+                throw new InvalidDataException("Local raster expiry metadata exceeds its bounded size.");
+            }
+
+            return ParseExpiry(
+                await File.ReadAllTextAsync(metadataPath, cancellationToken).ConfigureAwait(false));
+        }
+
+        var segments = objectKey.Split('/');
+        if (segments.Length < 5
+            || !string.Equals(segments[0], "raster", StringComparison.Ordinal)
+            || !string.Equals(segments[1], "staging", StringComparison.Ordinal)
+            || !segments[3].StartsWith("attempt-", StringComparison.Ordinal)
+            || !int.TryParse(
+                segments[3].AsSpan("attempt-".Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var attempt)
+            || attempt < 0
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(segments[2]))
+        {
+            return null;
+        }
+
+        var manifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(segments[2], attempt);
+        var manifest = await ReadManifestAsync(_storeReference, manifestKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(objectKey, manifestKey, StringComparison.Ordinal))
+        {
+            return manifest.Outputs.Max(output => output.ExpiresAt);
+        }
+
+        return manifest.Outputs.FirstOrDefault(output =>
+            string.Equals(output.ObjectKey, objectKey, StringComparison.Ordinal))?.ExpiresAt;
+    }
+
+    private static async Task WriteExpiryMetadataAsync(
+        string objectPath,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        var metadataPath = ExpiryMetadataPath(objectPath);
+        var temporary = metadataPath + ".upload-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await File.WriteAllTextAsync(
+                temporary,
+                expiresAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, metadataPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
+        }
+    }
+
+    private static DateTimeOffset ParseExpiry(string value)
+    {
+        if (!DateTimeOffset.TryParseExact(
+                value,
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var expiresAt))
+        {
+            throw new InvalidDataException("Local raster object contains invalid expiry metadata.");
+        }
+
+        return expiresAt;
+    }
+
+    private static void DeleteExpiryMetadata(string objectPath)
+    {
+        var metadataPath = ExpiryMetadataPath(objectPath);
+        if (File.Exists(metadataPath))
+        {
+            File.Delete(metadataPath);
+        }
+    }
+
+    private static string ExpiryMetadataPath(string objectPath) =>
+        objectPath + RasterOutputWorkerContract.LocalExpiryMetadataSuffix;
 
     private static async Task<FileIdentity> CopyAndHashAsync(
         Stream source,

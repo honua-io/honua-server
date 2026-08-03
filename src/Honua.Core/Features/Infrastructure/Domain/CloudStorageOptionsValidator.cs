@@ -165,6 +165,17 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
         // Connection string validation
         ValidateRequiredString(options.ConnectionString, "AzureBlob.ConnectionString", errors);
 
+        if (!string.IsNullOrWhiteSpace(options.ServiceUri)
+            && (!Uri.TryCreate(options.ServiceUri, UriKind.Absolute, out var serviceUri)
+                || !string.Equals(serviceUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(serviceUri.UserInfo)
+                || !string.IsNullOrEmpty(serviceUri.Query)
+                || !string.IsNullOrEmpty(serviceUri.Fragment)))
+        {
+            errors.Add(
+                "AzureBlob.ServiceUri must be a non-secret absolute HTTPS endpoint without user info, query, or fragment.");
+        }
+
         // Container name validation
         ValidateRequiredString(options.ContainerName, "AzureBlob.ContainerName", errors);
         if (!string.IsNullOrWhiteSpace(options.ContainerName))

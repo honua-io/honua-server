@@ -135,6 +135,10 @@ public sealed class LocalRasterOutputObjectStoreTests : IDisposable
 
         File.SetLastWriteTimeUtc(PathFor(publishedKey), PublishedAt.UtcDateTime);
         File.SetLastWriteTimeUtc(PathFor(retryStage.ObjectKey), PublishedAt.UtcDateTime);
+        var unrelatedPath = Path.Combine(_root, "uploads", "unrelated.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(unrelatedPath)!);
+        await File.WriteAllBytesAsync(unrelatedPath, [1, 2, 3]);
+        File.SetLastWriteTimeUtc(unrelatedPath, PublishedAt.UtcDateTime);
 
         var candidates = new List<RasterStoredObject>();
         await foreach (var candidate in store.ListExpiredAsync(
@@ -149,6 +153,25 @@ public sealed class LocalRasterOutputObjectStoreTests : IDisposable
             && candidate.State == RasterStoredObjectState.Published);
         candidates.Should().Contain(candidate => candidate.ObjectKey == retryStage.ObjectKey
             && candidate.State == RasterStoredObjectState.Staged);
+        File.Exists(unrelatedPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InspectAsync_PersistsStagedExpiryBeforeManifestExists()
+    {
+        var payload = new byte[256];
+        RandomNumberGenerator.Fill(payload);
+        var stage = Stage(payload);
+        var store = new LocalRasterOutputObjectStore(_root, "gp-results");
+        await using (var content = new MemoryStream(payload, writable: false))
+        {
+            await store.StageAsync(stage, content);
+        }
+
+        var inspected = await store.InspectAsync(stage.StoreReference, stage.ObjectKey);
+
+        inspected.Should().NotBeNull();
+        inspected!.ExpiresAt.Should().Be(stage.ExpiresAt);
     }
 
     [Fact]

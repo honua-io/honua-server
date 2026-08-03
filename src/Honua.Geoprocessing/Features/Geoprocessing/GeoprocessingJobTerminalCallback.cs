@@ -357,7 +357,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             "Raster output references could not be persisted after repeated version conflicts.");
     }
 
-    private static IReadOnlyList<string> MergeRasterOutputReferences(
+    private static string[] MergeRasterOutputReferences(
         IReadOnlyList<string> projectedReferences,
         IReadOnlyList<string> currentReferences)
     {

@@ -112,6 +112,7 @@ public static class GdalWorkerServiceCollectionExtensions
         services
             .AddOptions<CloudStorageOptions>()
             .Bind(storageSection)
+            .PostConfigure(options => ResolveWorkerSecretReferences(options))
             .Validate(
                 options => options.Provider != CloudStorageProvider.Local
                     || options.LocalStorage is { BasePath.Length: > 0 },
@@ -120,6 +121,7 @@ public static class GdalWorkerServiceCollectionExtensions
         services
             .AddOptions<RasterOutputPublicationOptions>()
             .Bind(configuration.GetSection(RasterOutputPublicationOptions.SectionName))
+            .PostConfigure(options => ResolveWorkerStoreReference(options))
             .Validate(
                 options => RasterOutputWorkerContract.IsLogicalStoreReference(options.StoreReference),
                 "Raster output StoreReference must be a bounded logical identifier.")
@@ -179,6 +181,86 @@ public static class GdalWorkerServiceCollectionExtensions
             default:
                 throw new InvalidOperationException($"Unknown raster output storage provider: {provider}.");
         }
+    }
+
+    internal static void ResolveWorkerSecretReferences(
+        CloudStorageOptions options,
+        Func<string, string?>? environmentReader = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        environmentReader ??= Environment.GetEnvironmentVariable;
+        if (options.AwsS3 is { } aws)
+        {
+            aws.AccessKeyId = ResolveEnvironmentReference(
+                aws.AccessKeyId,
+                "FileStorage:AwsS3:AccessKeyId",
+                environmentReader);
+            aws.SecretAccessKey = ResolveEnvironmentReference(
+                aws.SecretAccessKey,
+                "FileStorage:AwsS3:SecretAccessKey",
+                environmentReader);
+        }
+
+        if (options.AzureBlob is { } azure)
+        {
+            azure.ConnectionString = ResolveEnvironmentReference(
+                    azure.ConnectionString,
+                    "FileStorage:AzureBlob:ConnectionString",
+                    environmentReader)
+                ?? string.Empty;
+        }
+    }
+
+    internal static void ResolveWorkerStoreReference(
+        RasterOutputPublicationOptions options,
+        Func<string, string?>? environmentReader = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        environmentReader ??= Environment.GetEnvironmentVariable;
+        var projected = environmentReader(RasterOutputWorkerContract.StoreReferenceEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(projected))
+        {
+            return;
+        }
+
+        if (!RasterOutputWorkerContract.IsLogicalStoreReference(projected))
+        {
+            throw new InvalidOperationException(
+                "The projected raster output store reference is not a bounded logical identifier.");
+        }
+
+        options.StoreReference = projected;
+    }
+
+    private static string? ResolveEnvironmentReference(
+        string? value,
+        string optionName,
+        Func<string, string?> environmentReader)
+    {
+        const string prefix = "env:";
+        if (string.IsNullOrWhiteSpace(value)
+            || !value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return value;
+        }
+
+        var variableName = value[prefix.Length..];
+        if (variableName.Length is 0 or > 128
+            || variableName.Any(character =>
+                !char.IsAsciiLetterOrDigit(character) && character != '_'))
+        {
+            throw new InvalidOperationException(
+                $"{optionName} contains an invalid environment secret reference.");
+        }
+
+        var resolved = environmentReader(variableName);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            throw new InvalidOperationException(
+                $"{optionName} references an environment variable that is unavailable to the GDAL worker.");
+        }
+
+        return resolved;
     }
 
     /// <summary>

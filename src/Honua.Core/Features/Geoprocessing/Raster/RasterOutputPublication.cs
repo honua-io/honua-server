@@ -88,6 +88,13 @@ public sealed record RasterStoredObject
 
     /// <summary>Last mutation timestamp used by bounded orphan reconciliation.</summary>
     public required DateTimeOffset LastModifiedAt { get; init; }
+
+    /// <summary>
+    /// Optional staged-object lease expiry recovered from provider metadata. A sweeper must
+    /// not remove a staged object before this time even when its last mutation is older than
+    /// the normal orphan grace cutoff. Published objects use registry visibility instead.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
 }
 
 /// <summary>Idempotent same-store promotion request.</summary>
@@ -132,7 +139,9 @@ public sealed record RasterOutputPublicationOptions
 /// <summary>
 /// Object-store operations used by worker-side output publication. Implementations must stream
 /// content, validate declared size/media/checksum, isolate attempts, and make same-store promotion
-/// atomic. A repeated promotion must return the existing object only when its identity matches.
+/// atomic. Staging must durably preserve the descriptor expiry beside the object so reconciliation
+/// remains safe before a manifest exists. A repeated promotion must return the existing object only
+/// when its identity matches.
 /// </summary>
 public interface IRasterOutputObjectStore
 {
@@ -142,7 +151,7 @@ public interface IRasterOutputObjectStore
         Stream content,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns verified metadata for an exact stable or staged object.</summary>
+    /// <summary>Returns verified metadata, including any staged lease expiry, for an exact object.</summary>
     Task<RasterStoredObject?> InspectAsync(
         string storeReference,
         string objectKey,
@@ -159,7 +168,10 @@ public interface IRasterOutputObjectStore
         RasterObjectPublicationRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists a bounded set of staged or published objects older than a cutoff.</summary>
+    /// <summary>
+    /// Lists a bounded set of staged or published objects older than a cutoff. Staged candidates
+    /// may still have an active <see cref="RasterStoredObject.ExpiresAt"/> lease for the caller to retain.
+    /// </summary>
     IAsyncEnumerable<RasterStoredObject> ListExpiredAsync(
         DateTimeOffset olderThan,
         int maximumCount,
@@ -287,8 +299,8 @@ public sealed record RasterOutputPublicationResult
 /// <summary>Summary of a bounded orphan sweep.</summary>
 /// <param name="Inspected">Candidates inspected.</param>
 /// <param name="Deleted">Unregistered candidates deleted.</param>
-/// <param name="RetainedVisible">Visible published objects retained.</param>
-public sealed record RasterOutputOrphanSweepResult(int Inspected, int Deleted, int RetainedVisible);
+/// <param name="Retained">Objects retained because their staged lease or published registration is active.</param>
+public sealed record RasterOutputOrphanSweepResult(int Inspected, int Deleted, int Retained);
 
 /// <summary>Coordinates retry-safe promotion, atomic registration, and bounded orphan cleanup.</summary>
 public sealed class RasterOutputPublisher
@@ -437,6 +449,14 @@ public sealed class RasterOutputPublisher
                 candidate.StoreReference,
                 candidate.ObjectKey,
                 cancellationToken).ConfigureAwait(false);
+            if (candidate.State == RasterStoredObjectState.Staged
+                && candidate.ExpiresAt is { } stagedExpiry
+                && stagedExpiry > olderThan)
+            {
+                retained++;
+                continue;
+            }
+
             if (candidate.State == RasterStoredObjectState.Published
                 && await _registry.IsVisibleAsync(
                     candidate.StoreReference,

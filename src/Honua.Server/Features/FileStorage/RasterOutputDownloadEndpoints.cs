@@ -15,8 +15,8 @@ namespace Honua.Server.Features.FileStorage;
 /// </summary>
 internal static class RasterOutputDownloadEndpoints
 {
-    private const string Route =
-        "/api/v{version:apiVersion}/geoprocessing/raster-outputs/{artifactId}";
+    private const string RoutePrefix =
+        "/api/v{version:apiVersion}/geoprocessing/raster-outputs";
 
     public static IEndpointRouteBuilder MapRasterOutputDownloadEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -27,8 +27,12 @@ internal static class RasterOutputDownloadEndpoints
         // then IGeoprocessingJobService applies the canonical owner/grant check before
         // any object stream is opened. AllowAnonymous keeps 401/403 ordering inside that
         // shared authorization path for API-key and bearer-token callers alike.
-        endpoints.MapMethods(
-                Route,
+        var group = endpoints.MapGroup(RoutePrefix)
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0);
+
+        group.MapMethods(
+                "/{artifactId}",
                 [HttpMethods.Get, HttpMethods.Head],
                 static (string artifactId, HttpContext context, CancellationToken cancellationToken) =>
                     HandleDownloadAsync(
@@ -38,8 +42,6 @@ internal static class RasterOutputDownloadEndpoints
                         context.RequestServices.GetService<IRasterOutputObjectStore>(),
                         context.RequestServices.GetService<IGeoprocessingJobService>(),
                         cancellationToken))
-            .WithApiVersionSet()
-            .HasApiVersion(1, 0)
             .WithName("GeoprocessingRasterOutputDownload")
             .WithDisplayName("Download GP Raster Output")
             .WithSummary("Stream an immutable geoprocessing COG output")

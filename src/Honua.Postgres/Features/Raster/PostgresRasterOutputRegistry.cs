@@ -291,6 +291,7 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
 
         var layerId = ParseLayerTarget(command.Target.TargetReference);
         var (provider, container, prefix) = ResolvePhysicalStore(command.PublishedObject.StoreReference);
+        EnsureCatalogProviderSupported(provider);
         var physicalKey = string.IsNullOrWhiteSpace(prefix)
             ? command.PublishedObject.ObjectKey
             : prefix.Trim('/') + "/" + command.PublishedObject.ObjectKey;
@@ -517,6 +518,15 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
                 out var srid)
             ? srid
             : null;
+    }
+
+    internal static void EnsureCatalogProviderSupported(CloudStorageProvider provider)
+    {
+        if (provider is not CloudStorageProvider.AwsS3 and not CloudStorageProvider.AzureBlob)
+        {
+            throw new InvalidOperationException(
+                "Cloud COG catalog registration requires an AWS S3 or Azure Blob object store; local output remains a result artifact.");
+        }
     }
 
     private static string BuildLeaseResource(string storeReference, string objectKey) =>

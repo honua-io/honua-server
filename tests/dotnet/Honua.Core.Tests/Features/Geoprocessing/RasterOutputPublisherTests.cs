@@ -185,10 +185,34 @@ public sealed class RasterOutputPublisherTests
 
         Assert.Equal(3, result.Inspected);
         Assert.Equal(2, result.Deleted);
-        Assert.Equal(1, result.RetainedVisible);
+        Assert.Equal(1, result.Retained);
         Assert.Contains("raster/staging/job-1/attempt-0/a", store.DeletedKeys);
         Assert.Contains("raster/published/aa/unregistered.tif", store.DeletedKeys);
         Assert.DoesNotContain("raster/published/bb/visible.tif", store.DeletedKeys);
+    }
+
+    [Fact]
+    public async Task SweepOrphansAsync_RetainsStagedObjectUntilDeclaredExpiry()
+    {
+        var stage = RasterOutputContractTests.Stage();
+        var store = new RecordingObjectStore(stage);
+        var registry = new RecordingRegistry();
+        var publisher = new RasterOutputPublisher(store, registry);
+        var cutoff = DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture);
+        var staged = Candidate(
+            "raster/staging/job-1/attempt-0/output.tif",
+            RasterStoredObjectState.Staged) with
+        {
+            ExpiresAt = cutoff.AddHours(1)
+        };
+        store.Orphans.Add(staged);
+
+        var result = await publisher.SweepOrphansAsync(cutoff, 10);
+
+        Assert.Equal(1, result.Inspected);
+        Assert.Equal(0, result.Deleted);
+        Assert.Equal(1, result.Retained);
+        Assert.DoesNotContain(staged.ObjectKey, store.DeletedKeys);
     }
 
     [Fact]
@@ -375,7 +399,7 @@ public sealed class RasterOutputPublisherTests
                 }
             }
 
-            if (!semaphore.Wait(0))
+            if (!semaphore.Wait(0, CancellationToken.None))
             {
                 LeaseContended.TrySetResult();
                 await semaphore.WaitAsync(cancellationToken);

@@ -21,6 +21,7 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
     private const string ChecksumValueMetadata = "honua-checksum-value";
     private const string OutputStateMetadata = "honua-raster-state";
     private const string LogicalKeyMetadata = "honua-logical-key";
+    private const string ExpiresAtMetadata = "honua-expires-at";
     private readonly IAmazonS3 _client;
     private readonly AwsS3Options _options;
     private readonly string _storeReference;
@@ -75,6 +76,9 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
         request.Metadata[ChecksumValueMetadata] = checksum.Value;
         request.Metadata[OutputStateMetadata] = "staged";
         request.Metadata[LogicalKeyMetadata] = descriptor.ObjectKey;
+        request.Metadata[ExpiresAtMetadata] = descriptor.ExpiresAt.ToString(
+            "O",
+            System.Globalization.CultureInfo.InvariantCulture);
         if (_options.EnableServerSideEncryption)
         {
             request.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
@@ -129,7 +133,8 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
                     Checksum = new RasterChecksum(algorithm, checksum)
                 },
                 State = state,
-                LastModifiedAt = new DateTimeOffset(lastModified)
+                LastModifiedAt = new DateTimeOffset(lastModified),
+                ExpiresAt = ParseExpiry(Metadata(response.Metadata, ExpiresAtMetadata))
             };
         }
         catch (AmazonS3Exception exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -304,6 +309,9 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
         request.Metadata[ChecksumValueMetadata] = checksum;
         request.Metadata[OutputStateMetadata] = "staged";
         request.Metadata[LogicalKeyMetadata] = manifestObjectKey;
+        request.Metadata[ExpiresAtMetadata] = manifest.Outputs.Max(output => output.ExpiresAt).ToString(
+            "O",
+            System.Globalization.CultureInfo.InvariantCulture);
         if (_options.EnableServerSideEncryption)
         {
             request.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
@@ -464,6 +472,26 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
         }
 
         return null;
+    }
+
+    private static DateTimeOffset? ParseExpiry(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!DateTimeOffset.TryParseExact(
+                value,
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var expiresAt))
+        {
+            throw new InvalidDataException("S3 raster object contains invalid expiry metadata.");
+        }
+
+        return expiresAt;
     }
 
     private static string InferMediaType(string key) => key.EndsWith(".zarr", StringComparison.OrdinalIgnoreCase)

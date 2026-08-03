@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -66,6 +67,15 @@ internal static class KubernetesBackendFactory
         var backend = new KubernetesJobBatchComputeBackend(
             jobClient,
             optionsMonitor,
+            Options.Create(new CloudStorageOptions
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                AwsS3 = new AwsS3Options
+                {
+                    BucketName = "honua-cloud-integration-raster",
+                    Region = "us-west-2"
+                }
+            }),
             NullLogger<KubernetesJobBatchComputeBackend>.Instance);
 
         return (backend, provider);

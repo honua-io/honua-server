@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Azure;
+using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
@@ -22,6 +23,7 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
     private const string ChecksumValueMetadata = "honua_checksum_value";
     private const string OutputStateMetadata = "honua_raster_state";
     private const string LogicalKeyMetadata = "honua_logical_key";
+    private const string ExpiresAtMetadata = "honua_expires_at";
     private readonly BlobContainerClient _container;
     private readonly AzureBlobOptions _options;
     private readonly string _storeReference;
@@ -75,7 +77,11 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
             await blob.UploadAsync(verifying, new BlobUploadOptions
             {
                 HttpHeaders = new BlobHttpHeaders { ContentType = descriptor.Content.MediaType },
-                Metadata = Metadata(descriptor.Content, "staged", descriptor.ObjectKey)
+                Metadata = Metadata(
+                    descriptor.Content,
+                    "staged",
+                    descriptor.ObjectKey,
+                    descriptor.ExpiresAt)
             }, cancellationToken).ConfigureAwait(false);
             verifying.EnsureComplete();
         }
@@ -128,7 +134,10 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
                     && string.Equals(state, "published", StringComparison.Ordinal)
                         ? RasterStoredObjectState.Published
                         : RasterStoredObjectState.Staged,
-                LastModifiedAt = properties.LastModified
+                LastModifiedAt = properties.LastModified,
+                ExpiresAt = properties.Metadata.TryGetValue(ExpiresAtMetadata, out var expiresAt)
+                    ? ParseExpiry(expiresAt)
+                    : null
             };
         }
         catch (RequestFailedException exception) when (exception.Status == 404)
@@ -285,7 +294,11 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
             new BlobUploadOptions
             {
                 HttpHeaders = new BlobHttpHeaders { ContentType = "application/json" },
-                Metadata = Metadata(identity, "staged", manifestObjectKey)
+                Metadata = Metadata(
+                    identity,
+                    "staged",
+                    manifestObjectKey,
+                    manifest.Outputs.Max(output => output.ExpiresAt))
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -322,25 +335,74 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
 
     private static BlobContainerClient CreateContainer(AzureBlobOptions? options)
     {
-        if (options is null || string.IsNullOrWhiteSpace(options.ConnectionString)
-            || string.IsNullOrWhiteSpace(options.ContainerName))
+        if (options is null || string.IsNullOrWhiteSpace(options.ContainerName))
         {
             throw new InvalidOperationException("Azure Blob options are not configured for raster outputs.");
         }
 
-        return new BlobContainerClient(options.ConnectionString, options.ContainerName);
+        if (!string.IsNullOrWhiteSpace(options.ConnectionString))
+        {
+            return new BlobContainerClient(options.ConnectionString, options.ContainerName);
+        }
+
+        if (Uri.TryCreate(options.ServiceUri, UriKind.Absolute, out var serviceUri)
+            && string.Equals(serviceUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(serviceUri.UserInfo)
+            && string.IsNullOrEmpty(serviceUri.Query)
+            && string.IsNullOrEmpty(serviceUri.Fragment))
+        {
+            var containerUri = new Uri(
+                serviceUri.AbsoluteUri.TrimEnd('/') + "/" + Uri.EscapeDataString(options.ContainerName),
+                UriKind.Absolute);
+            return new BlobContainerClient(containerUri, new DefaultAzureCredential());
+        }
+
+        throw new InvalidOperationException(
+            "Azure raster outputs require a connection string or an HTTPS service URI for workload identity.");
     }
 
     private static Dictionary<string, string> Metadata(
         RasterContentIdentity content,
         string state,
-        string logicalKey) => new(StringComparer.Ordinal)
+        string logicalKey,
+        DateTimeOffset? expiresAt = null)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ChecksumAlgorithmMetadata] = content.Checksum!.Algorithm,
             [ChecksumValueMetadata] = content.Checksum.Value,
             [OutputStateMetadata] = state,
             [LogicalKeyMetadata] = logicalKey
         };
+        if (expiresAt is { } value)
+        {
+            metadata[ExpiresAtMetadata] = value.ToString(
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return metadata;
+    }
+
+    private static DateTimeOffset? ParseExpiry(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!DateTimeOffset.TryParseExact(
+                value,
+                "O",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var expiresAt))
+        {
+            throw new InvalidDataException("Azure raster blob contains invalid expiry metadata.");
+        }
+
+        return expiresAt;
+    }
 
     private string PhysicalKey(string logicalKey) => string.IsNullOrWhiteSpace(_options.BlobPrefix)
         ? logicalKey

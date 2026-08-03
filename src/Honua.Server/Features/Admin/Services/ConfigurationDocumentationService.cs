@@ -262,6 +262,8 @@ public sealed class ConfigurationDocumentationService
 
                 BuildProperty("FileStorage:AzureBlob:ConnectionString", "FileStorage__AzureBlob__ConnectionString", "string",
                     "Azure Blob connection string (required when Provider=AzureBlob)", null, isSensitive: true, validation: "Required when Provider=AzureBlob"),
+                BuildProperty("FileStorage:AzureBlob:ServiceUri", "FileStorage__AzureBlob__ServiceUri", "string",
+                    "Optional HTTPS Blob service URI projected to Kubernetes GP workers that use workload identity", null),
                 BuildProperty("FileStorage:AzureBlob:ContainerName", "FileStorage__AzureBlob__ContainerName", "string",
                     "Azure Blob container name (required when Provider=AzureBlob)", null, validation: "Required when Provider=AzureBlob"),
                 BuildProperty("FileStorage:AzureBlob:BlobPrefix", "FileStorage__AzureBlob__BlobPrefix", "string",
@@ -907,6 +909,7 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "FileStorage__AwsS3__ServiceUrl", ConfigPath = "FileStorage", Description = "S3-compatible service URL (Localstack/MinIO)", Required = false, Example = "http://localhost:4566" },
             new() { Name = "FileStorage__AwsS3__ForcePathStyle", ConfigPath = "FileStorage", Description = "Force path-style S3 addressing", Required = false, Example = "true" },
             new() { Name = "FileStorage__AzureBlob__ContainerName", ConfigPath = "FileStorage", Description = "Azure Blob container name", Required = false, Example = "honua-attachments" },
+            new() { Name = "FileStorage__AzureBlob__ServiceUri", ConfigPath = "FileStorage", Description = "HTTPS Blob service URI for workload-identity GP workers", Required = false, Example = "https://account.blob.core.windows.net" },
 
             // Key limits
             new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = "2000", Example = "5000" },

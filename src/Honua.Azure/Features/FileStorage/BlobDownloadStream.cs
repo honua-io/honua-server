@@ -54,10 +54,9 @@ internal sealed class BlobDownloadStream : Stream
         base.Dispose(disposing);
     }
 
-    public override ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
-        Dispose(disposing: true);
+        await base.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
-        return ValueTask.CompletedTask;
     }
 }

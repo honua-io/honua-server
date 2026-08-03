@@ -26,10 +26,7 @@ internal sealed class NpgsqlKnownLengthReadStream : Stream
             throw new ArgumentException("The underlying stream must be readable.", nameof(inner));
         }
 
-        if (length < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(length));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
 
         // PostgreSQL's bind protocol and Npgsql's bytea converter use a signed 32-bit value.
         if (length > int.MaxValue)
@@ -180,6 +177,7 @@ internal sealed class NpgsqlKnownLengthReadStream : Stream
             }
         }
 
+        await base.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
     }
 

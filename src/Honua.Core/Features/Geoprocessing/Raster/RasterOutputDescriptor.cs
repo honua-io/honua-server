@@ -309,6 +309,15 @@ public static class RasterOutputWorkerContract
     /// <summary>Worker environment variable containing the metadata manifest object key.</summary>
     public const string ManifestKeyEnvironmentVariable = "HONUA_RASTER_OUTPUT_MANIFEST_KEY";
 
+    /// <summary>
+    /// Cross-process local-store sidecar suffix used to preserve a staged lease before its
+    /// attempt manifest exists. The sidecar contains only one round-trip timestamp.
+    /// </summary>
+    public const string LocalExpiryMetadataSuffix = ".honua-expires-at";
+
+    /// <summary>Maximum byte length accepted for the local staged-lease sidecar.</summary>
+    public const int MaximumLocalExpiryMetadataBytes = 64;
+
     /// <summary>Checks whether a worker environment name is owned by this contract.</summary>
     public static bool IsReservedEnvironmentVariable(string name) =>
         string.Equals(name, ContractVersionEnvironmentVariable, StringComparison.Ordinal)

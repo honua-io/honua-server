@@ -59,21 +59,21 @@ internal sealed partial class RasterOutputReconciliationService(
             DateTimeOffset.UtcNow.Subtract(current.OrphanGracePeriod),
             current.MaximumSweepCount,
             cancellationToken).ConfigureAwait(false);
-        if (result.Deleted > 0 || result.RetainedVisible > 0)
+        if (result.Deleted > 0 || result.Retained > 0)
         {
-            Log.SweepCompleted(logger, result.Inspected, result.Deleted, result.RetainedVisible);
+            Log.SweepCompleted(logger, result.Inspected, result.Deleted, result.Retained);
         }
     }
 
     private static partial class Log
     {
         [LoggerMessage(7720, LogLevel.Information,
-            "Raster output orphan sweep inspected {Inspected}, deleted {Deleted}, and retained {RetainedVisible} visible objects")]
+            "Raster output orphan sweep inspected {Inspected}, deleted {Deleted}, and retained {Retained} active objects")]
         public static partial void SweepCompleted(
             ILogger logger,
             int inspected,
             int deleted,
-            int retainedVisible);
+            int retained);
 
         [LoggerMessage(7721, LogLevel.Warning, "Raster output orphan sweep failed")]
         public static partial void SweepFailed(ILogger logger, Exception exception);

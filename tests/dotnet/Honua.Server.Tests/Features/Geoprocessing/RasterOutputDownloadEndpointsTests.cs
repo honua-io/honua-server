@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
 using Honua.Server.Features.FileStorage;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -60,11 +61,16 @@ public sealed class RasterOutputDownloadEndpointsTests
         var lease = new TrackingLease();
         registry.ResolveVisibleAsync(output.ArtifactId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterOutputRegistrationResolution?>(resolution));
-        registry.AcquireObjectLeaseAsync(
+        // NSubstitute consumes the first ValueTask only to identify the configured call;
+        // the callback returns a fresh instance for every runtime invocation.
+#pragma warning disable CA2012
+        SubstituteExtensions.Returns(
+            registry.AcquireObjectLeaseAsync(
                 output.StoreReference,
                 output.ObjectKey,
-                Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult<IAsyncDisposable>(lease));
+                Arg.Any<CancellationToken>()),
+            _ => ValueTask.FromResult<IAsyncDisposable>(lease));
+#pragma warning restore CA2012
         objectStore.OpenReadAsync(
                 output.StoreReference,
                 output.ObjectKey,
