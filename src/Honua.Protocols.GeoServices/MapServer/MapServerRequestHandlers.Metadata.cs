@@ -411,9 +411,25 @@ internal static partial class MapServerEndpoints
         MetadataV2Service service)
     {
         var descriptors = new List<MapServerMetadataLayerDescriptor>();
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        var seenPublicLayerIds = new HashSet<int>();
+        var mapPublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(static publication => publication.PublicationType is (
+                MetadataV2PublicationType.EsriMapLayer or
+                MetadataV2PublicationType.EsriFeatureLayer))
+            .OrderBy(static publication =>
+                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
+            .ThenBy(static publication => publication.Metadata.Id, StringComparer.Ordinal);
+        foreach (var publication in mapPublications)
         {
-            if (publication.LayerIndex is not int publicLayerId)
+            // A single resource can be published through several protocol adapters with the
+            // same service-local numeric identifier (for example, automatic layer publishing
+            // emits both an Esri feature layer and a STAC collection). MapServer must only
+            // consume Esri publications; otherwise the duplicate identifier reaches export's
+            // layer lookup and ToDictionary throws before a valid static render can begin.
+            // Prefer an explicit Esri map publication when a graph also contains a feature
+            // publication for the same id; malformed or transitional graphs remain deterministic
+            // and cannot crash the renderer with duplicate dictionary keys.
+            if (publication.LayerIndex is not int publicLayerId || !seenPublicLayerIds.Add(publicLayerId))
             {
                 continue;
             }

@@ -247,6 +247,42 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithSameIdStacPublication_ReturnsImage()
+    {
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var esriPublication = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == WebAppFixture.TestLayerId &&
+            publication.PublicationType is (
+                MetadataV2PublicationType.EsriMapLayer or
+                MetadataV2PublicationType.EsriFeatureLayer));
+        var stacPublication = esriPublication with
+        {
+            Metadata = esriPublication.Metadata with
+            {
+                Id = $"{esriPublication.Metadata.Id}-stac",
+                Name = $"{esriPublication.Metadata.Name}-stac",
+            },
+            PublicationType = MetadataV2PublicationType.StacCollection,
+        };
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = snapshot.Graph.Publications.Append(stacPublication).ToArray(),
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=png32&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithDatelineCrossingBbox_ReturnsImageJson()
     {
         var response = await _fixture.Client.GetAsync(
