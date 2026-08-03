@@ -4,6 +4,18 @@
 
 Accepted
 
+For raster serving and GP, [ADR-0071](0071-raster-execution-boundary.md) is the
+controlling engine and placement decision. This ADR's instruction to delegate
+heavy spatial transforms to PostGIS means "when capability, data locality, and
+the database resource/SLO budget permit." Raster work outside the synchronous
+request envelope uses the dedicated managed PostGIS profile only when all three
+gates pass. Work that misses the PostGIS capability or locality gate, or exceeds
+the database budget, uses the isolated native GDAL placement defined by ADR-0071
+only when that engine's capability, locality, and worker-budget gates pass;
+otherwise execution is refused. The GeoETL-specific rollout and
+worker names below remain historical decisions for GeoETL, not a universal
+raster topology.
+
 ## Context
 
 `honua-io/honua-server#361` is the GeoETL epic — repeatable, scheduled,
@@ -48,7 +60,9 @@ A handful of secondary forces shape the design:
   pipelines would fragment the contract.
 - Heavy spatial transforms (large-scale reprojection, `ST_Buffer`,
   spatial joins) already have a mature engine in PostGIS. GeoETL should
-  delegate to PostGIS for those, not reproduce them in process.
+  delegate to PostGIS when the predicted work fits the governed database
+  resource and serving-SLO budget, not reproduce them in process. ADR-0071
+  controls this additional gate for raster work.
 
 ## Decision
 

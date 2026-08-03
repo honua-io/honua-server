@@ -18,6 +18,7 @@ namespace Honua.Core.Features.AnalysisContent;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(AnalysisContentItem))]
 [JsonSerializable(typeof(AnalysisContentItem[]))]

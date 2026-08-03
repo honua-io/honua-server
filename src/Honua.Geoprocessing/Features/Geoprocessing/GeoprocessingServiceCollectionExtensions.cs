@@ -82,7 +82,8 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
         // catalog so catalog definitions project the exact same immutable descriptor instances.
-        services.TryAddSingleton<IRasterEngineCapabilityRegistry, RasterEngineCapabilityRegistry>();
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(_ =>
+            CreateRasterEngineCapabilityRegistry(configuration));
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
@@ -408,5 +409,29 @@ internal static class GeoprocessingServiceCollectionExtensions
         {
             services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
         }
+    }
+
+    private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
+        IConfiguration configuration)
+    {
+        var configuredFormats = configuration
+            .GetSection("GdalWorker:AllowedRasterInputFormats")
+            .GetChildren()
+            .ToArray();
+        var configuredSkippedDrivers = configuration
+            .GetSection("GdalWorker:Hardening:SkipDrivers")
+            .GetChildren()
+            .ToArray();
+        return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+            configuredFormats.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
+                : configuredFormats
+                    .Select(format => format.Value)
+                    .OfType<string>(),
+            configuredSkippedDrivers.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
+                : configuredSkippedDrivers
+                    .Select(driver => driver.Value)
+                    .OfType<string>());
     }
 }

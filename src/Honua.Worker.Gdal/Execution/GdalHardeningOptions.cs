@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Raster;
+
 namespace Honua.Worker.Gdal.Execution;
 
 /// <summary>
@@ -47,57 +49,13 @@ internal sealed class GdalHardeningOptions
     /// REMOVE a default skip driver (e.g. drop <c>JP2OpenJPEG</c> to open JPEG 2000).
     /// Leaving it unset keeps the full default denial set. This is enforced in the worker
     /// registration, which post-binds the configured values over ConfigurationBinder's
-    /// append-onto-defaults behavior.
+    /// append-onto-defaults behavior. Because the effective driver set defines advertised
+    /// engine capabilities, it is snapshotted at host composition; changing it requires a
+    /// coordinated server/worker restart.
     /// </para>
     /// </summary>
-    public IList<string> SkipDrivers { get; set; } = new List<string>
-    {
-        // Raster indirection / aggregation.
-        "VRT",
-        "GTI",
-        "DERIVED",
-        // GDAL Streamed Algorithm (GDAL >= 3.10): a JSON blob serializing a
-        // gdal_translate/gdalwarp command line that can open a plain LOCAL path — it is
-        // neither XML nor a /vsi reference, so the content pre-check does not catch it;
-        // skipping the driver is the control. Pure attack surface, used by no executor.
-        "GDALG",
-        // Meta Raster Format: a header can point at a remote <CachedSource> URL.
-        "MRF",
-        // OGC / web service descriptions (auto-fetch on open).
-        "WMS",
-        "WMTS",
-        "WCS",
-        "HTTP",
-        "STACIT",
-        "STACTA",
-        // Vector indirection / web services.
-        "OGR_VRT",
-        "WFS",
-        "OAPIF",
-        "NGW",
-        "PLMOSAIC",
-        "EEDA",
-        "EEDAI",
-        // Decompression-bomb-capable raster drivers OUTSIDE the dimension-guarded
-        // TIFF/PNG/JPEG allowlist (#2784). Each can declare an enormous canvas that
-        // GdalRasterDimensionGuard cannot bound, so deny the driver outright.
-        // JPEG 2000 (SIZ dimensions to 2^32 — the strongest live vector):
-        "JP2OpenJPEG",
-        "JP2ECW",
-        "JP2KAK",
-        "JP2MrSID",
-        "JP2Lura",
-        "JPEG2000",
-        // GIF (65535²), BMP (int32 dims):
-        "GIF",
-        "BIGGIF",
-        "BMP",
-        // Other openable, un-guarded raster containers with large declarable canvases:
-        "HFA",
-        "NITF",
-        "ENVI",
-        "RMF",
-    };
+    public IList<string> SkipDrivers { get; set; } =
+        new List<string>(RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames);
 
     /// <summary>
     /// When <see langword="true"/> (the default), invocations that operate purely on

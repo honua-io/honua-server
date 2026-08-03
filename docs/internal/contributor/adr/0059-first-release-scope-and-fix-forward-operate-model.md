@@ -128,7 +128,8 @@ deployment. It lights up when the customer opts in.
 > realtime feature-streaming stays experimental.
 
 > **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
-> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`)
+> `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`,
+> `temporal.animation-api`)
 > has been promoted out of this experimental + disabled set to **GA
 > (`Implemented`)**. Time filtering, extent discovery, date-bin histograms,
 > time-series tiles, and the animation-API contract now ship on the default

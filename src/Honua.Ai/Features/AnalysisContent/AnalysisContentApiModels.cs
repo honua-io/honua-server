@@ -114,6 +114,7 @@ internal sealed record AnalysisArtifactResponse
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(CreateAnalysisContentItemRequest))]
 [JsonSerializable(typeof(CreateAnalysisContentVersionRequest))]

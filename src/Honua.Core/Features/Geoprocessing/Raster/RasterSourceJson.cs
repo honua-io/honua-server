@@ -10,6 +10,7 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(RasterSourceDescriptor))]
 [JsonSerializable(typeof(PostgisRasterSourceDescriptor))]
