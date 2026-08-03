@@ -206,14 +206,24 @@ public sealed record RasterExecutionDecision
 public sealed class RasterExecutionPlanningException : Exception
 {
     /// <summary>Creates an actionable planning refusal.</summary>
-    public RasterExecutionPlanningException(string reasonCode, string message)
+    public RasterExecutionPlanningException(
+        string reasonCode,
+        string message,
+        bool isRetryable = false)
         : base(message)
     {
         ReasonCode = reasonCode;
+        IsRetryable = isRetryable;
     }
 
     /// <summary>Stable machine-readable refusal reason.</summary>
     public string ReasonCode { get; }
+
+    /// <summary>
+    /// Whether a fresh health or backend-availability snapshot can make the same request eligible.
+    /// Capability, compatibility, budget, and operator-policy refusals are permanent for the request.
+    /// </summary>
+    public bool IsRetryable { get; }
 }
 
 /// <summary>Selects a raster engine and placement from immutable capability, cost, and health inputs.</summary>

@@ -245,7 +245,25 @@ public sealed class RasterExecutionPlannerTests
         var act = () => planner.Plan(request);
 
         act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => !exception.IsRetryable)
             .WithMessage("*No canonical PostGIS raster IProcessExecutor*");
+    }
+
+    [Fact]
+    public void Plan_TransientWorkerHealthFailure_IsRetryable()
+    {
+        var request = Request(
+            RasterInputResidency.Inline,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)) with
+        {
+            Health = Health(localAvailable: false, remoteAvailable: false),
+        };
+
+        var act = () => _sut.Plan(request);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception => exception.IsRetryable)
+            .WithMessage("*no allowed available placement*");
     }
 
     [Fact]
@@ -360,6 +378,11 @@ public sealed class RasterExecutionPlannerTests
 
         request.Cost.ZoneCount.Should().Be(3,
             "the decoded-byte upper bound completes planning without trusting a nonexistent zoneCount input");
+        request.Cost.DecodedBytes.Should().Be(4_099,
+            "the raster allocation and decoded zones payload both count toward admission");
+        request.Cost.ExpectedScratchBytes.Should().Be(8_198);
+        request.Cost.ExpectedDatabaseWork.Should().Be(1_536,
+            "each conservatively bounded zone can scan the source raster");
         _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
     }
 
@@ -488,6 +511,23 @@ public sealed class RasterExecutionPlannerTests
 
         request.Cost.InputPixels.Should().Be(500_000);
         request.Cost.OutputPixels.Should().Be(500_000);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
+    public void RequestFactory_MimeBase64Whitespace_MatchesWorkerDecoder()
+    {
+        var source = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1);
+        var mimeSource = string.Join(
+            "\r\n",
+            Enumerable.Range(0, (source.Length + 7) / 8)
+                .Select(index => source.Substring(index * 8, Math.Min(8, source.Length - index * 8))));
+        var request = CreateLegacyRequest(
+            "raster.statistics",
+            new Dictionary<string, string> { ["source"] = mimeSource });
+
+        request.Cost.InputPixels.Should().Be(512);
+        request.Cost.DecodedBytes.Should().Be(4_096);
         _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
     }
 

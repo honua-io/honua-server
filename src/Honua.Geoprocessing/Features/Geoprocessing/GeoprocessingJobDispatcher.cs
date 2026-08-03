@@ -140,6 +140,11 @@ internal sealed class GeoprocessingJobDispatcher
         }
         catch (RasterExecutionPlanningException ex)
         {
+            if (!ex.IsRetryable)
+            {
+                throw new GeoprocessingPreconditionFailedException(ex.Message);
+            }
+
             throw new GeoprocessingAdmissionException(
                 ExecutionAdmissionOutcome.Denied,
                 ExecutionAdmissionDimension.Cost,
