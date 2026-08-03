@@ -9,6 +9,15 @@ namespace Honua.Postgres.Tests.Features.Raster;
 public sealed class PostgresRasterOutputRegistryTests
 {
     [Fact]
+    public void ObjectLeaseSql_UsesSharedLocksForReadersAndExclusiveLocksForMutators()
+    {
+        Assert.Contains("pg_advisory_lock_shared", PostgresRasterOutputRegistry.BuildAcquireLeaseSql(shared: true), StringComparison.Ordinal);
+        Assert.Contains("pg_advisory_unlock_shared", PostgresRasterOutputRegistry.BuildReleaseLeaseSql(shared: true), StringComparison.Ordinal);
+        Assert.Contains("pg_advisory_lock(", PostgresRasterOutputRegistry.BuildAcquireLeaseSql(shared: false), StringComparison.Ordinal);
+        Assert.Contains("pg_advisory_unlock(", PostgresRasterOutputRegistry.BuildReleaseLeaseSql(shared: false), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CatalogRegistration_RejectsUnsupportedLocalStore()
     {
         var action = () => PostgresRasterOutputRegistry.EnsureCatalogProviderSupported(

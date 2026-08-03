@@ -36,15 +36,17 @@ public sealed class RasterOutputTerminalProjectionTests
 
         await fixture.Callback.OnTerminalAsync(fixture.Job, CancellationToken.None);
 
-        Assert.Equal(new[] { "job-cas", "package", "manifest-delete" }, fixture.Events);
+        Assert.Equal(
+            new[] { "job-cas", "package", "job-cas", "retry-complete", "manifest-delete" },
+            fixture.Events);
         Assert.NotNull(fixture.PersistedCandidate);
         var reference = Assert.Single(fixture.PersistedCandidate!.ArtifactReferences);
         Assert.True(RasterOutputArtifactReference.TryParseOutput(reference, out var output));
         Assert.NotNull(output);
         Assert.NotNull(storedPackage);
-        Assert.Equal(fixture.Job.Version, fixture.PersistedCandidate.Version);
+        Assert.Equal(fixture.Job.Version + 1, fixture.PersistedCandidate.Version);
         Assert.Equal(
-            fixture.Job.OperationId + ":v" + (fixture.Job.Version + 1).ToString(
+            fixture.Job.OperationId + ":v" + (fixture.Job.Version + 2).ToString(
                 System.Globalization.CultureInfo.InvariantCulture),
             storedPackage!.ResultPackageId);
     }
@@ -67,10 +69,49 @@ public sealed class RasterOutputTerminalProjectionTests
         await fixture.Callback.OnTerminalAsync(fixture.Job, CancellationToken.None);
 
         Assert.Equal(new[] { "job-cas", "package-failed" }, fixture.Events);
+        Assert.Contains(
+            fixture.DurableJob.ArtifactReferences,
+            reference => RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
         await fixture.ObjectStore.DidNotReceive().DeleteAsync(
             fixture.Stage.StoreReference,
             fixture.ManifestKey,
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PackageFailure_IsReplayedFromDurableMarkerUntilProjectionCompletes()
+    {
+        await using var fixture = new CallbackFixture(ExecutionJobStatus.Succeeded);
+        var packageAttempts = 0;
+        fixture.ResultPackageStore.SetAsync(
+                Arg.Any<string>(),
+                Arg.Any<AnalysisResultPackage>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                packageAttempts++;
+                fixture.Events.Add(packageAttempts == 1 ? "package-failed" : "package");
+                return packageAttempts == 1
+                    ? Task.FromException(new InvalidOperationException("simulated package outage"))
+                    : Task.CompletedTask;
+            });
+
+        await fixture.Callback.OnTerminalAsync(fixture.Job, CancellationToken.None);
+        await fixture.Callback.OnTerminalAsync(fixture.DurableJob, CancellationToken.None);
+
+        Assert.Equal(
+            new[]
+            {
+                "job-cas", "package-failed", "package", "job-cas", "retry-complete", "manifest-delete"
+            },
+            fixture.Events);
+        Assert.DoesNotContain(
+            fixture.DurableJob.ArtifactReferences,
+            reference => RasterOutputArtifactReference.TryParseManifest(reference, out _, out _));
+        Assert.Contains(
+            fixture.DurableJob.ArtifactReferences,
+            reference => RasterOutputArtifactReference.TryParseOutput(reference, out _));
     }
 
     [Fact]
@@ -156,7 +197,7 @@ public sealed class RasterOutputTerminalProjectionTests
             ObjectStore = Substitute.For<IRasterOutputObjectStore>();
             var manifestStore = Substitute.For<IRasterOutputManifestStore>();
             var registry = Substitute.For<IRasterOutputRegistry>();
-            var executionJobStore = Substitute.For<IExecutionJobStore>();
+            var executionJobStore = Substitute.For<IExecutionJobStore, ITerminalProjectionRetryStore>();
             ResultPackageStore = Substitute.For<IGeoprocessingResultPackageStore>();
             var progressStore = Substitute.For<IUniversalProgressStore>();
             var processCatalog = Substitute.For<IProcessCatalog>();
@@ -221,7 +262,7 @@ public sealed class RasterOutputTerminalProjectionTests
 
                     return Task.CompletedTask;
                 });
-            var durableJob = string.IsNullOrEmpty(additionalDurableArtifactReference)
+            DurableJob = string.IsNullOrEmpty(additionalDurableArtifactReference)
                 ? Job
                 : Job with
                 {
@@ -230,7 +271,7 @@ public sealed class RasterOutputTerminalProjectionTests
                         .ToArray()
                 };
             executionJobStore.GetAsync(Job.OperationId, Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult<ExecutionJobRecord?>(durableJob));
+                .Returns(_ => Task.FromResult<ExecutionJobRecord?>(DurableJob));
             executionJobStore.TrySetAsync(
                     Arg.Any<ExecutionJobRecord>(),
                     Arg.Any<TimeSpan?>(),
@@ -239,7 +280,23 @@ public sealed class RasterOutputTerminalProjectionTests
                 {
                     PersistedCandidate = call.Arg<ExecutionJobRecord>();
                     Events.Add("job-cas");
-                    return Task.FromResult(casSucceeds);
+                    if (!casSucceeds || PersistedCandidate.Version != DurableJob.Version)
+                    {
+                        return Task.FromResult(false);
+                    }
+
+                    DurableJob = PersistedCandidate with
+                    {
+                        Version = checked(PersistedCandidate.Version + 1)
+                    };
+                    return Task.FromResult(true);
+                });
+            ((ITerminalProjectionRetryStore)executionJobStore)
+                .CompleteTerminalProjectionAsync(Job.OperationId, Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                {
+                    Events.Add("retry-complete");
+                    return Task.CompletedTask;
                 });
             progressStore.GetProgressAsync<GeoprocessingProgress>(
                     Job.OperationId,
@@ -275,6 +332,7 @@ public sealed class RasterOutputTerminalProjectionTests
         public IRasterOutputObjectStore ObjectStore { get; }
         public IGeoprocessingResultPackageStore ResultPackageStore { get; }
         public GeoprocessingJobTerminalCallback Callback { get; }
+        public ExecutionJobRecord DurableJob { get; private set; }
         public ExecutionJobRecord? PersistedCandidate { get; private set; }
 
         public ValueTask DisposeAsync() => _services.DisposeAsync();

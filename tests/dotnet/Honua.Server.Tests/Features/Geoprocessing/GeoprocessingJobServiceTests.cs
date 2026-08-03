@@ -223,6 +223,40 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_AlternativeRasterOrFeatureOutput_DoesNotRequireRasterPublication()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-imagery-classify",
+            IntentId = "intent-imagery-classify",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "imagery.classify",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["model"] = "detector-v1"
+                    }
+                }
+            ]
+        };
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().NotContainKey(RasterOutputWorkerContract.StoreReferenceParameter,
+            "the backend selects one alternative output shape only after inference completes");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
     {
         var plan = CreateValidPlan();
@@ -1548,6 +1582,43 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<AnalysisResultPackage>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_WithPendingRasterManifest_RefusesPrematureVisibility()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            Version = 8,
+            AttemptCount = 1,
+            ArtifactReferences =
+            [
+                RasterOutputArtifactReference.CreateManifest(
+                    "gp-results",
+                    RasterOutputWorkerContract.BuildManifestObjectKey("job-1", 1))
+            ],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "raster.reproject",
+                ContractVersion = RasterOutputContract.JobContractVersion,
+                Parameters = new Dictionary<string, string>
+                {
+                    [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
+                }
+            }
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = async () => await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*still being finalized*");
+        await _resultPackageStore.DidNotReceiveWithAnyArgs().GetAsync(default!, default);
     }
 
     [UnitTest]

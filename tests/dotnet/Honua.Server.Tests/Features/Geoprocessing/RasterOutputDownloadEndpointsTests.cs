@@ -65,7 +65,7 @@ public sealed class RasterOutputDownloadEndpointsTests
         // the callback returns a fresh instance for every runtime invocation.
 #pragma warning disable CA2012
         SubstituteExtensions.Returns(
-            registry.AcquireObjectLeaseAsync(
+            registry.AcquireObjectReadLeaseAsync(
                 output.StoreReference,
                 output.ObjectKey,
                 Arg.Any<CancellationToken>()),
@@ -152,7 +152,7 @@ public sealed class RasterOutputDownloadEndpointsTests
 
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
         await objectStore.DidNotReceiveWithAnyArgs().OpenReadAsync(default!, default!, default);
-        await registry.DidNotReceiveWithAnyArgs().AcquireObjectLeaseAsync(default!, default!, default);
+        await registry.DidNotReceiveWithAnyArgs().AcquireObjectReadLeaseAsync(default!, default!, default);
     }
 
     private static ObjectStoreRasterOutputDescriptor CreateOutput(byte[] bytes)

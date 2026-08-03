@@ -252,6 +252,17 @@ public interface IRasterOutputRegistry
         string objectKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Acquires a shared, cross-process read lease for one physical object identity. Concurrent
+    /// readers may hold this lease together, while publication and cleanup must wait for every
+    /// reader before acquiring the corresponding exclusive lease.
+    /// </summary>
+    ValueTask<IAsyncDisposable> AcquireObjectReadLeaseAsync(
+        string storeReference,
+        string objectKey,
+        CancellationToken cancellationToken = default)
+        => AcquireObjectLeaseAsync(storeReference, objectKey, cancellationToken);
+
     /// <summary>Creates or replays an atomic, idempotent output registration.</summary>
     Task<RasterOutputRegistrationResult> RegisterAtomicallyAsync(
         RasterOutputRegistrationCommand command,

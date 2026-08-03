@@ -440,7 +440,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
         var declaredOutputKinds = plan.Outputs.Count > 0 ? plan.Outputs : DeriveArtifactKinds(plan);
-        var publishesRasterOutput = declaredOutputKinds.Contains(ArtifactKind.Raster);
+        var outputsAreAlternatives = plan.Steps.Any(step =>
+            step.Kind == AnalysisPlanStepKind.Geoprocess
+            && !string.IsNullOrWhiteSpace(step.ProcessId)
+            && _processCatalog.GetProcess(step.ProcessId) is { OutputsAreAlternatives: true });
+        var publishesRasterOutput = declaredOutputKinds.Contains(ArtifactKind.Raster)
+            && (!outputsAreAlternatives
+                || (plan.Outputs.Count == 1 && plan.Outputs[0] == ArtifactKind.Raster));
         if (publishesRasterOutput)
         {
             specParams[RasterOutputWorkerContract.StoreReferenceParameter] =
@@ -731,6 +737,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
+        }
+
+        if (job.ArtifactReferences.Any(reference =>
+                RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+        {
+            // The execution status is terminal, but raster publication/package/progress projection
+            // is still pending. Never synthesize the private manifest marker as a caller-visible
+            // file artifact, and never expose a package whose anticipated job version was consumed
+            // by an unrelated concurrent CAS. The durable terminal callback retry clears this
+            // marker only after every required projection succeeds.
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' results are still being finalized.");
         }
 
         return await _artifacts.GetOrSynthesizeResultPackageAsync(job, cancellationToken).ConfigureAwait(false);

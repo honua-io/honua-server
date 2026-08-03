@@ -96,7 +96,7 @@ internal static class RasterOutputDownloadEndpoints
             return NotFound(context);
         }
 
-        IAsyncDisposable? lease = await registry.AcquireObjectLeaseAsync(
+        IAsyncDisposable? lease = await registry.AcquireObjectReadLeaseAsync(
             resolution!.PublishedObject.StoreReference,
             resolution.PublishedObject.ObjectKey,
             cancellationToken).ConfigureAwait(false);

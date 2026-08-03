@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
@@ -16,7 +17,7 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class RedisExecutionJobStore(
     IConnectionMultiplexer redis,
-    ILogger<RedisExecutionJobStore> logger) : IExecutionJobStore
+    ILogger<RedisExecutionJobStore> logger) : IExecutionJobStore, ITerminalProjectionRetryStore
 {
     private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
     private const int MinQueryLimit = 1;
@@ -377,10 +378,116 @@ internal sealed partial class RedisExecutionJobStore(
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<ExecutionJobRecord>> ListTerminalProjectionsPendingAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var boundedLimit = Math.Clamp(limit, MinQueryLimit, MaxQueryLimit);
+        var entries = await _database.SortedSetRangeByRankWithScoresAsync(
+                TerminalProjectionPendingKey,
+                start: 0,
+                stop: boundedLimit - 1,
+                order: Order.Ascending)
+            .ConfigureAwait(false);
+        if (entries.Length == 0)
+        {
+            return Array.Empty<ExecutionJobRecord>();
+        }
+
+        var selected = entries
+            .Select(entry => entry.Element)
+            .Where(member => member.HasValue)
+            .ToArray();
+        if (selected.Length == 0)
+        {
+            return Array.Empty<ExecutionJobRecord>();
+        }
+
+        var payloads = await _database.StringGetAsync(
+                selected.Select(member => (RedisKey)GetJobKey(member.ToString())).ToArray())
+            .ConfigureAwait(false);
+        var pending = new List<ExecutionJobRecord>(selected.Length);
+        var stale = new List<RedisValue>();
+        for (var index = 0; index < selected.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var payload = payloads[index];
+            var job = payload.HasValue
+                ? JsonSerializer.Deserialize(
+                    payload.ToString(),
+                    ControlPlaneJsonContext.Default.ExecutionJobRecord)
+                : null;
+            if (job is null || !IsTerminal(job.Status))
+            {
+                stale.Add(selected[index]);
+                continue;
+            }
+
+            pending.Add(job);
+        }
+
+        if (stale.Count > 0)
+        {
+            await _database.SortedSetRemoveAsync(TerminalProjectionPendingKey, [.. stale]).ConfigureAwait(false);
+        }
+
+        if (pending.Count > 0)
+        {
+            // Rotate attempted entries to the back before invoking callbacks. A persistently
+            // failing projection therefore cannot monopolize a bounded sweep and starve newer
+            // pending work; its durable entry remains and returns after the other entries run.
+            var retryScore = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            await Task.WhenAll(pending.Select(job =>
+                    _database.SortedSetAddAsync(
+                        TerminalProjectionPendingKey,
+                        job.OperationId,
+                        retryScore)))
+                .ConfigureAwait(false);
+        }
+
+        return pending
+            .OrderBy(job => job.UpdatedAt)
+            .ToArray();
+    }
+
+    public Task CompleteTerminalProjectionAsync(
+        string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+        cancellationToken.ThrowIfCancellationRequested();
+        return _database.SortedSetRemoveAsync(TerminalProjectionPendingKey, operationId);
+    }
+
     private async Task UpdateIndexesAsync(ExecutionJobRecord? previous, ExecutionJobRecord job)
     {
+        // Enqueue before removing a terminal job from the active indexes. If the process dies
+        // immediately after the authoritative job write, the old active membership remains and
+        // JobReconciliationService re-drives the marker directly; if it dies after this first
+        // step, the durable pending index is already present. There is no crash window in which
+        // both recovery paths are absent.
+        await EnqueueTerminalProjectionIfNeededAsync(job).ConfigureAwait(false);
         await UpdateActiveIndexesAsync(job).ConfigureAwait(false);
         await UpdateQueryIndexesAsync(previous, job).ConfigureAwait(false);
+    }
+
+    private Task EnqueueTerminalProjectionIfNeededAsync(ExecutionJobRecord job)
+    {
+        if (!IsTerminal(job.Status)
+            || !job.ArtifactReferences.Any(reference =>
+                RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+        {
+            return Task.CompletedTask;
+        }
+
+        // Deliberately do not infer completion from a later job-record update that replaces the
+        // manifest marker with output descriptors. Artifact/package/progress projection still has
+        // work to do at that point; only the retryable terminal callback may acknowledge the outbox.
+        return _database.SortedSetAddAsync(
+            TerminalProjectionPendingKey,
+            job.OperationId,
+            job.UpdatedAt.ToUnixTimeMilliseconds());
     }
 
     private async Task UpdateActiveIndexesAsync(ExecutionJobRecord job)
@@ -721,6 +828,7 @@ internal sealed partial class RedisExecutionJobStore(
     }
 
     private const string ActiveJobsKey = "controlplane:job:active";
+    private const string TerminalProjectionPendingKey = "controlplane:job:terminal-projection-pending";
     private const string CreatedAllIndexKey = "controlplane:job:index:created:all";
 
     private readonly record struct JobCursor(long CreatedAtUnixMilliseconds, string JobId);

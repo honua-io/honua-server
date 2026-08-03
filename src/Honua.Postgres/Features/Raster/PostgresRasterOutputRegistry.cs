@@ -47,6 +47,27 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         string storeReference,
         string objectKey,
         CancellationToken cancellationToken = default)
+        => await AcquireObjectLeaseCoreAsync(
+            storeReference,
+            objectKey,
+            shared: false,
+            cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask<IAsyncDisposable> AcquireObjectReadLeaseAsync(
+        string storeReference,
+        string objectKey,
+        CancellationToken cancellationToken = default)
+        => await AcquireObjectLeaseCoreAsync(
+            storeReference,
+            objectKey,
+            shared: true,
+            cancellationToken).ConfigureAwait(false);
+
+    private async ValueTask<IAsyncDisposable> AcquireObjectLeaseCoreAsync(
+        string storeReference,
+        string objectKey,
+        bool shared,
+        CancellationToken cancellationToken)
     {
         EnsureLogicalStore(storeReference);
         if (!RasterOutputDescriptorValidator.IsSafeObjectKey(objectKey))
@@ -60,11 +81,11 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         try
         {
             await using var command = new NpgsqlCommand(
-                "SELECT pg_advisory_lock(hashtextextended(@resource, 0));",
+                BuildAcquireLeaseSql(shared),
                 connection.Connection);
             command.Parameters.AddWithValue("@resource", resource);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            return new AdvisoryObjectLease(connection, resource);
+            return new AdvisoryObjectLease(connection, resource, shared);
         }
         catch
         {
@@ -532,6 +553,14 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
     private static string BuildLeaseResource(string storeReference, string objectKey) =>
         "honua:raster-object:" + storeReference + ":" + objectKey;
 
+    internal static string BuildAcquireLeaseSql(bool shared) => shared
+        ? "SELECT pg_advisory_lock_shared(hashtextextended(@resource, 0));"
+        : "SELECT pg_advisory_lock(hashtextextended(@resource, 0));";
+
+    internal static string BuildReleaseLeaseSql(bool shared) => shared
+        ? "SELECT pg_advisory_unlock_shared(hashtextextended(@resource, 0));"
+        : "SELECT pg_advisory_unlock(hashtextextended(@resource, 0));";
+
     private static void EnsureLogicalStore(string storeReference)
     {
         if (!RasterOutputWorkerContract.IsLogicalStoreReference(storeReference))
@@ -542,14 +571,15 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
 
     private sealed class AdvisoryObjectLease(
         NpgsqlConnectionLease connection,
-        string resource) : IAsyncDisposable
+        string resource,
+        bool shared) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
         {
             try
             {
                 await using var command = new NpgsqlCommand(
-                    "SELECT pg_advisory_unlock(hashtextextended(@resource, 0));",
+                    BuildReleaseLeaseSql(shared),
                     connection.Connection);
                 command.Parameters.AddWithValue("@resource", resource);
                 await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
