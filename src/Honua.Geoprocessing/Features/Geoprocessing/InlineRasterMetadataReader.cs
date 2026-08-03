@@ -851,6 +851,30 @@ internal static class InlineRasterMetadataReader
         public static bool TryCreate(string encoded, out Base64ByteReader reader)
         {
             reader = default;
+            var whitespaceCount = 0;
+            foreach (var character in encoded)
+            {
+                if (char.IsWhiteSpace(character))
+                {
+                    whitespaceCount++;
+                }
+            }
+
+            if (whitespaceCount > 0)
+            {
+                var normalized = GC.AllocateUninitializedArray<char>(encoded.Length - whitespaceCount);
+                var destination = 0;
+                foreach (var character in encoded)
+                {
+                    if (!char.IsWhiteSpace(character))
+                    {
+                        normalized[destination++] = character;
+                    }
+                }
+
+                encoded = new string(normalized);
+            }
+
             if (encoded.Length == 0 || encoded.Length % 4 != 0)
             {
                 return false;
@@ -864,7 +888,7 @@ internal static class InlineRasterMetadataReader
 
             for (var index = 0; index < encoded.Length - padding; index++)
             {
-                if (encoded[index] == '=' || char.IsWhiteSpace(encoded[index]))
+                if (encoded[index] == '=')
                 {
                     return false;
                 }

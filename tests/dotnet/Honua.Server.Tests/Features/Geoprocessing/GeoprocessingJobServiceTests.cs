@@ -592,6 +592,74 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PermanentRasterCapabilityRefusal_IsFailedPrecondition()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions());
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-unsupported-raster",
+            IntentId = "intent-unsupported-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.interpolate-kriging",
+                    Inputs = new Dictionary<string, string> { ["points"] = "e30=" },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*no kriging-capable numerical backend*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TransientRasterWorkerHealthRefusal_RemainsRetryable()
+    {
+        var sut = CreateRasterPlanningService(new RasterExecutionPlannerOptions
+        {
+            LocalNativeWorkerAvailable = false,
+        });
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-raster-health",
+            IntentId = "intent-raster-health",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var act = async () => await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        var exception = await act.Should().ThrowAsync<GeoprocessingAdmissionException>();
+        exception.Which.RetryAfterSeconds.Should().Be(30);
+        exception.Which.PolicyRef.Should().Be("raster:no-eligible-raster-placement");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ConservativeRemoteRaster_ChargesOnlyOrchestrationAdmissionWeight()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -3716,6 +3784,23 @@ public sealed class GeoprocessingJobServiceTests
 
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
+
+    private GeoprocessingJobService CreateRasterPlanningService(RasterExecutionPlannerOptions options)
+        => new(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(options));
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

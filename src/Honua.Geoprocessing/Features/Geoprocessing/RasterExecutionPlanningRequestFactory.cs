@@ -73,6 +73,8 @@ internal static class RasterExecutionPlanningRequestFactory
         var bandCount = legacy?.BandCount ?? TrySumBands(sources);
         var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
         var sampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
+        var zonePayloadBytes = ResolveZonePayloadBytes(step);
+        var zoneCount = ResolveZoneCount(step, zonePayloadBytes);
         var outputPixels = TryReadOutputPixels(step) ?? TryDeriveResampleOutputPixels(step, sources);
         if (outputPixels is null && !RequiresDerivedOutputGrid(step))
         {
@@ -94,18 +96,27 @@ internal static class RasterExecutionPlanningRequestFactory
             decodedBytes = Math.Max(decodedBytes.Value, outputBytes);
         }
 
+        if (decodedBytes is { } rasterBytes && zonePayloadBytes is > 0)
+        {
+            decodedBytes = SaturatingAdd(rasterBytes, zonePayloadBytes.Value);
+        }
+
         long? scratchBytes = decodedBytes is { } decoded
             ? SaturatingMultiply(decoded, ScratchExpansionFactor)
             : null;
-        long? databaseWork = inputPixels is { } input && bandCount is { } bandTotal
-            ? SaturatingMultiply(input, bandTotal)
+        long? databaseWork = inputPixels is { } input
+            && bandCount is { } bandTotal
+            && zoneCount is { } zones
+            ? SaturatingMultiply(
+                SaturatingMultiply(input, bandTotal),
+                Math.Max(zones, 1))
             : null;
 
         return new RasterCostEstimatorInput
         {
             SourceCount = sourceCount,
             BandCount = bandCount,
-            ZoneCount = ResolveZoneCount(step),
+            ZoneCount = zoneCount,
             InputPixels = inputPixels,
             OutputPixels = outputPixels,
             DecodedBytes = decodedBytes,
@@ -439,7 +450,17 @@ internal static class RasterExecutionPlanningRequestFactory
         return Math.Max((long)Math.Ceiling(scaled), 1);
     }
 
-    private static long? ResolveZoneCount(AnalysisPlanStep step)
+    private static long? ResolveZonePayloadBytes(AnalysisPlanStep step)
+    {
+        if (!string.Equals(step.ProcessId, "raster.zonal-statistics", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        return TryGetEncodedPayloadBytes(ReadInput(step, "zones"));
+    }
+
+    private static long? ResolveZoneCount(AnalysisPlanStep step, long? zonePayloadBytes)
     {
         if (!string.Equals(step.ProcessId, "raster.zonal-statistics", StringComparison.Ordinal))
         {
@@ -451,8 +472,7 @@ internal static class RasterExecutionPlanningRequestFactory
         // bound on feature count (every feature occupies at least one byte). This completes the
         // cost vector without trusting a caller-supplied count or allocating the GeoJSON here;
         // the native worker still parses it and enforces exact feature/vertex caps.
-        var zoneBytes = TryGetEncodedPayloadBytes(ReadInput(step, "zones"));
-        return zoneBytes is { } bytes ? Math.Max(bytes, 1) : null;
+        return zonePayloadBytes is { } bytes ? Math.Max(bytes, 1) : null;
     }
 
     private static bool TryReadPositiveLong(AnalysisPlanStep step, string key, out long value)

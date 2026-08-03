@@ -94,9 +94,10 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
 
         var candidates = new List<Candidate>();
         var eliminations = new List<string>();
+        var hasRetryableBlocker = false;
         foreach (var engine in process.Engines)
         {
-            EvaluateEngine(request, engine, candidates, eliminations);
+            EvaluateEngine(request, engine, candidates, eliminations, ref hasRetryableBlocker);
         }
 
         if (candidates.Count == 0)
@@ -108,7 +109,8 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             throw Refuse(
                 request,
                 "no-eligible-raster-placement",
-                $"Raster execution was refused for '{request.ProcessId}'. {detail}");
+                $"Raster execution was refused for '{request.ProcessId}'. {detail}",
+                hasRetryableBlocker);
         }
 
         var selected = candidates
@@ -161,7 +163,8 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         RasterExecutionPlanningRequest request,
         RasterEngineCapability capability,
         List<Candidate> candidates,
-        List<string> eliminations)
+        List<string> eliminations,
+        ref bool hasRetryableBlocker)
     {
         var engineName = capability.Engine.ToString();
         if (!capability.IsAvailable)
@@ -211,11 +214,23 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         var cost = _capabilities.Estimate(request.ProcessId, capability.Engine, request.Cost);
         if (capability.Engine == RasterEngine.Postgis)
         {
-            EvaluatePostgis(request, capability, cost, candidates, eliminations);
+            EvaluatePostgis(
+                request,
+                capability,
+                cost,
+                candidates,
+                eliminations,
+                ref hasRetryableBlocker);
         }
         else
         {
-            EvaluateNative(request, capability, cost, candidates, eliminations);
+            EvaluateNative(
+                request,
+                capability,
+                cost,
+                candidates,
+                eliminations,
+                ref hasRetryableBlocker);
         }
     }
 
@@ -224,10 +239,12 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         RasterEngineCapability capability,
         RasterCostEstimate cost,
         List<Candidate> candidates,
-        List<string> eliminations)
+        List<string> eliminations,
+        ref bool hasRetryableBlocker)
     {
         if (request.Health.Database != RasterDatabaseHealth.Healthy)
         {
+            hasRetryableBlocker = true;
             eliminations.Add(
                 $"Postgis: database raster budget is '{request.Health.Database}' in health snapshot '{request.Health.Version}'.");
             return;
@@ -283,7 +300,8 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         RasterEngineCapability capability,
         RasterCostEstimate cost,
         List<Candidate> candidates,
-        List<string> eliminations)
+        List<string> eliminations,
+        ref bool hasRetryableBlocker)
     {
         var localAllowed = request.Policy.AllowedPlacements.Contains(RasterExecutionPlacement.LocalNativeWorker)
             && PlacementMatchesPolicy(request, RasterExecutionPlacement.LocalNativeWorker);
@@ -296,6 +314,12 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             residency is RasterInputResidency.ObjectStoreCog
                 or RasterInputResidency.ObjectStoreZarr
                 or RasterInputResidency.StagedArtifact);
+
+        if (localAllowed && !request.Health.LocalNativeWorkerAvailable
+            || remoteAllowed && !request.Health.RemoteNativeBackendAvailable)
+        {
+            hasRetryableBlocker = true;
+        }
 
         if (localAllowed && request.Health.LocalNativeWorkerAvailable && withinLocal && !external)
         {
@@ -504,7 +528,8 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
     private RasterExecutionPlanningException Refuse(
         RasterExecutionPlanningRequest request,
         string reasonCode,
-        string message)
+        string message,
+        bool isRetryable = false)
     {
         _decisions.Add(
             1,
@@ -513,7 +538,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
             new KeyValuePair<string, object?>("placement", "none"),
             new KeyValuePair<string, object?>("reason", reasonCode));
         Log.Refused(_logger, request.ProcessId, reasonCode, request.Policy.PolicyRef, message);
-        return new RasterExecutionPlanningException(reasonCode, message);
+        return new RasterExecutionPlanningException(reasonCode, message, isRetryable);
     }
 
     private sealed record Candidate(
