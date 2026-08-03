@@ -799,18 +799,23 @@ internal sealed partial class FeatureDataAccess
             ? EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId)
             : EditOperationResult.Failure(errorMessage, objectId: objectId);
 
-    private static async Task CommitEditTransactionAsync(
-        NpgsqlTransaction transaction,
+    internal static async Task CommitEditTransactionAsync(
+        DbTransaction transaction,
         CancellationToken cancellationToken)
     {
         // Do not start COMMIT after caller cancellation, and never pass a live token once it does
-        // start. Any provider failure after this boundary is ambiguous: PostgreSQL may have
-        // committed before the acknowledgement or connection was lost.
+        // start. A server error response proves PostgreSQL rejected the commit. Other provider
+        // failures remain ambiguous because the commit may have completed before the connection
+        // or acknowledgement was lost.
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (PostgresException)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
