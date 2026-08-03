@@ -142,7 +142,6 @@ def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
     violations: list[str] = []
     entrypoint = _normalise(entrypoint)
     entrypoint_seen = False
-    managed_entrypoint = f"{entrypoint}.dll"
 
     with tarfile.open(fileobj=stream, mode="r|*") as archive:
         for member in archive:
@@ -155,8 +154,8 @@ def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
                 if extracted_entrypoint is None or extracted_entrypoint.read(4) != b"\x7fELF":
                     violations.append(f"native entrypoint is not an ELF executable: {entrypoint}")
 
-            if path == managed_entrypoint and member.isfile():
-                violations.append(f"managed server entrypoint is present: {managed_entrypoint}")
+            if member.isfile() and PurePosixPath(path).name.casefold() == "honua.server.dll":
+                violations.append(f"managed server entrypoint is present: {path}")
 
             if not member.isdir():
                 reason = _forbidden_file_reason(path)
@@ -195,7 +194,8 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
 def verify_serving_image(image: str) -> list[str]:
     inspect = _docker("image", "inspect", image, capture=True)
     metadata = json.loads(inspect.stdout)[0]
-    labels = metadata.get("Config", {}).get("Labels") or {}
+    config = metadata.get("Config", {})
+    labels = config.get("Labels") or {}
     violations: list[str] = []
 
     if labels.get("honua.runtime.profile") != "web":
@@ -207,6 +207,13 @@ def verify_serving_image(image: str) -> list[str]:
     if not entrypoint or not entrypoint.startswith("/"):
         violations.append("image label honua.runtime.entrypoint must be an absolute path")
         return violations
+
+    launch_command = [*(config.get("Entrypoint") or []), *(config.get("Cmd") or [])]
+    for argument in launch_command:
+        if PurePosixPath(str(argument)).name.casefold() == "honua.server.dll":
+            violations.append(
+                f"configured launch command uses managed server entrypoint: {argument}"
+            )
 
     container = _docker("create", image, capture=True).stdout.strip()
     try:

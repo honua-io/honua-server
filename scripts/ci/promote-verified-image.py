@@ -84,7 +84,7 @@ def promote_verified_image(
         raise ValueError("at least one public destination tag is required")
 
     repositories = list(dict.fromkeys(_repository(tag) for tag in tags))
-    staged_by_repository: dict[str, str] = {}
+    verified_by_repository: dict[str, str] = {}
 
     # Phase one copies every manifest and referenced blob, then proves each
     # target registry retained the verified top-level digest. A failure here
@@ -97,13 +97,13 @@ def promote_verified_image(
             raise RuntimeError(
                 f"staged digest mismatch for {repository}: expected {expected_digest}, got {actual_digest}"
             )
-        staged_by_repository[repository] = staged
+        verified_by_repository[repository] = f"{repository}@{expected_digest}"
 
     # Phase two assigns public aliases only from a digest-verified copy in the
     # same target repository, so no cross-registry blob transfer is implicit.
     for tag in tags:
         repository = _repository(tag)
-        client.copy_all(staged_by_repository[repository], tag)
+        client.copy_all(verified_by_repository[repository], tag)
 
 
 def main(argv: list[str] | None = None) -> int:

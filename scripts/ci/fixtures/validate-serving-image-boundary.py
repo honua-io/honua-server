@@ -82,6 +82,7 @@ assert_rejected(
 )
 assert_rejected(base | {"/usr/lib/libgeos_c.so.1": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/app/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
+assert_rejected(base | {"/opt/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
 
 # The positive worker smoke must exercise the image's configured ENTRYPOINT. A
 # command-only probe with --entrypoint can pass even when the managed worker host

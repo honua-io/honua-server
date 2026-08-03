@@ -47,6 +47,11 @@ staged = [destination for destination in copy_destinations if destination and ":
 public = [destination for destination in copy_destinations if destination in TAGS]
 assert len(staged) == 2, staged
 assert public == TAGS, public
+for operation, source, destination in success.calls:
+    if operation != "copy" or destination not in TAGS:
+        continue
+    repository = destination.rsplit(":", 1)[0]
+    assert source == f"{repository}@{DIGEST}", (source, destination)
 first_public_call = next(index for index, call in enumerate(success.calls) if call[2] in TAGS)
 assert all(call[2] not in TAGS for call in success.calls[:first_public_call])
 
