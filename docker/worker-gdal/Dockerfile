@@ -30,6 +30,18 @@ ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
 ARG DOTNET_RUNTIME_VERSION=10.0
 
 # ---------------------------------------------------------------------------
+# Focused semantic-evidence stage. CI builds only this stage so native raster
+# semantics are proved on the exact GDAL base used by the isolated worker,
+# without compiling the worker or adding GDAL to the serving image.
+# ---------------------------------------------------------------------------
+FROM ${GDAL_BASE_IMAGE} AS raster-semantic-validation
+WORKDIR /evidence
+COPY scripts/ci/verify-gdal-raster-semantics.py scripts/ci/
+COPY tests/dotnet/Honua.TestKit/RasterSemantics/Fixtures/raster-semantic-fixtures.json \
+     tests/dotnet/Honua.TestKit/RasterSemantics/Fixtures/
+RUN python3 scripts/ci/verify-gdal-raster-semantics.py
+
+# ---------------------------------------------------------------------------
 # Build stage: restore + publish the worker (framework-dependent, no AOT).
 # ---------------------------------------------------------------------------
 FROM ${DOTNET_SDK_IMAGE} AS build

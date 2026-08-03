@@ -56,6 +56,9 @@ docs/
 scripts/*
 !scripts/docker/
 !scripts/docker/restore-dotnet-with-github-packages.sh
+!scripts/ci/
+scripts/ci/*
+!scripts/ci/verify-gdal-raster-semantics.py
 
 # Local artifacts not needed for app image builds
 tests/
@@ -67,6 +70,15 @@ tests/**
 !tests/python/
 tests/python/**
 !tests/python/requirements.txt
+!tests/dotnet/
+tests/dotnet/*
+!tests/dotnet/Honua.TestKit/
+tests/dotnet/Honua.TestKit/*
+!tests/dotnet/Honua.TestKit/RasterSemantics/
+tests/dotnet/Honua.TestKit/RasterSemantics/*
+!tests/dotnet/Honua.TestKit/RasterSemantics/Fixtures/
+tests/dotnet/Honua.TestKit/RasterSemantics/Fixtures/*
+!tests/dotnet/Honua.TestKit/RasterSemantics/Fixtures/raster-semantic-fixtures.json
 **/.terraform/
 
 # Temporary files

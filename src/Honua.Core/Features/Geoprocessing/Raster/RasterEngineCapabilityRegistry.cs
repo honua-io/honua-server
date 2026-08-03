@@ -14,7 +14,7 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabilityRegistry
 {
     private const string SemanticVersion = "1.0.0";
-    private const string GdalTestedRuntimeVersion = "3.13.1";
+    private const string GdalTestedRuntimeVersion = "3.12.4";
     private const string PostgisTestedRuntimeVersion = "3.4-3.6";
     private const string PostgisUnavailableReason =
         "No canonical PostGIS raster IProcessExecutor is registered for this process; "

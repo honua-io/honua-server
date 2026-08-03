@@ -211,7 +211,7 @@ public sealed class RasterEngineCapabilityRegistryTests
         Assert.NotNull(capability);
         var gdal = capability.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
         Assert.Equal(RasterSemanticConformanceStatus.CanonicalBaseline, gdal.SemanticConformance);
-        Assert.Equal("3.13.1", gdal.TestedRuntimeVersion);
+        Assert.Equal("3.12.4", gdal.TestedRuntimeVersion);
         Assert.Contains("bilinear", gdal.VerifiedSemanticVariants);
         Assert.Contains("resample.bilinear-nodata-edge.v1", gdal.SemanticEvidenceFixtureIds);
         Assert.True(gdal.SupportsSemanticVariant("bilinear"));

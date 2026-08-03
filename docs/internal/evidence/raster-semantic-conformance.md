@@ -13,7 +13,7 @@ evidence exists.
 | Engine | Tested versions | Execution lane |
 | --- | --- | --- |
 | PostGIS Raster | 3.4, 3.5, 3.6 | `Honua.Postgres.Tests` in the PostgreSQL 16/17/18 compatibility matrix |
-| GDAL | 3.13.1 | Digest-pinned `ghcr.io/osgeo/gdal:ubuntu-full-3.13.1`, the `docker/worker-gdal/Dockerfile` base |
+| GDAL | 3.12.4 | Patch-tag-pinned `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`, the `docker/worker-gdal/Dockerfile` base |
 
 PostGIS integration evidence uses real raster SQL, not mocks. Native evidence invokes the same
 `GdalSurfaceJobExecutor` and CLI runner as the worker, then decodes the resulting GeoTIFF into the
@@ -88,3 +88,9 @@ map algebra, reclassification, spectral index behavior, statistics, histograms, 
 slope, multiband promotion/color interpretation, antimeridian handling, invalid CRS, empty input,
 cancellation, and partial-result cleanup. Additional PostGIS executors must extend real executable
 coverage before claiming those variants.
+
+The focused `Raster Semantic Conformance` workflow builds only the worker Dockerfile's
+`raster-semantic-validation` stage. That stage executes the native slope fixture inside the pinned
+GDAL base, so a lean runner cannot turn missing GDAL into a skipped proof. The ordinary full and
+nightly CI matrices continue to exercise the provider-neutral oracle and the supported PostGIS
+16/3.4, 17/3.5, and 18/3.6 images. No GDAL library or utility enters the serving image.

@@ -88,7 +88,7 @@ public sealed class RasterSemanticOracleTests
             SemanticVersion = fixture.SemanticVersion,
             Engine = "gdalNative",
             ImplementationVersion = "honua.gdal-native.raster.clip@1.0.0",
-            RuntimeVersion = "3.13.1",
+            RuntimeVersion = "3.12.4",
             Outcome = RasterSemanticOutcome.Success,
             Snapshot = fixture.Expected,
         };

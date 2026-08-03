@@ -1,0 +1,39 @@
+name: Raster Semantic Conformance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/raster-semantic-conformance.yml'
+      - 'docker/worker-gdal/**'
+      - 'scripts/ci/verify-gdal-raster-semantics.py'
+      - 'src/Honua.Core/Features/Geoprocessing/Raster/**'
+      - 'src/Honua.Geoprocessing/Features/Geoprocessing/RasterExecutionPlanner.cs'
+      - 'src/Honua.Geoprocessing/Features/Geoprocessing/RasterExecutionPlanningRequestFactory.cs'
+      - 'tests/dotnet/Honua.TestKit/RasterSemantics/**'
+  schedule:
+    - cron: '41 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: raster-semantic-conformance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gdal-worker-semantics:
+    name: Pinned GDAL worker semantics
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify native raster semantics in pinned worker base
+        run: |
+          docker build \
+            --file docker/worker-gdal/Dockerfile \
+            --target raster-semantic-validation \
+            --tag honua-raster-semantic-validation:${{ github.sha }} \
+            .

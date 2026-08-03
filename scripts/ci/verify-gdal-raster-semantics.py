@@ -15,7 +15,7 @@ import numpy
 from osgeo import gdal, osr
 
 
-EXPECTED_GDAL_VERSION = "3.13.1"
+EXPECTED_GDAL_VERSION = "3.12.4"
 FIXTURE_ID = "surface.slope-plane-degrees.v1"
 
 
@@ -186,6 +186,7 @@ def _assert_fixture(fixture: dict[str, Any], output: pathlib.Path) -> None:
 
 def main() -> int:
     args = _parse_args()
+    gdal.UseExceptions()
     runtime_version = gdal.VersionInfo("--version")
     if not runtime_version.startswith(f"GDAL {EXPECTED_GDAL_VERSION}"):
         raise AssertionError(
