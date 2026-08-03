@@ -983,6 +983,60 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Admin Authorization"
+assert_descriptor \
+  "proposal-source-includes-agentic-ops-owner" \
+  "src/Honua.Server/Features/Admin/ProposalEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "proposal-model-includes-agentic-ops-owner" \
+  "src/Honua.Server/Features/Admin/Models/ProposalModels.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "alert-source-includes-agentic-ops-owner" \
+  "src/Honua.Server/Features/Alerts/AlertDispatchBackgroundService.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "alert-core-includes-agentic-ops-owner" \
+  "src/Honua.Core/Features/Alerts/Domain/AlertModels.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "alert-postgres-includes-agentic-ops-owner" \
+  "src/Honua.Postgres/Features/Alerts/PostgresAlertDispatchStore.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "authorization-core-includes-studio-owner" \
+  "src/Honua.Core/Features/Authorization/PermissionResolver.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio and Feature Store"
+assert_descriptor \
+  "authorization-postgres-includes-studio-owner" \
+  "src/Honua.Postgres/Features/Authorization/PostgresRlsPolicyStore.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio and Feature Store"
+assert_descriptor \
+  "forms-core-includes-studio-owner" \
+  "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio and Feature Store"
+assert_descriptor \
+  "forms-postgres-includes-studio-owner" \
+  "src/Honua.Postgres/Features/Forms/PostgresFormPackageStore.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio and Feature Store"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
 # maps to Infra and Security (Features.Infrastructure.* tests), NOT run_all —
@@ -1091,6 +1145,14 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Integrations and Automation" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Studio and Feature Store" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
