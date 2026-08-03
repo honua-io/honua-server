@@ -121,8 +121,8 @@ internal static class RasterStorageProtocol
             {
                 scenes.Add(new RasterGrid(
                     3857,
-                    originX + (column * sceneSize * scale),
-                    originY - (row * sceneSize * scale),
+                    originX + ((double)column * sceneSize * scale),
+                    originY - ((double)row * sceneSize * scale),
                     scale,
                     -scale,
                     0,

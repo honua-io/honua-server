@@ -59,14 +59,13 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         var catalogProcessIds = definitions
             .Select(definition => definition.ProcessId)
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var capability in rasterRegistry.Processes)
+        var unknownCapability = rasterRegistry.Processes
+            .FirstOrDefault(capability => !catalogProcessIds.Contains(capability.ProcessId));
+        if (unknownCapability is not null)
         {
-            if (!catalogProcessIds.Contains(capability.ProcessId))
-            {
-                throw new InvalidOperationException(
-                    $"Raster engine registry references unknown catalog process "
-                    + $"'{capability.ProcessId}'.");
-            }
+            throw new InvalidOperationException(
+                $"Raster engine registry references unknown catalog process "
+                + $"'{unknownCapability.ProcessId}'.");
         }
 
         for (var i = 0; i < definitions.Length; i++)

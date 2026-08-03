@@ -56,7 +56,7 @@ internal static class RasterGridAlignment
         }
 
         if (!double.IsFinite(grid.ScaleX) || !double.IsFinite(grid.ScaleY) ||
-            grid.ScaleX == 0 || grid.ScaleY == 0)
+            Math.Abs(grid.ScaleX) < double.Epsilon || Math.Abs(grid.ScaleY) < double.Epsilon)
         {
             issues.Add($"Scene {index} has an invalid pixel scale.");
         }
@@ -79,7 +79,7 @@ internal static class RasterGridAlignment
     private static bool SharesLattice(double referenceOrigin, double candidateOrigin, double scale)
     {
         if (!double.IsFinite(referenceOrigin) || !double.IsFinite(candidateOrigin) ||
-            !double.IsFinite(scale) || scale == 0)
+            !double.IsFinite(scale) || Math.Abs(scale) < double.Epsilon)
         {
             return false;
         }

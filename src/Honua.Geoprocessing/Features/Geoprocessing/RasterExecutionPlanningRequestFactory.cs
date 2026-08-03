@@ -362,8 +362,9 @@ internal static class RasterExecutionPlanningRequestFactory
         long total = 0;
         foreach (var source in sources)
         {
+            var selectedBands = source.Selection?.Bands.Count;
             if (source is InlineRasterSourceDescriptor inline
-                && source.Selection?.Bands.Count is not > 0)
+                && selectedBands is not > 0)
             {
                 if (!InlineRasterMetadataReader.TryRead(inline.Payload, out var metadata))
                 {
@@ -374,12 +375,12 @@ internal static class RasterExecutionPlanningRequestFactory
                 continue;
             }
 
-            if (source.Selection?.Bands.Count is not > 0)
+            if (selectedBands is not > 0)
             {
                 return null;
             }
 
-            total = SaturatingAdd(total, source.Selection.Bands.Count);
+            total = SaturatingAdd(total, selectedBands.Value);
         }
 
         return total;
@@ -451,9 +452,8 @@ internal static class RasterExecutionPlanningRequestFactory
             var pixels = source.Selection?.PixelWindow is { } window
                 ? SaturatingMultiply(window.Width, window.Height)
                 : SaturatingMultiply(metadata.Width, metadata.Height);
-            var bands = source.Selection?.Bands.Count is > 0
-                ? source.Selection.Bands.Count
-                : metadata.Bands;
+            var selectedBands = source.Selection?.Bands.Count;
+            var bands = selectedBands is > 0 ? selectedBands.Value : metadata.Bands;
             total = SaturatingAdd(
                 total,
                 SaturatingMultiply(SaturatingMultiply(pixels, bands), metadata.SampleBytes));

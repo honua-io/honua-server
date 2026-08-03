@@ -136,12 +136,19 @@ public sealed class RasterStorageProtocolTests
             var start = Assert.IsType<long>(range.From);
             var end = Assert.IsType<long>(range.To);
             var length = checked((int)(end - start + 1));
-            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+
+            // The response is owned by the caller (HttpClient disposes it), so it is
+            // built inline rather than held in a local that analyzers expect us to dispose.
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.PartialContent)
             {
-                Content = new ByteArrayContent(Content.AsSpan((int)start, length).ToArray()),
-            };
-            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(start, end, Content.LongLength);
-            return Task.FromResult(response);
+                Content = new ByteArrayContent(Content.AsSpan((int)start, length).ToArray())
+                {
+                    Headers =
+                    {
+                        ContentRange = new ContentRangeHeaderValue(start, end, Content.LongLength),
+                    },
+                },
+            });
         }
     }
 }

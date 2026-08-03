@@ -42,16 +42,18 @@ internal static class RasterStorageProtocolValidator
         var cells = definition.Cells
             .GroupBy(cell => (cell.Layout, cell.Workload))
             .ToDictionary(group => group.Key, group => group.ToArray());
-        foreach (var layout in Enum.GetValues<RasterStorageLayout>())
+        var invalidCells = Enum.GetValues<RasterStorageLayout>()
+            .SelectMany(
+                _ => Enum.GetValues<RasterStorageWorkload>(),
+                (layout, workload) => (Layout: layout, Workload: workload))
+            .Where(cell =>
+                !cells.TryGetValue((cell.Layout, cell.Workload), out var matches) || matches.Length != 1)
+            .ToArray();
+        if (invalidCells.Length > 0)
         {
-            foreach (var workload in Enum.GetValues<RasterStorageWorkload>())
-            {
-                if (!cells.TryGetValue((layout, workload), out var matches) || matches.Length != 1)
-                {
-                    throw new InvalidDataException(
-                        $"Protocol must contain exactly one support cell for {layout}/{workload}.");
-                }
-            }
+            var (layout, workload) = invalidCells[0];
+            throw new InvalidDataException(
+                $"Protocol must contain exactly one support cell for {layout}/{workload}.");
         }
 
         if (cells.Count != Enum.GetValues<RasterStorageLayout>().Length * Enum.GetValues<RasterStorageWorkload>().Length)

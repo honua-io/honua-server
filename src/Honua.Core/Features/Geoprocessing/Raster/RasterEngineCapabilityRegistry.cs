@@ -669,17 +669,17 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 
     private static GdalRasterInputFormat? ToGdalRasterInputFormat(string format) =>
         format.Trim().ToUpperInvariant() switch
-    {
-        "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
-        "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
-        "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
-        "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
-        "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
-        "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
-        "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
-        "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
-        _ => null,
-    };
+        {
+            "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
+            "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
+            "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
+            "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
+            "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
+            "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
+            "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
+            "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
+            _ => null,
+        };
 
     private static ReadOnlyCollection<T> ReadOnly<T>(params T[] values)
         => Array.AsReadOnly(values);
