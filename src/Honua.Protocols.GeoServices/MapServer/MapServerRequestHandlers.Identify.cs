@@ -886,7 +886,7 @@ internal static partial class MapServerEndpoints
         MetadataV2Service service)
     {
         var descriptors = new List<IdentifyLayerDescriptor>();
-        foreach (var publication in ResolveMapServerLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
         {
             if (publication.LayerIndex is not int publicLayerId)
             {

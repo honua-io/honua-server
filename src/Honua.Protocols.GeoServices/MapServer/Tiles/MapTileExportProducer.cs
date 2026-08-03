@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Tiles;
+using Honua.Protocols.GeoServices.MapServer;
 using Microsoft.Extensions.DependencyInjection;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
@@ -132,9 +133,10 @@ internal static class MapTileExportLayerResolver
         out int serviceSrid)
     {
         var resolved = new List<(int StorageLayerId, MetadataV2Resource Resource)>(pinnedLayers.Length);
+        var publicationsByLayerId = ResolvePublicationsByLayerId(snapshot, service);
         foreach (var selection in pinnedLayers)
         {
-            var publication = ResolvePublication(snapshot, service, selection);
+            var publication = ResolvePublication(publicationsByLayerId, service, selection);
             var resource = snapshot.ResolveResource(publication)
                 ?? throw new InvalidOperationException(
                     $"MapServer layer '{selection.LayerId}' has no resolvable resource in the pinned metadata revision.");
@@ -165,6 +167,7 @@ internal static class MapTileExportLayerResolver
         MetadataV2Service service,
         ImmutableArray<TileExportMapLayerSelection> pinnedLayers)
     {
+        var publicationsByLayerId = ResolvePublicationsByLayerId(snapshot, service);
         foreach (var selection in pinnedLayers)
         {
             if (!int.TryParse(selection.LayerId, NumberStyles.None, CultureInfo.InvariantCulture, out var publicLayerId))
@@ -172,8 +175,8 @@ internal static class MapTileExportLayerResolver
                 return false;
             }
 
-            var publication = snapshot.FindPublicationByLayerIndex(service.Metadata.Id, publicLayerId);
-            if (publication is null || snapshot.ResolveResource(publication) is null)
+            if (!publicationsByLayerId.TryGetValue(publicLayerId, out var publication) ||
+                snapshot.ResolveResource(publication) is null)
             {
                 return false;
             }
@@ -183,12 +186,22 @@ internal static class MapTileExportLayerResolver
     }
 
     private static MetadataV2Publication ResolvePublication(
-        MetadataV2GraphSnapshot snapshot,
+        IReadOnlyDictionary<int, MetadataV2Publication> publicationsByLayerId,
         MetadataV2Service service,
         TileExportMapLayerSelection selection)
-        => snapshot.FindPublicationByLayerIndex(service.Metadata.Id, ParseLayerId(selection.LayerId))
-            ?? throw new InvalidOperationException(
+    {
+        var publicLayerId = ParseLayerId(selection.LayerId);
+        return publicationsByLayerId.TryGetValue(publicLayerId, out var publication)
+            ? publication
+            : throw new InvalidOperationException(
                 $"MapServer layer '{selection.LayerId}' is not published on service '{service.Metadata.Id}' in the pinned metadata revision.");
+    }
+
+    private static Dictionary<int, MetadataV2Publication> ResolvePublicationsByLayerId(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+        => MapServerPublicationResolver.ResolveLayerPublications(snapshot, service)
+            .ToDictionary(static publication => publication.LayerIndex!.Value);
 
     private static bool HasMapServerGeometry(MetadataV2Resource resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None

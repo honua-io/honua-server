@@ -406,48 +406,12 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static MetadataV2Publication[] ResolveMapServerLayerPublications(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
-    {
-        var publications = new List<MetadataV2Publication>();
-        var seenPublicLayerIds = new HashSet<int>();
-        var mapPublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Where(static publication => publication.PublicationType is (
-                MetadataV2PublicationType.EsriMapLayer or
-                MetadataV2PublicationType.EsriFeatureLayer))
-            .OrderBy(static publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
-            .ThenBy(static publication => publication.Metadata.Id, StringComparer.Ordinal);
-        foreach (var publication in mapPublications)
-        {
-            // A single resource can be published through several protocol adapters with the
-            // same service-local numeric identifier (for example, automatic layer publishing
-            // emits both an Esri feature layer and a STAC collection). MapServer must only
-            // consume Esri publications; otherwise duplicate identifiers reach handler-specific
-            // layer lookups and can throw before valid render, query, or KML work begins.
-            // Prefer an explicit Esri map publication when a graph also contains a feature
-            // publication for the same id; malformed or transitional graphs remain deterministic
-            // and cannot crash the renderer with duplicate dictionary keys.
-            if (publication.LayerIndex is not int publicLayerId ||
-                snapshot.ResolveResource(publication) is null ||
-                !seenPublicLayerIds.Add(publicLayerId))
-            {
-                continue;
-            }
-
-            publications.Add(publication);
-        }
-
-        return [.. publications];
-    }
-
     private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
         var descriptors = new List<MapServerMetadataLayerDescriptor>();
-        foreach (var publication in ResolveMapServerLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
         {
             var publicLayerId = publication.LayerIndex!.Value;
 
