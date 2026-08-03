@@ -186,7 +186,7 @@ internal static class MapTileExportLayerResolver
     }
 
     private static MetadataV2Publication ResolvePublication(
-        IReadOnlyDictionary<int, MetadataV2Publication> publicationsByLayerId,
+        Dictionary<int, MetadataV2Publication> publicationsByLayerId,
         MetadataV2Service service,
         TileExportMapLayerSelection selection)
     {
