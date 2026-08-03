@@ -1622,6 +1622,70 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithAzureProviderRetries_DisablesSharedReconcilerRetries()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-azure-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AzureBatch,
+                Backend = "honua-azure-batch",
+                WorkloadName = "Geoprocessing (Azure Batch)",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Managed,
+                },
+            },
+        ]);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("honua-azure-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AzureBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "azure-job-1",
+            });
+        _jobStore.TryCreateAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        var job = await sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+                [GpResourceProfile.RetryAttemptsRequestKey] = "3",
+            });
+
+        job.Spec.Parameters[GpResourceProfile.AzureRetryAttemptsKey].Should().Be("2");
+        job.RetryPolicy.Should().Be(JobRetryPolicy.None,
+            "Azure owns the canonical three-attempt budget, so the reconciler must not resubmit it");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithRawBackendResourceOverride_RejectsBeforeAdmissionOrPersistence()
     {
         var sut = BuildBatchWorkloadService(out var backend);
@@ -3917,6 +3981,34 @@ public sealed class GeoprocessingJobServiceTests
 
         fingerprintA.Should().NotBe(fingerprintB,
             "two services with the same task name must produce distinguishable process identities");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void CreateRequestFingerprint_DifferentPlacementInputs_ProducesDifferentFingerprints()
+    {
+        var plan = CreateValidPlan();
+        var local = GeoprocessingJobService.CreateRequestFingerprint(
+            plan,
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "local",
+                [GpWorkloadPlacementParameterKeys.Affinity] = "local-disk",
+            });
+        var remote = GeoprocessingJobService.CreateRequestFingerprint(
+            plan,
+            new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+                [GpWorkloadPlacementParameterKeys.Affinity] = "s3",
+            });
+
+        local.Should().NotBe(remote,
+            "placement inputs change durable execution behavior and cannot share an idempotency key");
+        GeoprocessingJobService.CreateRequestFingerprint(plan).Should().Be(
+            GeoprocessingJobService.CreateRequestFingerprint(plan, new Dictionary<string, string>()),
+            "requests without execution overrides preserve the rolling-deployment fingerprint");
     }
 
     // -----------------------------------------------------------------------

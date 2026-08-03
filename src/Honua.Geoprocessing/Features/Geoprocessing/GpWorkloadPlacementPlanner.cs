@@ -188,7 +188,14 @@ internal static class GpWorkloadPlacementPlanner
             incompatibilities.Add($"architecture '{resources.Arch}' is not declared");
         }
 
-        if (!isLocal
+        if (isLocal
+            && resources.GpuCount is > 0
+            && !DeclaresLocalGpuCapacity(workload, resources.GpuCount.Value))
+        {
+            incompatibilities.Add(
+                "the local execution lane does not declare compatible GPU capacity");
+        }
+        else if (!isLocal
             && workload.TargetKind == BatchComputeTargetKind.KubernetesJob
             && resources.GpuCount is > 0)
         {
@@ -383,8 +390,12 @@ internal static class GpWorkloadPlacementPlanner
             }
         }
 
-        return options.AllowPressuredLocalFallback
-            ? Rank(scoped.Where(candidate => candidate.IsLocal), requestParameters).FirstOrDefault()
+        var allowPressuredLocal = options.AllowPressuredLocalFallback
+            && (intent.PreferLocal || options.AllowLocalFallback);
+        return allowPressuredLocal
+            ? Rank(
+                scoped.Where(candidate => candidate.IsLocal && candidate.IsPressured),
+                requestParameters).FirstOrDefault()
             : null;
     }
 
@@ -484,7 +495,7 @@ internal static class GpWorkloadPlacementPlanner
         }
 
         var declared = ReadSet(workload.Parameters, GpWorkloadPlacementParameterKeys.Architectures);
-        return declared.Count == 0 || declared.Contains(required);
+        return declared.Count > 0 && declared.Contains(required);
     }
 
     private static string ReadCapacity(
@@ -519,7 +530,9 @@ internal static class GpWorkloadPlacementPlanner
     {
         if (workload.TargetKind != BatchComputeTargetKind.AwsBatch
             || resources.EphemeralGib is not { } ephemeral
-            || !workload.Parameters.Keys.Any(key => key.StartsWith("batch.job_definition_arn.", StringComparison.Ordinal)))
+            || !workload.Parameters.Any(parameter =>
+                parameter.Key.StartsWith("batch.job_definition_arn.", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(parameter.Value)))
         {
             return;
         }
@@ -545,6 +558,13 @@ internal static class GpWorkloadPlacementPlanner
             incompatibilities.Add($"required AWS Batch job-definition tier '{tier}' is not configured");
         }
     }
+
+    private static bool DeclaresLocalGpuCapacity(
+        ExecutionJobDefinition workload,
+        int requestedGpuCount)
+        => workload.Parameters.TryGetValue(GpWorkloadPlacementParameterKeys.MaxGpuCount, out var raw)
+            && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maximum)
+            && maximum >= requestedGpuCount;
 
     private static void AddMaximumViolation(
         List<string> incompatibilities,

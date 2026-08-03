@@ -191,6 +191,70 @@ public sealed class GpWorkloadPlacementPlannerTests
     }
 
     [UnitTest]
+    public void Select_ImplicitLocalCannotSilentlyAcceptGpuRequest()
+    {
+        var act = () => GpWorkloadPlacementPlanner.SelectImplicitLocal(
+            RuntimeProfiles.Native,
+            NativeResources() with { GpuCount = 1 },
+            new Dictionary<string, string>(),
+            rasterDecision: null,
+            new GpWorkloadPlacementOptions());
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .WithMessage("*local execution lane does not declare compatible GPU capacity*");
+    }
+
+    [UnitTest]
+    public void Select_ExplicitArchitectureRequiresCompatibleLaneDeclaration()
+    {
+        var act = () => Select(
+            [Local(), Remote()],
+            NativeResources() with { Arch = "arm64" });
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .WithMessage("*architecture 'arm64' is not declared*");
+    }
+
+    [UnitTest]
+    public void Select_AwsBlankTierPlaceholders_FallsBackToConfiguredSingleArn()
+    {
+        var result = Select(
+            [Remote(new Dictionary<string, string>
+            {
+                ["batch.job_definition_arn"] = "arn:aws:batch:region:account:job-definition/gp:1",
+                ["batch.job_definition_arn.s"] = "",
+                ["batch.job_definition_arn.m"] = " ",
+                ["batch.job_definition_arn.l"] = "",
+                ["batch.job_definition_arn.xl"] = "",
+            })],
+            NativeResources());
+
+        result.Workload!.WorkloadId.Should().Be("gp-aws");
+    }
+
+    [UnitTest]
+    public void Select_PressuredLocalOptionCannotBypassDisabledLocalFallback()
+    {
+        var local = Local(parameters: new Dictionary<string, string>
+        {
+            [GpWorkloadPlacementParameterKeys.Capacity] = "pressured",
+        });
+        var options = new GpWorkloadPlacementOptions
+        {
+            AllowLocalFallback = false,
+            AllowPressuredLocalFallback = true,
+        };
+
+        var act = () => Select(
+            [local],
+            NativeResources() with { Vcpus = 16 },
+            options: options);
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .Where(exception => exception.PolicyRef == "gp:no-compatible-workload");
+    }
+
+    [UnitTest]
     public void Select_RasterRemoteDecisionWithBackendRequestPinsExactBackend()
     {
         var raster = RemoteRasterDecision("preliminary-backend");
@@ -375,6 +439,6 @@ public sealed class GpWorkloadPlacementPlannerTests
         TimeoutSeconds = 1800,
         RetryAttempts = 1,
         EphemeralGib = 50,
-        Arch = "x86_64",
+        Arch = null,
     };
 }

@@ -444,7 +444,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
-        var requestFingerprint = CreateRequestFingerprint(plan);
+        var requestFingerprint = CreateRequestFingerprint(plan, protocolMetadata);
 
         if (resolvedKey is not null)
         {
@@ -579,6 +579,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = queuedPhase,
+            RetryPolicy = ResolveRetryPolicy(resourceProfile, placement.Workload),
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
@@ -1295,6 +1296,26 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return derived.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
     }
 
+    private static JobRetryPolicy? ResolveRetryPolicy(
+        GpResourceProfile resourceProfile,
+        ExecutionJobDefinition? workload)
+    {
+        if (resourceProfile.RetryAttempts is not { } totalAttempts)
+        {
+            return null;
+        }
+
+        // AWS Batch and Azure Batch receive the canonical total-attempt budget through their
+        // provider submission contracts. Disable the shared reconciler retry layer for those
+        // jobs so provider attempts are not multiplied by a second series of submissions.
+        if (workload?.TargetKind is BatchComputeTargetKind.AwsBatch or BatchComputeTargetKind.AzureBatch)
+        {
+            return JobRetryPolicy.None;
+        }
+
+        return JobRetryPolicy.Default with { MaxAttempts = totalAttempts };
+    }
+
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
@@ -1510,14 +1531,33 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return $"gp-{Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant()}";
     }
 
-    internal static string CreateRequestFingerprint(AnalysisPlan plan)
+    internal static string CreateRequestFingerprint(
+        AnalysisPlan plan,
+        IReadOnlyDictionary<string, string>? requestParameters = null)
     {
+        var executionParameters = ResolveFingerprintExecutionParameters(requestParameters);
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteString("planId", plan.PlanId);
             writer.WriteString("intentId", plan.IntentId);
+
+            // Preserve the legacy plan-only byte shape when no placement/resource behavior was
+            // requested. When present, these values affect durable execution selection and must
+            // participate in idempotency rather than silently reusing a differently placed job.
+            if (executionParameters.Count > 0)
+            {
+                writer.WriteStartArray("executionParameters");
+                foreach (var parameter in executionParameters)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("Key", parameter.Key);
+                    writer.WriteString("Value", parameter.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+            }
 
             writer.WriteStartArray("steps");
             foreach (var step in plan.Steps)
@@ -1579,6 +1619,40 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // of buffer.ToArray(), which would copy the whole written payload just to hand it
         // to SHA256.HashData.
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))).ToLowerInvariant();
+    }
+
+    private static List<KeyValuePair<string, string>> ResolveFingerprintExecutionParameters(
+        IReadOnlyDictionary<string, string>? requestParameters)
+    {
+        if (requestParameters is null)
+        {
+            return new List<KeyValuePair<string, string>>();
+        }
+
+        string[] keys =
+        [
+            GpWorkloadPlacementParameterKeys.Mode,
+            GpWorkloadPlacementParameterKeys.Backend,
+            GpWorkloadPlacementParameterKeys.Affinity,
+            GpResourceProfile.VcpusRequestKey,
+            GpResourceProfile.MemoryMibRequestKey,
+            GpResourceProfile.GpuCountRequestKey,
+            GpResourceProfile.TimeoutSecondsRequestKey,
+            GpResourceProfile.RetryAttemptsRequestKey,
+            GpResourceProfile.EphemeralGibRequestKey,
+            GpResourceProfile.ArchRequestKey,
+        ];
+        var result = new List<KeyValuePair<string, string>>(keys.Length);
+        foreach (var key in keys.OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            if (requestParameters.TryGetValue(key, out var value)
+                && !string.IsNullOrWhiteSpace(value))
+            {
+                result.Add(new KeyValuePair<string, string>(key, value.Trim()));
+            }
+        }
+
+        return result;
     }
 
     private static void EnsureMatchingIdempotentRequest(
