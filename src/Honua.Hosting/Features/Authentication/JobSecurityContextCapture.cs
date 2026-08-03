@@ -369,7 +369,10 @@ internal enum JobSecurityContextMembershipStatus
 /// </summary>
 /// <param name="Context">Snapshot with current roles when resolution succeeded.</param>
 /// <param name="Status">Membership resolution outcome.</param>
-/// <param name="HasRemovedRoles">Whether at least one captured role is absent now.</param>
+/// <param name="HasRemovedRoles">
+/// Whether at least one captured role is absent now. Deferred callers must fail closed rather
+/// than use a role set that could select a less restrictive row or field policy.
+/// </param>
 internal sealed record JobSecurityContextMembershipResult(
     JobSecurityContext Context,
     JobSecurityContextMembershipStatus Status,

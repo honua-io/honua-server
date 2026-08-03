@@ -119,13 +119,6 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 definition.WorkflowId,
                 snapshot.PrincipalId ?? "unknown");
         }
-        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
-        {
-            OrchestrationLog.AuthorMembershipRevalidated(
-                _logger,
-                definition.WorkflowId,
-                snapshot.PrincipalId ?? "unknown");
-        }
         else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
         {
             OrchestrationLog.AuthorMembershipInactive(
@@ -135,6 +128,24 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             throw new WorkflowDefinitionValidationException(
                 $"Workflow '{definition.WorkflowId}' author '{snapshot.PrincipalId ?? "unknown"}' "
                 + "is no longer active; this triggered firing was refused.");
+        }
+        else if (result.HasRemovedRoles)
+        {
+            OrchestrationLog.AuthorMembershipNoLongerAuthorizes(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
+            throw new WorkflowDefinitionValidationException(
+                $"Workflow '{definition.WorkflowId}' author '{snapshot.PrincipalId ?? "unknown"}' "
+                + "lost role membership captured at publication; the triggered firing was refused "
+                + "because its row-level security and field masking cannot be safely relaxed.");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            OrchestrationLog.AuthorMembershipRevalidated(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
         }
 
         return result;

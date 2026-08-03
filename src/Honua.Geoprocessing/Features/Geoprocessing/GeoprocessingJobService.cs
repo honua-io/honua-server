@@ -331,13 +331,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// Shared submit pipeline for both the caller-initiated submit path and the
     /// approval-resume path. When <paramref name="resumingApproved"/> is true the
     /// caller is the operation gateway replaying a proposal that already cleared the
-    /// baseline execute and approval gates at proposal-creation time; those two are
-    /// bypassed here so the resumed submission is not re-denied against the
-    /// reconstructed submitter principal (ADR-0064, #2814). Structural, executability,
-    /// and catalog validation always run, and so do the RESOURCE gates — mutating-process
-    /// tier and per-layer read — which are re-evaluated against the persisted submitter
-    /// snapshot because their answer can change while a proposal waits
-    /// (honua-server#3046 review).
+    /// approval gate at proposal-creation time. That approval is not requested twice,
+    /// but baseline execute authorization is rechecked against the revalidated submitter
+    /// principal (ADR-0064, #2814). Structural, executability, and catalog validation
+    /// always run, and so do the RESOURCE gates — mutating-process tier and per-layer
+    /// read — which are re-evaluated against the persisted submitter snapshot because
+    /// their answer can change while a proposal waits (honua-server#3046 review).
     /// </summary>
     private async Task<ExecutionJobRecord> SubmitJobCoreAsync(
         AnalysisPlan plan,
@@ -383,14 +382,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        if (!resumingApproved)
-        {
-            await _authorizer.EnsureAuthorizedAsync(
-                principal,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                cancellationToken).ConfigureAwait(false);
-        }
+        await _authorizer.EnsureAuthorizedAsync(
+            resumingApproved ? authorizationPrincipal : principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
@@ -1147,12 +1143,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 _logger,
                 snapshot.PrincipalId ?? "unknown");
         }
-        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
-        {
-            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
-                _logger,
-                snapshot.PrincipalId ?? "unknown");
-        }
         else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
         {
             GeoprocessingServiceLog.SubmitterMembershipInactive(
@@ -1165,6 +1155,26 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 OperatorOperation.Execute,
                 AuthorizationDenialReason.StalePrincipalMembership);
         }
+        else if (result.HasRemovedRoles)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter's current role membership no longer includes every role captured "
+                + "by this deferred operation, so its row-level security and field masking cannot "
+                + "be safely relaxed.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
 
         return result;
     }
@@ -1176,14 +1186,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(payload.Plan);
 
-        // The baseline execute and approval gates were satisfied when the proposal was
-        // created; re-run the submission with those two bypassed, attributing the job to
-        // the original submitter recorded in the payload. A synthetic principal carrying
+        // The approval gate was satisfied when the proposal was created; re-run the
+        // submission with only that gate bypassed, attributing the job to the original
+        // submitter recorded in the payload. A synthetic principal carrying
         // only the submitter identity preserves job ownership and partition-scoped
-        // admission without re-deriving the submitter's roles. The resource gates
-        // (mutating tier, per-layer read) are NOT bypassed — SubmitJobCoreAsync re-runs
-        // them against the payload's submitter snapshot, so a grant revoked while the
-        // proposal waited denies the resume (honua-server#3046 review).
+        // admission without re-deriving the submitter's roles. The baseline execute and
+        // resource gates (mutating tier, per-layer read) are NOT bypassed —
+        // SubmitJobCoreAsync re-runs them against the payload's revalidated submitter
+        // snapshot, so a grant revoked while the proposal waited denies the resume
+        // (honua-server#3046 review).
         var principal = BuildResumePrincipal(payload.RequestedBy);
         return await SubmitJobCoreAsync(
                 payload.Plan,

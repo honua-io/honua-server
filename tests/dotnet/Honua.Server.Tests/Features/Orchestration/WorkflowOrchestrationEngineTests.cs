@@ -138,7 +138,6 @@ public sealed class WorkflowOrchestrationEngineTests
         var membershipSource = new FixedMembershipSource(
             new PrincipalMembership(IsActive: true, Roles: []));
         var harness = new OrchestrationTestHarness(membershipSource);
-        harness.JobService.RequiredExecutionRoleForPlanIds["plan-a"] = "restricted-analyst";
         var definition = BuildSingleStepDefinition(
             harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
         {
@@ -156,8 +155,7 @@ public sealed class WorkflowOrchestrationEngineTests
 
         var thrown = await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(act);
         Assert.Contains("lost role membership", thrown.Message, StringComparison.Ordinal);
-        var gated = Assert.Single(harness.JobService.ExecutionAuthorizationPrincipals);
-        Assert.False(gated.IsInRole("restricted-analyst"));
+        Assert.Empty(harness.JobService.ExecutionAuthorizationPrincipals);
         Assert.Empty(harness.RunStore.Snapshot);
         Assert.Empty(harness.JobService.Submitted);
     }
