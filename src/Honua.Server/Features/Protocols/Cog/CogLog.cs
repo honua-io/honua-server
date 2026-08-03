@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Raster.CogParser;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Cog;
@@ -81,5 +82,9 @@ internal static partial class CogLog
         EventId = 7911,
         Level = LogLevel.Debug,
         Message = "COG {RegistrationId} direct read rejected: disposition={Disposition}, reason={Reason}.")]
-    public static partial void DirectReadRejected(ILogger logger, long registrationId, string disposition, string reason);
+    public static partial void DirectReadRejected(
+        ILogger logger,
+        long registrationId,
+        CogDirectReadDisposition disposition,
+        CogDirectReadReason reason);
 }

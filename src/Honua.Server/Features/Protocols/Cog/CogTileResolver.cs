@@ -88,8 +88,8 @@ internal sealed class CogTileResolver : ICogTileResolver
             CogLog.DirectReadRejected(
                 _logger,
                 registration.Id,
-                directPlan.Disposition.ToString(),
-                directPlan.Reason.ToString());
+                directPlan.Disposition,
+                directPlan.Reason);
             return null;
         }
 
@@ -124,8 +124,8 @@ internal sealed class CogTileResolver : ICogTileResolver
             CogLog.DirectReadRejected(
                 _logger,
                 registration.Id,
-                validatedPlan.Disposition.ToString(),
-                validatedPlan.Reason.ToString());
+                validatedPlan.Disposition,
+                validatedPlan.Reason);
             return null;
         }
 
