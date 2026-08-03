@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
@@ -392,14 +393,38 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     // =============================================================================
 
     // NOTE: ST_FromGDALRaster requires the complete raster byte payload as a single parameter;
-    // there is no streaming overload. For the configured max of 500 MB this allocates on the
-    // Large Object Heap and roughly doubles peak memory (byte[] + Npgsql parameter copy).
-    // The upload staging path streams to disk (CopyStreamToTempFileAsync), so only the DB
-    // insertion step carries this cost. If memory pressure becomes an issue, consider lowering
-    // MaxRasterFileSizeBytes or switching to raster2pgsql / lo_import in a future pass.
+    // there is no streaming overload. The direct-import admission check above keeps that
+    // allocation under MaxDirectRasterImportSize. Larger rasters must use the durable staged
+    // loader rather than passing through the serving process.
     private static async Task<byte[]> ReadFileBytesAsync(string filePath, CancellationToken cancellationToken)
     {
-        return await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
+        await using var stream = new FileStream(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        var admittedLength = stream.Length;
+        if (admittedLength > FileSizeConstants.MaxDirectRasterImportSize)
+        {
+            throw new NotSupportedException(
+                "Raster exceeds the synchronous PostGIS import limit and requires durable staged import.");
+        }
+
+        var fileBytes = new byte[checked((int)admittedLength)];
+        await stream.ReadExactlyAsync(fileBytes, cancellationToken).ConfigureAwait(false);
+
+        // Do not permit a concurrently growing file to bypass the pre-allocation length check.
+        var trailingByte = new byte[1];
+        if (await stream.ReadAsync(trailingByte, cancellationToken).ConfigureAwait(false) != 0)
+        {
+            throw new NotSupportedException(
+                "Raster changed while being admitted and requires durable staged import.");
+        }
+
+        return fileBytes;
     }
 
     private async Task<long> InsertRasterDataAsync(
