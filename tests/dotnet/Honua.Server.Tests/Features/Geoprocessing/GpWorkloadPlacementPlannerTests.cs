@@ -253,6 +253,29 @@ public sealed class GpWorkloadPlacementPlannerTests
     }
 
     [UnitTest]
+    public void Select_AzureFixedPoolWithoutResourceDeclarations_RejectsBeforeSubmission()
+    {
+        var azure = Workload(
+            "gp-azure",
+            "honua-azure-batch",
+            BatchComputeTargetKind.AzureBatch,
+            "managed,native",
+            null);
+
+        var act = () => Select(
+            [azure],
+            NativeResources() with { GpuCount = 1 },
+            requestParameters: new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+            });
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .WithMessage(
+                "*placement.max_vcpus*placement.max_memory_mib*placement.max_gpu_count*placement.max_ephemeral_gib*");
+    }
+
+    [UnitTest]
     public void Select_PressuredLocalOptionCannotBypassDisabledLocalFallback()
     {
         var local = Local(parameters: new Dictionary<string, string>

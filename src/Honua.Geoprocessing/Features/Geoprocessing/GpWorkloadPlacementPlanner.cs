@@ -191,6 +191,7 @@ internal static class GpWorkloadPlacementPlanner
         AddMaximumViolation(incompatibilities, workload.Parameters, GpWorkloadPlacementParameterKeys.MaxTimeoutSeconds, "timeout seconds", resources.TimeoutSeconds);
         AddMaximumViolation(incompatibilities, workload.Parameters, GpWorkloadPlacementParameterKeys.MaxRetryAttempts, "retry attempts", resources.RetryAttempts);
         AddMaximumViolation(incompatibilities, workload.Parameters, GpWorkloadPlacementParameterKeys.MaxEphemeralGib, "ephemeral GiB", resources.EphemeralGib);
+        RequireAzureFixedPoolDeclarations(workload, resources, incompatibilities);
 
         if (!AcceptsArchitecture(workload, resources.Arch))
         {
@@ -584,6 +585,56 @@ internal static class GpWorkloadPlacementPlanner
         if (requested is { } value && value > maximum)
         {
             incompatibilities.Add($"requested {label} {value} exceeds declared maximum {maximum}");
+        }
+    }
+
+    private static void RequireAzureFixedPoolDeclarations(
+        ExecutionJobDefinition workload,
+        GpResourceProfile resources,
+        List<string> incompatibilities)
+    {
+        if (workload.TargetKind != BatchComputeTargetKind.AzureBatch)
+        {
+            return;
+        }
+
+        RequirePositiveCapacityDeclaration(
+            workload.Parameters,
+            GpWorkloadPlacementParameterKeys.MaxVcpus,
+            "vCPU",
+            resources.Vcpus,
+            incompatibilities);
+        RequirePositiveCapacityDeclaration(
+            workload.Parameters,
+            GpWorkloadPlacementParameterKeys.MaxMemoryMib,
+            "memory MiB",
+            resources.MemoryMib,
+            incompatibilities);
+        RequirePositiveCapacityDeclaration(
+            workload.Parameters,
+            GpWorkloadPlacementParameterKeys.MaxGpuCount,
+            "GPU",
+            resources.GpuCount,
+            incompatibilities);
+        RequirePositiveCapacityDeclaration(
+            workload.Parameters,
+            GpWorkloadPlacementParameterKeys.MaxEphemeralGib,
+            "ephemeral GiB",
+            resources.EphemeralGib,
+            incompatibilities);
+    }
+
+    private static void RequirePositiveCapacityDeclaration(
+        IReadOnlyDictionary<string, string> parameters,
+        string key,
+        string label,
+        int? requested,
+        List<string> incompatibilities)
+    {
+        if (requested is > 0 && !parameters.ContainsKey(key))
+        {
+            incompatibilities.Add(
+                $"Azure fixed-pool execution requires declaration '{key}' for requested {label} {requested}");
         }
     }
 

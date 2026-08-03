@@ -45,6 +45,7 @@ namespace Honua.Geoprocessing;
 /// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
+    private const string RequestFingerprintVersionPrefix = "gp-v2:";
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
@@ -445,6 +446,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan, protocolMetadata);
+        var legacyRequestFingerprint = CreateLegacyRequestFingerprint(plan);
 
         if (resolvedKey is not null)
         {
@@ -455,7 +457,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                EnsureMatchingIdempotentRequest(
+                    existing,
+                    requestFingerprint,
+                    legacyRequestFingerprint,
+                    principal);
                 EnsureSubmissionDidNotRollback(existing);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existing;
@@ -599,7 +605,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (existing != null)
             {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                EnsureMatchingIdempotentRequest(
+                    existing,
+                    requestFingerprint,
+                    legacyRequestFingerprint,
+                    principal);
                 EnsureSubmissionDidNotRollback(existing);
                 GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
                 return existing;
@@ -1542,6 +1552,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IReadOnlyDictionary<string, string>? requestParameters = null)
     {
         var executionParameters = ResolveFingerprintExecutionParameters(requestParameters);
+        return RequestFingerprintVersionPrefix + CreateRequestFingerprintCore(plan, executionParameters);
+    }
+
+    internal static string CreateLegacyRequestFingerprint(AnalysisPlan plan)
+        => CreateRequestFingerprintCore(plan, []);
+
+    private static string CreateRequestFingerprintCore(
+        AnalysisPlan plan,
+        List<KeyValuePair<string, string>> executionParameters)
+    {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -1662,7 +1682,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private static void EnsureMatchingIdempotentRequest(
-        ExecutionJobRecord existing, string requestFingerprint, ClaimsPrincipal principal)
+        ExecutionJobRecord existing,
+        string requestFingerprint,
+        string legacyRequestFingerprint,
+        ClaimsPrincipal principal)
     {
         // Reject cross-principal replay: a different caller must not silently
         // receive another principal's job via an idempotency-key collision.
@@ -1677,6 +1700,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var existingFingerprint = existing.Audit.RequestFingerprint;
         if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
             string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Pre-upgrade GP records carry the unversioned, plan-only digest. Accept the same
+        // logical replay even when resource/placement inputs are present now; new records are
+        // explicitly versioned, so changing those inputs still produces an idempotency conflict.
+        if (!string.IsNullOrWhiteSpace(existingFingerprint)
+            && !existingFingerprint.StartsWith(RequestFingerprintVersionPrefix, StringComparison.Ordinal)
+            && string.Equals(existingFingerprint, legacyRequestFingerprint, StringComparison.Ordinal))
         {
             return;
         }

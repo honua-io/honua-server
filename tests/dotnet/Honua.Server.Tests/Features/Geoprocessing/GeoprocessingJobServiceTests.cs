@@ -357,6 +357,74 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_LegacyPlanOnlyFingerprintWithResourceRequest_ReturnsExistingJob()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "legacy-resource-replay";
+        var existing = CreateJobRecord(
+            GeoprocessingJobService.CreateJobId(idempotencyKey),
+            ExecutionJobStatus.Queued) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = "test-user",
+                RequestFingerprint = GeoprocessingJobService.CreateLegacyRequestFingerprint(plan),
+            },
+        };
+        _jobStore.GetAsync(existing.OperationId, Arg.Any<CancellationToken>()).Returns(existing);
+
+        var replay = await _sut.SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        replay.Should().BeSameAs(existing);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CurrentFingerprintWithoutOverrides_RejectsChangedResourceRequest()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "current-resource-conflict";
+        var existing = CreateJobRecord(
+            GeoprocessingJobService.CreateJobId(idempotencyKey),
+            ExecutionJobStatus.Queued) with
+        {
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = "test-user",
+                RequestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan),
+            },
+        };
+        _jobStore.GetAsync(existing.OperationId, Arg.Any<CancellationToken>()).Returns(existing);
+
+        var act = async () => await _sut.SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        await act.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_IdempotentRasterReplay_ReusesPersistedDecisionWithoutReplanning()
     {
         ExecutionJobRecord? created = null;
@@ -1638,6 +1706,9 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
                     [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Managed,
+                    [GpWorkloadPlacementParameterKeys.MaxVcpus] = "4",
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "8192",
+                    [GpWorkloadPlacementParameterKeys.MaxEphemeralGib] = "100",
                 },
             },
         ]);
@@ -4034,7 +4105,7 @@ public sealed class GeoprocessingJobServiceTests
             "placement inputs change durable execution behavior and cannot share an idempotency key");
         GeoprocessingJobService.CreateRequestFingerprint(plan).Should().Be(
             GeoprocessingJobService.CreateRequestFingerprint(plan, new Dictionary<string, string>()),
-            "requests without execution overrides preserve the rolling-deployment fingerprint");
+            "requests without execution overrides share the same current-version fingerprint");
     }
 
     // -----------------------------------------------------------------------
