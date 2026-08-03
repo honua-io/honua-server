@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
@@ -782,6 +783,58 @@ public sealed class GrpcProcessServiceTests
         fpA.Should().Be(fpB, "semantically equivalent plans with reordered dependencies must hash identically");
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public void Fingerprint_EmptyRasterSources_PreservesLegacyFingerprint()
+    {
+        var protoPlan = CreateValidPlan();
+        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
+
+        var actual = GeoprocessingJobService.CreateRequestFingerprint(domainPlan);
+
+        actual.Should().Be(ComputeExpectedFingerprint(protoPlan),
+            "rolling deployment retries for legacy plans must match fingerprints written before typed raster sources existed");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public void Fingerprint_DifferentTypedRasterSources_ProduceDifferentHashes()
+    {
+        var baseline = GeoprocessingConversionHelpers.ToDomainPlan(CreateValidPlan());
+        var first = baseline with
+        {
+            Steps =
+            [
+                baseline.Steps[0] with
+                {
+                    RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                    {
+                        ["source"] = CogSource("tenant-a/elevation-v1.tif")
+                    }
+                }
+            ]
+        };
+        var second = first with
+        {
+            Steps =
+            [
+                first.Steps[0] with
+                {
+                    RasterSources = new Dictionary<string, RasterSourceDescriptor>
+                    {
+                        ["source"] = CogSource("tenant-a/elevation-v2.tif")
+                    }
+                }
+            ]
+        };
+
+        GeoprocessingJobService.CreateRequestFingerprint(first).Should().NotBe(
+            GeoprocessingJobService.CreateRequestFingerprint(second),
+            "typed raster content identity is part of idempotency semantics when a binding is present");
+    }
+
     // -----------------------------------------------------------------------
     // Authorization
     // -----------------------------------------------------------------------
@@ -1007,6 +1060,24 @@ public sealed class GrpcProcessServiceTests
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
     }
+
+    private static ObjectStoreCogRasterSourceDescriptor CogSource(string objectKey) => new()
+    {
+        Version = "object-version-1",
+        StoreReference = "imagery-prod",
+        ObjectKey = objectKey,
+        Content = new RasterContentIdentity
+        {
+            SizeBytes = 4096,
+            MediaType = "image/tiff",
+            Checksum = new RasterChecksum("sha256", new string('a', 64))
+        },
+        SecurityContext = new RasterSecurityContextReference
+        {
+            TenantId = "tenant-a",
+            AuthorizationSnapshotReference = "auth-snapshot-123"
+        }
+    };
 
     private static ExecutionJobRecord CreateTestJobRecord(string jobId, ExecutionJobStatus status)
     {

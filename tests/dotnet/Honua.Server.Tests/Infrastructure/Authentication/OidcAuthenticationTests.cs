@@ -150,6 +150,18 @@ public class OidcAuthenticationTests
 
     private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
 
+    /// <summary>
+    /// Service provider carrying an Enterprise-entitled license so claims transformation tests
+    /// exercise the pre-#2997 behavior (custom claims mapping applied); the unentitled path is
+    /// covered by OidcClaimsMappingEntitlementTests.
+    /// </summary>
+    private static ServiceProvider EnterpriseEntitledServices()
+        => new ServiceCollection()
+            .AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(
+                new Honua.TestKit.Helpers.TestLicenseEntitlementService(Honua.Core.Features.Licensing.Domain.HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+
+
     private static void AddFeatureServerMetadataV2Graph(IServiceCollection services)
     {
         var graph = new TestMetadataV2GraphBuilder()
@@ -957,7 +969,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -989,7 +1001,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1018,7 +1030,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1047,7 +1059,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1084,7 +1096,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1114,7 +1126,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1146,7 +1158,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var identity = new ClaimsIdentity(); // Not authenticated (no auth type)
         var principal = new ClaimsPrincipal(identity);
@@ -1169,7 +1181,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         // Azure AD often provides email in UPN claim
         var claims = new List<Claim>
@@ -1197,7 +1209,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         // Some providers use preferred_username instead of name
         var claims = new List<Claim>
@@ -1230,7 +1242,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1264,7 +1276,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1297,7 +1309,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {
@@ -1333,7 +1345,7 @@ public class OidcAuthenticationTests
         });
 
         var logger = new TestLogger<OidcClaimsTransformation>();
-        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
         var claims = new List<Claim>
         {

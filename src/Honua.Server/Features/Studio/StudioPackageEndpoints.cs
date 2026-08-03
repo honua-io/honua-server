@@ -14,6 +14,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Studio.Export;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
@@ -883,7 +884,7 @@ internal static class StudioPackageEndpoints
                 draftId,
                 request.ChangeNote,
                 ConsolePrincipal.ResolveActorId(context.User),
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken: context.RequestAborted).ConfigureAwait(false);
             if (version is null)
             {
                 return NotFound(context, "Studio package draft was not found.");

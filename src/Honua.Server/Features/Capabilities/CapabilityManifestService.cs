@@ -216,17 +216,25 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestServerInfo BuildServerInfo()
     {
-        var assembly = typeof(CapabilityManifestService).Assembly;
-        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var identity = options.DeploymentIdentity;
         return new CapabilityManifestServerInfo
         {
-            ServerVersion = string.IsNullOrWhiteSpace(version)
-                ? assembly.GetName().Version?.ToString() ?? "0.0.0"
-                : version,
+            // serverVersion stays the mutable release version. The immutable deployment
+            // identity is a separate field so evidence consumers can bind a retained
+            // artifact to exact code/image content (#3038, REQ-004).
+            //
+            // Read through the SAME normalizer the streaming capability surface uses, rather
+            // than the raw InformationalVersion: with SourceLink or SemVer build metadata
+            // (`1.0.0+<sha>`) the two documents advertised different serverVersion values for
+            // one running server, and this one mixed immutable build identity back into the
+            // field the change documents as mutable (honua-server#3038 review).
+            ServerVersion = identity.ReleaseVersion,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName
+            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentRevision = identity.Revision,
+            DeploymentRevisionSource = identity.RevisionSource
         };
     }
 
@@ -381,6 +389,7 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.extent-discovery", "temporal", context, entitlementKey: "temporal.extent-discovery"),
             Capability("temporal.histogram", "temporal", context, entitlementKey: "temporal.histogram"),
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
+            Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
@@ -494,6 +503,7 @@ internal sealed class CapabilityManifestService(
             ["temporal.extent-discovery"] = new() { EntitlementKey = "temporal.extent-discovery" },
             ["temporal.histogram"] = new() { EntitlementKey = "temporal.histogram" },
             ["temporal.time-series-tiles"] = new() { EntitlementKey = "temporal.time-series-tiles" },
+            ["temporal.animation-api"] = new() { EntitlementKey = "temporal.animation-api" },
 
             ["sync.offline"] = new()
             {
@@ -898,22 +908,10 @@ internal sealed class CapabilityManifestService(
     }
 
     private bool HasAdminRole(ClaimsPrincipal principal)
-    {
-        var roleClaimType = options.Rbac.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        foreach (var claim in principal.Claims)
-        {
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-            if (isRoleClaim && string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => RbacRoleClaims.IsAdmin(
+            principal,
+            options.Rbac,
+            entitlementService.GetSnapshot().HasEntitlement(FeatureCatalog.OidcClaimsMappingKey));
 
     private static bool HasPolicyCapability(CapabilityPolicyContext context, string capability)
     {

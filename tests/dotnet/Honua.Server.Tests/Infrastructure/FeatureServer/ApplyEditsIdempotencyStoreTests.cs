@@ -53,9 +53,9 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
         var results = await Task.WhenAll(tasks);
 
-        results.Count(r => r).Should().Be(1,
+        results.Count(token => token is not null).Should().Be(1,
             "exactly one concurrent TryReserveAsync must win the reservation (BH5-001)");
-        results.Count(r => !r).Should().Be(concurrency - 1,
+        results.Count(token => token is null).Should().Be(concurrency - 1,
             "all other concurrent attempts must lose the reservation and return false");
     }
 
@@ -71,8 +71,8 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var reservedA = await store.TryReserveAsync(Scope(key: "key-a"));
         var reservedB = await store.TryReserveAsync(Scope(key: "key-b"));
 
-        reservedA.Should().BeTrue("scope A is a new key and must win the reservation");
-        reservedB.Should().BeTrue("scope B uses a different key and must independently win");
+        reservedA.Should().NotBeNull("scope A is a new key and must win the reservation");
+        reservedB.Should().NotBeNull("scope B uses a different key and must independently win");
     }
 
     [UnitTest]
@@ -91,7 +91,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
         // First: reserve and complete the edit.
         var reserved = await store.TryReserveAsync(scope);
-        reserved.Should().BeTrue("first reservation must be won");
+        reserved.Should().NotBeNull("first reservation must be won");
 
         await store.SetAsync(scope, new Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse
         {
@@ -103,7 +103,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         // is already stored (TryGetAsync would return the recorded response; TryReserveAsync
         // must not grant a second reservation to re-execute the edit).
         var reservedAgain = await store.TryReserveAsync(scope);
-        reservedAgain.Should().BeFalse(
+        reservedAgain.Should().BeNull(
             "after the edit response is stored, TryReserveAsync must not grant a second execution");
     }
 

@@ -3,6 +3,14 @@
 Status: Proposed
 Date: 2026-07-04
 
+Raster specialization: [ADR-0071](0071-raster-execution-boundary.md) controls
+raster engine and placement within the execution/GP plane. A configured batch
+backend is an eligible placement, not a universal destination: bounded,
+data-resident raster work may prefer PostGIS only when its capabilities,
+data-locality, and database SLO budget all qualify, while native execution must
+likewise satisfy its capability, locality/staging, and worker-budget gates.
+Large raster inputs and outputs cross the plane by typed artifact reference.
+
 ## Context
 
 Operating a GIS server — deploy, upgrade, scale, run geoprocessing, tune, troubleshoot, roll back — is the platform's sharpest wedge against ArcGIS Server. ArcGIS makes the *human* the control loop: you monitor, diagnose, fix, scale, and upgrade a Byzantine, stateful, click-configured stack by hand. Honua's opportunity is to close that loop so the operator **supervises** instead of operates.
@@ -24,6 +32,14 @@ Adopt a **two-plane, substrate-neutral operability architecture**: Honua owns th
 ### Two planes, one pattern
 - **Serving plane (`IDeployBackend`)** — stateless request/response; rolling replace with health-gating; proxy-fronted.
 - **Execution/GP plane (`IBatchComputeBackend`)** — stateless batch jobs (inputs from store → outputs to store); submit / track / retry / cancel / collect; scheduler-fronted.
+
+For raster jobs, the execution plane includes governed durable PostGIS work as
+well as local and remote native workers. The planner defined by ADR-0071 chooses
+among them before an attempt starts. `IBatchComputeBackend` is the
+substrate-neutral dispatch seam for eligible local-process-pool and remote
+native placements; governed PostGIS execution remains behind its database
+executor rather than bypassing the planner or creating a parallel native-job
+lifecycle.
 
 ### Blue/green is NOT the primitive
 Because compute is stateless, the primitive is **(statelessness) + (a Honua-owned cutover semantic: rolling replace + health-gate + keep-old-until-healthy) + (a thin executor)** — *not* AWS/K8s-native blue/green. Coupling ops to a cloud's deployment strategy breaks on-prem/air-gapped and is unnecessary given stateless compute.

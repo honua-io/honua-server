@@ -122,11 +122,13 @@
       "endpointPrefixes": [],
       "endpointExactMatches": [
         "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+        "/api/v1/saved-maps/{mapId}/collaboration/sessions/leave",
         "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
         "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release",
-        "/api/v1/saved-maps/{mapId}/collaboration/operations"
+        "/api/v1/saved-maps/{mapId}/collaboration/operations",
+        "/api/v1/saved-maps/{mapId}/collaboration/checkpoints"
       ],
       "endpointContains": [],
       "operationKeys": [],

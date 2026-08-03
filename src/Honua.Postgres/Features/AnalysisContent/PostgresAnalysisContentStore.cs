@@ -39,6 +39,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         {
             ArgumentNullException.ThrowIfNull(item);
             ArgumentNullException.ThrowIfNull(version);
+            EnsureRasterSourcesCanPersist(version);
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -90,6 +91,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         => TranslateStoreFailuresAsync(async () =>
         {
             ArgumentNullException.ThrowIfNull(version);
+            EnsureRasterSourcesCanPersist(version);
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -118,6 +120,21 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
                     ex);
             }
         });
+
+    private static void EnsureRasterSourcesCanPersist(AnalysisContentVersion version)
+    {
+        if (version.AnalysisPackage is not { } package)
+        {
+            return;
+        }
+
+        var validation = AnalysisContentRasterSourcePolicy.ValidateForPersistence(package);
+        if (!validation.IsValid)
+        {
+            var failure = validation.Errors[0];
+            throw new AnalysisContentStoreValidationException(failure.Message, failure.Code);
+        }
+    }
 
     public Task<AnalysisContentVersion?> GetVersionAsync(
         string itemId,

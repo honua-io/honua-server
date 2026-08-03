@@ -10,26 +10,62 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Features.Alerts;
 
 /// <summary>
-/// Configuration-binding regression tests for the operator-facing alert worker switch (#3055).
+/// Configuration-binding tests for the operator-facing alert options: the worker enable switch
+/// (<c>Alerts:Enabled</c>, #3055) and the downward-only alert-edition cap (<c>Alerts:Edition</c>,
+/// #2998). Both are settable so the configuration binding source generator assigns them; these
+/// tests bind the option the same way the host does
+/// (<c>AddOptions().Bind(configuration.GetSection("Alerts"))</c>) so each configuration path is
+/// covered independently of the HTTP surface.
 /// </summary>
 public sealed class AlertOptionsBindingTests
 {
-    [UnitTest]
-    public void Bind_EnabledTrue_SetsEnabled()
+    private static AlertOptions Bind(params (string Key, string? Value)[] settings)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Alerts:Enabled"] = "true",
-            })
+            .AddInMemoryCollection(settings.ToDictionary(s => s.Key, s => s.Value))
             .Build();
 
         var services = new ServiceCollection();
-        services.AddOptions<AlertOptions>()
-            .Bind(configuration.GetSection(AlertOptions.SectionName));
-
+        services.AddOptions<AlertOptions>().Bind(configuration.GetSection(AlertOptions.SectionName));
         using var provider = services.BuildServiceProvider();
-
-        Assert.True(provider.GetRequiredService<IOptions<AlertOptions>>().Value.Enabled);
+        return provider.GetRequiredService<IOptions<AlertOptions>>().Value;
     }
+
+    [UnitTest]
+    public void Bind_EnabledTrue_SetsEnabled()
+        => Assert.True(Bind(("Alerts:Enabled", "true")).Enabled);
+
+    [UnitTest]
+    public void Bind_SettableProperties_AreBound()
+    {
+        var options = Bind(("Alerts:Enabled", "true"), ("Alerts:Edition", "Pro"));
+        Assert.True(options.Enabled);
+        Assert.Equal(AlertEdition.Pro, options.Edition);
+    }
+
+    [UnitTest]
+    public void Bind_SectionExposesEditionValue()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Alerts:Edition"] = "Pro" })
+            .Build();
+
+        Assert.Equal("Pro", configuration.GetSection(AlertOptions.SectionName)["Edition"]);
+    }
+
+    [UnitTest]
+    public void Bind_EditionPro_SetsDownwardCap()
+        => Assert.Equal(AlertEdition.Pro, Bind(("Alerts:Edition", "Pro")).Edition);
+
+    [UnitTest]
+    public void Bind_EditionEnterprise_SetsDownwardCap()
+        => Assert.Equal(AlertEdition.Enterprise, Bind(("Alerts:Edition", "Enterprise")).Edition);
+
+    [UnitTest]
+    public void Bind_EditionAbsent_LeavesCapNullSoTheEntitlementDecides()
+        => Assert.Null(Bind(("Alerts:Enabled", "true")).Edition);
+
+    [UnitTest]
+    public void Bind_EditionEmpty_LeavesCapNullSoTheEntitlementDecides()
+        => Assert.Null(Bind(("Alerts:Edition", string.Empty)).Edition);
 }

@@ -6,11 +6,15 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Middleware;
 
-namespace Honua.Server.Features.Studio;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Endpoint-facing Studio authorization seam. Keeps the policy decision and its mandatory
 /// audit record together so handlers cannot accidentally authorize without auditing.
+/// Lives in shared infrastructure (not the Studio slice) because multiple feature slices
+/// adapt to it — the Studio lifecycle endpoints and the saved-map collaboration surface
+/// (honua-server#2999) both authorize Studio-owned resources through this seam — and the
+/// vertical-slice rule forbids one feature referencing another feature's types directly.
 /// </summary>
 internal sealed class StudioEndpointAuthorization(
     IStudioAuthorizationService authorizationService,

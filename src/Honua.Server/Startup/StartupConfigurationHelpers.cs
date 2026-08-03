@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -68,6 +69,112 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:DefaultConnection");
         ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:redis");
         ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
+        ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
+        ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
+    }
+
+    /// <summary>
+    /// Validates or resolves security values that are consumed directly from configuration. The AWS
+    /// serverless module deliberately injects the admin password and connection-encryption master key
+    /// as Secrets Manager references. Authentication retains its reference for per-request refresh,
+    /// while connection encryption requires a stable process-lifetime key snapshot.
+    /// </summary>
+    public static async Task ResolveSecuritySecretReferencesAsync(
+        ConfigurationManager configuration,
+        bool isProduction,
+        CancellationToken cancellationToken = default)
+    {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        var keys = new[]
+        {
+            "HONUA_ADMIN_PASSWORD",
+            "Security:ConnectionEncryption:MasterKey"
+        };
+
+        // AddSecurityConfiguration can introduce either key after the initial environment-reference
+        // pass near the start of Program.cs, so normalize env: references again at the final source order.
+        foreach (var key in keys)
+        {
+            ResolveEnvironmentSecretReference(configuration, key);
+        }
+
+        if (!keys.Any(key => configuration[key]?.StartsWith(
+                awsSecretsManagerPrefix,
+                StringComparison.OrdinalIgnoreCase) == true))
+        {
+            return;
+        }
+
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var resolver = new AwsSecretsManagerResolver(
+            secretsClient,
+            metadataClient,
+            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+
+        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task ResolveSecuritySecretReferencesAsync(
+        ConfigurationManager configuration,
+        Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
+        IEnumerable<string> keys,
+        bool isProduction,
+        CancellationToken cancellationToken = default)
+    {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        foreach (var key in keys)
+        {
+            var reference = configuration[key];
+            if (string.IsNullOrWhiteSpace(reference) ||
+                !reference.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!resolver.CanResolve(reference))
+            {
+                throw new InvalidOperationException(
+                    $"The AWS Secrets Manager reference configured for security setting '{key}' is invalid or cannot be resolved.");
+            }
+
+            string? resolved;
+            try
+            {
+                resolved = await resolver.ResolveSecretAsync(reference, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.",
+                    ex);
+            }
+
+            if (string.IsNullOrEmpty(resolved))
+            {
+                throw new InvalidOperationException(
+                    $"AWS Secrets Manager returned an empty value for the security setting '{key}'.");
+            }
+
+            // Authentication handlers deliberately keep the reference and resolve it on each
+            // request so a warm process observes secret rotation. Resolve once here only to fail
+            // startup on an inaccessible or weak production credential. The connection-encryption
+            // master key is different: changing it while a process is live would make existing
+            // ciphertext unreadable, so that key remains a process-lifetime snapshot.
+            if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isProduction)
+                {
+                    AdminPasswordValidation.ValidateProductionPassword(resolved);
+                }
+
+                continue;
+            }
+
+            configuration[key] = resolved;
+        }
     }
 
     private static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
@@ -183,22 +290,38 @@ internal static class StartupConfigurationHelpers
             return false;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        var snapshot = await LoadBootstrapLicenseSnapshotAsync(configuration, environment).ConfigureAwait(false);
+        return snapshot.HasEntitlement("caching.redis");
+    }
 
-        // Resolve the bootstrap snapshot with the SAME license-content secret resolver that
-        // AddHonuaLicensing wires for the per-request service. Without it a Secrets-Manager-only
-        // Pro license (Licensing:LicenseContentSecretRef) resolves as Community at bootstrap, so
-        // this gate sees no caching.redis entitlement and the IConnectionMultiplexer never gets
-        // wired for the process lifetime even when the SM license carries it (honua-server#1755).
+    // caching.output-cache (Pro) is deliberately NOT gated here. The Redis-cache gate has to run
+    // at boot because it decides service registration (IConnectionMultiplexer, the durable job
+    // store), but the output-cache middleware is a pipeline branch, so it is gated per request
+    // against the live license snapshot in Program.cs instead — a boot-time capture would keep
+    // serving cached responses after a Pro license expired at runtime and would ignore a license
+    // applied through ILicenseManager.ApplyLicenseAsync.
+
+    /// <summary>
+    /// Resolves the bootstrap license snapshot the boot-time entitlement gates share. Uses the
+    /// SAME license-content secret resolvers that <c>AddHonuaLicensing</c> wires for the
+    /// per-request service — without them a Secrets-Manager-only Pro license
+    /// (<c>Licensing:LicenseContentSecretRef</c>) resolves as Community at bootstrap
+    /// (honua-server#1755) — and honors the dev-only <c>Licensing:DevGrantEdition</c> override
+    /// outside Production (honua-server#1787).
+    /// </summary>
+    private static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
+        IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
         var secretResolvers = CreateBootstrapLicenseSecretResolvers(loggerFactory);
-        var snapshot = await FileBackedLicenseService
+        return await FileBackedLicenseService
             .LoadBootstrapSnapshotAsync(
                 configuration,
                 loggerFactory,
                 honorDevGrant: !environment.IsProduction(),
                 secretResolvers: secretResolvers)
             .ConfigureAwait(false);
-        return snapshot.HasEntitlement("caching.redis");
     }
 
     /// <summary>

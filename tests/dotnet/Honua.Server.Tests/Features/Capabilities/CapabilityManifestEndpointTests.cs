@@ -192,6 +192,10 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Should().Be(FeatureCatalog.AiGroundingKey);
         GetCapability(root, "ai.workflow-generation").GetProperty("entitlementKey").GetString()
             .Should().Be(FeatureCatalog.AiWorkflowGenerationKey);
+        var animation = GetCapability(root, "temporal.animation-api");
+        animation.GetProperty("available").GetBoolean().Should().BeTrue();
+        animation.GetProperty("entitlementKey").GetString().Should().Be("temporal.animation-api");
+        animation.GetProperty("minimumEdition").GetString().Should().Be("Pro");
         GetCapability(root, "publication.metadata-release").GetProperty("available").GetBoolean().Should().BeTrue();
         root.GetProperty("limits").GetProperty("upload").GetProperty("maxUploadSizeBytes").GetInt64()
             .Should().Be(123456);
@@ -282,6 +286,12 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 capability.GetProperty("reasonCode").GetString().Should().Be("license-required");
                 capability.GetProperty("minimumEdition").GetString().Should().Be("Pro");
             }
+
+            var animation = GetCapability(root, "temporal.animation-api");
+            animation.GetProperty("available").GetBoolean().Should().BeFalse();
+            animation.GetProperty("reasonCode").GetString().Should().Be("license-required");
+            animation.GetProperty("entitlementKey").GetString().Should().Be("temporal.animation-api");
+            animation.GetProperty("minimumEdition").GetString().Should().Be("Pro");
         }
         finally
         {

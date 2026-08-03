@@ -19,7 +19,8 @@ internal sealed class AdminPortalCredentialVerifier(
     IOptions<ApiKeyAuthenticationOptions> apiKeyOptions,
     IConnectionSecretResolver? secretResolver = null,
     IAdminApiKeyStore? adminApiKeyStore = null,
-    ITenantContext? tenantContext = null) : IPortalCredentialVerifier
+    ITenantContext? tenantContext = null,
+    ILogger<AdminPortalCredentialVerifier>? logger = null) : IPortalCredentialVerifier
 {
     private const string AdminUsername = "admin";
     private static readonly string[] AdminRoles = ["admin"];
@@ -28,6 +29,7 @@ internal sealed class AdminPortalCredentialVerifier(
     private readonly IConnectionSecretResolver? _secretResolver = secretResolver;
     private readonly IAdminApiKeyStore? _adminApiKeyStore = adminApiKeyStore;
     private readonly ITenantContext? _tenantContext = tenantContext;
+    private readonly ILogger<AdminPortalCredentialVerifier>? _logger = logger;
 
     /// <inheritdoc />
     public async Task<PortalCredentialPrincipal?> VerifyAsync(
@@ -74,7 +76,23 @@ internal sealed class AdminPortalCredentialVerifier(
             }
         }
 
-        var configuredPassword = await ResolveAdminPasswordAsync(cancellationToken).ConfigureAwait(false);
+        string? configuredPassword;
+        try
+        {
+            configuredPassword = await ResolveAdminPasswordAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Secret-provider outages and rotated values that violate the production credential
+            // policy are authentication failures, not unhandled endpoint errors.
+            if (_logger is not null)
+            {
+                AuthenticationLog.AdminPasswordResolutionFailed(_logger, ex);
+            }
+
+            return null;
+        }
+
         if (string.IsNullOrEmpty(configuredPassword))
         {
             return null;
@@ -100,18 +118,18 @@ internal sealed class AdminPortalCredentialVerifier(
             return null;
         }
 
-        if (_secretResolver is null)
+        var resolvedPassword = configuredPassword;
+        if (_secretResolver is not null)
         {
-            return configuredPassword;
+            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
+            if (canResolve)
+            {
+                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-        if (!canResolve)
-        {
-            return configuredPassword;
-        }
-
-        return await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
+        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _apiKeyOptions.EnvironmentName);
+        return resolvedPassword;
     }
 
     private static bool ConstantTimeEquals(string provided, string configured)

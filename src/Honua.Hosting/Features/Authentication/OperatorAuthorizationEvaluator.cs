@@ -22,7 +22,8 @@ namespace Honua.Infrastructure.Authentication;
 internal sealed class OperatorAuthorizationEvaluator(
     IServiceScopeFactory scopeFactory,
     IOptions<RbacOptions> rbacOptions,
-    ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
+    ILogger<OperatorAuthorizationEvaluator> logger,
+    IServiceProvider? serviceProvider = null) : IOperatorAuthorizationEvaluator
 {
     public async Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request, CancellationToken cancellationToken = default)
     {
@@ -44,29 +45,9 @@ internal sealed class OperatorAuthorizationEvaluator(
         }
 
         var userId = ResolveGrantSubjectId(principal);
-        var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        bool isAdmin = false;
-        List<string>? roleNames = null;
-
-        foreach (var claim in principal.Claims)
-        {
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-
-            if (!isRoleClaim || string.IsNullOrWhiteSpace(claim.Value))
-                continue;
-
-            if (string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                isAdmin = true;
-                break;
-            }
-
-            roleNames ??= [];
-            roleNames.Add(claim.Value);
-        }
+        var roleNames = RbacRoleClaims.Enumerate(principal, rbacOptions.Value, serviceProvider);
+        var isAdmin = roleNames.Any(role =>
+            string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
 
         if (isAdmin)
         {
@@ -119,7 +100,7 @@ internal sealed class OperatorAuthorizationEvaluator(
             }
         }
 
-        if (roleNames is not { Count: > 0 })
+        if (roleNames.Count == 0)
         {
             OperatorAuthorizationLog.PermissionDenied(logger, userId, request.ResourceType, request.Operation, request.ResourceId);
             return AccessDecision.Forbidden("No operator-eligible roles assigned.");

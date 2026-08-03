@@ -155,8 +155,8 @@ internal sealed partial class OpsNotificationService
     [LoggerMessage(EventId = 9450, Level = LogLevel.Debug, Message = "Ops notification from {Source} ({Severity}) skipped: below minimum severity {MinSeverity}.")]
     private static partial void LogBelowMinSeverity(ILogger logger, string source, AlertSeverity severity, AlertSeverity minSeverity);
 
-    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by edition {Edition}; skipping that channel.")]
-    private static partial void LogChannelNotAllowed(ILogger logger, string source, AlertChannelType channelType, AlertEdition edition);
+    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by the active alert entitlements (configured edition cap: {Edition}); skipping that channel.")]
+    private static partial void LogChannelNotAllowed(ILogger logger, string source, AlertChannelType channelType, AlertEdition? edition);
 
     [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} skipped: the delivery circuit breaker is open (channel is persistently failing).")]
     private static partial void LogChannelCircuitOpen(ILogger logger, string source, AlertChannelType channelType);

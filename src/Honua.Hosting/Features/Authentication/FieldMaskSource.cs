@@ -60,7 +60,10 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
             return ImmutableArray<string>.Empty;
         }
 
-        var roles = EnumeratePrincipalRoles(principal, _rbacOptions);
+        var roles = RbacRoleClaims.Enumerate(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -145,21 +148,4 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
-    {
-        var roles = new List<string>();
-        roles.AddRange(principal.FindAll(ClaimTypes.Role)
-            .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
-            .Select(claim => claim.Value));
-
-        var roleClaimType = options.EffectiveRoleClaimType;
-        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
-        {
-            roles.AddRange(principal.FindAll(roleClaimType)
-                .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
-                .Select(claim => claim.Value));
-        }
-
-        return roles;
-    }
 }

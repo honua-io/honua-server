@@ -187,6 +187,24 @@ public sealed class FeatureEditBatchTests
     }
 
     [UnitTest]
+    public void FailureWithUnknownCommitOutcome_RetainsIdempotencyRisk()
+    {
+        var result = FeatureEditResult.FailureWithUnknownCommitOutcome(
+            createResults:
+            [
+                EditOperationResult.FailureWithUnknownCommitOutcome("Commit acknowledgement was lost.")
+            ]);
+
+        result.WasRolledBack.Should().BeFalse();
+        result.MayHaveCommitted.Should().BeTrue();
+        result.IsSuccess.Should().BeFalse();
+        result.HasErrors.Should().BeTrue();
+        result.CreatedCount.Should().Be(0);
+        result.CreateResults.Should().ContainSingle()
+            .Which.IsCommitOutcomeUnknown.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void EditOperationResult_DefaultIsSuccessTrue()
     {
         var result = new EditOperationResult();

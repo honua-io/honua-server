@@ -11,6 +11,8 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal sealed class RbacOptions
 {
+    internal const string DefaultRoleClaimType = "roles";
+
     /// <summary>
     /// Configuration section name in appsettings.json.
     /// </summary>
@@ -19,7 +21,7 @@ internal sealed class RbacOptions
     /// <summary>
     /// Gets or sets the claim type used for role values.
     /// </summary>
-    public string RoleClaimType { get; set; } = "roles";
+    public string RoleClaimType { get; set; } = DefaultRoleClaimType;
 
     /// <summary>
     /// Gets or sets global data editor roles that grant write access to all services.

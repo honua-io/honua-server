@@ -683,13 +683,12 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
-    public async Task ValidateTranslation_BranchDependentRequirement_IsNotCertifiedExecutable()
+    public async Task ValidateTranslation_BranchDependentRequirement_IsReportedPerBranch()
     {
-        // analytics.cluster-managed requires 'k' only when algorithm=kmeans. The probe can
-        // only exercise the branch its substituted values select (the catalog default,
-        // dbscan), and the catalog does not enumerate 'algorithm'. Because 'algorithm' is
-        // caller-supplied and 'k' is neither mapped nor defaulted, the mapping must not be
-        // certified translated.
+        // analytics.cluster-managed requires 'k' only when algorithm=kmeans. The catalog now
+        // publishes 'algorithm''s value domain (#3048), so the probe walks every branch and the
+        // report states exactly which one faults instead of downgrading the whole mapping as
+        // unverifiable. 'k' is neither mapped nor defaulted, so the tool stays uncertified.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -717,8 +716,9 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
         tool.GetProperty("classification").GetString().Should().NotBe("translated");
         var issue = tool.GetProperty("issues").EnumerateArray()
-            .Single(entry => entry.GetProperty("code").GetString() == "unverifiable-conditional-branches");
-        issue.GetProperty("message").GetString().Should().Contain("k");
+            .Single(entry => entry.GetProperty("code").GetString() == "conditional-branch-requirement");
+        issue.GetProperty("parameterName").GetString().Should().Be("k");
+        issue.GetProperty("message").GetString().Should().Contain("algorithm=kmeans");
     }
 
     [IntegrationTest]
@@ -976,10 +976,10 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_MappedDiscriminatorBranch_IsNotReportedUnsupported()
     {
         // Mapping analytics.cluster-managed's input/algorithm/k executes when the caller
-        // supplies algorithm=kmeans. The probe cannot enumerate 'algorithm', so it pins the
-        // catalog default (dbscan) and that branch wants eps/minPoints — a requirement the
-        // caller avoids. The report must not declare the tool unsupported on the strength of
-        // a branch the probe fabricated; it is branch-unverifiable, not impossible (#3040).
+        // supplies algorithm=kmeans, while the dbscan branch wants eps/minPoints — a
+        // requirement the caller avoids. The report must not declare the tool unsupported on
+        // the strength of one branch (#3040); with the domain published it names that branch
+        // exactly rather than calling the mapping unverifiable (#3048).
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -1005,9 +1005,11 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         var tool = report.RootElement.GetProperty("tools")[0];
 
         tool.GetProperty("classification").GetString().Should().Be("partially-translated");
-        tool.GetProperty("issues").EnumerateArray()
-            .Should().Contain(issue =>
-                issue.GetProperty("code").GetString() == "unverifiable-conditional-branches");
+        var issues = tool.GetProperty("issues").EnumerateArray().ToArray();
+        issues.Should().Contain(issue =>
+            issue.GetProperty("code").GetString() == "conditional-branch-requirement");
+        issues.Select(issue => issue.GetProperty("message").GetString())
+            .Should().OnlyContain(message => message!.Contains("algorithm=dbscan"));
     }
 
     [IntegrationTest]
