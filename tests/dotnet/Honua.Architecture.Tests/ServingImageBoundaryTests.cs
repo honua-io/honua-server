@@ -229,6 +229,12 @@ public sealed class ServingImageBoundaryTests
         genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
         genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
         genericDeploy.Should().Contain("compatibility_alias: -aot");
+        genericDeploy.Should().Contain(
+            "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ startsWith(github.ref, 'refs/tags/v') || github.ref_name == github.event.repository.default_branch }}",
+            Exactly.Twice(),
+            "both architecture tags and multi-arch manifests must advance latest on stable release tags");
+        genericDeploy.Should().NotContain("enable={{is_default_branch}}",
+            "a v* tag ref is never the default branch and would silently leave latest stale");
         platformDeploy.Should().Contain("tag_suffix: -ecs-jit");
         platformDeploy.Should().Contain("tag_suffix: -lambda-jit");
         platformDeploy.Should().Contain("tag_suffix: -functions-jit");
