@@ -53,6 +53,8 @@ assert_rejected(base | {"/usr/lib/libgdal.so.36": b"fixture"}, "native GDAL/PROJ
 assert_rejected(base | {"/usr/lib/libgdal.a": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/usr/lib/libproj.a": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/usr/lib/libgeos_c.a": b"fixture"}, "native GDAL/PROJ/GEOS library")
+assert_rejected(base | {"/usr/lib/libproj-abc123.so.25": b"fixture"}, "native GDAL/PROJ/GEOS library")
+assert_rejected(base | {"/usr/lib/libgeos_c-deadbeef.so.1": b"fixture"}, "native GDAL/PROJ/GEOS library")
 assert_rejected(base | {"/usr/bin/gdalinfo": b"fixture"}, "native raster CLI")
 for utility in (
     "nearblack",
