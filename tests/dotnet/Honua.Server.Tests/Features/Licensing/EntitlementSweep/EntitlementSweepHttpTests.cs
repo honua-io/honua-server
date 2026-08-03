@@ -58,6 +58,11 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .WithTestLicense(Edition)
+            // #2997: pre-seed one OIDC provider so the identity.oidc-multi-provider probe's
+            // create request exercises the "second provider" branch (the Enterprise gate runs
+            // before the Pro identity.oidc gate for creates that would grow the store past one
+            // provider, so the 402 names the multi-provider key).
+            .ReplaceService<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore>(CreateSeededOidcProviderStore())
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -80,6 +85,24 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         _adminClient = _fixture.CreateAdminClient();
+    }
+
+    /// <summary>
+    /// Builds an in-memory OIDC provider store already holding one provider, so the
+    /// identity.oidc-multi-provider probe's single create request lands on the second-provider
+    /// entitlement branch (#2997).
+    /// </summary>
+    private static Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore CreateSeededOidcProviderStore()
+    {
+        var store = new Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore();
+        store.CreateProviderAsync(new Honua.Core.Features.Identity.Domain.OidcProviderConfiguration
+        {
+            Name = "sweep-seeded-provider",
+            ProviderType = "Generic",
+            Authority = "https://idp.example.com",
+            ClientId = "sweep-client",
+        }).GetAwaiter().GetResult();
+        return store;
     }
 
     public async Task DisposeAsync()

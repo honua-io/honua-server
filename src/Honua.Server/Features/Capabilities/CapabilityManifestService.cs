@@ -900,22 +900,10 @@ internal sealed class CapabilityManifestService(
     }
 
     private bool HasAdminRole(ClaimsPrincipal principal)
-    {
-        var roleClaimType = options.Rbac.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        foreach (var claim in principal.Claims)
-        {
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-            if (isRoleClaim && string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => RbacRoleClaims.IsAdmin(
+            principal,
+            options.Rbac,
+            entitlementService.GetSnapshot().HasEntitlement(FeatureCatalog.OidcClaimsMappingKey));
 
     private static bool HasPolicyCapability(CapabilityPolicyContext context, string capability)
     {

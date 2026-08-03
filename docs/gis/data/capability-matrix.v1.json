@@ -225,7 +225,7 @@
       "category": "Alerts",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 39,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 18
       },
@@ -967,7 +967,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 13,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 6
       },

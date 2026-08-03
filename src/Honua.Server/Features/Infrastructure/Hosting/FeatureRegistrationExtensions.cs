@@ -88,7 +88,10 @@ internal static class FeatureRegistrationExtensions
     /// <summary>
     /// Registers feature services in a single, auditable block.
     /// </summary>
-    public static IServiceCollection AddServerFeatures(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddServerFeatures(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool redisCacheEntitled = false)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -124,7 +127,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOData(configuration);
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
-        services.AddObservability(configuration);
+        services.AddObservability(configuration, redisCacheEntitled);
         services.AddAlerts(configuration);
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);

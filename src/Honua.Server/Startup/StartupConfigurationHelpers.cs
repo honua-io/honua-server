@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -289,22 +290,38 @@ internal static class StartupConfigurationHelpers
             return false;
         }
 
-        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        var snapshot = await LoadBootstrapLicenseSnapshotAsync(configuration, environment).ConfigureAwait(false);
+        return snapshot.HasEntitlement("caching.redis");
+    }
 
-        // Resolve the bootstrap snapshot with the SAME license-content secret resolver that
-        // AddHonuaLicensing wires for the per-request service. Without it a Secrets-Manager-only
-        // Pro license (Licensing:LicenseContentSecretRef) resolves as Community at bootstrap, so
-        // this gate sees no caching.redis entitlement and the IConnectionMultiplexer never gets
-        // wired for the process lifetime even when the SM license carries it (honua-server#1755).
+    // caching.output-cache (Pro) is deliberately NOT gated here. The Redis-cache gate has to run
+    // at boot because it decides service registration (IConnectionMultiplexer, the durable job
+    // store), but the output-cache middleware is a pipeline branch, so it is gated per request
+    // against the live license snapshot in Program.cs instead — a boot-time capture would keep
+    // serving cached responses after a Pro license expired at runtime and would ignore a license
+    // applied through ILicenseManager.ApplyLicenseAsync.
+
+    /// <summary>
+    /// Resolves the bootstrap license snapshot the boot-time entitlement gates share. Uses the
+    /// SAME license-content secret resolvers that <c>AddHonuaLicensing</c> wires for the
+    /// per-request service — without them a Secrets-Manager-only Pro license
+    /// (<c>Licensing:LicenseContentSecretRef</c>) resolves as Community at bootstrap
+    /// (honua-server#1755) — and honors the dev-only <c>Licensing:DevGrantEdition</c> override
+    /// outside Production (honua-server#1787).
+    /// </summary>
+    private static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
+        IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
         var secretResolvers = CreateBootstrapLicenseSecretResolvers(loggerFactory);
-        var snapshot = await FileBackedLicenseService
+        return await FileBackedLicenseService
             .LoadBootstrapSnapshotAsync(
                 configuration,
                 loggerFactory,
                 honorDevGrant: !environment.IsProduction(),
                 secretResolvers: secretResolvers)
             .ConfigureAwait(false);
-        return snapshot.HasEntitlement("caching.redis");
     }
 
     /// <summary>
