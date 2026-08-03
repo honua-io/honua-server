@@ -37,7 +37,23 @@ public enum RasterOutputRegistrationKind
 /// <param name="TargetReference">Operator-defined logical target registration.</param>
 public sealed record RasterOutputRegistrationTarget(
     RasterOutputRegistrationKind Kind,
-    string TargetReference);
+    string TargetReference)
+{
+    /// <summary>Parses the bounded logical form used by catalog and PostGIS layer targets.</summary>
+    public static bool TryParseLayerReference(string? targetReference, out int layerId)
+    {
+        const string prefix = "layer.";
+        layerId = -1;
+        return targetReference is not null
+            && targetReference.StartsWith(prefix, StringComparison.Ordinal)
+            && int.TryParse(
+                targetReference.AsSpan(prefix.Length),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out layerId)
+            && layerId >= 0;
+    }
+}
 
 /// <summary>Request to make one staged output visible.</summary>
 public sealed record RasterOutputPublicationRequest

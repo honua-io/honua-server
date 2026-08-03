@@ -182,6 +182,26 @@ public sealed class RasterOutputTerminalProjectionTests
             "the durable marker must be removed before its replay manifest is deleted");
     }
 
+    [Fact]
+    public async Task Publication_UsesSubmissionPinnedTargetInsteadOfCurrentConfiguration()
+    {
+        var pinnedTarget = new RasterOutputRegistrationTarget(
+            RasterOutputRegistrationKind.CatalogObject,
+            "layer.17");
+        await using var fixture = new CallbackFixture(
+            ExecutionJobStatus.Succeeded,
+            pinnedTarget: pinnedTarget,
+            currentPublicationOptions: new RasterOutputPublicationOptions
+            {
+                RegistrationKind = RasterOutputRegistrationKind.PostgisRaster,
+                RegistrationTarget = "layer.99"
+            });
+
+        await fixture.Callback.OnTerminalAsync(fixture.Job, CancellationToken.None);
+
+        Assert.Equal(pinnedTarget, fixture.RegistrationCommand?.Target);
+    }
+
     private sealed class CallbackFixture : IAsyncDisposable
     {
         private readonly ServiceProvider _services;
@@ -189,11 +209,13 @@ public sealed class RasterOutputTerminalProjectionTests
         public CallbackFixture(
             ExecutionJobStatus status,
             bool casSucceeds = true,
-            string? additionalDurableArtifactReference = null)
+            string? additionalDurableArtifactReference = null,
+            RasterOutputRegistrationTarget? pinnedTarget = null,
+            RasterOutputPublicationOptions? currentPublicationOptions = null)
         {
             Stage = CreateStage();
             ManifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(Stage.JobId, Stage.Attempt);
-            Job = CreateJob(status, ManifestKey);
+            Job = CreateJob(status, ManifestKey, pinnedTarget);
             ObjectStore = Substitute.For<IRasterOutputObjectStore>();
             var manifestStore = Substitute.For<IRasterOutputManifestStore>();
             var registry = Substitute.For<IRasterOutputRegistry>();
@@ -245,6 +267,7 @@ public sealed class RasterOutputTerminalProjectionTests
                 .Returns(call =>
                 {
                     var command = call.Arg<RasterOutputRegistrationCommand>();
+                    RegistrationCommand = command;
                     return Task.FromResult(new RasterOutputRegistrationResult(
                         command.PublishedObject,
                         AlreadyRegistered: false));
@@ -309,7 +332,8 @@ public sealed class RasterOutputTerminalProjectionTests
                 .AddSingleton(registry)
                 .AddSingleton(new RasterOutputPublisher(ObjectStore, registry))
                 .AddSingleton<IOptionsMonitor<RasterOutputPublicationOptions>>(
-                    new StaticOptionsMonitor<RasterOutputPublicationOptions>(new RasterOutputPublicationOptions()))
+                    new StaticOptionsMonitor<RasterOutputPublicationOptions>(
+                        currentPublicationOptions ?? new RasterOutputPublicationOptions()))
                 .BuildServiceProvider();
             Callback = new GeoprocessingJobTerminalCallback(
                 progressStore,
@@ -332,6 +356,7 @@ public sealed class RasterOutputTerminalProjectionTests
         public IRasterOutputObjectStore ObjectStore { get; }
         public IGeoprocessingResultPackageStore ResultPackageStore { get; }
         public GeoprocessingJobTerminalCallback Callback { get; }
+        public RasterOutputRegistrationCommand? RegistrationCommand { get; private set; }
         public ExecutionJobRecord DurableJob { get; private set; }
         public ExecutionJobRecord? PersistedCandidate { get; private set; }
 
@@ -379,9 +404,22 @@ public sealed class RasterOutputTerminalProjectionTests
 
         private static ExecutionJobRecord CreateJob(
             ExecutionJobStatus status,
-            string manifestKey)
+            string manifestKey,
+            RasterOutputRegistrationTarget? pinnedTarget)
         {
             var now = new DateTimeOffset(2026, 8, 1, 1, 0, 0, TimeSpan.Zero);
+            var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
+            };
+            if (pinnedTarget is not null)
+            {
+                parameters[RasterOutputWorkerContract.RegistrationKindParameter] =
+                    pinnedTarget.Kind.ToString();
+                parameters[RasterOutputWorkerContract.RegistrationTargetParameter] =
+                    pinnedTarget.TargetReference;
+            }
+
             return new ExecutionJobRecord
             {
                 OperationId = "job-raster-terminal",
@@ -402,10 +440,7 @@ public sealed class RasterOutputTerminalProjectionTests
                     Backend = "aws-batch",
                     WorkloadName = "raster.reproject",
                     ContractVersion = RasterOutputContract.JobContractVersion,
-                    Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        [RasterOutputWorkerContract.StoreReferenceParameter] = "gp-results"
-                    }
+                    Parameters = parameters
                 }
             };
         }

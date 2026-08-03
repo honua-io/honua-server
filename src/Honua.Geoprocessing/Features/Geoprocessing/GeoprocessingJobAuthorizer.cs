@@ -62,6 +62,16 @@ internal sealed class GeoprocessingJobAuthorizer
         => _layerAccessGuard.EnsureLayerReadAccessAsync(plan, principal, cancellationToken);
 
     /// <summary>
+    /// Enforces update/data-editor access to the configured layer that a raster publication
+    /// transaction will mutate after execution completes.
+    /// </summary>
+    public Task EnsureLayerWriteAccessAsync(
+        int layerId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+        => _layerAccessGuard.EnsureLayerWriteAccessAsync(layerId, principal, cancellationToken);
+
+    /// <summary>
     /// Evaluates the caller's authorization for the specified resource/operation and throws
     /// <see cref="GeoprocessingAuthorizationException"/> (after logging the denial) when the
     /// decision is not allowed.

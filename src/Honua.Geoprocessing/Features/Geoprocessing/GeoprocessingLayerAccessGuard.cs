@@ -192,6 +192,44 @@ internal sealed class GeoprocessingLayerAccessGuard
     }
 
     /// <summary>
+    /// Enforces the shared metadata-v2 write/data-editor policy for a raster publication target.
+    /// This runs while the submitting principal is still available; terminal callbacks never
+    /// reconstruct or widen the submitter's layer authority.
+    /// </summary>
+    public async Task EnsureLayerWriteAccessAsync(
+        int layerId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(layerId);
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var ambient = _httpContextAccessor.HttpContext;
+        if (ambient is null && _serviceScopeFactory is null)
+        {
+            throw DenyWrite(principal, "submission has no evaluable authorization context");
+        }
+
+        using IServiceScope? ownedScope = ambient is null ? _serviceScopeFactory!.CreateScope() : null;
+        var context = ambient ?? new DefaultHttpContext
+        {
+            RequestServices = ownedScope!.ServiceProvider,
+            User = principal
+        };
+        var validation = await LayerValidationHelpers.ValidateLayerWriteAccessV2Async(
+            context,
+            layerId,
+            LayerValidationHelpers.ValidationProtocol.ProblemJson,
+            requiredProtocol: null,
+            operation: AuthorizationOperation.Update,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            throw DenyWrite(principal, "layer write access denied");
+        }
+    }
+
+    /// <summary>
     /// Gates the two layers an <c>enrichment.enrich</c> job reads: the caller-selected
     /// source layer (absent when the job stages an inline FeatureCollection instead) and
     /// the resolved dataset's backing layer — exactly the pair
@@ -400,6 +438,21 @@ internal sealed class GeoprocessingLayerAccessGuard
                 : "You do not have permission to read one or more layers this process would read.",
             OperatorResourceType.Catalog,
             OperatorOperation.Read);
+    }
+
+    private GeoprocessingAuthorizationException DenyWrite(
+        ClaimsPrincipal principal,
+        string reason)
+    {
+        var requiresAuthentication = principal.Identity?.IsAuthenticated != true;
+        GeoprocessingServiceLog.LayerWriteAccessDenied(_logger, reason);
+        return new GeoprocessingAuthorizationException(
+            requiresAuthentication,
+            requiresAuthentication
+                ? "Authentication is required for this operation."
+                : "You do not have permission to update the configured raster output layer.",
+            OperatorResourceType.Catalog,
+            OperatorOperation.Update);
     }
 
     private static bool TryReadLayerId(AnalysisPlanStep step, string key, out int layerId)

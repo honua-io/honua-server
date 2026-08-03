@@ -297,6 +297,12 @@ public static class RasterOutputWorkerContract
     /// <summary>Durable spec parameter holding a logical output-store registration.</summary>
     public const string StoreReferenceParameter = "honua.geoprocessing.raster_output.store_reference";
 
+    /// <summary>Durable spec parameter pinning the submission-authorized registration kind.</summary>
+    public const string RegistrationKindParameter = "honua.geoprocessing.raster_output.registration_kind";
+
+    /// <summary>Durable spec parameter pinning the submission-authorized logical target.</summary>
+    public const string RegistrationTargetParameter = "honua.geoprocessing.raster_output.registration_target";
+
     /// <summary>Worker environment variable containing the output contract version.</summary>
     public const string ContractVersionEnvironmentVariable = "HONUA_RASTER_OUTPUT_CONTRACT_VERSION";
 

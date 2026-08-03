@@ -115,6 +115,12 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
                 command.IdempotencyKey,
                 cancellationToken).ConfigureAwait(false);
 
+            await RetireExpiredResultArtifactAsync(
+                connection,
+                transaction,
+                command.IdempotencyKey,
+                cancellationToken).ConfigureAwait(false);
+
             var replay = await TryReadReplayAsync(
                 connection,
                 transaction,
@@ -297,6 +303,27 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
 
         return new RasterOutputRegistrationResult(output, true);
     }
+
+    private async Task RetireExpiredResultArtifactAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            BuildRetireExpiredReplaySql(_publicationTable),
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@idempotency_key", idempotencyKey);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static string BuildRetireExpiredReplaySql(string publicationTable) => $"""
+        DELETE FROM {publicationTable}
+        WHERE idempotency_key = @idempotency_key
+          AND target_kind = 'ResultArtifact'
+          AND expires_at <= NOW();
+        """;
 
     private async Task<RasterOutputDescriptor> RegisterCatalogAsync(
         NpgsqlConnection connection,
@@ -512,14 +539,7 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
 
     private static int ParseLayerTarget(string targetReference)
     {
-        const string prefix = "layer.";
-        if (!targetReference.StartsWith(prefix, StringComparison.Ordinal)
-            || !int.TryParse(
-                targetReference.AsSpan(prefix.Length),
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var layerId)
-            || layerId < 0)
+        if (!RasterOutputRegistrationTarget.TryParseLayerReference(targetReference, out var layerId))
         {
             throw new InvalidOperationException(
                 "Catalog and PostGIS raster targets must use the logical form 'layer.<id>'.");

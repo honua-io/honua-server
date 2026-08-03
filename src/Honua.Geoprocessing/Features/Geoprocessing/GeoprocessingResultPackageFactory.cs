@@ -106,7 +106,16 @@ internal static class GeoprocessingResultPackageFactory
             if (RasterOutputArtifactReference.TryParseOutput(reference, out var rasterOutput)
                 && rasterOutput is not null)
             {
-                artifacts[index] = BuildRasterArtifact(rasterOutput);
+                var rasterSlot = index < outputKinds.Length && outputKinds[index] == ArtifactKind.Raster
+                    ? index
+                    : Array.IndexOf(outputKinds, ArtifactKind.Raster);
+                var advertisedRasterOutputName = rasterSlot < 0
+                    ? null
+                    : job.Spec.Parameters.GetValueOrDefault(
+                            $"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{rasterSlot}")
+                        ?? job.Spec.Parameters.GetValueOrDefault(
+                            $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{rasterSlot}");
+                artifacts[index] = BuildRasterArtifact(rasterOutput, advertisedRasterOutputName);
                 continue;
             }
 
@@ -158,7 +167,9 @@ internal static class GeoprocessingResultPackageFactory
         return artifacts;
     }
 
-    private static ArtifactRef BuildRasterArtifact(RasterOutputDescriptor output)
+    private static ArtifactRef BuildRasterArtifact(
+        RasterOutputDescriptor output,
+        string? advertisedOutputName)
     {
         var checksum = output.Content.Checksum!;
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -180,6 +191,11 @@ internal static class GeoprocessingResultPackageFactory
             ["processId"] = output.Lineage.ProcessId,
             ["sourceArtifactIds"] = string.Join(",", output.Lineage.SourceArtifactIds)
         };
+        if (!string.IsNullOrWhiteSpace(advertisedOutputName))
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey] =
+                advertisedOutputName;
+        }
 
         var stableUri = output switch
         {
@@ -195,7 +211,9 @@ internal static class GeoprocessingResultPackageFactory
         {
             ArtifactId = output.ArtifactId,
             Kind = ArtifactKind.Raster,
-            Label = output.OutputName,
+            Label = string.IsNullOrWhiteSpace(advertisedOutputName)
+                ? output.OutputName
+                : advertisedOutputName,
             Uri = stableUri,
             ContentType = output.Content.MediaType,
             Metadata = metadata

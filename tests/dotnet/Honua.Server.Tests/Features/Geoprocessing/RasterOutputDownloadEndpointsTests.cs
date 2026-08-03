@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Server.Features.FileStorage;
 using Microsoft.AspNetCore.Http;
@@ -32,7 +33,12 @@ public sealed class RasterOutputDownloadEndpointsTests
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
-                WorkloadName = "geoprocessing:test"
+                WorkloadName = "geoprocessing:test",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "raster.reproject",
+                    [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}0"] = "outputRaster"
+                }
             }
         };
 
@@ -44,6 +50,10 @@ public sealed class RasterOutputDownloadEndpointsTests
             artifact.Uri);
         Assert.DoesNotContain(output.StoreReference, artifact.Uri!, StringComparison.Ordinal);
         Assert.DoesNotContain(output.ObjectKey, artifact.Uri!, StringComparison.Ordinal);
+        Assert.Equal("outputRaster", artifact.Label);
+        Assert.Equal(
+            "outputRaster",
+            artifact.Metadata[GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey]);
     }
 
     [Fact]

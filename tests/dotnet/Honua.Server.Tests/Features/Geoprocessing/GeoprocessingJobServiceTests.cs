@@ -257,6 +257,43 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterOutput_CapturesAuthorizedRegistrationTarget()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-raster-output",
+            IntentId = "intent-raster-output",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-raster",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "raster.reproject",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrid"] = "3857"
+                    }
+                }
+            ]
+        };
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().ContainKey(RasterOutputWorkerContract.StoreReferenceParameter)
+            .WhoseValue.Should().Be("gp-results");
+        job.Spec.Parameters.Should().ContainKey(RasterOutputWorkerContract.RegistrationKindParameter)
+            .WhoseValue.Should().Be(RasterOutputRegistrationKind.ResultArtifact.ToString());
+        job.Spec.Parameters.Should().ContainKey(RasterOutputWorkerContract.RegistrationTargetParameter)
+            .WhoseValue.Should().Be("result-artifact");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_OversizedInlineRaster_RejectsBeforeDurablePersistence()
     {
         var plan = CreateValidPlan();

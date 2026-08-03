@@ -251,6 +251,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         var publicationOptions = scope.ServiceProvider
             .GetRequiredService<IOptionsMonitor<RasterOutputPublicationOptions>>()
             .CurrentValue;
+        var registrationTarget = ResolveRegistrationTarget(job, publicationOptions);
         var manifest = await manifestStore.ReadManifestAsync(
             configuredStoreReference,
             manifestKey,
@@ -305,9 +306,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             {
                 Stage = stage,
                 CompletionState = completionState,
-                RegistrationTarget = new RasterOutputRegistrationTarget(
-                    publicationOptions.RegistrationKind,
-                    publicationOptions.RegistrationTarget),
+                RegistrationTarget = registrationTarget,
                 PublishedAt = publishedAt,
                 RetainUntil = publishedAt.Add(ProgressRetention)
             }, cancellationToken).ConfigureAwait(false);
@@ -325,6 +324,40 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 ? retainedReferences.Concat(outputReferences).Distinct(StringComparer.Ordinal).ToArray()
                 : retainedReferences.ToArray()
         };
+    }
+
+    private static RasterOutputRegistrationTarget ResolveRegistrationTarget(
+        ExecutionJobRecord job,
+        RasterOutputPublicationOptions publicationOptions)
+    {
+        if (job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.RegistrationKindParameter,
+                out var pinnedKind)
+            && Enum.TryParse<RasterOutputRegistrationKind>(pinnedKind, ignoreCase: false, out var kind)
+            && Enum.IsDefined(kind)
+            && job.Spec.Parameters.TryGetValue(
+                RasterOutputWorkerContract.RegistrationTargetParameter,
+                out var pinnedTarget)
+            && RasterOutputWorkerContract.IsLogicalStoreReference(pinnedTarget)
+            && ((kind is not (RasterOutputRegistrationKind.CatalogObject
+                    or RasterOutputRegistrationKind.PostgisRaster))
+                || RasterOutputRegistrationTarget.TryParseLayerReference(pinnedTarget, out _)))
+        {
+            return new RasterOutputRegistrationTarget(kind, pinnedTarget);
+        }
+
+        // Compatibility is safe only for non-mutating result artifacts. Catalog/PostGIS targets
+        // must have been captured and authorized while the submitting principal was available.
+        if (publicationOptions.RegistrationKind is not RasterOutputRegistrationKind.ResultArtifact
+            || !RasterOutputWorkerContract.IsLogicalStoreReference(publicationOptions.RegistrationTarget))
+        {
+            throw new InvalidDataException(
+                "Terminal raster job does not carry a valid submission-authorized registration target.");
+        }
+
+        return new RasterOutputRegistrationTarget(
+            publicationOptions.RegistrationKind,
+            publicationOptions.RegistrationTarget);
     }
 
     private async Task<ExecutionJobRecord> PersistRasterOutputReferencesAsync(

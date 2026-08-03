@@ -18,6 +18,18 @@ public sealed class PostgresRasterOutputRegistryTests
     }
 
     [Fact]
+    public void RegistrationReplay_RetiresOnlyExpiredResultArtifactRows()
+    {
+        var sql = PostgresRasterOutputRegistry.BuildRetireExpiredReplaySql(
+            "honua.raster_output_publications");
+
+        Assert.Contains("DELETE FROM honua.raster_output_publications", sql, StringComparison.Ordinal);
+        Assert.Contains("idempotency_key = @idempotency_key", sql, StringComparison.Ordinal);
+        Assert.Contains("target_kind = 'ResultArtifact'", sql, StringComparison.Ordinal);
+        Assert.Contains("expires_at <= NOW()", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CatalogRegistration_RejectsUnsupportedLocalStore()
     {
         var action = () => PostgresRasterOutputRegistry.EnsureCatalogProviderSupported(
