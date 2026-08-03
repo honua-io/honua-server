@@ -54,3 +54,32 @@ public sealed record JobSecurityContext(
     string? TenantId,
     IReadOnlyList<JobSecurityClaim> Claims,
     string? RoleClaimType = null);
+
+/// <summary>
+/// Well-known claim types carried inside a <see cref="JobSecurityContext"/> snapshot to drive
+/// deferred-lane role revalidation (honua-server#3081).
+/// </summary>
+public static class JobSecurityContextClaimTypes
+{
+    /// <summary>
+    /// Marks a captured principal whose role membership is authoritatively owned by the
+    /// configured live <c>IPrincipalMembershipSource</c> — a managed SCIM/OIDC-provisioned
+    /// identity rather than a federated identity the source does not mirror.
+    /// </summary>
+    /// <remarks>
+    /// The identity layer stamps this marker when it establishes the principal, so it travels
+    /// with the durable snapshot independently of which replica later revalidates. That
+    /// replica-independence is the whole point: a node-local membership store cannot tell
+    /// "this principal is not managed" from "this principal is managed but was provisioned on
+    /// another replica / under a different identifier", so on a resolution miss the snapshot
+    /// marker is the only trustworthy signal. When present, a deferred lane that cannot
+    /// re-resolve the principal MUST fail closed instead of trusting the captured role
+    /// snapshot, because those roles could otherwise keep authorizing deferred work after the
+    /// managed identity was deactivated or had roles revoked. The marker is produced upstream
+    /// (the OIDC/SCIM claims surface, honua-server#3062); this contract is its consumer.
+    /// </remarks>
+    public const string ManagedMembershipMarker = "honua:managed-membership";
+
+    /// <summary>Value stamped on <see cref="ManagedMembershipMarker"/> for a managed identity.</summary>
+    public const string ManagedMembershipMarkerValue = "true";
+}
