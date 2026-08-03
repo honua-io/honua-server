@@ -1320,6 +1320,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests",
       "paths": [
         "src/Honua.Server/Features/Admin/AdminAuth",
+        "src/Honua.Server/Features/Admin/AdminEndpoints.cs",
         "src/Honua.Server/Features/Admin/OAuthClient",
         "src/Honua.Server/Features/Admin/OidcProvider",
         "src/Honua.Server/Features/Admin/Services/InMemoryOidcProviderStore.cs",
@@ -1433,6 +1434,7 @@
       "_comment": "#3059 split of Server Features Admin Platform and Governance. Platform administration, convergence, secure connections, and licensing.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.LicenseEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests",
       "paths": [
+        "src/Honua.Server/Features/Admin/IdentityAdmin",
         "src/Honua.Server/Features/Admin/License",
         "src/Honua.Server/Features/Admin/Platform",
         "src/Honua.Server/Features/Admin/SecureConnection",
@@ -1598,6 +1600,9 @@
         "src/Honua.Server/Features/Admin/GeoprocessingUsage",
         "src/Honua.Server/Features/Admin/Ops",
         "src/Honua.Server/Features/Admin/RealtimeOperation",
+        "src/Honua.Server/Features/Admin/Services/ConfigurationSecretRedactor.cs",
+        "src/Honua.Server/Features/Admin/Services/ExternalServiceDiscoveryService.cs",
+        "src/Honua.Server/Features/Admin/TileOperations/TileCache",
         "src/Honua.Server/Features/Admin/Models/AlertAdmin",
         "src/Honua.Server/Features/Admin/Models/GeoprocessingUsage",
         "src/Honua.Server/Features/Admin/Models/SldStyle",

@@ -906,6 +906,36 @@ assert_descriptor \
   "false" \
   "Server Features Admin Authorization"
 assert_descriptor \
+  "shared-admin-endpoints-own-authentication-tests" \
+  "src/Honua.Server/Features/Admin/AdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Authentication"
+assert_descriptor \
+  "identity-admin-owns-platform-provider-tests" \
+  "src/Honua.Server/Features/Admin/IdentityAdminEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Platform and Connections"
+assert_descriptor \
+  "tile-cache-source-owns-service-tests" \
+  "src/Honua.Server/Features/Admin/TileOperations/TileCacheEvictionService.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "configuration-redactor-owns-unit-tests" \
+  "src/Honua.Server/Features/Admin/Services/ConfigurationSecretRedactor.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
+  "external-service-discovery-owns-unit-tests" \
+  "src/Honua.Server/Features/Admin/Services/ExternalServiceDiscoveryService.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Admin Integrations and Automation"
+assert_descriptor \
   "deploy-control-targeted" \
   "src/Honua.Server/Features/Admin/DeployControlEndpoints.cs" \
   "targeted" \
@@ -1025,6 +1055,26 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Authentication" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Platform and Connections" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.TileCacheEvictionServiceTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Integrations and Automation" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Integrations and Automation" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Integrations and Automation" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
