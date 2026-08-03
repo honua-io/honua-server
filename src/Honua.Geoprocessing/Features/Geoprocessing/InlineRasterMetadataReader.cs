@@ -12,6 +12,8 @@ namespace Honua.Geoprocessing;
 internal static class InlineRasterMetadataReader
 {
     private const int MaxIfdEntries = 3000;
+    private const ushort ModelPixelScaleTag = 33550;
+    private const ushort ModelTransformationTag = 34264;
 
     public static bool TryReadBase64(string? encoded, out InlineRasterMetadata metadata)
     {
@@ -126,6 +128,8 @@ internal static class InlineRasterMetadataReader
         ulong sampleBytes = 8;
         double? pixelScaleX = null;
         double? pixelScaleY = null;
+        AffinePixelTransform? modelTransformation = null;
+        var modelTransformationSeen = false;
 
         for (var index = 0; index < entryCount; index++)
         {
@@ -135,7 +139,7 @@ internal static class InlineRasterMetadataReader
                 return false;
             }
 
-            if (tag == 33550)
+            if (tag == ModelPixelScaleTag)
             {
                 if (TryReadBase64PixelScale(
                         reader,
@@ -150,6 +154,21 @@ internal static class InlineRasterMetadataReader
                     pixelScaleY = scaleY;
                 }
 
+                continue;
+            }
+
+            if (tag == ModelTransformationTag)
+            {
+                modelTransformationSeen = true;
+                modelTransformation = TryReadBase64ModelTransformation(
+                    reader,
+                    littleEndian,
+                    entryOffset,
+                    inlineSize,
+                    isBigTiff,
+                    out var transformation)
+                        ? transformation
+                        : null;
                 continue;
             }
 
@@ -210,6 +229,14 @@ internal static class InlineRasterMetadataReader
             return false;
         }
 
+        ResolveEffectivePixelScale(
+            width.Value,
+            height.Value,
+            modelTransformationSeen,
+            modelTransformation,
+            ref pixelScaleX,
+            ref pixelScaleY);
+
         metadata = new InlineRasterMetadata(
             (long)width,
             (long)height,
@@ -260,6 +287,45 @@ internal static class InlineRasterMetadataReader
             && double.IsFinite(scaleY)
             && scaleX > 0
             && scaleY > 0;
+    }
+
+    private static bool TryReadBase64ModelTransformation(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out AffinePixelTransform transformation)
+    {
+        transformation = default;
+        if (!reader.TryReadUInt16(entryOffset + 2, littleEndian, out var type)
+            || type != 12
+            || !TryReadBase64EntryCount(reader, littleEndian, entryOffset, isBigTiff, out var count)
+            || count != 16)
+        {
+            return false;
+        }
+
+        const ulong valueBytes = 16 * sizeof(double);
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12UL : 8UL);
+        if (!TryResolveBase64DataOffset(
+                reader,
+                littleEndian,
+                valueFieldOffset,
+                valueBytes,
+                inlineSize,
+                isBigTiff,
+                out var dataOffset)
+            || !reader.TryReadDouble(dataOffset, littleEndian, out var xFromColumn)
+            || !reader.TryReadDouble(dataOffset + sizeof(double), littleEndian, out var xFromRow)
+            || !reader.TryReadDouble(dataOffset + 4 * sizeof(double), littleEndian, out var yFromColumn)
+            || !reader.TryReadDouble(dataOffset + 5 * sizeof(double), littleEndian, out var yFromRow))
+        {
+            return false;
+        }
+
+        transformation = new AffinePixelTransform(xFromColumn, xFromRow, yFromColumn, yFromRow);
+        return transformation.IsFinite;
     }
 
     private static bool TryReadBase64MaximumEntryValue(
@@ -558,12 +624,14 @@ internal static class InlineRasterMetadataReader
         ulong sampleBytes = 8;
         double? pixelScaleX = null;
         double? pixelScaleY = null;
+        AffinePixelTransform? modelTransformation = null;
+        var modelTransformationSeen = false;
 
         for (var index = 0; index < entryCount; index++)
         {
             var entryOffset = entriesOffset + index * entrySize;
             var tag = ReadUInt16(payload, entryOffset, littleEndian);
-            if (tag == 33550)
+            if (tag == ModelPixelScaleTag)
             {
                 if (TryReadPixelScale(
                         payload,
@@ -578,6 +646,21 @@ internal static class InlineRasterMetadataReader
                     pixelScaleY = scaleY;
                 }
 
+                continue;
+            }
+
+            if (tag == ModelTransformationTag)
+            {
+                modelTransformationSeen = true;
+                modelTransformation = TryReadModelTransformation(
+                    payload,
+                    littleEndian,
+                    entryOffset,
+                    inlineSize,
+                    isBigTiff,
+                    out var transformation)
+                        ? transformation
+                        : null;
                 continue;
             }
 
@@ -639,6 +722,14 @@ internal static class InlineRasterMetadataReader
             return false;
         }
 
+        ResolveEffectivePixelScale(
+            width.Value,
+            height.Value,
+            modelTransformationSeen,
+            modelTransformation,
+            ref pixelScaleX,
+            ref pixelScaleY);
+
         metadata = new InlineRasterMetadata(
             (long)width,
             (long)height,
@@ -691,6 +782,87 @@ internal static class InlineRasterMetadataReader
             && double.IsFinite(scaleY)
             && scaleX > 0
             && scaleY > 0;
+    }
+
+    private static bool TryReadModelTransformation(
+        ReadOnlySpan<byte> payload,
+        bool littleEndian,
+        int entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out AffinePixelTransform transformation)
+    {
+        transformation = default;
+        if (ReadUInt16(payload, entryOffset + 2, littleEndian) != 12)
+        {
+            return false;
+        }
+
+        var count = isBigTiff
+            ? ReadUInt64(payload, entryOffset + 4, littleEndian)
+            : ReadUInt32(payload, entryOffset + 4, littleEndian);
+        if (count != 16)
+        {
+            return false;
+        }
+
+        const ulong valueBytes = 16 * sizeof(double);
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12 : 8);
+        var dataOffset = valueBytes <= (ulong)inlineSize
+            ? (ulong)valueFieldOffset
+            : isBigTiff
+                ? ReadUInt64(payload, valueFieldOffset, littleEndian)
+                : ReadUInt32(payload, valueFieldOffset, littleEndian);
+        if (dataOffset > int.MaxValue || !Contains(payload, (int)dataOffset, (int)valueBytes))
+        {
+            return false;
+        }
+
+        var offset = (int)dataOffset;
+        transformation = new AffinePixelTransform(
+            ReadDouble(payload, offset, littleEndian),
+            ReadDouble(payload, offset + sizeof(double), littleEndian),
+            ReadDouble(payload, offset + 4 * sizeof(double), littleEndian),
+            ReadDouble(payload, offset + 5 * sizeof(double), littleEndian));
+        return transformation.IsFinite;
+    }
+
+    private static void ResolveEffectivePixelScale(
+        ulong width,
+        ulong height,
+        bool modelTransformationSeen,
+        AffinePixelTransform? modelTransformation,
+        ref double? pixelScaleX,
+        ref double? pixelScaleY)
+    {
+        if (!modelTransformationSeen)
+        {
+            return;
+        }
+
+        pixelScaleX = null;
+        pixelScaleY = null;
+        if (modelTransformation is not { } transformation)
+        {
+            return;
+        }
+
+        var widthPixels = (double)width;
+        var heightPixels = (double)height;
+        var extentX = Math.Abs(transformation.XFromColumn) * widthPixels
+            + Math.Abs(transformation.XFromRow) * heightPixels;
+        var extentY = Math.Abs(transformation.YFromColumn) * widthPixels
+            + Math.Abs(transformation.YFromRow) * heightPixels;
+        if (!double.IsFinite(extentX)
+            || !double.IsFinite(extentY)
+            || extentX <= 0
+            || extentY <= 0)
+        {
+            return;
+        }
+
+        pixelScaleX = extentX / widthPixels;
+        pixelScaleY = extentY / heightPixels;
     }
 
     private static bool TryReadMaximumEntryValue(
@@ -1004,6 +1176,18 @@ internal static class InlineRasterMetadataReader
             decoded.Slice(leadingBytes, destination.Length).CopyTo(destination);
             return true;
         }
+    }
+
+    private readonly record struct AffinePixelTransform(
+        double XFromColumn,
+        double XFromRow,
+        double YFromColumn,
+        double YFromRow)
+    {
+        public bool IsFinite => double.IsFinite(XFromColumn)
+            && double.IsFinite(XFromRow)
+            && double.IsFinite(YFromColumn)
+            && double.IsFinite(YFromRow);
     }
 }
 
