@@ -17,11 +17,11 @@ from typing import BinaryIO, Iterable
 
 FORBIDDEN_PACKAGE = re.compile(r"(?:^|[-_.]|lib)(gdal|proj|geos)(?:[-_.0-9]|$)", re.IGNORECASE)
 FORBIDDEN_GDAL_LIBRARY = re.compile(
-    r"^(?:lib)?gdal.*\.(?:so(?:\..*)?|dylib|dll)$",
+    r"^(?:lib)?gdal.*\.(?:so(?:\..*)?|dylib|dll|a)$",
     re.IGNORECASE,
 )
 FORBIDDEN_PROJ_GEOS_LIBRARY = re.compile(
-    r"^(?:lib)?(?:proj|geos(?:_c)?)(?:[-_.][0-9].*)?\.(?:so(?:\..*)?|dylib|dll)$",
+    r"^(?:lib)?(?:proj|geos(?:_c)?)(?:[-_.][0-9].*)?\.(?:so(?:\..*)?|dylib|dll|a)$",
     re.IGNORECASE,
 )
 FORBIDDEN_BINDING = re.compile(
