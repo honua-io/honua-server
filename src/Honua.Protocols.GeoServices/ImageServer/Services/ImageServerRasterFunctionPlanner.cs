@@ -105,7 +105,7 @@ internal sealed class ImageServerRasterFunctionException : Exception
 /// Default <see cref="IImageServerRasterFunctionPlanner"/>. The chain depth is
 /// capped to keep recursive payloads bounded.
 /// </summary>
-internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunctionPlanner
+internal sealed partial class ImageServerRasterFunctionPlanner : IImageServerRasterFunctionPlanner
 {
     /// <summary>Maximum depth permitted for nested raster function chains.</summary>
     public const int MaxChainDepth = 8;
@@ -263,7 +263,7 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         }
     }
 
-    private static bool TryGetNestedFunction(
+    internal static bool TryGetNestedFunction(
         Dictionary<string, object?> arguments,
         string key,
         out RasterFunctionDocument document)
