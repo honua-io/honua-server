@@ -10,7 +10,7 @@ authoritative reference cited by the temporal handlers and their tests.
 
 ## Capabilities and edition split
 
-Temporal analytics is exposed through four capabilities. The Community/Pro split
+Temporal analytics is exposed through five capabilities. The Community/Pro split
 is enforced by license entitlements (`FeatureCatalog`), independent of the GA
 maturity flag — GA means "no longer hidden/unadvertised," not "free."
 
