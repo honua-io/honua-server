@@ -228,15 +228,22 @@ a layer.
   fence; failure to advance any member prevents dispatch. Once frozen, partial
   sink success is publication-recovery work for the same attempt, never a
   reason to execute another attempt.
-- Every output sink owns a durable commit record keyed by job and logical
-  output. The record contains the current attempt identifier, fencing token,
-  idempotency key, immutable artifact locator, and publication state. Before
-  dispatch, the coordinator conditionally creates or advances an uncommitted
-  intent in that sink and gives the executor the resulting record version. A
-  new attempt may advance an uncommitted intent but may not replace a committed
-  one. Finalization is a sink-local compare-and-set against both the token and
-  record version; checking the coordinator's Redis job state before writing is
-  only an optimization and is not the fence.
+- Every output sink owns both a durable attempt commit record, keyed by job and
+  logical output, and a durable destination publication record, keyed by the
+  normalized stable raster, catalog, or object destination. The attempt record
+  contains the current attempt identifier, fencing token, idempotency key,
+  immutable artifact locator, and private commit state. The destination record
+  contains the currently published completion token and monotonically changing
+  target version, plus at most one pending reservation. Before dispatch, the
+  coordinator reads the target version (or records that the destination is
+  absent), persists that expected version and destination identity in both the
+  output-set manifest and attempt intent, and gives the executor the resulting
+  attempt-record version. An overwrite without an explicit expected target
+  version is invalid. A new attempt for the same job may advance an uncommitted
+  attempt intent but may not replace a committed one. Attempt finalization is a
+  sink-local compare-and-set against both its token and record version;
+  checking the coordinator's Redis job state before writing is only an
+  optimization and is neither the attempt fence nor the destination fence.
 - PostGIS materialization is first written to an attempt-scoped staging or
   versioned relation. Its catalog row carries the output-set manifest identity
   and an explicit publication-candidate state. Committing a member's sink-local
@@ -244,6 +251,10 @@ a layer.
   transaction. A unique job/output key plus a conditional update on the
   expected token and record version makes a competing or stale attempt fail,
   but that member commit alone never replaces the currently published raster.
+  The separate normalized-destination row is unique across jobs; reserving it
+  conditionally updates its expected target version and, when the winning set
+  contains only PostGIS destinations, all such reservations occur in the same
+  database transaction.
   `QueryCatalogAsync`, tile/coverage reads, and every other public catalog path
   require both the candidate registration and the authoritative job-wide
   manifest to be `Complete`; they must filter an incomplete manifest rather
@@ -254,13 +265,24 @@ a layer.
   manifest. The coordinator also persists a `PromotionReady` copy of the full
   manifest in a publication store whose retention matches the outputs (the
   catalog database for registered outputs, or a stable object manifest for an
-  object-only set). Only then may the coordinator use the final job-store CAS
-  to change the live manifest to `Complete`, create an immutable completion
-  token, project the full reference set, and mark the job `Succeeded`. This CAS
-  is the orchestration visibility decision and contends with cancellation on
-  the same job record. During durable-manifest reconciliation, object/result
-  readers and PostGIS catalog readers require that completed live decision plus
-  the matching promotion-ready durable manifest, so its success exposes the
+  object-only set). Before the orchestration visibility decision, the
+  coordinator must reserve every normalized destination for the same immutable
+  completion token using a sink-local compare-and-set against the expected
+  target version captured before dispatch. Create-only destinations use an
+  equivalent create-if-absent condition. A version conflict fails publication;
+  it never degrades to last-writer-wins or silently refreshes the expectation.
+  Reservations acquired before a later member conflicts remain private and are
+  conditionally released or recovered by the fenced reconciler. Only after all
+  destination reservations name the same completion token may the coordinator
+  use the final job-store CAS to change the live manifest to `Complete`, project
+  the full reference set, and mark the job `Succeeded`. This CAS is the
+  orchestration visibility decision and contends with cancellation on the same
+  job record. During durable-manifest reconciliation, object/result readers and
+  PostGIS catalog readers require that completed live decision, the matching
+  promotion-ready durable manifest, and the destination publication record
+  naming that completion token. Consequently two jobs targeting the same
+  raster or object cannot both become the visible winner even though their
+  attempt records are independently valid. The protocol exposes the
   already-ready set together without claiming a cross-store transaction.
 - A completed visibility decision is never retained solely in the expiring job
   record. The success CAS places the job under a retention hold instead of the
@@ -276,11 +298,14 @@ a layer.
   aborts or quarantines the staged versions without altering the previously
   published raster.
 - Object outputs remain at immutable attempt-scoped keys. The stable object is
-  a small intent/commit marker: the coordinator creates or advances the intent
-  before dispatch using create-if-absent or `If-Match` on its prior ETag, and
-  finalizes it with `If-Match` on the ETag issued to that attempt. Advancing an
-  intent therefore changes its ETag before the next attempt runs, so a stale
-  attempt cannot publish. Only the coordinator may write the stable marker;
+  the destination publication record described above, represented by a small
+  intent/commit marker at the stable key. The coordinator snapshots its current
+  ETag as the expected target version before dispatch, reserves it for the
+  winning completion token with create-if-absent or `If-Match`, and finalizes
+  that reservation with `If-Match` on the reservation ETag. Advancing a
+  reservation therefore changes its ETag before another job or attempt can
+  publish, so both a stale attempt and a competing job fail the destination
+  CAS. Only the coordinator may write the stable marker;
   worker credentials permit writes only under the attempt-scoped staging key.
   The reconciler may resolve the immutable artifact named by a committed
   marker, but public/result readers expose it only through a `Complete`
