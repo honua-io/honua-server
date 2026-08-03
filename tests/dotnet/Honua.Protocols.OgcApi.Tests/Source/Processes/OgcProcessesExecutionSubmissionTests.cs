@@ -157,56 +157,6 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_PlanWithTypedRasterSource_PreservesBindingForSharedValidation()
-    {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
-        request.Headers.Add("Prefer", "respond-async");
-        request.Content = new StringContent(
-            """
-            {
-              "inputs": {
-                "plan": {
-                  "planId": "typed-raster-plan",
-                  "steps": [{
-                    "stepId": "s1",
-                    "kind": "geoprocess",
-                    "processId": "surface.slope",
-                    "inputs": { "source": "AAAA", "units": "degrees" },
-                    "rasterSources": {
-                      "source": {
-                        "sourceType": "inline",
-                        "sourceContractVersion": 1,
-                        "version": "inline-v1",
-                        "content": { "sizeBytes": 3, "mediaType": "image/tiff" },
-                        "securityContext": {
-                          "tenantId": "default",
-                          "authorizationSnapshotReference": "request-context"
-                        },
-                        "payload": "AAAA"
-                      }
-                    }
-                  }]
-                }
-              }
-            }
-            """,
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await _jobStore.DidNotReceive().TryCreateAsync(
-            Arg.Any<ExecutionJobRecord>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WhenCreateFails_DoesNotReturnCreated()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

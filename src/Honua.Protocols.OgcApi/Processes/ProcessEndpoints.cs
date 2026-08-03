@@ -674,7 +674,7 @@ internal static class ProcessEndpoints
         return $"{baseName}{ordinal}";
     }
 
-    private static bool TryParseStep(
+    internal static bool TryParseStep(
         JsonElement stepElement,
         out AnalysisPlanStep? step,
         out string? error)
