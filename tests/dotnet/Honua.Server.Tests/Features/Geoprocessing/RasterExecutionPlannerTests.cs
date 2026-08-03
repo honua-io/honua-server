@@ -415,6 +415,25 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void RequestFactory_NonStringGeoJsonType_RemainsConservative()
+    {
+        var request = CreateLegacyRequest(
+            "raster.zonal-statistics",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                ["zones"] = Convert.ToBase64String(
+                    """{"type":1,"features":[]}"""u8.ToArray()),
+            },
+            remoteBackendAvailable: true);
+
+        request.Cost.ZoneCount.Should().BeNull();
+        var decision = _builtInPlanner.Plan(request);
+        decision.Placement.Should().Be(RasterExecutionPlacement.RemoteBackend);
+        decision.ReasonCode.Should().Be("native-remote-conservative");
+    }
+
+    [Fact]
     public void RequestFactory_RasterClip_ChargesBoundaryPayloadAndParsingFootprint()
     {
         var boundaryBytes = new byte[4_096];
