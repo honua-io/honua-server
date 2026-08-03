@@ -95,18 +95,19 @@ public sealed class RasterEngineCapabilityRegistryTests
     }
 
     [Theory]
-    [InlineData("GTiff", "surface.slope")]
-    [InlineData("COG", "conversion.raster-format")]
-    [InlineData("PNG", "conversion.raster-format")]
-    [InlineData("JPEG", "conversion.raster-format")]
-    [InlineData("GeoJSON", "conversion.polygonize")]
+    [InlineData("PNG", "GTiff", "surface.slope")]
+    [InlineData("TIFF", "COG", "conversion.raster-format")]
+    [InlineData("TIFF", "PNG", "conversion.raster-format")]
+    [InlineData("TIFF", "JPEG", "conversion.raster-format")]
+    [InlineData("TIFF", "GeoJSON", "conversion.polygonize")]
     public void ConfiguredGdalRequiredOutputDriverSkipped_IsRejected(
+        string allowedInputFormat,
         string skippedDriver,
         string affectedProcess)
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
             RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
-                ["TIFF"],
+                [allowedInputFormat],
                 [skippedDriver]));
 
         Assert.Contains(skippedDriver, exception.Message, StringComparison.Ordinal);
