@@ -126,7 +126,8 @@ internal sealed class GeoprocessingJobDispatcher
             definition.RasterEngineCapabilities,
             _rasterExecutionOptions.CurrentValue,
             remoteBackendAvailable,
-            remoteBackendAvailable ? remoteWorkload!.Backend : null);
+            remoteBackendAvailable ? remoteWorkload!.Backend : null,
+            remoteBackendAvailable ? remoteWorkload!.WorkloadId : null);
 
         try
         {
@@ -302,7 +303,16 @@ internal sealed class GeoprocessingJobDispatcher
                 var workload = geoprocessingWorkloads
                     .Where(workload =>
                         !string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
-                        && string.Equals(workload.Backend, rasterDecision.Backend, StringComparison.Ordinal))
+                        && string.Equals(
+                            RuntimeProfiles.Normalize(workload.RuntimeProfile),
+                            RuntimeProfiles.Native,
+                            StringComparison.Ordinal)
+                        && string.Equals(workload.Backend, rasterDecision.Backend, StringComparison.Ordinal)
+                        && (string.IsNullOrWhiteSpace(rasterDecision.RemoteWorkloadId)
+                            || string.Equals(
+                                workload.WorkloadId,
+                                rasterDecision.RemoteWorkloadId,
+                                StringComparison.Ordinal)))
                     .OrderBy(workload => workload.WorkloadId, StringComparer.Ordinal)
                     .FirstOrDefault();
                 return workload ?? throw RemoteRasterPlacementUnavailable(rasterDecision);
@@ -349,6 +359,10 @@ internal sealed class GeoprocessingJobDispatcher
             .Where(definition =>
                 definition.Kind == ExecutionJobKind.Geoprocessing
                 && !string.Equals(definition.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal)
+                && string.Equals(
+                    RuntimeProfiles.Normalize(definition.RuntimeProfile),
+                    RuntimeProfiles.Native,
+                    StringComparison.Ordinal)
                 && !string.Equals(definition.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
             .OrderBy(definition => definition.Backend, StringComparer.Ordinal)
             .ThenBy(definition => definition.WorkloadId, StringComparer.Ordinal)
