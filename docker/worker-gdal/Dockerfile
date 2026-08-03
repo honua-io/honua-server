@@ -57,19 +57,25 @@ COPY eng/ eng/
 
 # Restore the worker project and keep the NuGet cache mounted for publish.
 # The worker is framework-dependent and NOT AOT, so no RuntimeIdentifier is set.
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     sh scripts/docker/restore-dotnet-with-github-packages.sh \
       src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
     || dotnet restore src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj
 
-# Copy the full source tree and publish.
+# Copy the full source tree and publish. Restore again in the same RUN and cache
+# mount as publish: a cached earlier restore layer does not prove that a fresh
+# builder's mutable cache mount contains every package referenced by its assets.
 COPY . .
 
 ARG CONFIGURATION=Release
-RUN --mount=type=cache,target=/root/.nuget/packages \
-    dotnet publish src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh \
+      src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
+ && dotnet publish src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
       --configuration "${CONFIGURATION}" \
       --no-restore \
       --self-contained false \

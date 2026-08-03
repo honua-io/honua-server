@@ -371,7 +371,27 @@ public sealed class ServingImageBoundaryTests
         verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"10.0.10\"");
         verifier.Should().Contain("worker image must run as user 1001:1001");
         verifier.Should().Contain("libpdalcpp.so");
-        dockerfile.Split("--mount=type=cache,target=/root/.nuget/packages")
-            .Should().HaveCount(3, "restore and publish must share the BuildKit NuGet cache");
+        const string lockedNugetMount = "--mount=type=cache,target=/root/.nuget/packages,sharing=locked";
+        dockerfile.Split(lockedNugetMount)
+            .Should().HaveCount(3, "restore and publish must share the same locked BuildKit NuGet cache");
+
+        var fullSourceIndex = dockerfile.IndexOf("COPY . .", StringComparison.Ordinal);
+        var nativeBuildIndex = dockerfile.IndexOf("FROM ${GDAL_BASE_IMAGE} AS pdal-build", StringComparison.Ordinal);
+        fullSourceIndex.Should().BeGreaterThan(-1);
+        nativeBuildIndex.Should().BeGreaterThan(fullSourceIndex);
+        var finalManagedBuild = dockerfile[fullSourceIndex..nativeBuildIndex];
+        var authenticatedRestoreIndex = finalManagedBuild.IndexOf(
+            "sh scripts/docker/restore-dotnet-with-github-packages.sh",
+            StringComparison.Ordinal);
+        var publishIndex = finalManagedBuild.IndexOf("dotnet publish", StringComparison.Ordinal);
+
+        finalManagedBuild.Should().Contain(lockedNugetMount);
+        finalManagedBuild.Should().Contain("--mount=type=secret,id=github_actor");
+        finalManagedBuild.Should().Contain("--mount=type=secret,id=github_token");
+        authenticatedRestoreIndex.Should().BeGreaterThan(-1);
+        publishIndex.Should().BeGreaterThan(authenticatedRestoreIndex,
+            "the authenticated restore must populate the exact cache mount consumed by publish");
+        dockerfile.Should().NotContain("ARG GITHUB_TOKEN");
+        dockerfile.Should().NotContain("ENV GITHUB_TOKEN");
     }
 }
