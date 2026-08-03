@@ -51,4 +51,15 @@ internal static partial class ZarrLog
         Level = LogLevel.Debug,
         Message = "Rendered datacube tile for layer {LayerId} variable '{Variable}' at {Z}/{X}/{Y} ({Bytes} bytes)")]
     public static partial void DatacubeTileRendered(ILogger logger, int layerId, string variable, int z, int x, int y, int bytes);
+
+    [LoggerMessage(
+        EventId = 7927,
+        Level = LogLevel.Warning,
+        Message = "Denied datacube tile capacity for layer {LayerId}: dimension {Dimension}, requested {Requested}, limit {Limit}")]
+    public static partial void DatacubeTileCapacityDenied(
+        ILogger logger,
+        int layerId,
+        string dimension,
+        long requested,
+        long limit);
 }

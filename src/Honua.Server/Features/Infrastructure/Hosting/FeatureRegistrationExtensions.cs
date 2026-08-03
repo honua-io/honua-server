@@ -77,6 +77,7 @@ using Honua.Server.Features.StaticMap;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.Core.Features.Studio;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Infrastructure.Hosting;
 
@@ -106,6 +107,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
         services.AddFieldWorkflows();
+        services.AddRasterCapacityAdmission(configuration);
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();

@@ -23,6 +23,7 @@ internal static class ZarrServiceCollectionExtensions
         services.AddSingleton<IZarrStore, InMemoryZarrStore>();
         services.AddSingleton<IZarrPointSliceReader, ZarrPointSliceReader>();
         services.AddSingleton<IZarrRasterSliceReader, ZarrRasterSliceReader>();
+        services.AddScoped<ZarrDatacubeTileService>();
         return services;
     }
 }

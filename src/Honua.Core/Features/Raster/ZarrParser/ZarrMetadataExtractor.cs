@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -21,9 +22,6 @@ namespace Honua.Core.Features.Raster.ZarrParser;
 /// </summary>
 public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 {
-    private const int MaxMetadataBytes = 64 * 1024;
-    private const int MaxVariables = 64;
-
     /// <inheritdoc />
     public async Task<ZarrStoreMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
@@ -155,9 +153,9 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         {
             foreach (var entry in variablesElement.EnumerateArray())
             {
-                if (variables.Count >= MaxVariables)
+                if (variables.Count >= ZarrReadSupportMatrix.MaxVariables)
                 {
-                    throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
+                    throw new InvalidDataException($"Zarr store exposes more than {ZarrReadSupportMatrix.MaxVariables} variables; reduce the manifest or split the store.");
                 }
                 if (entry.ValueKind != JsonValueKind.String)
                 {
@@ -230,17 +228,29 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             }
 
             var dtype = ReadRequiredString(root, "dtype", name);
+            if (!ZarrReadSupportMatrix.TryNormalizeDataType(
+                    ZarrFormatVersion.V2,
+                    dtype,
+                    out var normalizedDataType,
+                    out _))
+            {
+                throw new InvalidDataException(
+                    $"Zarr v2 array '{name}' uses dtype '{dtype}', which is outside the managed direct-read support matrix.");
+            }
+            dtype = normalizedDataType;
+
             var order = root.TryGetProperty("order", out var orderEl) && orderEl.ValueKind == JsonValueKind.String
                 ? orderEl.GetString() ?? "C"
                 : "C";
-            if (!string.Equals(order, "C", StringComparison.Ordinal))
+            if (!ZarrReadSupportMatrix.IsOrderSupported(order))
             {
                 throw new InvalidDataException($"Zarr array '{name}' uses Fortran chunk order; only C order is supported by the MVP reader.");
             }
 
             RejectUnsupportedFilters(root, name);
 
-            var compressor = ResolveCompressorId(root);
+            var compressor = ResolveV2Compressor(root, name);
+            var chunkKeyEncoding = ResolveV2ChunkKeyEncoding(root, name);
 
             object? fillValue = null;
             if (root.TryGetProperty("fill_value", out var fillEl))
@@ -274,7 +284,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 Order: order,
                 Compressor: compressor,
                 FillValue: fillValue,
-                DimensionNames: dimNames);
+                DimensionNames: dimNames,
+                ChunkKeyEncoding: chunkKeyEncoding);
         }
     }
 
@@ -373,9 +384,9 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
         foreach (var entry in variablesEl.EnumerateArray())
         {
-            if (variables.Count >= MaxVariables)
+            if (variables.Count >= ZarrReadSupportMatrix.MaxVariables)
             {
-                throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
+                throw new InvalidDataException($"Zarr store exposes more than {ZarrReadSupportMatrix.MaxVariables} variables; reduce the manifest or split the store.");
             }
             if (entry.ValueKind != JsonValueKind.String)
             {
@@ -510,16 +521,29 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             ? sepEl.GetString()
             : null;
 
+        if (!ZarrReadSupportMatrix.IsV3ChunkKeyEncodingSupported(encName))
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk_key_encoding '{encName}'.");
+        }
+
         switch (encName)
         {
             case "default":
                 separator ??= "/";
+                if (!ZarrReadSupportMatrix.IsChunkSeparatorSupported(separator))
+                {
+                    throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk-key separator '{separator}'.");
+                }
                 return new ZarrChunkKeyEncoding(separator, "c", "c" + separator + "0");
             case "v2":
                 separator ??= ".";
+                if (!ZarrReadSupportMatrix.IsChunkSeparatorSupported(separator))
+                {
+                    throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk-key separator '{separator}'.");
+                }
                 return new ZarrChunkKeyEncoding(separator, string.Empty, "0");
             default:
-                throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported chunk_key_encoding '{encName}'.");
+                throw new UnreachableException();
         }
     }
 
@@ -537,6 +561,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         }
 
         string? compressor = null;
+        var sawBytes = false;
+        var codecIndex = 0;
         foreach (var codec in codecsEl.EnumerateArray())
         {
             if (codec.ValueKind != JsonValueKind.Object ||
@@ -547,31 +573,53 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             }
 
             var codecName = codecNameEl.GetString();
+            if (codecName is null || !ZarrReadSupportMatrix.IsV3CodecSupported(codecName))
+            {
+                throw new InvalidDataException(
+                    $"Zarr v3 array '{name}' uses unsupported codec '{codecName ?? "<null>"}'. Use a leading little-endian bytes codec and optional gzip compression.");
+            }
+
             switch (codecName)
             {
                 case "bytes":
-                    // Array->bytes codec. Reject big-endian; the subset reader is little-endian only.
-                    if (codec.TryGetProperty("configuration", out var bytesCfg) &&
-                        bytesCfg.ValueKind == JsonValueKind.Object &&
-                        bytesCfg.TryGetProperty("endian", out var endianEl) &&
-                        endianEl.ValueKind == JsonValueKind.String &&
-                        string.Equals(endianEl.GetString(), "big", StringComparison.Ordinal))
+                    if (codecIndex != 0 || sawBytes)
                     {
-                        throw new InvalidDataException($"Zarr v3 array '{name}' declares big-endian bytes codec; only little-endian is supported.");
+                        throw new InvalidDataException($"Zarr v3 array '{name}' must declare exactly one bytes codec as the first codec.");
                     }
+
+                    var endian = codec.TryGetProperty("configuration", out var bytesCfg) &&
+                                 bytesCfg.ValueKind == JsonValueKind.Object &&
+                                 bytesCfg.TryGetProperty("endian", out var endianEl) &&
+                                 endianEl.ValueKind == JsonValueKind.String
+                        ? endianEl.GetString()
+                        : null;
+                    if (!ZarrReadSupportMatrix.IsV3EndianSupported(endian))
+                    {
+                        throw new InvalidDataException(
+                            $"Zarr v3 array '{name}' must declare explicit little endianness in its bytes codec; '{endian ?? "missing"}' is not supported.");
+                    }
+
+                    sawBytes = true;
                     break;
                 case "gzip":
-                    // Zarr v3 gzip codec: RFC 1952 gzip container over DEFLATE.
+                    if (!sawBytes || compressor is not null)
+                    {
+                        throw new InvalidDataException(
+                            $"Zarr v3 array '{name}' may declare at most one gzip codec, after the required bytes codec.");
+                    }
+
                     compressor = "gzip";
                     break;
-                case "zstd":
-                case "blosc":
-                case "sharding_indexed":
-                case "crc32c":
-                    throw new InvalidDataException($"Zarr v3 array '{name}' uses codec '{codecName}', which is not supported by the reader. Use uncompressed or gzip-coded chunks.");
                 default:
-                    throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported codec '{codecName}'.");
+                    throw new UnreachableException();
             }
+
+            codecIndex++;
+        }
+
+        if (!sawBytes)
+        {
+            throw new InvalidDataException($"Zarr v3 array '{name}' is missing the required leading bytes codec.");
         }
 
         return compressor;
@@ -582,21 +630,19 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     /// numpy little-endian dtype string the subset reader and CoverageJSON writer
     /// consume (e.g. <c>&lt;f4</c>). Rejects unsupported data types cleanly.
     /// </summary>
-    internal static string NormalizeV3DataType(string dataType, string name) => dataType switch
+    internal static string NormalizeV3DataType(string dataType, string name)
     {
-        "bool" => "|b1",
-        "int8" => "|i1",
-        "uint8" => "|u1",
-        "int16" => "<i2",
-        "uint16" => "<u2",
-        "int32" => "<i4",
-        "uint32" => "<u4",
-        "int64" => "<i8",
-        "uint64" => "<u8",
-        "float32" => "<f4",
-        "float64" => "<f8",
-        _ => throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported data_type '{dataType}'.")
-    };
+        if (ZarrReadSupportMatrix.TryNormalizeDataType(
+                ZarrFormatVersion.V3,
+                dataType,
+                out var normalized,
+                out _))
+        {
+            return normalized;
+        }
+
+        throw new InvalidDataException($"Zarr v3 array '{name}' uses unsupported data_type '{dataType}'.");
+    }
 
     private static string[] ReadV3DimensionNames(JsonElement root, int rank)
     {
@@ -673,7 +719,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return element.GetString() ?? throw new InvalidDataException($"Zarr array '{arrayName}' has empty '{property}'.");
     }
 
-    private static string? ResolveCompressorId(JsonElement root)
+    private static string? ResolveV2Compressor(JsonElement root, string name)
     {
         if (!root.TryGetProperty("compressor", out var element))
         {
@@ -687,9 +733,34 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             element.TryGetProperty("id", out var idEl) &&
             idEl.ValueKind == JsonValueKind.String)
         {
-            return idEl.GetString();
+            var compressor = idEl.GetString();
+            if (ZarrReadSupportMatrix.IsV2CompressorSupported(compressor))
+            {
+                return compressor;
+            }
+
+            throw new InvalidDataException(
+                $"Zarr v2 array '{name}' uses compressor '{compressor}', which is outside the managed direct-read support matrix. Use uncompressed or zlib chunks.");
         }
-        return null;
+
+        throw new InvalidDataException($"Zarr v2 array '{name}' has a malformed compressor declaration.");
+    }
+
+    private static ZarrChunkKeyEncoding ResolveV2ChunkKeyEncoding(JsonElement root, string name)
+    {
+        var separator = root.TryGetProperty("dimension_separator", out var separatorElement)
+            ? separatorElement.ValueKind == JsonValueKind.String
+                ? separatorElement.GetString()
+                : null
+            : ".";
+
+        if (!ZarrReadSupportMatrix.IsChunkSeparatorSupported(separator))
+        {
+            throw new InvalidDataException(
+                $"Zarr v2 array '{name}' uses unsupported dimension_separator '{separator ?? "<malformed>"}'. Use '.' or '/'.");
+        }
+
+        return new ZarrChunkKeyEncoding(separator!, string.Empty, "0");
     }
 
     private static void RejectUnsupportedFilters(JsonElement root, string arrayName)
@@ -1057,7 +1128,13 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         byte[] payload;
         try
         {
-            payload = await reader.ReadRangeAsync(bucket, key, 0, MaxMetadataBytes, cancellationToken).ConfigureAwait(false);
+            payload = await reader.ReadRangeAsync(
+                    bucket,
+                    key,
+                    0,
+                    ZarrReadSupportMatrix.MaxMetadataDocumentBytes,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
