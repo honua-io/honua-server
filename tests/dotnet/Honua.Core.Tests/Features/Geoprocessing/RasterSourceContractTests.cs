@@ -7,6 +7,7 @@ using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
@@ -531,6 +532,7 @@ public sealed class RasterSourceContractTests
     private static ObjectStoreCogRasterSourceDescriptor Cog() => new()
     {
         Version = "object-version-1",
+        Provider = CloudStorageProvider.AwsS3,
         StoreReference = "imagery-prod",
         ObjectKey = "tenant-a/imagery/source.tif",
         Content = Content() with { MediaType = "image/tiff", ETag = "etag-1" },
