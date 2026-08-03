@@ -6,6 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Server.Tests.Features.Infrastructure.Scene;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -45,6 +47,17 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 services.AddSingleton(provider);
                 services.AddSingleton<IMetadataV2GraphProvider>(provider);
                 services.AddSingleton<IMetadataV2GraphStore>(provider);
+
+                // GET /rest/services composes its directory from the metadata graph PLUS the
+                // scene registry (GeoservicesCatalogEndpoints.AppendSceneServerEntriesAsync ->
+                // ISceneRegistrationService), which is DB-backed and independent of the graph.
+                // Emptying only the graph left the registry reading shared state, so a scene
+                // registered elsewhere in a merge-train batch made this "empty" server advertise
+                // one service and the zero-services assertion flaked. Pin an empty scene registry
+                // so the catalog is deterministically empty regardless of edition or batch state
+                // (honua-server#1619).
+                services.RemoveAll<ISceneRegistrationService>();
+                services.AddSingleton<ISceneRegistrationService>(new StubRegistrationService());
             });
     }
 
