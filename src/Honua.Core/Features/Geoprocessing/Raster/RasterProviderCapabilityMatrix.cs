@@ -654,6 +654,7 @@ public static class RasterProviderCapabilityMatrix
 
     private static void ValidateProofs(IReadOnlyList<RasterProviderSemanticProof> proofs)
     {
+        var keys = new HashSet<SemanticProofKey>();
         foreach (var proof in proofs)
         {
             if (proof is null
@@ -669,6 +670,23 @@ public static class RasterProviderCapabilityMatrix
             {
                 throw new InvalidOperationException("Raster provider semantic proofs contain invalid identity data.");
             }
+
+            var key = new SemanticProofKey(
+                proof.ProviderId,
+                proof.Engine,
+                proof.ProcessId,
+                proof.SemanticVersion,
+                proof.SemanticVariantId,
+                proof.ImplementationVersion,
+                proof.PolicyVersion,
+                proof.FixtureId,
+                proof.RuntimeVersion);
+            if (!keys.Add(key))
+            {
+                throw new InvalidOperationException(
+                    "Raster provider semantic proofs must contain at most one receipt for each "
+                    + "exact provider, variant, fixture, and runtime identity.");
+            }
         }
     }
 
@@ -683,4 +701,15 @@ public static class RasterProviderCapabilityMatrix
             Code = code,
             Reason = reason,
         });
+
+    private readonly record struct SemanticProofKey(
+        string ProviderId,
+        RasterEngine Engine,
+        string ProcessId,
+        string SemanticVersion,
+        string SemanticVariantId,
+        string ImplementationVersion,
+        string PolicyVersion,
+        string FixtureId,
+        string RuntimeVersion);
 }

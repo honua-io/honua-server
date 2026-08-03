@@ -106,6 +106,23 @@ public sealed class RasterProviderCapabilityMatrixTests
     }
 
     [UnitTest]
+    public void Discover_ConflictingReceiptsForExactProofIdentity_AreRejected()
+    {
+        var row = Row();
+        var executor = new FakeExecutor(AvailableCapability(row));
+        var passing = Proof(row);
+        var failing = passing with { Passed = false };
+
+        var act = () => Discover(
+            row,
+            [Registration(row, executor)],
+            [passing, failing]);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*at most one receipt for each exact provider, variant, fixture, and runtime identity*");
+    }
+
+    [UnitTest]
     public void ProjectOperations_OneUnprovenVariant_KeepsWholeProcessUnavailable()
     {
         var proven = Row();
@@ -172,27 +189,27 @@ public sealed class RasterProviderCapabilityMatrixTests
 
     private static RasterProviderCapability AvailableCapability(
         RasterProviderOperationCapabilityRow row) => new()
-    {
-        ProviderId = row.ProviderId,
-        Engine = row.Engine,
-        Variant = new RasterSemanticVariant
         {
-            ProcessId = row.ProcessId,
-            SemanticVersion = row.SemanticVersion,
-            ImplementationVersion = row.ImplementationVersion,
-        },
-        PolicyVersion = row.PolicyVersion,
-        Availability = RasterProviderAvailability.Available,
-    };
+            ProviderId = row.ProviderId,
+            Engine = row.Engine,
+            Variant = new RasterSemanticVariant
+            {
+                ProcessId = row.ProcessId,
+                SemanticVersion = row.SemanticVersion,
+                ImplementationVersion = row.ImplementationVersion,
+            },
+            PolicyVersion = row.PolicyVersion,
+            Availability = RasterProviderAvailability.Available,
+        };
 
     private static RasterProviderExecutableSemanticVariant Registration(
         RasterProviderOperationCapabilityRow row,
         IRasterProviderExecutor executor) => new()
-    {
-        Executor = executor,
-        Capability = AvailableCapability(row),
-        SemanticVariantId = row.SemanticVariantId,
-    };
+        {
+            Executor = executor,
+            Capability = AvailableCapability(row),
+            SemanticVariantId = row.SemanticVariantId,
+        };
 
     private static RasterProviderSemanticProof Proof(RasterProviderOperationCapabilityRow row) => new()
     {
