@@ -21,6 +21,13 @@ public static class RasterSourceContract
     /// typed raster source references. Version-one jobs predate this contract.
     /// </summary>
     public const int JobContractVersion = 2;
+
+    /// <summary>
+    /// Absolute decoded-byte ceiling for an inline raster carried by the JSON contract.
+    /// Deployments may configure a lower admission limit, but deserialization never
+    /// materializes a payload above this boundary.
+    /// </summary>
+    public const int MaximumInlinePayloadBytes = 64 * 1024;
 }
 
 /// <summary>
@@ -117,6 +124,7 @@ public sealed record StagedArtifactRasterSourceDescriptor : RasterSourceDescript
 public sealed record InlineRasterSourceDescriptor : RasterSourceDescriptor
 {
     /// <summary>Small inline raster payload. JSON encodes this byte array as base64.</summary>
+    [JsonConverter(typeof(BoundedInlineRasterPayloadJsonConverter))]
     public required byte[] Payload { get; init; }
 }
 

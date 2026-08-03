@@ -13,8 +13,11 @@ public sealed record RasterSourceValidationOptions
     /// <summary>Default validation limits.</summary>
     public static RasterSourceValidationOptions Default { get; } = new();
 
-    /// <summary>Maximum decoded bytes accepted in an inline descriptor.</summary>
-    public int MaxInlineBytes { get; init; } = 64 * 1024;
+    /// <summary>
+    /// Maximum decoded bytes accepted in an inline descriptor, capped by the absolute
+    /// <see cref="RasterSourceContract.MaximumInlinePayloadBytes"/> wire-contract limit.
+    /// </summary>
+    public int MaxInlineBytes { get; init; } = RasterSourceContract.MaximumInlinePayloadBytes;
 
     /// <summary>Maximum band indexes accepted in one bounded selection.</summary>
     public int MaxBandSelections { get; init; } = 256;
@@ -181,6 +184,9 @@ public static class RasterSourceDescriptorValidator
                 break;
 
             case InlineRasterSourceDescriptor inline:
+                var maximumInlineBytes = Math.Min(
+                    options.MaxInlineBytes,
+                    RasterSourceContract.MaximumInlinePayloadBytes);
                 if (inline.Payload is null || inline.Payload.Length == 0)
                 {
                     Add(errors, RasterSourceValidationCodes.InvalidField, "payload",
@@ -188,10 +194,10 @@ public static class RasterSourceDescriptorValidator
                 }
                 else
                 {
-                    if (inline.Payload.Length > options.MaxInlineBytes)
+                    if (inline.Payload.Length > maximumInlineBytes)
                     {
                         Add(errors, RasterSourceValidationCodes.InlinePayloadTooLarge, "payload",
-                            $"Inline raster payload exceeds the configured {options.MaxInlineBytes}-byte ceiling.");
+                            $"Inline raster payload exceeds the effective {maximumInlineBytes}-byte ceiling.");
                     }
 
                     if (content is not null && content.SizeBytes != inline.Payload.LongLength)

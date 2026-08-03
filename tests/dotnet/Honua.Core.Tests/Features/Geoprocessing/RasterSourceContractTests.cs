@@ -97,6 +97,40 @@ public sealed class RasterSourceContractTests
         Assert.Throws<JsonException>(() => RasterSourceJson.Deserialize(json));
     }
 
+    [Fact]
+    public void Deserialize_InlinePayloadWithOversizedEncodedToken_IsRejectedBeforeBase64Decode()
+    {
+        var document = JsonNode.Parse(RasterSourceJson.Serialize(Inline([1, 2, 3, 4])))!.AsObject();
+        var maximumEncodedBytes = ((RasterSourceContract.MaximumInlinePayloadBytes + 2) / 3) * 4;
+        document["payload"] = new string('A', maximumEncodedBytes + 1);
+
+        var exception = Assert.Throws<JsonException>(() =>
+            RasterSourceJson.Deserialize(document.ToJsonString()));
+
+        Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnalysisContentJsonContext_InlinePayloadAboveDecodedCeiling_IsRejected()
+    {
+        var package = new AnalysisPackageContent
+        {
+            Plan = Plan(new Dictionary<string, RasterSourceDescriptor>
+            {
+                ["source"] = Inline([1, 2, 3, 4]),
+            }),
+        };
+        var document = JsonNode.Parse(
+            JsonSerializer.Serialize(package, AnalysisContentJsonContext.Default.AnalysisPackageContent))!;
+        document["plan"]!["steps"]![0]!["rasterSources"]!["source"]!["payload"] =
+            Convert.ToBase64String(new byte[RasterSourceContract.MaximumInlinePayloadBytes + 1]);
+
+        var exception = Assert.Throws<JsonException>(() => JsonSerializer.Deserialize(
+            document.ToJsonString(), AnalysisContentJsonContext.Default.AnalysisPackageContent));
+
+        Assert.Contains("contract ceiling", exception.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("../secret.tif")]
     [InlineData("/vsis3/private-bucket/secret.tif")]
@@ -169,6 +203,17 @@ public sealed class RasterSourceContractTests
         var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
 
         Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
+    }
+
+    [Fact]
+    public void Validate_ConfiguredInlineCeilingCannotExceedWireContractLimit()
+    {
+        var descriptor = Inline(new byte[RasterSourceContract.MaximumInlinePayloadBytes + 1]);
+        var options = RasterSourceValidationOptions.Default with { MaxInlineBytes = int.MaxValue };
+
+        var result = RasterSourceDescriptorValidator.Validate(descriptor, options);
+
         Assert.Contains(result.Errors, error => error.Code == RasterSourceValidationCodes.InlinePayloadTooLarge);
     }
 
