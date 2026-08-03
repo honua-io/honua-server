@@ -18250,6 +18250,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsConflictCodeTests.ApplyEdits_UpdateMissingFeature_ReturnsNotFoundCode",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsIdempotencyReleaseTests.ApplyEdits_RetryAfterProviderRejectionWithSameIdempotencyKey_RepeatsRejectionInsteadOfConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsPostCommitExceptionTests.ApplyEdits_ReadOnlyExceptionAfterCommit_RetainsReservation",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsTransactionalCancellationTests.ApplyEdits_RetryAfterTransactionalCancellation_DoesNotConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditingEditionGateTests.ApplyEdits_UnderCommunity_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureAllowedByPlugin_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureRejectedByPlugin_IsNotWritten",
