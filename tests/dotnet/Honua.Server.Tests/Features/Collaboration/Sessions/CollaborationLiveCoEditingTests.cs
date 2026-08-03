@@ -1130,6 +1130,7 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_DraftDeletedDuringVersionSave_ReturnsNotFoundAndKeepsCursorUnadvanced()
     {
         var store = new DeleteDuringVersionSaveStore(new InMemoryStudioPackageStore());
