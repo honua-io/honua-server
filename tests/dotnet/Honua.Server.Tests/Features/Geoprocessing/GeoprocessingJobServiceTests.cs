@@ -241,7 +241,7 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeFalse();
         result.Violations.Should().ContainSingle(violation =>
             violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
-            && violation.FieldPath == "steps[step-raster].raster_sources[resampling]");
+            && violation.FieldPath == "steps[step-raster].raster_sources.resampling");
         result.Violations.Should().NotContain(violation =>
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
     }
@@ -260,7 +260,7 @@ public sealed class GeoprocessingJobServiceTests
                 {
                     Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
                     {
-                        ["source"] = "legacy-base64",
+                        ["source"] = "legacy-source",
                     },
                 },
             ],
@@ -271,7 +271,7 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeFalse();
         result.Violations.Should().ContainSingle(violation =>
             violation.Code == RasterSourceValidationCodes.InvalidParameterBinding
-            && violation.FieldPath == "steps[step-raster].raster_sources[source]"
+            && violation.FieldPath == "steps[step-raster].raster_sources.source"
             && violation.Message.Contains("both a typed reference", StringComparison.Ordinal));
         result.Violations.Should().NotContain(violation =>
             violation.Code == GeoprocessingJobArtifactService.TypedRasterExecutionNotSupportedCode);
