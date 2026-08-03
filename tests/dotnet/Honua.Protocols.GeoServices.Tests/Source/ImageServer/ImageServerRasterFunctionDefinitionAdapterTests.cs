@@ -16,6 +16,17 @@ public sealed class ImageServerRasterFunctionDefinitionAdapterTests
     private static RasterFunctionDocument Parse(string json)
         => JsonSerializer.Deserialize(json, ImageServerJsonContext.Default.RasterFunctionDocument)!;
 
+    private static RasterFunctionDocument CreateIdentityChain(int depth)
+    {
+        var json = "{\"rasterFunction\":\"Identity\"}";
+        for (var index = 1; index < depth; index++)
+        {
+            json = "{\"rasterFunction\":\"Identity\",\"rasterFunctionArguments\":{\"Raster\":" + json + "}}";
+        }
+
+        return Parse(json);
+    }
+
     [UnitTest]
     public void Adapt_LinearChain_PreservesInnerToOuterSemanticOrder()
     {
@@ -156,6 +167,21 @@ public sealed class ImageServerRasterFunctionDefinitionAdapterTests
 
         mapping.Supported.Should().BeTrue();
         mapping.Definition!.Nodes[1].Should().BeOfType<RasterFunctionIdentityNode>();
+    }
+
+    [UnitTest]
+    public void Adapt_ImageServerDepthBoundary_AcceptsEightFunctionsAndRejectsNinth()
+    {
+        var maximum = ImageServerRasterFunctionDefinitionAdapter.Adapt(CreateIdentityChain(8));
+        var tooDeep = ImageServerRasterFunctionDefinitionAdapter.Adapt(CreateIdentityChain(9));
+
+        maximum.Supported.Should().BeTrue();
+        maximum.Definition!.Nodes.Should().HaveCount(9);
+        maximum.Definition.OutputNodeId.Should().Be("function-8");
+
+        tooDeep.Supported.Should().BeFalse();
+        tooDeep.Definition.Should().BeNull();
+        tooDeep.Reason.Should().Contain("maximum depth of 8");
     }
 
     [UnitTest]

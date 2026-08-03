@@ -36,6 +36,14 @@ internal static class ImageServerRasterFunctionDefinitionAdapter
     private const string InputNodeId = "input";
     private const string InputName = "raster";
 
+    // ImageServer's depth contract counts function documents, while the canonical validator
+    // also counts the implicit source input node. Keep those definitions aligned explicitly.
+    private static readonly RasterFunctionValidationOptions ValidationOptions =
+        RasterFunctionValidationOptions.Default with
+        {
+            MaxDepth = ImageServerRasterFunctionPlanner.MaxChainDepth + 1,
+        };
+
     /// <summary>
     /// Converts an ImageServer function document to a validated canonical definition.
     /// Unsupported, free-form, multi-input, or otherwise ambiguous documents fail closed.
@@ -124,7 +132,7 @@ internal static class ImageServerRasterFunctionDefinitionAdapter
             Nodes = nodes,
             OutputNodeId = inputNodeId,
         };
-        var validation = RasterFunctionValidator.Validate(definition);
+        var validation = RasterFunctionValidator.Validate(definition, ValidationOptions);
         if (!validation.IsValid)
         {
             var detail = string.Join(
