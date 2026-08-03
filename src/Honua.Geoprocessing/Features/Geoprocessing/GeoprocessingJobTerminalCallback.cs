@@ -227,22 +227,21 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         var manifestKey = RasterOutputWorkerContract.BuildManifestObjectKey(
             job.OperationId,
             job.AttemptCount);
-        foreach (var reference in job.ArtifactReferences)
+        var hasForeignManifestMarker = job.ArtifactReferences.Any(reference =>
+            RasterOutputArtifactReference.TryParseManifest(
+                reference,
+                out var markerStore,
+                out var markerKey)
+            && (!string.Equals(markerStore, configuredStoreReference, StringComparison.Ordinal)
+                || !RasterOutputWorkerContract.TryParseManifestObjectKey(
+                    markerKey,
+                    out var markerJobId,
+                    out var markerAttempt)
+                || !string.Equals(markerJobId, job.OperationId, StringComparison.Ordinal)
+                || markerAttempt > job.AttemptCount));
+        if (hasForeignManifestMarker)
         {
-            if (RasterOutputArtifactReference.TryParseManifest(
-                    reference,
-                    out var markerStore,
-                    out var markerKey)
-                && (!string.Equals(markerStore, configuredStoreReference, StringComparison.Ordinal)
-                    || !RasterOutputWorkerContract.TryParseManifestObjectKey(
-                        markerKey,
-                        out var markerJobId,
-                        out var markerAttempt)
-                    || !string.Equals(markerJobId, job.OperationId, StringComparison.Ordinal)
-                    || markerAttempt > job.AttemptCount))
-            {
-                throw new InvalidDataException("Raster output manifest marker does not belong to this job's attempts.");
-            }
+            throw new InvalidDataException("Raster output manifest marker does not belong to this job's attempts.");
         }
 
         using var scope = serviceScopeFactory.CreateScope();
@@ -264,10 +263,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 // snapshot after a prior callback already persisted output descriptors and
                 // removed the manifest. Rehydrate that durable projection; otherwise a
                 // succeeded v2 job without a manifest remains an integrity failure.
-                var persisted = executionJobStore is null
-                    ? null
-                    : await executionJobStore.GetAsync(job.OperationId, cancellationToken)
-                        .ConfigureAwait(false);
+                var persisted = await executionJobStore.GetAsync(job.OperationId, cancellationToken)
+                    .ConfigureAwait(false);
                 if (persisted is not null
                     && persisted.ArtifactReferences.Any(reference =>
                         RasterOutputArtifactReference.TryParseOutput(reference, out _)))

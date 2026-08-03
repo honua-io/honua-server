@@ -2053,17 +2053,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GpResourceProfile.EphemeralGibRequestKey,
             GpResourceProfile.ArchRequestKey,
         ];
-        var result = new List<KeyValuePair<string, string>>(keys.Length);
-        foreach (var key in keys.OrderBy(static key => key, StringComparer.Ordinal))
-        {
-            if (requestParameters.TryGetValue(key, out var value)
+        return keys
+            .Where(key => requestParameters.TryGetValue(key, out var value)
                 && !string.IsNullOrWhiteSpace(value))
-            {
-                result.Add(new KeyValuePair<string, string>(key, value.Trim()));
-            }
-        }
-
-        return result;
+            .OrderBy(static key => key, StringComparer.Ordinal)
+            .Select(key => new KeyValuePair<string, string>(key, requestParameters[key].Trim()))
+            .ToList();
     }
 
     private static void EnsureMatchingIdempotentRequest(

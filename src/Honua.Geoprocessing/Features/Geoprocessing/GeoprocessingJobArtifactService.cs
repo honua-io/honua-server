@@ -181,20 +181,19 @@ internal sealed class GeoprocessingJobArtifactService
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        foreach (var step in plan.Steps)
+        var violatingStep = plan.Steps.FirstOrDefault(step =>
+            step.RasterSources?.Any(source => source.Value is not InlineRasterSourceDescriptor) == true);
+        if (violatingStep is null)
         {
-            if (step.RasterSources?.Any(source => source.Value is not InlineRasterSourceDescriptor) == true)
-            {
-                return new GeoprocessingValidationFailure
-                {
-                    Code = TypedRasterExecutionNotSupportedCode,
-                    Message = TypedRasterExecutionNotSupportedMessage,
-                    FieldPath = $"steps[{step.StepId}].raster_sources",
-                };
-            }
+            return null;
         }
 
-        return null;
+        return new GeoprocessingValidationFailure
+        {
+            Code = TypedRasterExecutionNotSupportedCode,
+            Message = TypedRasterExecutionNotSupportedMessage,
+            FieldPath = $"steps[{violatingStep.StepId}].raster_sources",
+        };
     }
 
     /// <summary>

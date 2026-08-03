@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Collections.ObjectModel;
 using Honua.Core.Features.Raster.Domain;
 
@@ -55,6 +56,12 @@ internal static class ZarrReadSupportMatrix
         new("<f8", "float64", 8),
     ];
 
+    private static readonly FrozenDictionary<string, int> ElementSizesByV2Name =
+        DataTypes.ToFrozenDictionary(
+            static entry => entry.V2Name,
+            static entry => entry.ElementSize,
+            StringComparer.Ordinal);
+
     /// <summary>
     /// Complete human-readable matrix rows. These rows are also asserted by tests;
     /// the tailored helpers below are used on the parser's hot path.
@@ -93,17 +100,7 @@ internal static class ZarrReadSupportMatrix
     {
         ArgumentNullException.ThrowIfNull(normalizedDataType);
 
-        foreach (var candidate in DataTypes)
-        {
-            if (string.Equals(candidate.V2Name, normalizedDataType, StringComparison.Ordinal))
-            {
-                elementSize = candidate.ElementSize;
-                return true;
-            }
-        }
-
-        elementSize = 0;
-        return false;
+        return ElementSizesByV2Name.TryGetValue(normalizedDataType, out elementSize);
     }
 
     internal static bool IsOrderSupported(string order)

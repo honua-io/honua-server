@@ -479,14 +479,14 @@ public sealed class GeoprocessingLayerAccessGuardTests
         string name,
         string[] allowedRoles,
         string[]? allowedWriteRoles = null) => new()
-    {
-        Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-        AccessPolicy = new AccessPolicy
         {
-            AllowedRoles = allowedRoles,
-            AllowedWriteRoles = allowedWriteRoles
-        },
-    };
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            AccessPolicy = new AccessPolicy
+            {
+                AllowedRoles = allowedRoles,
+                AllowedWriteRoles = allowedWriteRoles
+            },
+        };
 
     private static MetadataV2Publication Publication(
         string id,

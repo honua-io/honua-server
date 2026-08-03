@@ -1025,13 +1025,14 @@ internal static class InlineRasterMetadataReader
         public static bool TryCreate(string encoded, out Base64ByteReader reader)
         {
             reader = default;
+            // Counted with a branchless accumulate rather than LINQ's Count(predicate):
+            // `encoded` is a caller-sized inline payload, and the LINQ form would add an
+            // IEnumerable<char> enumerator allocation plus per-character interface and
+            // delegate dispatch to a scan that must stay allocation-free.
             var whitespaceCount = 0;
             foreach (var character in encoded)
             {
-                if (char.IsWhiteSpace(character))
-                {
-                    whitespaceCount++;
-                }
+                whitespaceCount += char.IsWhiteSpace(character) ? 1 : 0;
             }
 
             if (whitespaceCount > 0)

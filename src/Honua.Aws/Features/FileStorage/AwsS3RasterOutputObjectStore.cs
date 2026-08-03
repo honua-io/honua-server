@@ -462,16 +462,12 @@ internal sealed class AwsS3RasterOutputObjectStore : IRasterOutputObjectStore, I
 
     private static string? Metadata(MetadataCollection metadata, string name)
     {
-        foreach (var key in metadata.Keys)
-        {
-            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase)
-                || key.EndsWith("-" + name, StringComparison.OrdinalIgnoreCase))
-            {
-                return metadata[key];
-            }
-        }
+        var suffix = "-" + name;
+        var match = metadata.Keys.FirstOrDefault(key =>
+            string.Equals(key, name, StringComparison.OrdinalIgnoreCase)
+            || key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
-        return null;
+        return match is null ? null : metadata[match];
     }
 
     private static DateTimeOffset? ParseExpiry(string? value)
