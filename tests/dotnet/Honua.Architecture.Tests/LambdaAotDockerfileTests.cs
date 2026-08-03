@@ -10,6 +10,13 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 public sealed class LambdaAotDockerfileTests
 {
+    private static readonly string[] RenderingSourcePaths =
+    [
+        "src/Honua.Hosting/Features/Rendering/LegendImageComposer.cs",
+        "src/Honua.Server/Features/PrintingTools/Layout/LayoutComposer.cs",
+        "src/Honua.Server/Features/Studio/Export/StudioDeliverableComposer.cs",
+    ];
+
     [ArchitectureTest]
     public void BuildStage_RestoresRidAssetsImmediatelyBeforeNoRestorePublish()
     {
@@ -82,12 +89,8 @@ public sealed class LambdaAotDockerfileTests
         dockerfile.Should().Contain("grep -Eq 'not found|undefined symbol'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
-        foreach (var renderSource in new[]
-        {
-            "src/Honua.Hosting/Features/Rendering/LegendImageComposer.cs",
-            "src/Honua.Server/Features/PrintingTools/Layout/LayoutComposer.cs",
-            "src/Honua.Server/Features/Studio/Export/StudioDeliverableComposer.cs",
-        }.Select(relativePath => File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+        foreach (var renderSource in RenderingSourcePaths.Select(relativePath =>
+            File.ReadAllText(ArchitectureTestHelpers.CombinePath(
                 repositoryRoot,
                 relativePath.Replace('/', Path.DirectorySeparatorChar)))))
         {
