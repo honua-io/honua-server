@@ -122,7 +122,7 @@ These workflows enforce the control-plane versioning policy defined in `docs/dev
 | `openapi-contract-governance.yml` | OpenAPI spec shape and breaking-change detection for admin endpoints |
 | `control-plane-sdk-governance.yml` | Reproducible SDK generation from the admin OpenAPI spec |
 
-Breaking changes in these workflows require explicit opt-in (`OPENAPI_ALLOW_BREAKING_CHANGES=true`) and corresponding documentation updates.
+Breaking changes require corresponding migration/deprecation documentation and the exact checked `OPENAPI_BREAKING_CHANGE_APPROVED` marker in the introducing PR. The marker is accepted only when the PR also changes the control-plane migration guide, versioning policy, or release checklist. It keeps the workflow green but emits an Actions warning and a job-summary list of every suppressed finding. The repository-wide `OPENAPI_ALLOW_BREAKING_CHANGES` variable is a temporary pre-publication override governed by honua-server#3065 and the `honua-release#71` first-release gate; it must be `false` before publication and produces the same warnings while active.
 
 ### Standards Compatibility
 

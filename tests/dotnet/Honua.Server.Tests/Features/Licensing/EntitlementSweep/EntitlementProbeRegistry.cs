@@ -263,8 +263,9 @@ internal static class EntitlementProbeRegistry
                 "(IAgentGuardrailPolicy); cannot drift from the license by construction."),
             new("temporal.animation-api",
                 "Pure capability-advertisement flag ('Capability flag for SDK/admin TimeSlider " +
-                "and playback integration' per FeatureCatalog doc) — no backend behavior, no " +
-                "endpoint, nothing to gate."),
+                "and playback integration' per FeatureCatalog doc) — advertised and edition-" +
+                "resolved by the shared capability manifest, with no dedicated backend route " +
+                "whose response could use the sweep's 402/200 probe shape."),
             new("styling.auto-suggest",
                 "Degrades gracefully rather than blocking: AdminStyleSuggestionEndpoints always " +
                 "returns 200 (enhanced geometry-only defaults at Community, full analysis at " +

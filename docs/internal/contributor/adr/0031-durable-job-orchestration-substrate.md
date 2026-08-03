@@ -45,6 +45,51 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
 | Failed | Terminal: execution failed (may be retried) |
 | Cancelled | Terminal: cancelled by user or system |
 
+Output publication does not add values to this enum. Jobs with fenced output
+intents retain `ExecutionJobStatus.Running` while a durable, orthogonal
+`OutputPublicationPhase` is `Finalizing` or `Terminalizing`. During
+either phase the job admits no new execution and is excluded from execution
+heartbeat and timeout expiry as well as requeue. During terminalization the record also persists
+the requested terminal status (`Failed` or `Cancelled`). The coordinator
+changes the canonical status only after every sink intent is committed or
+aborted. Pre-dispatch cancellation may conditionally change an unclaimed
+`Queued` record to canonical `Running` while entering `Terminalizing`; in that
+case `Running` is only the publication-phase carrier and does not append an
+execution attempt or imply that execution began. Success additionally requires
+the job-wide output-set manifest from ADR-0071 to be `Complete` for one winning
+attempt; individual committed sink records are not projected into
+`ArtifactReferences` before that point. Jobs without output intents keep the
+existing direct transitions.
+
+The `Running` to `Finalizing` handoff is a conditional job-store update. It
+compares the expected record version, current execution claim, attempt
+identifier, fencing token, and absence of `CancellationRequestedAt` before
+changing the publication phase. A stale or already-cancelled attempt cannot
+enter `Finalizing`, release the current execution claim, or publish; only the
+winning update may stop its execution heartbeat and transfer recovery ownership
+to the publication lease. If the same compare-and-set observes a pending
+cancellation, the coordinator instead records requested status `Cancelled`,
+enters `Terminalizing`, references the prepared output set, and transfers
+recovery to a new publication-lease generation. It never starts sink commits or
+passes through `Finalizing`; the output reconciler aborts the intents before the
+canonical job becomes `Cancelled`.
+
+Cancellation during `Finalizing` is also a conditional job-store transition.
+It compares the expected record version, canonical `Running` status,
+`Finalizing` phase, winning attempt/output-set manifest, and publication-lease
+generation before recording requested status `Cancelled`, changing the phase
+to `Terminalizing`, and advancing the publication-lease generation. It does
+not depend on an execution claim, because that claim may already have been
+released. A final-success update and this cancellation update contend on the
+same job record: success that was already made durable remains terminal, while
+a winning cancellation update prevents the manifest from becoming `Complete`
+or the job from becoming `Succeeded`. An output reconciler must re-read the
+phase and lease generation before starting each sink action and before its
+final manifest/job update. A sink commit already in flight contends with abort
+on the sink intent's attempt fence and record version; committed members remain
+committed, but they are not exposed through the incomplete manifest, and every
+remaining member is aborted before the job becomes `Cancelled`.
+
 ### Claim and Heartbeat
 
 - `IJobQueue.TryClaimAsync` atomically removes a job from the pending set and
@@ -54,7 +99,14 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
   (default: 30 seconds). Each heartbeat updates `LastHeartbeatAt`.
 - `JobReconciliationService` sweeps active jobs every 30 seconds. If
   `LastHeartbeatAt` exceeds the heartbeat timeout (default: 90 seconds), the
-  job is considered abandoned.
+  job is considered abandoned only while its output publication phase is not
+  `Finalizing` or `Terminalizing`. Those phases prove that execution has ended
+  and must never be requeued by the execution-heartbeat sweeper.
+- Output reconciliation owns a separate durable lease and heartbeat/deadline
+  while the publication phase is `Finalizing` or `Terminalizing`. An expired
+  publication lease is recovered only through fenced, idempotent output
+  reconciliation. That reconciler may complete publication or terminalize the
+  job according to policy, but it never starts a new execution attempt.
 
 ### Job Kinds
 
@@ -91,7 +143,12 @@ Millisecond timestamps break ties within a band.
   at 10 minutes.
 - When a heartbeat expires and retries remain, the reconciler requeues the job
   with a computed backoff delay. `AttemptCount` on the record tracks attempts.
-- When retries are exhausted, the job transitions to Failed.
+- When retries are exhausted, a job without a current fenced sink intent
+  transitions directly to Failed. A job with any such intent instead records
+  requested status `Failed` and enters `OutputPublicationPhase.Terminalizing`.
+  The output reconciler conditionally aborts every uncommitted intent under its
+  attempt fence before changing the canonical status to Failed. Exhausting the
+  retry budget therefore never bypasses sink terminalization.
 
 ### Timeout Policy
 
@@ -100,26 +157,58 @@ Millisecond timestamps break ties within a band.
 - Enforcement is dual-layered: `JobExecutionService` sets a
   `CancellationTokenSource` timeout for in-process detection, while
   `JobReconciliationService` catches workers that crash without cancelling.
-- Jobs that exceed their timeout are marked Failed and are **not** retried.
+- `Finalizing` and `Terminalizing` are not executing phases and are excluded
+  from `MaxDuration` expiry. Their separate publication deadline and fenced
+  output reconciler exclusively govern stalled publication or terminalization.
+- Jobs that exceed their timeout are **not** retried. A job without fenced
+  output intents is marked Failed directly. A job with such intents first
+  records requested status `Failed` plus output phase `Terminalizing`, revokes
+  the intents as defined by ADR-0071, and then changes the canonical status to
+  Failed. This is one terminal transition with no requeue or replacement
+  attempt, not a retry state.
 
 ### Cancellation
 
-- API-side cancellation first attempts to signal in-flight workers via the
-  process-local `IJobCancellationNotifier`. The worker registers its per-job
-  cancellation token source before the `Provisioning → Running` transition so
-  that operator cancellation arriving during that window is delivered through
-  the token rather than as a direct store write.
-- When the local notifier confirms the signal was delivered, the worker owns
-  the terminal state transition and the API returns immediately.
-- When no local notifier can reach the worker (the common case in split
-  API/worker deployments), the API checks the job's claim state:
-  - **Unclaimed** (`ClaimedBy` is null): the API marks the job as Cancelled
-    directly and removes it from the queue.
-  - **Actively claimed**: the API persists `CancellationRequestedAt` on the
-    `ExecutionJobRecord` as a durable cancellation signal. The worker observes
-    this signal during its next heartbeat read and cancels locally. If the
-    worker's heartbeat expires before it processes the signal, the reconciler
-    honours the request with a terminal Cancelled state instead of retrying.
+- API-side cancellation is a compare-and-set retry loop over the complete job
+  record, not a one-time phase read. Each iteration re-reads the record version,
+  canonical status, publication phase, claim, and cancellation fields. A
+  terminal record returns its existing outcome. Any version or predicate
+  conflict restarts the loop and reclassifies the new phase; notifier delivery
+  never substitutes for a durable winning update.
+- A job in `Finalizing` follows the claim-independent fenced transition to
+  `Terminalizing` defined above. A job already in `Terminalizing` is handled
+  idempotently by the output reconciler; an existing requested terminal status
+  is not overwritten. These cases are evaluated before execution-claim state,
+  on every retry, so a concurrent `Running` to `Finalizing` handoff cannot be
+  misclassified as unclaimed execution.
+- While publication phase is `None`, the retry loop branches on canonical
+  execution/claim state:
+  - **Queued and unclaimed**: when no fenced output intent exists, the API uses
+    a CAS over the expected version, `Queued` status, absent claim, and phase
+    `None` to mark the job Cancelled, then removes the queue member idempotently.
+    When prepared intents exist, the API instead uses a job-store
+    compare-and-set on the expected record version, canonical `Queued` status,
+    absent claim, and publication phase `None`. The winning update changes the
+    canonical status to `Running`, records requested status `Cancelled`, enters
+    `Terminalizing`, and references the already-durable intents for the fenced
+    output reconciler. It then removes any stale pending-queue member
+    idempotently. A concurrent worker claim and this cancellation update contend
+    on the same job record: if the claim wins, the API follows the actively
+    claimed branch; if cancellation wins, the queue entry is no longer eligible
+    for execution. The output reconciler aborts the referenced intents under
+    their fences before changing the canonical status to Cancelled.
+  - **Provisioning or Running execution**: the API conditionally persists
+    `CancellationRequestedAt` against the expected version, phase `None`,
+    status, claim/attempt, and fencing token. Only after this durable write wins
+    does it best-effort signal `IJobCancellationNotifier`. The worker registers
+    its per-job token source before the `Provisioning → Running` transition and
+    observes the durable field during heartbeat reads. If the local notifier is
+    absent, stale, or races with completion, the persisted signal remains the
+    authority. A handoff CAS that saw the earlier record now fails because the
+    version/cancellation predicate changed; it must re-read and enter
+    `Terminalizing` instead of `Finalizing`. If the worker heartbeat expires,
+    the reconciler honours the request rather than retrying and aborts fenced
+    output intents before writing terminal Cancelled.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 - When the reconciler requeues or terminally fails a job (heartbeat or timeout
@@ -152,10 +241,18 @@ Millisecond timestamps break ties within a band.
 
 ### Artifact References
 
-- Workers publish artifact references through
-  `IJobExecutionContext.PublishArtifactAsync`.
-- References accumulate in `ExecutionJobRecord.ArtifactReferences` and are
-  available for result packaging after terminal state.
+- For jobs without fenced output intents, workers publish artifact references
+  through `IJobExecutionContext.PublishArtifactAsync`. Those references
+  accumulate in `ExecutionJobRecord.ArtifactReferences` and are available for
+  result packaging after terminal state.
+- A worker producing a fenced output set must not append its members to public
+  `ArtifactReferences`. It writes attempt-scoped references only to the private
+  sink-intent/staging records governed by ADR-0071. After every required member
+  is committed and the job-wide manifest becomes `Complete`, the coordinator
+  conditionally projects the complete winning set into `ArtifactReferences` in
+  one job-record update. A stale, partial, failed, or cancelled attempt therefore
+  exposes no public result references, including through intermediate job
+  projections.
 
 ### API/Worker Boundary
 
@@ -169,13 +266,21 @@ Millisecond timestamps break ties within a band.
 ### Graceful Shutdown
 
 When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
-jobs are abandoned rather than marked as terminal failures. The worker itself
-transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
-`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it immediately. This applies
-both during active execution and during the pre-execution window between claim
-and Running. Shutdown requeue always succeeds regardless of the job's retry
-budget because a host shutdown is an infrastructure event, not an execution
-failure.
+jobs that are still executing (`OutputPublicationPhase.None`) are abandoned
+rather than marked as terminal failures. The worker conditionally transitions
+the job back to Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
+`LastHeartbeatAt`), and re-enqueues it immediately. This applies during active
+execution and during the pre-execution window between claim and Running.
+Shutdown requeue ignores the retry budget because a host shutdown is an
+infrastructure event, but its update is conditional on the publication phase
+remaining `None`.
+
+A job in `Finalizing` or `Terminalizing` is never returned to the execution
+queue during shutdown. The stopping worker leaves its canonical state, attempt
+fence, and sink intents unchanged and conditionally relinquishes only a
+publication lease it owns (or lets that lease expire). The fenced output
+reconciler then resumes publication or terminalization from the durable phase;
+it does not start another execution attempt.
 
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has
