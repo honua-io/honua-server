@@ -516,7 +516,7 @@ internal readonly record struct AddSubscriptionOutcome(AddSubscriptionResult Res
 /// Result of <see cref="FeatureStreamSessionManager.TryClaimSubscriptionDelivery"/>. The
 /// writer distinguishes a stale-generation drop (which is observable telemetry — frames are
 /// being orphaned by unsubscribe/replacement) from a benign dedup skip (the per-subscription
-/// replay path already claimed and sent the frame).
+/// replay path already claimed and sent the frame for the same subscription generation).
 /// </summary>
 internal enum SubscriptionDeliveryClaim
 {

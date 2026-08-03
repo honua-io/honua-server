@@ -1122,60 +1122,99 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", first.Generation, "evt-a"));
     }
 
-    // Regression: a writer can win the delivery claim, then wait behind an unsubscribe or
-    // same-id replacement acknowledgement for the WebSocket write lock. Sequence allocation
-    // is the final generation fence; if it fails, the stale frame must never reach the wire.
+    // Regression: a writer can win the delivery claim, then wait behind an unsubscribe
+    // acknowledgement for the WebSocket write lock. Sequence allocation is the final
+    // generation fence; its failed old-generation claim must neither reach the wire nor
+    // poison delivery after the same subscription id is reused.
     [UnitTest]
-    public async Task SendStampedWebSocketJsonAsync_GenerationChangesAfterClaim_SkipsFrame()
+    public Task SendStampedWebSocketJsonAsync_UnsubscribeAfterClaim_SkipsStaleAndLetsResubscribeDeliver()
+        => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: false);
+
+    // Regression: same-id replacement has the same claim-to-sequence race as unsubscribe.
+    // The replacement generation must be able to claim and deliver the event even though the
+    // retired generation claimed that event id before losing the final generation fence.
+    [UnitTest]
+    public Task SendStampedWebSocketJsonAsync_ReplacementAfterClaim_SkipsStaleAndLetsReplacementDeliver()
+        => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: true);
+
+    private async Task AssertClaimRaceDoesNotBlockReplacementAsync(bool replaceBeforeStaleSendCompletes)
     {
-        foreach (var replaceSubscription in new[] { false, true })
+        using var session = _manager.CreateSession("WebSocket", "stamp-race");
+        var original = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, original.Result);
+
+        var envelope = CreateEnvelope(cursor: 500) with
         {
-            using var session = _manager.CreateSession("WebSocket", "stamp-race");
-            var add = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
-            Assert.Equal(AddSubscriptionResult.Added, add.Result);
-
-            var envelope = CreateEnvelope(cursor: 500) with
-            {
-                EventId = $"evt-{replaceSubscription}",
-                SubscriptionId = "subB"
-            };
-            Assert.Equal(
-                SubscriptionDeliveryClaim.Claimed,
-                _manager.TryClaimSubscriptionDelivery(
-                    session.SessionId,
-                    "subB",
-                    add.Generation,
-                    envelope.EventId));
-
-            using var writeLock = new SemaphoreSlim(0, 1);
-            using var webSocket = new RecordingWebSocket();
-            var sendTask = FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
-                webSocket,
-                writeLock,
-                envelope,
-                _manager,
+            EventId = replaceBeforeStaleSendCompletes ? "evt-replace" : "evt-unsubscribe",
+            SubscriptionId = "subB"
+        };
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(
                 session.SessionId,
                 "subB",
-                add.Generation,
-                CancellationToken.None);
-            Assert.False(sendTask.IsCompleted);
+                original.Generation,
+                envelope.EventId));
 
-            if (replaceSubscription)
-            {
-                var replacement = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
-                Assert.Equal(AddSubscriptionResult.Added, replacement.Result);
-                Assert.NotEqual(add.Generation, replacement.Generation);
-            }
-            else
-            {
-                Assert.True(_manager.TryRemoveSubscription(session.SessionId, "subB"));
-            }
+        using var writeLock = new SemaphoreSlim(0, 1);
+        using var webSocket = new RecordingWebSocket();
+        var staleSend = FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
+            webSocket,
+            writeLock,
+            envelope,
+            _manager,
+            session.SessionId,
+            "subB",
+            original.Generation,
+            CancellationToken.None);
+        Assert.False(staleSend.IsCompleted);
 
-            writeLock.Release();
-
-            Assert.False(await sendTask);
-            Assert.Equal(0, webSocket.SendCount);
+        AddSubscriptionOutcome replacement;
+        if (replaceBeforeStaleSendCompletes)
+        {
+            replacement = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
         }
+        else
+        {
+            Assert.True(_manager.TryRemoveSubscription(session.SessionId, "subB"));
+            replacement = default;
+        }
+
+        writeLock.Release();
+
+        Assert.False(await staleSend);
+        Assert.Equal(0, webSocket.SendCount);
+
+        if (!replaceBeforeStaleSendCompletes)
+        {
+            replacement = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        }
+
+        Assert.Equal(AddSubscriptionResult.Added, replacement.Result);
+        Assert.NotEqual(original.Generation, replacement.Generation);
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(
+                session.SessionId,
+                "subB",
+                replacement.Generation,
+                envelope.EventId));
+
+        Assert.True(await FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
+            webSocket,
+            writeLock,
+            envelope,
+            _manager,
+            session.SessionId,
+            "subB",
+            replacement.Generation,
+            CancellationToken.None));
+        Assert.Equal(1, webSocket.SendCount);
+
+        // The replacement's delivered frame used sequence zero; the next admitted frame is one.
+        Assert.Equal(
+            1L,
+            _manager.NextSubscriptionSequence(session.SessionId, "subB", replacement.Generation));
     }
 
     // Regression: Broadcast must stamp each queued copy with the matching

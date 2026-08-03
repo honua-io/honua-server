@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
@@ -731,7 +732,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     /// <summary>
     /// Atomically verifies the subscription still exists with the supplied generation and,
-    /// if so, claims the (event, subscription) delivery slot. Returns
+    /// if so, claims the (event, subscription, generation) delivery slot. Returns
     /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the session is gone or
     /// the subscription was removed or replaced (so callers must drop the queued frame
     /// without claiming dedup), and <see cref="SubscriptionDeliveryClaim.AlreadyDelivered"/>
@@ -1086,7 +1087,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         /// <summary>
         /// Atomically verifies the subscription still exists with the supplied generation and,
-        /// if so, claims the (event, subscription) delivery slot. Returns
+        /// if so, claims the (event, subscription, generation) delivery slot. Returns
         /// <see cref="SubscriptionDeliveryClaim.StaleGeneration"/> when the generation no
         /// longer matches (subscription removed or replaced) — the caller must drop the queued
         /// frame without sending and without claiming dedup, so a future replay for the same
@@ -1106,7 +1107,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
                 lock (_recentEventLock)
                 {
-                    return TryRememberEventLocked(string.Concat(eventId, ":", subscriptionId))
+                    var deliveryKey = string.Concat(
+                        eventId,
+                        ":",
+                        subscriptionId,
+                        ":",
+                        generation.ToString(CultureInfo.InvariantCulture));
+                    return TryRememberEventLocked(deliveryKey)
                         ? SubscriptionDeliveryClaim.Claimed
                         : SubscriptionDeliveryClaim.AlreadyDelivered;
                 }
