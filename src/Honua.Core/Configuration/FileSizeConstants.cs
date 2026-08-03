@@ -41,6 +41,13 @@ public static class FileSizeConstants
     public const long MaxRasterFileSize = 500 * OneMB;
 
     /// <summary>
+    /// Maximum raster payload accepted by the synchronous PostGIS import path.
+    /// This path must materialize one <c>byte[]</c> and an Npgsql parameter copy,
+    /// so larger rasters require the durable staged-import pipeline.
+    /// </summary>
+    public const long MaxDirectRasterImportSize = FiftyMB;
+
+    /// <summary>
     /// Maximum vector file size (200 MB).
     /// </summary>
     public const long MaxVectorFileSize = 200 * OneMB;
