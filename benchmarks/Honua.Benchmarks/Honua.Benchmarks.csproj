@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Npgsql" />
     <!-- Compressor side of the managed zstd port, used to build benchmark inputs (#2854). -->
     <PackageReference Include="ZstdSharp.Port" />
   </ItemGroup>

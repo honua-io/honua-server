@@ -12,8 +12,13 @@ namespace Honua.Benchmarks;
 /// </summary>
 public static class Program
 {
-    public static int Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "raster-storage", StringComparison.Ordinal))
+        {
+            return await RasterStorage.RasterStorageCommand.RunAsync(args[1..], CancellationToken.None).ConfigureAwait(false);
+        }
+
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
         return 0;
     }
