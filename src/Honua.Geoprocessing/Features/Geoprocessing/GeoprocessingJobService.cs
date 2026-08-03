@@ -444,6 +444,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        if (resolvedKey is not null)
+        {
+            // Replays reuse the exact durable raster/compute decision that was admitted on the
+            // first submission. Looking up the deterministic id before source materialization and
+            // planning prevents a later health or policy change from refusing an already-created
+            // request. The TryCreate race path below remains authoritative for concurrent callers.
+            var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                EnsureSubmissionDidNotRollback(existing);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return existing;
+            }
+        }
+
         // Resolve the legacy layerId/rasterId compatibility path before planning so the planner
         // sees the canonical inline source that the native worker will consume. The request
         // fingerprint above remains bound to the caller's stable catalog reference rather than

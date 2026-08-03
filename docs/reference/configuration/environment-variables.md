@@ -229,12 +229,12 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__ImageryInference__TimeoutSeconds` | `300` | Per-request delegation timeout (clamped to 1–3600). |
 
 Raster admission never loads GDAL into the web process. For inline TIFF/BigTIFF inputs it reads
-only a bounded header to obtain trusted dimensions and band count, then charges a conservative
-minimum of eight bytes per sample (increasing for wider declared types). Unrecognized raster
-headers and output grids whose dimensions depend on a
-spatial envelope (for example `conversion.rasterize` with `cellSize`) remain incomplete: they are
-isolated on an available remote native backend or refused, never admitted locally from an encoded-
-size compression guess.
+only a bounded header to obtain trusted dimensions, band count, sample width, and common GeoTIFF
+pixel-scale metadata. That scale permits a bounded `raster.resample` grid to stay on the local
+native worker. Unrecognized raster headers and output grids that still require an unresolved
+spatial envelope (for example `conversion.rasterize` with `cellSize`, or a mosaic union) remain
+incomplete: they are isolated on an available remote native backend or refused, never admitted
+locally from an encoded-size compression guess.
 
 ## Related pages
 

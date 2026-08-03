@@ -425,6 +425,29 @@ public sealed class RasterExecutionPlannerTests
         decision.Cost.UnknownInputs.Should().Contain("outputPixels");
     }
 
+    [Fact]
+    public void RequestFactory_ResamplePixelScale_DerivesBoundedOutputGridForLocalWorker()
+    {
+        var request = CreateLegacyRequest(
+            "raster.resample",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateGeoTiffHeaderBase64(
+                    width: 1_000,
+                    height: 500,
+                    scaleX: 30,
+                    scaleY: 20),
+                ["cellSize"] = "60",
+                ["cellSizeY"] = "10",
+            });
+
+        request.Cost.InputPixels.Should().Be(500_000);
+        request.Cost.OutputPixels.Should().Be(500_000);
+        var decision = _builtInPlanner.Plan(request);
+        decision.Cost.UnknownInputs.Should().BeEmpty();
+        decision.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
     private void AssertLegacyInputsUseLocal(
         string processId,
         Dictionary<string, string> inputs,
@@ -490,6 +513,38 @@ public sealed class RasterExecutionPlannerTests
         WriteTiffEntry(payload, 46, tag: 277, type: 3, value: (uint)bands);
         return Convert.ToBase64String(payload);
     }
+
+    private static string CreateGeoTiffHeaderBase64(
+        int width,
+        int height,
+        double scaleX,
+        double scaleY)
+    {
+        const int pixelScaleOffset = 74;
+        var payload = new byte[pixelScaleOffset + sizeof(double) * 3];
+        payload[0] = (byte)'I';
+        payload[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(8), 5);
+        WriteTiffEntry(payload, 10, tag: 256, type: 4, value: (uint)width);
+        WriteTiffEntry(payload, 22, tag: 257, type: 4, value: (uint)height);
+        WriteTiffEntry(payload, 34, tag: 258, type: 3, value: 64);
+        WriteTiffEntry(payload, 46, tag: 277, type: 3, value: 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(58), 33550);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(60), 12);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(62), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(66), pixelScaleOffset);
+        WriteDouble(payload, pixelScaleOffset, scaleX);
+        WriteDouble(payload, pixelScaleOffset + sizeof(double), scaleY);
+        WriteDouble(payload, pixelScaleOffset + sizeof(double) * 2, 0);
+        return Convert.ToBase64String(payload);
+    }
+
+    private static void WriteDouble(byte[] payload, int offset, double value)
+        => BinaryPrimitives.WriteUInt64LittleEndian(
+            payload.AsSpan(offset),
+            unchecked((ulong)BitConverter.DoubleToInt64Bits(value)));
 
     private static void WriteTiffEntry(
         byte[] payload,

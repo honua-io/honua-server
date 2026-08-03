@@ -135,11 +135,31 @@ internal static class InlineRasterMetadataReader
         ulong? height = null;
         ulong bands = 1;
         ulong sampleBytes = 8;
+        double? pixelScaleX = null;
+        double? pixelScaleY = null;
 
         for (var index = 0; index < entryCount; index++)
         {
             var entryOffset = entriesOffset + index * entrySize;
             var tag = ReadUInt16(payload, entryOffset, littleEndian);
+            if (tag == 33550)
+            {
+                if (TryReadPixelScale(
+                        payload,
+                        littleEndian,
+                        entryOffset,
+                        inlineSize,
+                        isBigTiff,
+                        out var scaleX,
+                        out var scaleY))
+                {
+                    pixelScaleX = scaleX;
+                    pixelScaleY = scaleY;
+                }
+
+                continue;
+            }
+
             if (tag is not (256 or 257 or 258 or 277))
             {
                 continue;
@@ -202,8 +222,54 @@ internal static class InlineRasterMetadataReader
             (long)width,
             (long)height,
             (long)bands,
-            (long)sampleBytes);
+            (long)sampleBytes,
+            pixelScaleX,
+            pixelScaleY);
         return true;
+    }
+
+    private static bool TryReadPixelScale(
+        ReadOnlySpan<byte> payload,
+        bool littleEndian,
+        int entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out double scaleX,
+        out double scaleY)
+    {
+        scaleX = 0;
+        scaleY = 0;
+        if (ReadUInt16(payload, entryOffset + 2, littleEndian) != 12)
+        {
+            return false;
+        }
+
+        var count = isBigTiff
+            ? ReadUInt64(payload, entryOffset + 4, littleEndian)
+            : ReadUInt32(payload, entryOffset + 4, littleEndian);
+        if (count is < 2 or > 16 || count > ulong.MaxValue / sizeof(double))
+        {
+            return false;
+        }
+
+        var valueBytes = count * sizeof(double);
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12 : 8);
+        var dataOffset = valueBytes <= (ulong)inlineSize
+            ? (ulong)valueFieldOffset
+            : isBigTiff
+                ? ReadUInt64(payload, valueFieldOffset, littleEndian)
+                : ReadUInt32(payload, valueFieldOffset, littleEndian);
+        if (dataOffset > int.MaxValue || !Contains(payload, (int)dataOffset, sizeof(double) * 2))
+        {
+            return false;
+        }
+
+        scaleX = ReadDouble(payload, (int)dataOffset, littleEndian);
+        scaleY = ReadDouble(payload, (int)dataOffset + sizeof(double), littleEndian);
+        return double.IsFinite(scaleX)
+            && double.IsFinite(scaleY)
+            && scaleX > 0
+            && scaleY > 0;
     }
 
     private static bool TryReadMaximumEntryValue(
@@ -338,6 +404,9 @@ internal static class InlineRasterMetadataReader
             ? BinaryPrimitives.ReadUInt64LittleEndian(payload[offset..])
             : BinaryPrimitives.ReadUInt64BigEndian(payload[offset..]);
 
+    private static double ReadDouble(ReadOnlySpan<byte> payload, int offset, bool littleEndian)
+        => BitConverter.Int64BitsToDouble(unchecked((long)ReadUInt64(payload, offset, littleEndian)));
+
     private static bool Contains(ReadOnlySpan<byte> payload, int offset, int length)
         => offset >= 0 && length >= 0 && offset <= payload.Length - length;
 }
@@ -347,4 +416,6 @@ internal readonly record struct InlineRasterMetadata(
     long Width,
     long Height,
     long Bands,
-    long SampleBytes);
+    long SampleBytes,
+    double? PixelScaleX,
+    double? PixelScaleY);

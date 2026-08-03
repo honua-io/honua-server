@@ -73,7 +73,7 @@ internal static class RasterExecutionPlanningRequestFactory
         var bandCount = legacy?.BandCount ?? TrySumBands(sources);
         var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
         var sampleBytes = legacy?.SampleBytes ?? TryMaxInlineSampleBytes(sources) ?? BytesPerSample;
-        var outputPixels = TryReadOutputPixels(step);
+        var outputPixels = TryReadOutputPixels(step) ?? TryDeriveResampleOutputPixels(step, sources);
         if (outputPixels is null && !RequiresDerivedOutputGrid(step))
         {
             outputPixels = legacy?.DefaultOutputPixels ?? inputPixels;
@@ -371,8 +371,70 @@ internal static class RasterExecutionPlanningRequestFactory
 
     private static bool RequiresDerivedOutputGrid(AnalysisPlanStep step)
         => string.Equals(step.ProcessId, "raster.mosaic", StringComparison.Ordinal)
-            || (step.Inputs.TryGetValue("cellSize", out var cellSize)
+            || string.Equals(step.ProcessId, "raster.resample", StringComparison.Ordinal)
+            || (string.Equals(step.ProcessId, "conversion.rasterize", StringComparison.Ordinal)
+                && step.Inputs.TryGetValue("cellSize", out var cellSize)
                 && !string.IsNullOrWhiteSpace(cellSize));
+
+    private static long? TryDeriveResampleOutputPixels(
+        AnalysisPlanStep step,
+        RasterSourceDescriptor[] sources)
+    {
+        if (!string.Equals(step.ProcessId, "raster.resample", StringComparison.Ordinal)
+            || !TryReadPositiveDouble(step, "cellSize", out var targetScaleX))
+        {
+            return null;
+        }
+
+        var targetScaleY = targetScaleX;
+        if (step.Inputs.ContainsKey("cellSizeY")
+            && !TryReadPositiveDouble(step, "cellSizeY", out targetScaleY))
+        {
+            return null;
+        }
+
+        InlineRasterMetadata metadata;
+        if (sources.Length == 0)
+        {
+            if (!InlineRasterMetadataReader.TryReadBase64(ReadInput(step, "source"), out metadata))
+            {
+                return null;
+            }
+        }
+        else if (sources.Length == 1
+            && sources[0] is InlineRasterSourceDescriptor inline
+            && InlineRasterMetadataReader.TryRead(inline.Payload, out var typedMetadata))
+        {
+            metadata = typedMetadata;
+        }
+        else
+        {
+            return null;
+        }
+
+        if (metadata.PixelScaleX is not { } sourceScaleX
+            || metadata.PixelScaleY is not { } sourceScaleY)
+        {
+            return null;
+        }
+
+        var outputWidth = TryScaleDimension(metadata.Width, sourceScaleX, targetScaleX);
+        var outputHeight = TryScaleDimension(metadata.Height, sourceScaleY, targetScaleY);
+        return outputWidth is { } width && outputHeight is { } height
+            ? SaturatingMultiply(width, height)
+            : null;
+    }
+
+    private static long? TryScaleDimension(long sourcePixels, double sourceScale, double targetScale)
+    {
+        var scaled = sourcePixels * sourceScale / targetScale;
+        if (!double.IsFinite(scaled) || scaled <= 0 || scaled > long.MaxValue)
+        {
+            return null;
+        }
+
+        return Math.Max((long)Math.Ceiling(scaled), 1);
+    }
 
     private static long? ResolveZoneCount(AnalysisPlanStep step)
     {
@@ -399,6 +461,19 @@ internal static class RasterExecutionPlanningRequestFactory
                 System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out value)
+            && value > 0;
+    }
+
+    private static bool TryReadPositiveDouble(AnalysisPlanStep step, string key, out double value)
+    {
+        value = 0;
+        return step.Inputs.TryGetValue(key, out var raw)
+            && double.TryParse(
+                raw,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out value)
+            && double.IsFinite(value)
             && value > 0;
     }
 
