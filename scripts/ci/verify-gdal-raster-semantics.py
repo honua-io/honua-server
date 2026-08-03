@@ -15,7 +15,7 @@ import numpy
 from osgeo import gdal, osr
 
 
-EXPECTED_GDAL_VERSION = "3.12.4"
+EXPECTED_GDAL_VERSION = "3.13.1"
 FIXTURE_ID = "surface.slope-plane-degrees.v1"
 
 

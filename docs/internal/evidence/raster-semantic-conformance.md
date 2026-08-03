@@ -14,7 +14,7 @@ PostGIS executor cannot silently enter dynamic routing before parity evidence ex
 | Engine | Tested versions | Execution lane |
 | --- | --- | --- |
 | PostGIS Raster | 3.4, 3.5, 3.6 | `Honua.Postgres.Tests` in the PostgreSQL 16/17/18 compatibility matrix |
-| GDAL | 3.12.4 | Patch-tag-pinned `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`, the `docker/worker-gdal/Dockerfile` base |
+| GDAL | 3.13.1 | Digest-pinned `ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a`, the `docker/worker-gdal/Dockerfile` base |
 
 Current PostGIS integration evidence uses real raster SQL, not mocks, for runtime compatibility,
 population statistics, slope, and cancellation. Current native provider-runner evidence invokes
