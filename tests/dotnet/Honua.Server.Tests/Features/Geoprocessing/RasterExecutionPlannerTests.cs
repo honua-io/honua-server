@@ -496,6 +496,26 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
+    public void RequestFactory_ByteTiff_HonorsDeclaredSampleWidthForLocalPlacement()
+    {
+        var request = CreateLegacyRequest(
+            "raster.statistics",
+            new Dictionary<string, string>
+            {
+                ["source"] = CreateTiffHeaderBase64(
+                    width: 20_000,
+                    height: 20_000,
+                    bands: 1,
+                    bitsPerSample: 8),
+            });
+
+        request.Cost.InputPixels.Should().Be(400_000_000);
+        request.Cost.DecodedBytes.Should().Be(400_000_000);
+        request.Cost.ExpectedScratchBytes.Should().Be(800_000_000);
+        _builtInPlanner.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    [Fact]
     public void RequestFactory_ReprojectWithoutTrustedTargetGrid_KeepsOutputConservativeAndOffloads()
     {
         var request = CreateLegacyRequest(

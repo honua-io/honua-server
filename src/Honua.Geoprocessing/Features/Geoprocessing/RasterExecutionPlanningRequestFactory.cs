@@ -201,7 +201,7 @@ internal static class RasterExecutionPlanningRequestFactory
         long bandCount = 0;
         long inputPixels = 0;
         long decodedBytes = 0;
-        long sampleBytes = BytesPerSample;
+        long sampleBytes = 0;
         foreach (var payload in payloads)
         {
             if (!InlineRasterMetadataReader.TryReadBase64(payload, out var metadata))
@@ -359,7 +359,7 @@ internal static class RasterExecutionPlanningRequestFactory
             return null;
         }
 
-        long maximum = BytesPerSample;
+        long maximum = 0;
         foreach (var source in sources)
         {
             if (source is not InlineRasterSourceDescriptor inline
