@@ -19,6 +19,7 @@ public sealed class RasterEngineCapabilityRegistryTests
         Assert.All(registry.Processes, capability =>
         {
             Assert.Matches("^[0-9]+\\.[0-9]+\\.[0-9]+$", capability.SemanticVersion);
+            Assert.NotEmpty(capability.SemanticVariants);
             Assert.Equal(
                 new[] { RasterEngine.Postgis, RasterEngine.GdalNative },
                 capability.Engines.Select(engine => engine.Engine).OrderBy(engine => engine).ToArray());
@@ -31,6 +32,9 @@ public sealed class RasterEngineCapabilityRegistryTests
                 Assert.True(engine.Formats.InputMediaTypes.Count > 0);
                 Assert.True(engine.Formats.OutputMediaTypes.Count > 0);
                 Assert.Equal(engine.IsAvailable, engine.UnavailabilityReason is null);
+                Assert.NotEmpty(engine.TestedRuntimeVersion);
+                Assert.All(engine.VerifiedSemanticVariants, variant =>
+                    Assert.Contains(variant, capability.SemanticVariants));
             });
         });
     }
@@ -178,10 +182,39 @@ public sealed class RasterEngineCapabilityRegistryTests
 
         Assert.Equal(capability.ProcessId, roundTrip.ProcessId);
         Assert.Equal(capability.SemanticVersion, roundTrip.SemanticVersion);
+        Assert.Equal(capability.SemanticVariants, roundTrip.SemanticVariants);
         Assert.Equal(capability.Engines.Count, roundTrip.Engines.Count);
         Assert.Equal(json, RasterEngineCapabilityJson.Serialize(roundTrip));
         Assert.Contains("\"gdalNative\"", json, StringComparison.Ordinal);
         Assert.Contains("\"postgis\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuiltInCapabilities_BlockUnverifiedPostgisDynamicRouting()
+    {
+        var registry = new RasterEngineCapabilityRegistry();
+
+        Assert.All(registry.Processes, process =>
+        {
+            var postgis = process.Engines.Single(engine => engine.Engine == RasterEngine.Postgis);
+            Assert.Equal(RasterSemanticConformanceStatus.Unverified, postgis.SemanticConformance);
+            Assert.Empty(postgis.VerifiedSemanticVariants);
+            Assert.All(process.SemanticVariants, variant => Assert.False(postgis.SupportsSemanticVariant(variant)));
+        });
+    }
+
+    [Fact]
+    public void BuiltInCapabilities_PinGdalBaselineAndLinkKnownFixtureEvidence()
+    {
+        var capability = new RasterEngineCapabilityRegistry().Find("raster.resample");
+
+        Assert.NotNull(capability);
+        var gdal = capability.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
+        Assert.Equal(RasterSemanticConformanceStatus.CanonicalBaseline, gdal.SemanticConformance);
+        Assert.Equal("3.13.1", gdal.TestedRuntimeVersion);
+        Assert.Contains("bilinear", gdal.VerifiedSemanticVariants);
+        Assert.Contains("resample.bilinear-nodata-edge.v1", gdal.SemanticEvidenceFixtureIds);
+        Assert.True(gdal.SupportsSemanticVariant("bilinear"));
     }
 
     [Fact]
@@ -204,6 +237,7 @@ public sealed class RasterEngineCapabilityRegistryTests
 
     [Theory]
     [InlineData("defaultPreference")]
+    [InlineData("semanticConformance")]
     [InlineData("inputResidency")]
     [InlineData("outputSink")]
     public void Constructor_UndefinedNestedEnumValues_AreRejected(string field)
@@ -215,6 +249,10 @@ public sealed class RasterEngineCapabilityRegistryTests
             "defaultPreference" => engine with
             {
                 DefaultPreference = (RasterEngineDefaultPreference)100,
+            },
+            "semanticConformance" => engine with
+            {
+                SemanticConformance = (RasterSemanticConformanceStatus)100,
             },
             "inputResidency" => engine with
             {
@@ -236,6 +274,26 @@ public sealed class RasterEngineCapabilityRegistryTests
 
         Assert.Equal("capabilities", exception.ParamName);
         Assert.Contains("undefined", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Constructor_UnverifiedEngineWithSemanticEvidence_IsRejected()
+    {
+        var template = new RasterEngineCapabilityRegistry().Find("raster.resample")!;
+        var malformed = template with
+        {
+            Engines = template.Engines
+                .Select(engine => engine.Engine == RasterEngine.GdalNative
+                    ? engine with { SemanticConformance = RasterSemanticConformanceStatus.Unverified }
+                    : engine)
+                .ToArray(),
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new RasterEngineCapabilityRegistry([malformed]));
+
+        Assert.Equal("capabilities", exception.ParamName);
+        Assert.Contains("cannot advertise semantic evidence", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -279,43 +337,58 @@ public sealed class RasterEngineCapabilityRegistryTests
     [Fact]
     public void Constructor_SnapshotsTheFullDescriptorGraph()
     {
-        var template = new RasterEngineCapabilityRegistry().Processes[0];
-        var requiredCapabilities = template.Engines[0].RequiredCapabilities.ToArray();
-        var inputMediaTypes = template.Engines[0].Formats.InputMediaTypes.ToArray();
-        var outputMediaTypes = template.Engines[0].Formats.OutputMediaTypes.ToArray();
-        var inputResidencies = template.Engines[0].InputResidencies.ToArray();
-        var outputSinks = template.Engines[0].OutputSinks.ToArray();
+        var template = new RasterEngineCapabilityRegistry().Find("raster.resample")!;
+        var semanticVariants = template.SemanticVariants.ToArray();
+        var requiredCapabilities = template.Engines[1].RequiredCapabilities.ToArray();
+        var inputMediaTypes = template.Engines[1].Formats.InputMediaTypes.ToArray();
+        var outputMediaTypes = template.Engines[1].Formats.OutputMediaTypes.ToArray();
+        var inputResidencies = template.Engines[1].InputResidencies.ToArray();
+        var outputSinks = template.Engines[1].OutputSinks.ToArray();
+        var verifiedVariants = template.Engines[1].VerifiedSemanticVariants.ToArray();
+        var evidenceFixtureIds = template.Engines[1].SemanticEvidenceFixtureIds.ToArray();
+        var knownDivergences = new[] { "documented.test-divergence" };
         var engines = template.Engines.ToArray();
-        engines[0] = engines[0] with
+        engines[1] = engines[1] with
         {
             RequiredCapabilities = requiredCapabilities,
-            Formats = engines[0].Formats with
+            Formats = engines[1].Formats with
             {
                 InputMediaTypes = inputMediaTypes,
                 OutputMediaTypes = outputMediaTypes,
             },
             InputResidencies = inputResidencies,
             OutputSinks = outputSinks,
+            VerifiedSemanticVariants = verifiedVariants,
+            SemanticEvidenceFixtureIds = evidenceFixtureIds,
+            KnownSemanticDivergences = knownDivergences,
         };
-        var source = new[] { template with { Engines = engines } };
+        var source = new[] { template with { SemanticVariants = semanticVariants, Engines = engines } };
         var registry = new RasterEngineCapabilityRegistry(source);
 
         source[0] = source[0] with { ProcessId = "mutated.process" };
-        engines[0] = engines[0] with { ImplementationVersion = "mutated" };
+        engines[1] = engines[1] with { ImplementationVersion = "mutated" };
+        semanticVariants[0] = "mutated.variant";
         requiredCapabilities[0] = "mutated.capability";
         inputMediaTypes[0] = "application/mutated-input";
         outputMediaTypes[0] = "application/mutated-output";
         inputResidencies[0] = RasterInputResidency.Inline;
         outputSinks[0] = RasterOutputSink.ObjectStore;
+        verifiedVariants[0] = "mutated.verified-variant";
+        evidenceFixtureIds[0] = "mutated.fixture";
+        knownDivergences[0] = "mutated.divergence";
 
         var snapshot = Assert.Single(registry.Processes);
         Assert.Equal(template.ProcessId, snapshot.ProcessId);
-        Assert.Equal(template.Engines[0].ImplementationVersion, snapshot.Engines[0].ImplementationVersion);
-        Assert.Equal(template.Engines[0].RequiredCapabilities, snapshot.Engines[0].RequiredCapabilities);
-        Assert.Equal(template.Engines[0].Formats.InputMediaTypes, snapshot.Engines[0].Formats.InputMediaTypes);
-        Assert.Equal(template.Engines[0].Formats.OutputMediaTypes, snapshot.Engines[0].Formats.OutputMediaTypes);
-        Assert.Equal(template.Engines[0].InputResidencies, snapshot.Engines[0].InputResidencies);
-        Assert.Equal(template.Engines[0].OutputSinks, snapshot.Engines[0].OutputSinks);
+        Assert.Equal(template.SemanticVariants, snapshot.SemanticVariants);
+        Assert.Equal(template.Engines[1].ImplementationVersion, snapshot.Engines[1].ImplementationVersion);
+        Assert.Equal(template.Engines[1].RequiredCapabilities, snapshot.Engines[1].RequiredCapabilities);
+        Assert.Equal(template.Engines[1].Formats.InputMediaTypes, snapshot.Engines[1].Formats.InputMediaTypes);
+        Assert.Equal(template.Engines[1].Formats.OutputMediaTypes, snapshot.Engines[1].Formats.OutputMediaTypes);
+        Assert.Equal(template.Engines[1].InputResidencies, snapshot.Engines[1].InputResidencies);
+        Assert.Equal(template.Engines[1].OutputSinks, snapshot.Engines[1].OutputSinks);
+        Assert.Equal(template.Engines[1].VerifiedSemanticVariants, snapshot.Engines[1].VerifiedSemanticVariants);
+        Assert.Equal(template.Engines[1].SemanticEvidenceFixtureIds, snapshot.Engines[1].SemanticEvidenceFixtureIds);
+        Assert.Equal("documented.test-divergence", Assert.Single(snapshot.Engines[1].KnownSemanticDivergences));
     }
 
     [Fact]

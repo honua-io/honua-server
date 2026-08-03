@@ -14,6 +14,8 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabilityRegistry
 {
     private const string SemanticVersion = "1.0.0";
+    private const string GdalTestedRuntimeVersion = "3.13.1";
+    private const string PostgisTestedRuntimeVersion = "3.4-3.6";
     private const string PostgisUnavailableReason =
         "No canonical PostGIS raster IProcessExecutor is registered for this process; "
         + "PostGIS GP execution is tracked by honua-server#3095 and #3096.";
@@ -422,6 +424,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         {
             ProcessId = processId,
             SemanticVersion = SemanticVersion,
+            SemanticVariants = SemanticVariantsFor(processId),
             Engines = ReadOnly(
                 new RasterEngineCapability
                 {
@@ -439,6 +442,11 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     DefaultPreference = postgisPreference,
                     IsAvailable = false,
                     UnavailabilityReason = PostgisUnavailableReason,
+                    SemanticConformance = RasterSemanticConformanceStatus.Unverified,
+                    TestedRuntimeVersion = PostgisTestedRuntimeVersion,
+                    VerifiedSemanticVariants = ReadOnly<string>(),
+                    SemanticEvidenceFixtureIds = ReadOnly<string>(),
+                    KnownSemanticDivergences = ReadOnly<string>(),
                 },
                 new RasterEngineCapability
                 {
@@ -458,9 +466,60 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     DefaultPreference = gdalPreference,
                     IsAvailable = gdalAvailable,
                     UnavailabilityReason = gdalAvailable ? null : gdalUnavailableReason,
+                    SemanticConformance = RasterSemanticConformanceStatus.CanonicalBaseline,
+                    TestedRuntimeVersion = GdalTestedRuntimeVersion,
+                    VerifiedSemanticVariants = SemanticVariantsFor(processId),
+                    SemanticEvidenceFixtureIds = SemanticEvidenceFor(processId),
+                    KnownSemanticDivergences = ReadOnly<string>(),
                 }),
         };
     }
+
+    private static ReadOnlyCollection<string> SemanticVariantsFor(string processId) => processId switch
+    {
+        "conversion.raster-reproject" or "gdal.gdalwarp" or "raster.reproject" =>
+            ReadOnly("default", "nearest", "bilinear", "cubic", "cubicspline", "lanczos", "antimeridian", "invalid-crs"),
+        "raster.resample" =>
+            ReadOnly("default", "nearest", "bilinear", "cubic", "cubicspline", "lanczos"),
+        "raster.clip" => ReadOnly("default", "pixel-center"),
+        "raster.mosaic" => ReadOnly("default", "first", "last", "min", "max", "mean", "cancellation"),
+        "raster.map-algebra" => ReadOnly("default", "allowlisted-expression", "a-plus-b", "multiband-promotion"),
+        "raster.reclassify" => ReadOnly("default", "closed-open"),
+        "raster.spectral-index" => ReadOnly("default", "ndvi", "ndwi", "evi", "savi"),
+        "raster.statistics" => ReadOnly("default", "population", "empty-input"),
+        "raster.histogram" => ReadOnly("default", "equal-width"),
+        "raster.zonal-statistics" => ReadOnly("default", "pixel-center"),
+        "surface.slope" => ReadOnly("default", "degrees", "percent"),
+        "surface.aspect" => ReadOnly("default", "degrees"),
+        "surface.hillshade" => ReadOnly("default", "horn"),
+        "surface.roughness" or "surface.rugosity-tpi" or "surface.rugosity-tri" =>
+            ReadOnly("default", "three-by-three"),
+        _ => ReadOnly("default"),
+    };
+
+    private static ReadOnlyCollection<string> SemanticEvidenceFor(string processId) => processId switch
+    {
+        "conversion.raster-reproject" or "gdal.gdalwarp" or "raster.reproject" => ReadOnly(
+            "reproject.nearest-grid.v1",
+            "reproject.antimeridian.v1",
+            "reproject.invalid-crs.v1"),
+        "raster.resample" => ReadOnly("resample.bilinear-nodata-edge.v1"),
+        "raster.clip" => ReadOnly("clip.pixel-center-boundary.v1"),
+        "raster.mosaic" => ReadOnly("mosaic.last-overlap-nodata.v1", "mosaic.cancellation.v1"),
+        "raster.map-algebra" => ReadOnly("map-algebra.nodata-propagation.v1", "multiband.promotion-color.v1"),
+        "raster.reclassify" => ReadOnly("reclassify.closed-open-boundaries.v1"),
+        "raster.spectral-index" => ReadOnly("spectral-index.ndvi-zero-denominator.v1"),
+        "raster.statistics" => ReadOnly("statistics.nodata-population.v1", "statistics.empty-input.v1"),
+        "raster.histogram" => ReadOnly("histogram.bin-boundaries.v1"),
+        "raster.zonal-statistics" => ReadOnly("zonal-statistics.pixel-center-edge.v1"),
+        "surface.slope" => ReadOnly("surface.slope-plane-degrees.v1"),
+        "surface.aspect" => ReadOnly("surface.aspect-plane-degrees.v1"),
+        "surface.hillshade" => ReadOnly("surface.hillshade-horn.v1"),
+        "surface.roughness" => ReadOnly("surface.roughness-three-by-three.v1"),
+        "surface.rugosity-tri" => ReadOnly("surface.rugosity-tri-three-by-three.v1"),
+        "surface.rugosity-tpi" => ReadOnly("surface.rugosity-tpi-three-by-three.v1"),
+        _ => ReadOnly<string>(),
+    };
 
     private static void ValidateCapabilities(IReadOnlyList<RasterProcessCapability> capabilities)
     {
@@ -493,6 +552,16 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     nameof(capabilities));
             }
 
+            if (process.SemanticVariants is null
+                || process.SemanticVariants.Count == 0
+                || process.SemanticVariants.Any(string.IsNullOrWhiteSpace)
+                || process.SemanticVariants.Distinct(StringComparer.Ordinal).Count() != process.SemanticVariants.Count)
+            {
+                throw new ArgumentException(
+                    $"Raster process '{process.ProcessId}' has invalid semantic variants.",
+                    nameof(capabilities));
+            }
+
             if (process.Engines is null || process.Engines.Count == 0)
             {
                 throw new ArgumentException(
@@ -509,7 +578,10 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     || engine.Formats.InputMediaTypes is null
                     || engine.Formats.OutputMediaTypes is null
                     || engine.InputResidencies is null
-                    || engine.OutputSinks is null)
+                    || engine.OutputSinks is null
+                    || engine.VerifiedSemanticVariants is null
+                    || engine.SemanticEvidenceFixtureIds is null
+                    || engine.KnownSemanticDivergences is null)
                 {
                     throw new ArgumentException(
                         $"Raster process '{process.ProcessId}' has incomplete engine metadata.",
@@ -536,6 +608,14 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     throw new ArgumentException(
                         $"Raster process '{process.ProcessId}' engine '{engine.Engine}' declares "
                         + $"undefined default preference value '{(int)engine.DefaultPreference}'.",
+                        nameof(capabilities));
+                }
+
+                if (!Enum.IsDefined(engine.SemanticConformance))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' declares "
+                        + $"undefined semantic conformance value '{(int)engine.SemanticConformance}'.",
                         nameof(capabilities));
                 }
 
@@ -567,7 +647,18 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     || engine.Formats.OutputMediaTypes.Count == 0
                     || engine.Formats.OutputMediaTypes.Any(string.IsNullOrWhiteSpace)
                     || engine.InputResidencies.Count == 0
-                    || engine.OutputSinks.Count == 0)
+                    || engine.OutputSinks.Count == 0
+                    || string.IsNullOrWhiteSpace(engine.TestedRuntimeVersion)
+                    || engine.VerifiedSemanticVariants.Any(string.IsNullOrWhiteSpace)
+                    || engine.SemanticEvidenceFixtureIds.Any(string.IsNullOrWhiteSpace)
+                    || engine.KnownSemanticDivergences.Any(string.IsNullOrWhiteSpace)
+                    || engine.VerifiedSemanticVariants.Distinct(StringComparer.Ordinal).Count()
+                        != engine.VerifiedSemanticVariants.Count
+                    || engine.SemanticEvidenceFixtureIds.Distinct(StringComparer.Ordinal).Count()
+                        != engine.SemanticEvidenceFixtureIds.Count
+                    || engine.KnownSemanticDivergences.Distinct(StringComparer.Ordinal).Count()
+                        != engine.KnownSemanticDivergences.Count
+                    || engine.VerifiedSemanticVariants.Except(process.SemanticVariants, StringComparer.Ordinal).Any())
                 {
                     throw new ArgumentException(
                         $"Raster process '{process.ProcessId}' has incomplete '{engine.Engine}' metadata.",
@@ -579,6 +670,45 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     throw new ArgumentException(
                         $"Raster process '{process.ProcessId}' engine '{engine.Engine}' must carry an "
                         + "unavailability reason exactly when it is unavailable.",
+                        nameof(capabilities));
+                }
+
+
+                if (engine.SemanticConformance == RasterSemanticConformanceStatus.Unverified
+                    && (engine.VerifiedSemanticVariants.Count > 0
+                        || engine.SemanticEvidenceFixtureIds.Count > 0))
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' cannot advertise "
+                        + "semantic evidence while unverified.",
+                        nameof(capabilities));
+                }
+
+                if (engine.SemanticConformance != RasterSemanticConformanceStatus.Unverified
+                    && engine.VerifiedSemanticVariants.Count == 0)
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' must advertise "
+                        + "at least one verified semantic variant.",
+                        nameof(capabilities));
+                }
+
+                if ((engine.SemanticConformance is RasterSemanticConformanceStatus.Verified
+                        or RasterSemanticConformanceStatus.Restricted)
+                    && engine.SemanticEvidenceFixtureIds.Count == 0)
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' must link executable "
+                        + "fixture evidence when verified.",
+                        nameof(capabilities));
+                }
+
+                if (engine.SemanticConformance == RasterSemanticConformanceStatus.Restricted
+                    && engine.KnownSemanticDivergences.Count == 0)
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' must describe its "
+                        + "known divergences when restricted.",
                         nameof(capabilities));
                 }
             }
@@ -597,6 +727,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         ArgumentNullException.ThrowIfNull(capability);
         return capability with
         {
+            SemanticVariants = ReadOnly(capability.SemanticVariants.ToArray()),
             Engines = ReadOnly(capability.Engines.Select(SnapshotEngine).ToArray()),
         };
     }
@@ -614,6 +745,9 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
             },
             InputResidencies = ReadOnly(capability.InputResidencies.ToArray()),
             OutputSinks = ReadOnly(capability.OutputSinks.ToArray()),
+            VerifiedSemanticVariants = ReadOnly(capability.VerifiedSemanticVariants.ToArray()),
+            SemanticEvidenceFixtureIds = ReadOnly(capability.SemanticEvidenceFixtureIds.ToArray()),
+            KnownSemanticDivergences = ReadOnly(capability.KnownSemanticDivergences.ToArray()),
         };
     }
 
@@ -669,17 +803,17 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 
     private static GdalRasterInputFormat? ToGdalRasterInputFormat(string format) =>
         format.Trim().ToUpperInvariant() switch
-    {
-        "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
-        "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
-        "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
-        "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
-        "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
-        "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
-        "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
-        "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
-        _ => null,
-    };
+        {
+            "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
+            "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
+            "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
+            "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
+            "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
+            "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
+            "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
+            "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
+            _ => null,
+        };
 
     private static ReadOnlyCollection<T> ReadOnly<T>(params T[] values)
         => Array.AsReadOnly(values);
