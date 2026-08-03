@@ -68,6 +68,22 @@ attempt cannot enter `Finalizing`, release the current execution claim, or
 publish; only the winning update may stop its execution heartbeat and transfer
 recovery ownership to the publication lease.
 
+Cancellation during `Finalizing` is also a conditional job-store transition.
+It compares the expected record version, canonical `Running` status,
+`Finalizing` phase, winning attempt/output-set manifest, and publication-lease
+generation before recording requested status `Cancelled`, changing the phase
+to `Terminalizing`, and advancing the publication-lease generation. It does
+not depend on an execution claim, because that claim may already have been
+released. A final-success update and this cancellation update contend on the
+same job record: success that was already made durable remains terminal, while
+a winning cancellation update prevents the manifest from becoming `Complete`
+or the job from becoming `Succeeded`. An output reconciler must re-read the
+phase and lease generation before starting each sink action and before its
+final manifest/job update. A sink commit already in flight contends with abort
+on the sink intent's attempt fence and record version; committed members remain
+committed, but they are not exposed through the incomplete manifest, and every
+remaining member is aborted before the job becomes `Cancelled`.
+
 ### Claim and Heartbeat
 
 - `IJobQueue.TryClaimAsync` atomically removes a job from the pending set and
@@ -147,6 +163,13 @@ Millisecond timestamps break ties within a band.
 
 ### Cancellation
 
+- API-side cancellation first branches on the durable output-publication phase.
+  A job in `Finalizing` follows the claim-independent fenced transition to
+  `Terminalizing` defined above. A job already in `Terminalizing` is handled
+  idempotently by the output reconciler; an existing requested terminal status
+  is not overwritten. These branches run before execution-claim inspection so
+  a released execution claim cannot cause finalization cancellation to be
+  misclassified as unclaimed execution.
 - API-side cancellation first attempts to signal in-flight workers via the
   process-local `IJobCancellationNotifier`. The worker registers its per-job
   cancellation token source before the `Provisioning → Running` transition so

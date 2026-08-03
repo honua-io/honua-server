@@ -256,18 +256,25 @@ a layer.
   existing result. A different or stale token cannot replace it. Losing
   attempt-scoped artifacts remain uncommitted for policy-driven cleanup.
 - Cancellation and terminal failure first abort every uncommitted sink intent
-  with a conditional update on its current token and record version. Sink
-  finalization and abort therefore contend on the same record: either commit
-  wins and the coordinator observes the committed result, or abort wins and
-  the worker's later commit fails. For object output this is an `If-Match`
-  transition of the stable intent marker to an aborted state; for PostGIS it is
-  a conditional update in the sink database. The durable job does not become
-  `Cancelled` or `Failed` until all intents are committed or aborted. While
-  reconciling an unreachable sink, its canonical status remains `Running`, its
-  durable `OutputPublicationPhase` is `Terminalizing`, and a separate requested
-  terminal status records `Cancelled` or `Failed`; no new execution is
-  admitted. Like `Finalizing`, `Terminalizing` is excluded from execution
-  heartbeat and timeout expiry as well as requeue. Its separate durable publication lease and
+  with a conditional update on its current token and record version. If
+  cancellation arrives during `Finalizing`, a claim-independent job-store CAS
+  on the expected record version, winning output-set manifest, and
+  publication-lease generation records requested status `Cancelled`, changes
+  the phase to `Terminalizing`, and advances that lease generation. This CAS
+  contends with the final manifest/job success update. A reconciler must re-read
+  the phase and lease generation before each sink action and before completing
+  the manifest; a sink commit already in flight instead contends with abort on
+  the same sink record. Either that commit wins and remains durable but hidden
+  by the incomplete manifest, or abort wins and the later commit fails. For
+  object output this is an `If-Match` transition of the stable intent marker to
+  an aborted state; for PostGIS it is a conditional update in the sink
+  database. The durable job does not become `Cancelled` or `Failed` until all
+  intents are committed or aborted. While reconciling an unreachable sink, its
+  canonical status remains `Running`, its durable `OutputPublicationPhase` is
+  `Terminalizing`, and a separate requested terminal status records
+  `Cancelled` or `Failed`; no new execution is admitted. Like `Finalizing`,
+  `Terminalizing` is excluded from execution heartbeat and timeout expiry as
+  well as requeue. Its separate durable publication lease and
   heartbeat/deadline are recovered only by the fenced output reconciler, which
   may finish the terminal transition but never re-executes the job. This is the
   orthogonal phase mapping defined by ADR-0031, not a new
