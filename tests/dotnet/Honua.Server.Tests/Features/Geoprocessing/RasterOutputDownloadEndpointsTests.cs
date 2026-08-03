@@ -7,12 +7,14 @@ using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Server.Features.FileStorage;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
+[Protocol(TestProtocols.GPServer)]
 public sealed class RasterOutputDownloadEndpointsTests
 {
     [Fact]
@@ -56,7 +58,9 @@ public sealed class RasterOutputDownloadEndpointsTests
             artifact.Metadata[GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey]);
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/geoprocessing/raster-outputs/{artifactId}")]
     public async Task Download_KeepsCleanupLeaseUntilStreamCompletes()
     {
         var bytes = new byte[] { 1, 2, 3, 4, 5 };
@@ -123,7 +127,66 @@ public sealed class RasterOutputDownloadEndpointsTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("HEAD /api/v1/geoprocessing/raster-outputs/{artifactId}")]
+    public async Task Head_ReturnsMetadataWithoutOpeningObjectStream()
+    {
+        var bytes = new byte[] { 1, 2, 3, 4, 5 };
+        var output = CreateOutput(bytes);
+        var resolution = new RasterOutputRegistrationResolution(
+            output,
+            output,
+            RasterOutputRegistrationKind.ResultArtifact);
+        var registry = Substitute.For<IRasterOutputRegistry>();
+        var objectStore = Substitute.For<IRasterOutputObjectStore>();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var lease = new TrackingLease();
+        registry.ResolveVisibleAsync(output.ArtifactId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterOutputRegistrationResolution?>(resolution));
+#pragma warning disable CA2012
+        SubstituteExtensions.Returns(
+            registry.AcquireObjectReadLeaseAsync(
+                output.StoreReference,
+                output.ObjectKey,
+                Arg.Any<CancellationToken>()),
+            _ => ValueTask.FromResult<IAsyncDisposable>(lease));
+#pragma warning restore CA2012
+        jobService.GetJobAsync(
+                output.Lineage.JobId,
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ExecutionJobRecord>(null!));
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var responseBody = new MemoryStream();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "owner-1")], "test"))
+        };
+        context.Request.Method = HttpMethods.Head;
+        context.Response.Body = responseBody;
+
+        var result = await RasterOutputDownloadEndpoints.HandleDownloadAsync(
+            output.ArtifactId,
+            context,
+            registry,
+            objectStore,
+            jobService,
+            CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        Assert.True(lease.IsDisposed);
+        Assert.Equal("image/tiff", context.Response.ContentType);
+        Assert.Equal(bytes.LongLength, context.Response.ContentLength);
+        Assert.Equal("private, no-store", context.Response.Headers.CacheControl.ToString());
+        Assert.Empty(responseBody.ToArray());
+        await objectStore.DidNotReceiveWithAnyArgs().OpenReadAsync(default!, default!, default);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/geoprocessing/raster-outputs/{artifactId}")]
     public async Task Download_RefusesObjectOpenWhenOwningJobIsUnauthorized()
     {
         var output = CreateOutput([1, 2, 3]);

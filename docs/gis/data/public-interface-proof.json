@@ -4170,12 +4170,13 @@
       "displayName": "Analysis content and artifact HTTP surface",
       "surfaceKind": "http-route-family",
       "protocol": "Analysis Content",
-      "canonicalIdentifier": "/api/v1/analysis/content/* + /api/v1/analysis/artifacts/* + /api/v1/analysis/jobs/*",
+      "canonicalIdentifier": "/api/v1/analysis/content/* + /api/v1/analysis/artifacts/* + /api/v1/analysis/jobs/* + /api/v1/geoprocessing/raster-outputs/*",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/api/v1/analysis/content/",
         "/api/v1/analysis/artifacts/",
-        "/api/v1/analysis/jobs/"
+        "/api/v1/analysis/jobs/",
+        "/api/v1/geoprocessing/raster-outputs/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
@@ -4183,12 +4184,13 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus analysis content endpoint integration tests",
+          "proofMechanism": "EndpointRegistry coverage plus analysis content and authenticated geoprocessing raster artifact endpoint integration tests",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/RasterOutputDownloadEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

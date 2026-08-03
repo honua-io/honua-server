@@ -469,6 +469,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _artifacts.ValidateRasterSources(plan, cancellationToken);
         GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
+        // Idempotency identifies the caller-authored request, not catalog metadata that is
+        // bound below for authorization and execution. The lookup still occurs only after all
+        // authorization gates, so capturing this immutable value early does not bypass access
+        // checks or reveal whether a referenced raster exists.
+        var requestFingerprint = CreateRequestFingerprint(plan, protocolMetadata);
+        var legacyRequestFingerprint = CreateLegacyRequestFingerprint(plan);
+
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
         // catalog process to validate; the customcode.* parameters are validated by
@@ -595,8 +602,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
-        var requestFingerprint = CreateRequestFingerprint(plan, protocolMetadata);
-        var legacyRequestFingerprint = CreateLegacyRequestFingerprint(plan);
 
         if (resolvedKey is not null)
         {

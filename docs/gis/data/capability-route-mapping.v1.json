@@ -263,6 +263,11 @@
     },
     {
       "family": "Analysis Content",
+      "routePrefix": "/api/v1/geoprocessing/raster-outputs/",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
+      "family": "Analysis Content",
       "capability": "analytics.content"
     },
     {

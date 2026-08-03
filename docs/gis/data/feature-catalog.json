@@ -4856,6 +4856,21 @@
       "capability": "fieldops.forms"
     },
     {
+      "id": "get-api-v1-geoprocessing-raster-outputs-artifactid",
+      "route": "/api/v1/geoprocessing/raster-outputs/{artifactId}",
+      "method": "GET",
+      "family": "Analysis Content",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geoprocessing.RasterOutputDownloadEndpointsTests.Download_KeepsCleanupLeaseUntilStreamCompletes",
+        "Honua.Server.Tests.Features.Geoprocessing.RasterOutputDownloadEndpointsTests.Download_RefusesObjectOpenWhenOwningJobIsUnauthorized"
+      ],
+      "proof_ledger_surface": "analysis-content",
+      "maturity": "implemented",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
       "id": "get-api-v1-metrics-cache",
       "route": "/api/v1/metrics/cache",
       "method": "GET",
@@ -12530,6 +12545,20 @@
       "proof_ledger_surface": "wfs-2.0",
       "maturity": "implemented",
       "capability": "serve.wfs"
+    },
+    {
+      "id": "head-api-v1-geoprocessing-raster-outputs-artifactid",
+      "route": "/api/v1/geoprocessing/raster-outputs/{artifactId}",
+      "method": "HEAD",
+      "family": "Analysis Content",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geoprocessing.RasterOutputDownloadEndpointsTests.Head_ReturnsMetadataWithoutOpeningObjectStream"
+      ],
+      "proof_ledger_surface": "analysis-content",
+      "maturity": "implemented",
+      "capability": "raster.cloud-cog-serving"
     },
     {
       "id": "head-api-v1-tiles-pmtiles-artifactid",
