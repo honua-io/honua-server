@@ -26,7 +26,7 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_JpegTileRequestedAsJpeg_ReturnsTile()
     {
-        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var tileData = CreateStandaloneJpeg();
         var rangeReader = CreateRangeReader(tileData);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         var cogStore = Substitute.For<ICogStore>();
@@ -56,7 +56,7 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_JpegTileRequestedAsPng_ReturnsNull()
     {
-        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var tileData = CreateStandaloneJpeg();
         var rangeReader = CreateRangeReader(tileData);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         var cogStore = Substitute.For<ICogStore>();
@@ -78,13 +78,15 @@ public class CogTileResolverTests
         result.Should().BeNull();
         await metadataReader.DidNotReceiveWithAnyArgs()
             .ReadMetadataAsync(default!, default!, default!, default);
+        await rangeReader.DidNotReceiveWithAnyArgs()
+            .ReadRangeAsync(default!, default!, default, default, default);
     }
 
     [UnitTest]
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_WithMisalignedExtent_ReturnsNull()
     {
-        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var tileData = CreateStandaloneJpeg();
         var rangeReader = CreateRangeReader(tileData);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         var cogStore = Substitute.For<ICogStore>();
@@ -112,8 +114,8 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_WithMultipleOverviews_UsesResolutionMatchedOverview()
     {
-        var fullResolutionTile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
-        var matchedOverviewTile = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+        var fullResolutionTile = CreateStandaloneJpeg();
+        var matchedOverviewTile = CreateStandaloneJpeg();
         var rangeReader = Substitute.For<ICloudRangeReader>();
         rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
         rangeReader.ReadRangeAsync("bucket", "cog.tif", Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -135,24 +137,37 @@ public class CogTileResolverTests
             NullLogger<CogTileResolver>.Instance);
 
         var metadata = new CogMetadata(
-            Width: 4096,
-            Height: 4096,
+            Width: 8,
+            Height: 8,
             BandCount: 3,
             PixelType: "uint8",
             Srid: 3857,
             Compression: "JPEG",
-            TileWidth: 256,
-            TileHeight: 256,
+            TileWidth: 1,
+            TileHeight: 1,
             OverviewLevels:
             [
-                new CogOverviewLevel(Level: 0, Width: 4096, Height: 4096, IfdOffset: 8, TileOffsets: [16], TileByteCounts: [fullResolutionTile.Length]),
-                new CogOverviewLevel(Level: 1, Width: 2048, Height: 2048, IfdOffset: 24, TileOffsets: [32], TileByteCounts: [matchedOverviewTile.Length])
+                new CogOverviewLevel(
+                    Level: 0,
+                    Width: 8,
+                    Height: 8,
+                    IfdOffset: 8,
+                    TileOffsets: Enumerable.Repeat(16L, 8 * 8).ToArray(),
+                    TileByteCounts: Enumerable.Repeat(fullResolutionTile.Length, 8 * 8).ToArray()),
+                new CogOverviewLevel(
+                    Level: 1,
+                    Width: 4,
+                    Height: 4,
+                    IfdOffset: 24,
+                    TileOffsets: Enumerable.Repeat(32L, 4 * 4).ToArray(),
+                    TileByteCounts: Enumerable.Repeat(matchedOverviewTile.Length, 4 * 4).ToArray())
             ],
-            Extent: CreateWorldExtent());
+            Extent: CreateWorldExtent(),
+            PhotometricInterpretation: 2);
 
         var result = await resolver.GetTileAsync(
             CreateRegistration(metadata),
-            level: 3,
+            level: 2,
             row: 0,
             col: 0,
             RasterFormat.JPEG);
@@ -160,6 +175,70 @@ public class CogTileResolverTests
         result.Should().NotBeNull();
         result!.Value.Data.Should().Equal(matchedOverviewTile);
         await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 32, matchedOverviewTile.Length, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_LosslessTileRequestedAsRaw_ReturnsExactPixels()
+    {
+        var tileData = new byte[256 * 256];
+        for (var i = 0; i < tileData.Length; i++)
+        {
+            tileData[i] = (byte)i;
+        }
+
+        var rangeReader = CreateRangeReader(tileData);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        var cogStore = Substitute.For<ICogStore>();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            cogStore,
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+        var metadata = CreateMetadata("NONE", tileData.Length) with
+        {
+            BandCount = 1,
+            PhotometricInterpretation = 1,
+        };
+
+        var result = await resolver.GetTileAsync(
+            CreateRegistration(metadata),
+            level: 0,
+            row: 0,
+            col: 0,
+            RasterFormat.Raw);
+
+        result.Should().NotBeNull();
+        result!.Value.ContentType.Should().Be("application/octet-stream");
+        result.Value.Data.Should().Equal(tileData);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_TruncatedJpegTables_ReturnsNull()
+    {
+        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var rangeReader = CreateRangeReader(tileData);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        var cogStore = Substitute.For<ICogStore>();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            cogStore,
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+
+        var result = await resolver.GetTileAsync(
+            CreateRegistration(CreateMetadata("JPEG", tileData.Length)),
+            level: 0,
+            row: 0,
+            col: 0,
+            RasterFormat.JPEG);
+
+        result.Should().BeNull();
     }
 
     private static ICloudRangeReader CreateRangeReader(byte[] tileData)
@@ -184,25 +263,26 @@ public class CogTileResolverTests
     };
 
     private static CogMetadata CreateMetadata(string compression, int tileLength, RasterExtent? extent = null) => new(
-        Width: 256,
-        Height: 256,
+        Width: compression == "JPEG" ? 1 : 256,
+        Height: compression == "JPEG" ? 1 : 256,
         BandCount: 3,
         PixelType: "uint8",
         Srid: 3857,
         Compression: compression,
-        TileWidth: 256,
-        TileHeight: 256,
+        TileWidth: compression == "JPEG" ? 1 : 256,
+        TileHeight: compression == "JPEG" ? 1 : 256,
         OverviewLevels:
         [
             new CogOverviewLevel(
                 Level: 0,
-                Width: 256,
-                Height: 256,
+                Width: compression == "JPEG" ? 1 : 256,
+                Height: compression == "JPEG" ? 1 : 256,
                 IfdOffset: 8,
                 TileOffsets: [16],
                 TileByteCounts: [tileLength])
         ],
-        Extent: extent ?? CreateWorldExtent());
+        Extent: extent ?? CreateWorldExtent(),
+        PhotometricInterpretation: 2);
 
     private static RasterExtent CreateWorldExtent() => new()
     {
@@ -221,4 +301,13 @@ public class CogTileResolverTests
         YMax = 256,
         Srid = 3857
     };
+
+    private static byte[] CreateStandaloneJpeg() => Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////" +
+        "2wBDAf//////////////////////////////////////////////////////////////////////////////////////" +
+        "wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF/" +
+        "/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAA" +
+        "AAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/a" +
+        "AAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EB//xAAUEQEAAAAAAAAAAAAAAAAAAAAA" +
+        "/9oACAECAQE/EB//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EB//2Q==");
 }

@@ -76,4 +76,10 @@ internal static partial class CogLog
         Level = LogLevel.Debug,
         Message = "COG {RegistrationId} cannot satisfy requested format {RequestedFormat} with native tile content type {ContentType}.")]
     public static partial void UnsupportedTileFormat(ILogger logger, long registrationId, string requestedFormat, string contentType);
+
+    [LoggerMessage(
+        EventId = 7911,
+        Level = LogLevel.Debug,
+        Message = "COG {RegistrationId} direct read rejected: disposition={Disposition}, reason={Reason}.")]
+    public static partial void DirectReadRejected(ILogger logger, long registrationId, string disposition, string reason);
 }

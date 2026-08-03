@@ -55,7 +55,7 @@ internal sealed class CogTileResolver : ICogTileResolver
         int level,
         int row,
         int col,
-        RasterFormat format, // Not yet used — tiles are served in native COG compression (JPEG passthrough / DEFLATE).
+        RasterFormat format,
         CancellationToken cancellationToken = default)
     {
         var reader = _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider);
@@ -68,14 +68,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         var cacheKey = MetadataCacheKey(registration.Id);
         var (metadata, metadataSource) = await GetOrLoadMetadataAsync(cacheKey, registration, reader, cancellationToken).ConfigureAwait(false);
 
-        // Skip COGs with unsupported compression rather than throwing.
-        // The foreach loop in GetTileForLayerAsync will try the next COG.
-        if (!TileDecompressor.IsSupported(metadata.Compression))
-        {
-            CogLog.UnsupportedCompression(_logger, metadata.Compression, registration.Id);
-            return null;
-        }
-
         // Find the best overview level for the requested zoom
         var overviewLevel = FindBestOverviewLevel(metadata, level);
         if (overviewLevel == null)
@@ -84,21 +76,25 @@ internal sealed class CogTileResolver : ICogTileResolver
             return null;
         }
 
-        if (!TryResolveAlignedTileIndex(metadata, overviewLevel, level, row, col, out var tileIndex) ||
-            tileIndex < 0 || tileIndex >= overviewLevel.TileOffsets.Length ||
-            tileIndex >= overviewLevel.TileByteCounts.Length)
+        var directPlan = CogDirectReadSupportMatrix.PlanTile(
+            metadata,
+            overviewLevel,
+            level,
+            row,
+            col,
+            format);
+        if (!directPlan.IsDirect)
         {
-            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
+            CogLog.DirectReadRejected(
+                _logger,
+                registration.Id,
+                directPlan.Disposition.ToString(),
+                directPlan.Reason.ToString());
             return null;
         }
 
-        var offset = overviewLevel.TileOffsets[tileIndex];
-        var length = overviewLevel.TileByteCounts[tileIndex];
-
-        if (offset == 0 || length == 0)
-        {
-            return null; // Empty tile
-        }
+        var offset = overviewLevel.TileOffsets[directPlan.TileIndex];
+        var length = overviewLevel.TileByteCounts[directPlan.TileIndex];
 
         // Single range read for the tile data
         var tileData = await reader.ReadRangeAsync(
@@ -113,20 +109,23 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+        var maxDecodedBytes = directPlan.ExpectedDecodedBytes > 0
+            ? directPlan.ExpectedDecodedBytes
+            : TileDecompressor.DefaultMaxDecompressedBytes;
+        var (decompressedData, contentType) = TileDecompressor.Decompress(
+            tileData,
+            metadata.Compression,
+            layout,
+            maxDecodedBytes);
 
-        if (!CanServeRequestedFormat(format, contentType))
+        var validatedPlan = CogDirectReadSupportMatrix.ValidatePayload(directPlan, decompressedData, contentType);
+        if (!validatedPlan.IsDirect)
         {
-            var requestedFormat = format switch
-            {
-                RasterFormat.PNG => "PNG",
-                RasterFormat.JPEG => "JPEG",
-                RasterFormat.TIFF => "TIFF",
-                RasterFormat.Raw => "Raw",
-                RasterFormat.COG => "COG",
-                _ => "Unknown"
-            };
-            CogLog.UnsupportedTileFormat(_logger, registration.Id, requestedFormat, contentType);
+            CogLog.DirectReadRejected(
+                _logger,
+                registration.Id,
+                validatedPlan.Disposition.ToString(),
+                validatedPlan.Reason.ToString());
             return null;
         }
 
@@ -273,85 +272,4 @@ internal sealed class CogTileResolver : ICogTileResolver
         return bestIndex >= 0 ? metadata.OverviewLevels[bestIndex] : metadata.OverviewLevels[0];
     }
 
-    private static bool TryResolveAlignedTileIndex(
-        CogMetadata metadata,
-        CogOverviewLevel overviewLevel,
-        int level,
-        int row,
-        int col,
-        out int tileIndex)
-    {
-        tileIndex = -1;
-
-        if (metadata.Srid != 3857)
-        {
-            return false;
-        }
-
-        var extentWidth = metadata.Extent.XMax - metadata.Extent.XMin;
-        var extentHeight = metadata.Extent.YMax - metadata.Extent.YMin;
-        if (extentWidth <= 0 || extentHeight <= 0 || overviewLevel.Width <= 0 || overviewLevel.Height <= 0)
-        {
-            return false;
-        }
-
-        var tileBounds = TileMath.GetTileBounds(col, row, level);
-        var overviewPixelWidth = extentWidth / overviewLevel.Width;
-        var overviewPixelHeight = extentHeight / overviewLevel.Height;
-
-        if (!TryResolvePixelCoordinate((tileBounds.XMin - metadata.Extent.XMin) / overviewPixelWidth, out var minPixelX) ||
-            !TryResolvePixelCoordinate((tileBounds.XMax - metadata.Extent.XMin) / overviewPixelWidth, out var maxPixelX) ||
-            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMax) / overviewPixelHeight, out var minPixelY) ||
-            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMin) / overviewPixelHeight, out var maxPixelY))
-        {
-            return false;
-        }
-
-        if (maxPixelX - minPixelX != metadata.TileWidth ||
-            maxPixelY - minPixelY != metadata.TileHeight ||
-            minPixelX < 0 ||
-            minPixelY < 0 ||
-            maxPixelX > overviewLevel.Width ||
-            maxPixelY > overviewLevel.Height ||
-            minPixelX % metadata.TileWidth != 0 ||
-            minPixelY % metadata.TileHeight != 0)
-        {
-            return false;
-        }
-
-        var tileX = minPixelX / metadata.TileWidth;
-        var tileY = minPixelY / metadata.TileHeight;
-        var tilesAcross = (overviewLevel.Width + metadata.TileWidth - 1) / metadata.TileWidth;
-        var tilesDown = (overviewLevel.Height + metadata.TileHeight - 1) / metadata.TileHeight;
-        if (tileX < 0 || tileX >= tilesAcross || tileY < 0 || tileY >= tilesDown)
-        {
-            return false;
-        }
-
-        tileIndex = (tileY * tilesAcross) + tileX;
-        return true;
-    }
-
-    private static bool TryResolvePixelCoordinate(double value, out int pixelCoordinate)
-    {
-        const double epsilon = 1e-6;
-        var rounded = Math.Round(value);
-        if (Math.Abs(value - rounded) > epsilon || rounded < int.MinValue || rounded > int.MaxValue)
-        {
-            pixelCoordinate = 0;
-            return false;
-        }
-
-        pixelCoordinate = (int)rounded;
-        return true;
-    }
-
-    private static bool CanServeRequestedFormat(RasterFormat requestedFormat, string contentType) => requestedFormat switch
-    {
-        RasterFormat.PNG => contentType == "image/png",
-        RasterFormat.JPEG => contentType == "image/jpeg",
-        RasterFormat.TIFF or RasterFormat.COG => contentType == "image/tiff",
-        RasterFormat.Raw => contentType == "application/octet-stream",
-        _ => false
-    };
 }

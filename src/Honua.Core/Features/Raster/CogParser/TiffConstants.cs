@@ -31,13 +31,25 @@ internal static class TiffConstants
     public const ushort TagBitsPerSample = 258;
     public const ushort TagCompression = 259;
     public const ushort TagPhotometricInterpretation = 262;
+    public const ushort TagOrientation = 274;
+    public const ushort TagPlanarConfiguration = 284;
     public const ushort TagPredictor = 317;
     public const ushort TagSamplesPerPixel = 277;
     public const ushort TagTileWidth = 322;
     public const ushort TagTileLength = 323;
     public const ushort TagTileOffsets = 324;
     public const ushort TagTileByteCounts = 325;
+    public const ushort TagSubIfds = 330;
     public const ushort TagSampleFormat = 339;
+
+    // TIFF layout values
+    public const ushort PhotometricWhiteIsZero = 0;
+    public const ushort PhotometricBlackIsZero = 1;
+    public const ushort PhotometricRgb = 2;
+    public const ushort PhotometricYCbCr = 6;
+    public const ushort OrientationTopLeft = 1;
+    public const ushort PlanarConfigurationContiguous = 1;
+    public const ushort PlanarConfigurationSeparate = 2;
 
     // SampleFormat values (TIFF tag 339)
     public const ushort SampleFormatUnsigned = 1;
@@ -47,6 +59,7 @@ internal static class TiffConstants
     // GeoTIFF tag IDs
     public const ushort TagModelTiepointTag = 33922;
     public const ushort TagModelPixelScaleTag = 33550;
+    public const ushort TagModelTransformationTag = 34264;
     public const ushort TagGeoKeyDirectoryTag = 34735;
 
     // GeoKey IDs within GeoKeyDirectoryTag

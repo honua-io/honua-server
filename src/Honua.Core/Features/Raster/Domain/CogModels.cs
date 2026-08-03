@@ -21,6 +21,13 @@ namespace Honua.Core.Features.Raster.Domain;
 /// <param name="BitsPerSample">Bits per sample (TIFF tag 258), needed to reverse a predictor.</param>
 /// <param name="Predictor">TIFF predictor (tag 317): 1 = none, 2 = horizontal differencing.</param>
 /// <param name="IsLittleEndian">Byte order of the source TIFF, which multi-byte samples are stored in.</param>
+/// <param name="IsBigTiff">Whether the source uses the BigTIFF 64-bit container.</param>
+/// <param name="PlanarConfiguration">TIFF planar configuration (1 = contiguous, 2 = separate).</param>
+/// <param name="PhotometricInterpretation">TIFF photometric interpretation tag value.</param>
+/// <param name="Orientation">TIFF orientation tag value (1 = top-left).</param>
+/// <param name="HasModelTransformation">Whether a rotation/skew-capable model transformation tag is present.</param>
+/// <param name="HasSubIfds">Whether the hierarchy declares SubIFDs that the linear reader does not traverse.</param>
+/// <param name="HasHeterogeneousOverviewLayout">Whether a main-chain overview changes codec/tile/sample layout from the base IFD.</param>
 public sealed record CogMetadata(
     int Width,
     int Height,
@@ -34,7 +41,14 @@ public sealed record CogMetadata(
     RasterExtent Extent,
     int BitsPerSample = 8,
     int Predictor = 1,
-    bool IsLittleEndian = true);
+    bool IsLittleEndian = true,
+    bool IsBigTiff = false,
+    int PlanarConfiguration = 1,
+    int PhotometricInterpretation = -1,
+    int Orientation = 1,
+    bool HasModelTransformation = false,
+    bool HasSubIfds = false,
+    bool HasHeterogeneousOverviewLayout = false);
 
 /// <summary>
 /// One IFD resolution level within a COG.

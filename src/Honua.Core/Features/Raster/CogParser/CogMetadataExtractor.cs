@@ -53,6 +53,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         double xMin = 0, yMin = 0, xMax = 0, yMax = 0;
         double pixelScaleX = 0, pixelScaleY = 0;
         bool hasPixelScale = false;
+        var planarConfiguration = (int)TiffConstants.PlanarConfigurationContiguous;
+        var photometricInterpretation = -1;
+        var orientation = (int)TiffConstants.OrientationTopLeft;
+        var hasModelTransformation = false;
+        var hasSubIfds = false;
+        var hasHeterogeneousOverviewLayout = false;
 
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
@@ -90,7 +96,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             int ifdWidth = 0, ifdHeight = 0, ifdTileWidth = 256, ifdTileHeight = 256;
             ushort ifdCompression = TiffConstants.CompressionNone;
             ushort samplesPerPixel = 1;
+            var ifdBitsPerSample = 8;
+            var ifdSampleFormat = TiffConstants.SampleFormatUnsigned;
             var ifdPredictor = TilePixelLayout.PredictorNone;
+            var ifdPlanarConfiguration = (int)TiffConstants.PlanarConfigurationContiguous;
+            var ifdPhotometricInterpretation = -1;
+            var ifdOrientation = (int)TiffConstants.OrientationTopLeft;
             IfdEntry? tileOffsetsEntry = null;
             IfdEntry? tileByteCountsEntry = null;
 
@@ -113,6 +124,15 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                     case TiffConstants.TagCompression:
                         ifdCompression = (ushort)entry.ValueOrOffset;
                         break;
+                    case TiffConstants.TagPhotometricInterpretation:
+                        ifdPhotometricInterpretation = (int)entry.ValueOrOffset;
+                        break;
+                    case TiffConstants.TagOrientation:
+                        ifdOrientation = (int)entry.ValueOrOffset;
+                        break;
+                    case TiffConstants.TagPlanarConfiguration:
+                        ifdPlanarConfiguration = (int)entry.ValueOrOffset;
+                        break;
                     case TiffConstants.TagSamplesPerPixel:
                         samplesPerPixel = (ushort)entry.ValueOrOffset;
                         break;
@@ -125,25 +145,28 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                     case TiffConstants.TagTileByteCounts:
                         tileByteCountsEntry = entry;
                         break;
-                    case TiffConstants.TagBitsPerSample when levelIndex == 0:
+                    case TiffConstants.TagSubIfds:
+                        hasSubIfds = true;
+                        break;
+                    case TiffConstants.TagBitsPerSample:
                         if (entry.Count >= 1)
                         {
                             var bpsData = await ReadIntArrayFromEntryAsync(
                                 reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                             if (bpsData.Length > 0)
                             {
-                                bitsPerSample = bpsData[0];
+                                ifdBitsPerSample = bpsData[0];
                             }
                         }
                         break;
-                    case TiffConstants.TagSampleFormat when levelIndex == 0:
+                    case TiffConstants.TagSampleFormat:
                         if (entry.Count >= 1)
                         {
                             var sfData = await ReadIntArrayFromEntryAsync(
                                 reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                             if (sfData.Length > 0)
                             {
-                                sampleFormat = (ushort)sfData[0];
+                                ifdSampleFormat = (ushort)sfData[0];
                             }
                         }
                         break;
@@ -157,6 +180,9 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         (pixelScaleX, pixelScaleY) = await ExtractPixelScaleAsync(reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         hasPixelScale = true;
                         break;
+                    case TiffConstants.TagModelTransformationTag:
+                        hasModelTransformation = true;
+                        break;
                 }
             }
 
@@ -169,7 +195,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 tileWidth = ifdTileWidth;
                 tileHeight = ifdTileHeight;
                 compression = ifdCompression;
+                bitsPerSample = ifdBitsPerSample;
+                sampleFormat = ifdSampleFormat;
                 predictor = ifdPredictor;
+                planarConfiguration = ifdPlanarConfiguration;
+                photometricInterpretation = ifdPhotometricInterpretation;
+                orientation = ifdOrientation;
 
                 // Classify pixel type now that both BitsPerSample and SampleFormat are collected.
                 pixelType = ClassifyPixelType(bitsPerSample, sampleFormat);
@@ -195,6 +226,19 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                     yMin = 0;
                     yMax = height;
                 }
+            }
+            else if (ifdCompression != compression ||
+                     samplesPerPixel != bandCount ||
+                     ifdTileWidth != tileWidth ||
+                     ifdTileHeight != tileHeight ||
+                     ifdBitsPerSample != bitsPerSample ||
+                     ifdSampleFormat != sampleFormat ||
+                     ifdPredictor != predictor ||
+                     ifdPlanarConfiguration != planarConfiguration ||
+                     ifdPhotometricInterpretation != photometricInterpretation ||
+                     ifdOrientation != orientation)
+            {
+                hasHeterogeneousOverviewLayout = true;
             }
 
             // Read tile offsets and byte counts
@@ -228,7 +272,16 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             tileWidth, tileHeight,
             overviewLevels.ToArray(),
             new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
-            bitsPerSample, predictor, parser.IsLittleEndian);
+            bitsPerSample,
+            predictor,
+            parser.IsLittleEndian,
+            parser.IsBigTiff,
+            planarConfiguration,
+            photometricInterpretation,
+            orientation,
+            hasModelTransformation,
+            hasSubIfds,
+            hasHeterogeneousOverviewLayout);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(

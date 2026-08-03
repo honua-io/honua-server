@@ -239,6 +239,38 @@ public class TiffIfdParserTests
     }
 
     [Fact]
+    public void TileDecompressor_DeflateAtExactLimit_SucceedsWithoutReadingPastBound()
+    {
+        byte[] rawData = [0x01, 0x02, 0x03, 0x04];
+        using var stream = new MemoryStream();
+        using (var zlib = new System.IO.Compression.ZLibStream(
+                   stream,
+                   System.IO.Compression.CompressionMode.Compress,
+                   leaveOpen: true))
+        {
+            zlib.Write(rawData);
+        }
+
+        var (data, _) = TileDecompressor.Decompress(
+            stream.ToArray(),
+            "DEFLATE",
+            maxDecompressedBytes: rawData.Length);
+
+        data.Should().Equal(rawData);
+    }
+
+    [Fact]
+    public void TileDecompressor_NoneBeyondLimit_ThrowsBeforeCopying()
+    {
+        var act = () => TileDecompressor.Decompress(
+            new byte[5],
+            "NONE",
+            maxDecompressedBytes: 4);
+
+        act.Should().Throw<InvalidDataException>().WithMessage("*decompression bomb*");
+    }
+
+    [Fact]
     public void TileDecompressor_EmptyString_TreatedAsNone()
     {
         // Arrange — empty compression string (DB default when column is NULL)

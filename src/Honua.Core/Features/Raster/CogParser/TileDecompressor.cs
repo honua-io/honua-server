@@ -68,6 +68,14 @@ public static class TileDecompressor
         in TilePixelLayout layout,
         int maxDecompressedBytes = DefaultMaxDecompressedBytes)
     {
+        if (maxDecompressedBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxDecompressedBytes),
+                maxDecompressedBytes,
+                "The decompressed byte limit must be positive.");
+        }
+
         switch (compression)
         {
             case "JPEG":
@@ -76,6 +84,11 @@ public static class TileDecompressor
             case "NONE" or "":
                 // NONE tiles are already pixel data; a predictor still has to be reversed, but the
                 // caller owns tileData so an in-place pass would mutate their buffer.
+                if (tileData.Length > maxDecompressedBytes)
+                {
+                    throw new InvalidDataException(
+                        $"NONE tile contains {tileData.Length} bytes, exceeding the {maxDecompressedBytes}-byte limit (possible decompression bomb).");
+                }
                 return (ApplyPredictor(tileData, layout, copyFirst: true), "application/octet-stream");
 
             case "DEFLATE":
@@ -156,32 +169,32 @@ public static class TileDecompressor
         {
             while (true)
             {
-                if (written == scratch.Length)
+                var remaining = maxDecompressedBytes - written;
+                if (remaining == 0)
                 {
-                    if (written >= maxDecompressedBytes)
+                    if (zlib.ReadByte() >= 0)
                     {
                         throw new InvalidDataException(
                             $"DEFLATE tile decompressed beyond the {maxDecompressedBytes}-byte limit; refusing to inflate further (possible decompression bomb).");
                     }
 
+                    break;
+                }
+
+                if (written == scratch.Length)
+                {
                     var bigger = pool.Rent((int)Math.Min(scratch.Length * 2L, maxDecompressedBytes));
                     Buffer.BlockCopy(scratch, 0, bigger, 0, written);
                     pool.Return(scratch);
                     scratch = bigger;
                 }
 
-                var read = zlib.Read(scratch.AsSpan(written));
+                var read = zlib.Read(scratch.AsSpan(written, Math.Min(scratch.Length - written, remaining)));
                 if (read == 0)
                 {
                     break;
                 }
                 written += read;
-            }
-
-            if (written > maxDecompressedBytes)
-            {
-                throw new InvalidDataException(
-                    $"DEFLATE tile decompressed to {written} bytes, exceeding the {maxDecompressedBytes}-byte limit (possible decompression bomb).");
             }
 
             var result = new byte[written];
