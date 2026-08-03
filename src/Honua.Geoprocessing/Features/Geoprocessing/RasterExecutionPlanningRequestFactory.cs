@@ -12,6 +12,7 @@ internal static class RasterExecutionPlanningRequestFactory
     private const long InlineDecodedExpansionFactor = 64;
     private const long BytesPerSample = 8;
     private const long ScratchExpansionFactor = 2;
+    private const long GdalGridDefaultDimension = 256;
 
     public static RasterExecutionPlanningRequest Create(
         AnalysisPlan plan,
@@ -67,27 +68,29 @@ internal static class RasterExecutionPlanningRequestFactory
         AnalysisPlanStep step,
         RasterSourceDescriptor[] sources)
     {
-        var sourceCount = Math.Max(sources.Length, 1);
-        var bandCount = TrySumBands(sources);
-        var inputPixels = TrySumSelectedPixels(sources);
-        long? decodedBytes;
+        var legacy = sources.Length == 0 ? BuildLegacyMetadata(step) : null;
+        var sourceCount = legacy?.SourceCount ?? sources.Length;
+        var bandCount = legacy?.BandCount ?? TrySumBands(sources);
+        var inputPixels = legacy?.InputPixels ?? TrySumSelectedPixels(sources);
+        var outputPixels = TryReadOutputPixels(step) ?? legacy?.DefaultOutputPixels ?? inputPixels;
+        long? decodedBytes = legacy?.DecodedBytes;
 
-        if (inputPixels is { } pixels && bandCount is { } bands)
+        if (decodedBytes is null && inputPixels is { } pixels && bandCount is { } bands)
         {
             decodedBytes = SaturatingMultiply(SaturatingMultiply(pixels, bands), BytesPerSample);
         }
-        else if (TryGetBoundedInlineBytes(step, sources) is { } inlineBytes)
+        else if (decodedBytes is null && TryGetBoundedInlineBytes(step, sources) is { } inlineBytes)
         {
             bandCount ??= 1;
             decodedBytes = SaturatingMultiply(inlineBytes, InlineDecodedExpansionFactor);
             inputPixels ??= Math.Max(decodedBytes.Value / BytesPerSample, 1);
         }
-        else
+
+        if (decodedBytes is not null && outputPixels is { } output)
         {
-            decodedBytes = null;
+            decodedBytes = Math.Max(decodedBytes.Value, SaturatingMultiply(output, BytesPerSample));
         }
 
-        var outputPixels = TryReadOutputPixels(step) ?? inputPixels;
         long? scratchBytes = decodedBytes is { } decoded
             ? SaturatingMultiply(decoded, ScratchExpansionFactor)
             : null;
@@ -107,6 +110,102 @@ internal static class RasterExecutionPlanningRequestFactory
             ExpectedDatabaseWork = databaseWork,
         };
     }
+
+    private static LegacyRasterMetadata BuildLegacyMetadata(AnalysisPlanStep step)
+    {
+        var processId = step.ProcessId;
+        if (string.Equals(processId, "raster.mosaic", StringComparison.Ordinal)
+            || string.Equals(processId, "raster.map-algebra", StringComparison.Ordinal))
+        {
+            var payloads = ReadSeparatedPayloads(step, "sources");
+            return BuildRasterPayloadMetadata(payloads);
+        }
+
+        if (string.Equals(processId, "raster.spectral-index", StringComparison.Ordinal))
+        {
+            var payloads = ResolveSpectralRoleNames(step)
+                .Select(role => ReadInput(step, role))
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>()
+                .ToArray();
+            return BuildRasterPayloadMetadata(payloads);
+        }
+
+        if (string.Equals(processId, "raster.interpolate-idw", StringComparison.Ordinal)
+            || string.Equals(processId, "raster.interpolate-kriging", StringComparison.Ordinal))
+        {
+            var pointBytes = TryGetEncodedPayloadBytes(ReadInput(step, "points"));
+            long? expandedBytes = pointBytes is { } bytes
+                ? SaturatingMultiply(bytes, InlineDecodedExpansionFactor)
+                : null;
+            long? pointUnits = pointBytes is { } payloadBytes ? Math.Max(payloadBytes, 1) : null;
+            return new LegacyRasterMetadata(
+                SourceCount: 1,
+                BandCount: 1,
+                InputPixels: pointUnits,
+                DecodedBytes: expandedBytes,
+                DefaultOutputPixels: SaturatingMultiply(GdalGridDefaultDimension, GdalGridDefaultDimension));
+        }
+
+        var sourceBytes = TryGetEncodedPayloadBytes(ReadInput(step, "source"));
+        long? decodedBytes = sourceBytes is { } encodedBytes
+            ? SaturatingMultiply(encodedBytes, InlineDecodedExpansionFactor)
+            : null;
+        long? inputPixels = decodedBytes is { } decoded ? Math.Max(decoded / BytesPerSample, 1) : null;
+        return new LegacyRasterMetadata(1, 1, inputPixels, decodedBytes, null);
+    }
+
+    private static LegacyRasterMetadata BuildRasterPayloadMetadata(string[] payloads)
+    {
+        if (payloads.Length == 0)
+        {
+            return new LegacyRasterMetadata(1, 1, null, null, null);
+        }
+
+        long encodedBytes = 0;
+        foreach (var payload in payloads)
+        {
+            encodedBytes = SaturatingAdd(
+                encodedBytes,
+                TryGetEncodedPayloadBytes(payload) ?? 0);
+        }
+
+        var decodedBytes = SaturatingMultiply(encodedBytes, InlineDecodedExpansionFactor);
+        var sourceCount = payloads.Length;
+        return new LegacyRasterMetadata(
+            SourceCount: sourceCount,
+            BandCount: sourceCount,
+            InputPixels: Math.Max(decodedBytes / BytesPerSample, 1),
+            DecodedBytes: decodedBytes,
+            DefaultOutputPixels: null);
+    }
+
+    private static string[] ReadSeparatedPayloads(AnalysisPlanStep step, string key)
+        => ReadInput(step, key)?.Split(
+            '|',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? [];
+
+    private static string[] ResolveSpectralRoleNames(AnalysisPlanStep step)
+    {
+        var index = ReadInput(step, "index")?.Trim().ToUpperInvariant();
+        return index switch
+        {
+            "NDVI" or "SAVI" => ["nir", "red"],
+            "NDWI" => ["green", "nir"],
+            "NDBI" => ["swir", "nir"],
+            "EVI" => ["nir", "red", "blue"],
+            _ => ["red", "nir", "green", "swir", "blue"],
+        };
+    }
+
+    private static string? ReadInput(AnalysisPlanStep step, string key)
+        => step.Inputs.TryGetValue(key, out var value) ? value : null;
+
+    private static long? TryGetEncodedPayloadBytes(string? encoded)
+        => string.IsNullOrWhiteSpace(encoded)
+            ? null
+            : SaturatingMultiply(encoded.Length, 3) / 4;
 
     private static RasterInputResidency ToResidency(RasterSourceDescriptor source) => source switch
     {
@@ -132,12 +231,13 @@ internal static class RasterExecutionPlanningRequestFactory
             return RasterInputResidency.Inline;
         }
 
-        // The legacy layerId/rasterId path resolves through the registered COG catalog.
-        // Classify the reference from request metadata before that compatibility path reads
-        // object bytes into the eventual native-worker spec.
+        // The legacy layerId/rasterId compatibility path is materialized onto the canonical
+        // inline 'source' before the durable planner runs. Classify its execution residency,
+        // not the backing catalog's storage implementation, so native local/remote placement
+        // remains based on the payload the worker actually consumes.
         if (HasPositiveLong(step, "rasterId") || HasNonNegativeInt(step, "layerId"))
         {
-            return RasterInputResidency.ObjectStoreCog;
+            return RasterInputResidency.Inline;
         }
 
         return RasterInputResidency.Inline;
@@ -211,7 +311,7 @@ internal static class RasterExecutionPlanningRequestFactory
 
         // Metadata-only upper bound for legacy base64. Validation/worker decoding remains
         // authoritative; the planner never allocates or decodes the payload.
-        return SaturatingMultiply(encoded.Length, 3) / 4;
+        return TryGetEncodedPayloadBytes(encoded);
     }
 
     private static long? TryReadOutputPixels(AnalysisPlanStep step)
@@ -238,7 +338,13 @@ internal static class RasterExecutionPlanningRequestFactory
             return 0;
         }
 
-        return TryReadPositiveLong(step, "zoneCount", out var zoneCount) ? zoneCount : null;
+        // The accepted contract carries base64 GeoJSON in 'zones', not a separate trusted
+        // zoneCount. Without decoding in the web process, decoded payload bytes are a safe upper
+        // bound on feature count (every feature occupies at least one byte). This completes the
+        // cost vector without trusting a caller-supplied count or allocating the GeoJSON here;
+        // the native worker still parses it and enforces exact feature/vertex caps.
+        var zoneBytes = TryGetEncodedPayloadBytes(ReadInput(step, "zones"));
+        return zoneBytes is { } bytes ? Math.Max(bytes, 1) : null;
     }
 
     private static bool TryReadPositiveLong(AnalysisPlanStep step, string key, out long value)
@@ -277,4 +383,11 @@ internal static class RasterExecutionPlanningRequestFactory
 
         return left > long.MaxValue / right ? long.MaxValue : left * right;
     }
+
+    private sealed record LegacyRasterMetadata(
+        long SourceCount,
+        long? BandCount,
+        long? InputPixels,
+        long? DecodedBytes,
+        long? DefaultOutputPixels);
 }

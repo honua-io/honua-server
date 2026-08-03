@@ -516,19 +516,19 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_RasterPlan_PlansBeforeLegacySourceMaterialization()
+    public async Task SubmitJob_RasterPlan_ResolvesLegacySourceBeforePlanningAndKeepsReferenceFingerprint()
     {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
         resolver.ResolveAsync(
                 Arg.Any<RasterSourceReference>(),
                 Arg.Any<long>(),
                 Arg.Any<CancellationToken>())
             .Returns(RasterSourceResolution.Success([1, 2, 3]));
-        var planner = Substitute.For<IRasterExecutionPlanner>();
-        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>())
-            .Returns(_ => throw new RasterExecutionPlanningException(
-                "metadata-only-refusal",
-                "Metadata-only raster planning refused the request."));
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
         var sut = new GeoprocessingJobService(
             _progressStore,
             [_cancellationNotifier],
@@ -562,12 +562,16 @@ public sealed class GeoprocessingJobServiceTests
                 },
             ],
         };
+        var referenceFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
 
-        var act = () => sut.SubmitJobAsync(plan, null, CreatePrincipal());
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
-        await act.Should().ThrowAsync<GeoprocessingAdmissionException>()
-            .WithMessage("*Metadata-only raster planning refused*");
-        await resolver.DidNotReceive().ResolveAsync(
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.InputResidencies.Should().Equal(RasterInputResidency.Inline);
+        job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source"].Should().Be("AQID");
+        job.Audit.RequestFingerprint.Should().Be(referenceFingerprint);
+        await resolver.Received(1).ResolveAsync(
             Arg.Any<RasterSourceReference>(),
             Arg.Any<long>(),
             Arg.Any<CancellationToken>());

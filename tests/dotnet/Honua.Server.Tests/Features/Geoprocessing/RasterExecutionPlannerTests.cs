@@ -257,7 +257,7 @@ public sealed class RasterExecutionPlannerTests
     }
 
     [Fact]
-    public void RequestFactory_LegacyCatalogReference_ClassifiesObjectStoreWithoutMaterializing()
+    public void RequestFactory_LegacyCatalogReference_ClassifiesEventualInlineResidencyWithoutMaterializing()
     {
         var process = CreateRegistry().Find("raster.clip")!;
         var plan = new AnalysisPlan
@@ -283,10 +283,109 @@ public sealed class RasterExecutionPlannerTests
             remoteBackendAvailable: false,
             remoteBackend: null);
 
-        request.InputResidencies.Should().Equal(RasterInputResidency.ObjectStoreCog);
+        request.InputResidencies.Should().Equal(RasterInputResidency.Inline);
         request.Cost.DecodedBytes.Should().BeNull();
         request.Cost.ExpectedScratchBytes.Should().BeNull();
         plan.Steps[0].Inputs.Should().NotContainKey("source");
+    }
+
+    [Fact]
+    public void RequestFactory_AlternateLegacyRasterInputs_ProduceCompleteLocalNativeEstimates()
+    {
+        AssertLegacyInputsUseLocal(
+            "raster.mosaic",
+            new Dictionary<string, string>
+            {
+                ["sources"] = "AAAA|BBBB",
+                ["operator"] = "last",
+            },
+            expectedSourceCount: 2);
+        AssertLegacyInputsUseLocal(
+            "raster.map-algebra",
+            new Dictionary<string, string>
+            {
+                ["sources"] = "AAAA|BBBB",
+                ["expression"] = "A+B",
+            },
+            expectedSourceCount: 2);
+        AssertLegacyInputsUseLocal(
+            "raster.spectral-index",
+            new Dictionary<string, string>
+            {
+                ["index"] = "NDVI",
+                ["nir"] = "AAAA",
+                ["red"] = "BBBB",
+            },
+            expectedSourceCount: 2);
+        AssertLegacyInputsUseLocal(
+            "raster.interpolate-idw",
+            new Dictionary<string, string>
+            {
+                ["points"] = "e30=",
+            },
+            expectedSourceCount: 1);
+    }
+
+    [Fact]
+    public void RequestFactory_ZonalStatistics_DerivesBoundedZoneCountFromAcceptedZonesPayload()
+    {
+        var request = CreateLegacyRequest(
+            "raster.zonal-statistics",
+            new Dictionary<string, string>
+            {
+                ["source"] = "AAAA",
+                ["zones"] = "e30=",
+            });
+
+        request.Cost.ZoneCount.Should().Be(3,
+            "the decoded-byte upper bound completes planning without trusting a nonexistent zoneCount input");
+        _sut.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    private void AssertLegacyInputsUseLocal(
+        string processId,
+        Dictionary<string, string> inputs,
+        long expectedSourceCount)
+    {
+        var request = CreateLegacyRequest(processId, inputs);
+
+        request.Cost.SourceCount.Should().Be(expectedSourceCount);
+        request.Cost.BandCount.Should().NotBeNull();
+        request.Cost.InputPixels.Should().NotBeNull();
+        request.Cost.OutputPixels.Should().NotBeNull();
+        request.Cost.DecodedBytes.Should().NotBeNull();
+        request.Cost.ExpectedScratchBytes.Should().NotBeNull();
+        request.Cost.ExpectedDatabaseWork.Should().NotBeNull();
+        _sut.Plan(request).Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+    }
+
+    private static RasterExecutionPlanningRequest CreateLegacyRequest(
+        string processId,
+        Dictionary<string, string> inputs)
+    {
+        var process = CreateRegistry().Find(processId)!;
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-" + processId,
+            IntentId = "intent-" + processId,
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = processId,
+                    Inputs = inputs,
+                },
+            ],
+        };
+
+        return RasterExecutionPlanningRequestFactory.Create(
+            plan,
+            process,
+            new RasterExecutionPlannerOptions(),
+            remoteBackendAvailable: false,
+            remoteBackend: null);
     }
 
     private const long MiB = 1024L * 1024L;

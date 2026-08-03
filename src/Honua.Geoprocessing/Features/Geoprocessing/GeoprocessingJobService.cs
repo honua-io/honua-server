@@ -444,20 +444,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        // Resolve the legacy layerId/rasterId compatibility path before planning so the planner
+        // sees the canonical inline source that the native worker will consume. The request
+        // fingerprint above remains bound to the caller's stable catalog reference rather than
+        // the materialized bytes. The planner itself still examines metadata/encoded length only;
+        // it never decodes the raster or loads GDAL into the serving process.
+        plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
+
         var rasterDefinition = !isCustomCode && plan.Steps[0].ProcessId is { } rasterProcessId
             ? _processCatalog.GetProcess(rasterProcessId)
             : null;
         var rasterDecision = await _dispatcher
             .PlanRasterExecutionAsync(plan, rasterDefinition, cancellationToken)
             .ConfigureAwait(false);
-
-        // Resolve any native raster/surface step that references a registered catalog
-        // raster by layerId/rasterId, materializing the bytes onto the canonical base64
-        // 'source' input the worker reads (#2264). Planning above consumes only the caller's
-        // validated descriptors/reference metadata, never the materialized payload. The
-        // fingerprint is likewise computed on the original reference-carrying plan so
-        // idempotency keys map to the request; the legacy spec below carries resolved bytes.
-        plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
