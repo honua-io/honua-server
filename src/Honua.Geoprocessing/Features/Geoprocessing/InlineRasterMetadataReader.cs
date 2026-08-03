@@ -125,7 +125,7 @@ internal static class InlineRasterMetadataReader
         ulong? width = null;
         ulong? height = null;
         ulong bands = 1;
-        ulong sampleBytes = 8;
+        ulong? sampleBytes = null;
         double? pixelScaleX = null;
         double? pixelScaleY = null;
         AffinePixelTransform? modelTransformation = null;
@@ -211,7 +211,7 @@ internal static class InlineRasterMetadataReader
                         return false;
                     }
 
-                    sampleBytes = Math.Max(sampleBytes, (value + 7) / 8);
+                    sampleBytes = Math.Max(sampleBytes ?? 0, (value + 7) / 8);
                     break;
                 case 277:
                     bands = value;
@@ -219,12 +219,13 @@ internal static class InlineRasterMetadataReader
             }
         }
 
+        var effectiveSampleBytes = sampleBytes ?? 8;
         if (width is null
             || height is null
             || width > long.MaxValue
             || height > long.MaxValue
             || bands > long.MaxValue
-            || sampleBytes > long.MaxValue)
+            || effectiveSampleBytes > long.MaxValue)
         {
             return false;
         }
@@ -241,7 +242,7 @@ internal static class InlineRasterMetadataReader
             (long)width,
             (long)height,
             (long)bands,
-            (long)sampleBytes,
+            (long)effectiveSampleBytes,
             pixelScaleX,
             pixelScaleY);
         return true;
@@ -621,7 +622,7 @@ internal static class InlineRasterMetadataReader
         ulong? width = null;
         ulong? height = null;
         ulong bands = 1;
-        ulong sampleBytes = 8;
+        ulong? sampleBytes = null;
         double? pixelScaleX = null;
         double? pixelScaleY = null;
         AffinePixelTransform? modelTransformation = null;
@@ -704,7 +705,7 @@ internal static class InlineRasterMetadataReader
                         return false;
                     }
 
-                    sampleBytes = Math.Max(sampleBytes, (value + 7) / 8);
+                    sampleBytes = Math.Max(sampleBytes ?? 0, (value + 7) / 8);
                     break;
                 case 277:
                     bands = value;
@@ -712,12 +713,13 @@ internal static class InlineRasterMetadataReader
             }
         }
 
+        var effectiveSampleBytes = sampleBytes ?? 8;
         if (width is null
             || height is null
             || width > long.MaxValue
             || height > long.MaxValue
             || bands > long.MaxValue
-            || sampleBytes > long.MaxValue)
+            || effectiveSampleBytes > long.MaxValue)
         {
             return false;
         }
@@ -734,7 +736,7 @@ internal static class InlineRasterMetadataReader
             (long)width,
             (long)height,
             (long)bands,
-            (long)sampleBytes,
+            (long)effectiveSampleBytes,
             pixelScaleX,
             pixelScaleY);
         return true;

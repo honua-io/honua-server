@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
@@ -221,6 +222,8 @@ internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAda
             Kind = kind,
             ProcessId = step.ProcessId,
             Inputs = step.Inputs ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            RasterSources = step.RasterSources
+                ?? new Dictionary<string, RasterSourceDescriptor>(StringComparer.Ordinal),
             DependsOn = step.DependsOn ?? []
         };
     }
@@ -390,6 +393,8 @@ internal sealed class AnalysisPlanStepPackagePayload
     public string? ProcessId { get; init; }
 
     public IReadOnlyDictionary<string, string>? Inputs { get; init; }
+
+    public IReadOnlyDictionary<string, RasterSourceDescriptor>? RasterSources { get; init; }
 
     public IReadOnlyList<string>? DependsOn { get; init; }
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal;
 using Honua.Worker.Gdal.Execution;
@@ -75,7 +76,38 @@ public sealed class GdalWorkerOptionsConfigBindingTests
         var hardening = provider.GetRequiredService<IOptions<GdalHardeningOptions>>().Value;
 
         worker.AllowedRasterInputFormats.Should().BeEquivalentTo(new[] { "TIFF", "PNG", "JPEG" });
+        hardening.SkipDrivers.Should().Equal(
+            RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames);
         hardening.SkipDrivers.Should().Contain("JP2OpenJPEG").And.Contain("VRT").And.Contain("NITF");
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_CapabilityPolicyRequiresRestartToChange()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "TIFF",
+                ["GdalWorker:Hardening:SkipDrivers:0"] = "VRT",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        services.AddGdalProcessExecutors(configuration);
+        using var provider = services.BuildServiceProvider();
+        var workerOptions = provider.GetRequiredService<IOptionsMonitor<GdalWorkerOptions>>();
+        var hardeningOptions = provider.GetRequiredService<IOptionsMonitor<GdalHardeningOptions>>();
+        var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+
+        configuration["GdalWorker:AllowedRasterInputFormats:0"] = "PNG";
+        configuration["GdalWorker:Hardening:SkipDrivers:0"] = "GTiff";
+        configuration.Reload();
+
+        workerOptions.CurrentValue.AllowedRasterInputFormats.Should().Equal("TIFF");
+        hardeningOptions.CurrentValue.SkipDrivers.Should().Equal("VRT");
+        registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId)!
+            .Engines.Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes.Should().Equal("image/tiff");
     }
 
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)

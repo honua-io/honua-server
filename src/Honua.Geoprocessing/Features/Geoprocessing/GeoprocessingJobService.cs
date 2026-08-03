@@ -212,6 +212,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
+        var rasterValidationViolations = _artifacts.GetRasterSourceValidationFailures(plan);
+        violations.AddRange(rasterValidationViolations);
 
         if (string.IsNullOrWhiteSpace(plan.PlanId))
         {
@@ -245,7 +247,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 
-        var rasterExecutionViolation = GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan);
+        // A malformed descriptor or parameter binding gets its precise diagnostics instead
+        // of the lower-value execution-boundary refusal that applies to otherwise valid
+        // direct durable references.
+        var rasterExecutionViolation = rasterValidationViolations.Count == 0
+            ? GeoprocessingJobArtifactService.GetTypedRasterExecutionViolation(plan)
+            : null;
         if (rasterExecutionViolation is not null)
         {
             violations.Add(rasterExecutionViolation);
@@ -287,6 +294,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
+        _artifacts.ValidateRasterSources(plan, CancellationToken.None);
         EnsurePlanCatalogValid(plan);
         GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
