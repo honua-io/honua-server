@@ -51,6 +51,25 @@ class ResolvePolicyTests(unittest.TestCase):
 
         self.assertFalse(decision.allow_breaking_changes)
 
+    def test_ResolvePolicy_NonRenderedTaskMarkerSpacing_DoesNotAllowBreakingChanges(self):
+        bodies = {
+            "no whitespace after list marker": (
+                "-[x] `OPENAPI_BREAKING_CHANGE_APPROVED`"
+            ),
+            "no whitespace after checkbox": (
+                "- [x]`OPENAPI_BREAKING_CHANGE_APPROVED`"
+            ),
+            "no task-list whitespace": (
+                "-[x]`OPENAPI_BREAKING_CHANGE_APPROVED`"
+            ),
+        }
+
+        for scenario, body in bodies.items():
+            with self.subTest(scenario=scenario):
+                decision = POLICY.resolve_policy("false", body)
+
+                self.assertFalse(decision.allow_breaking_changes)
+
     def test_ResolvePolicy_MarkerInNonRenderedMarkdown_DoesNotAllowBreakingChanges(self):
         marker = "- [x] `OPENAPI_BREAKING_CHANGE_APPROVED` - example only"
         bodies = {

@@ -19,7 +19,8 @@ APPROVAL_MARKER = "OPENAPI_BREAKING_CHANGE_APPROVED"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 APPROVAL_PATTERN = re.compile(
-    rf"^[ ]{{0,3}}-\s*\[[xX]\]\s*`{re.escape(APPROVAL_MARKER)}`(?:\s*(?:-|—).*)?$",
+    rf"^[ ]{{0,3}}-[ \t]+\[[xX]\][ \t]+`{re.escape(APPROVAL_MARKER)}`"
+    r"(?:[ \t]*(?:-|—).*)?$",
     re.MULTILINE,
 )
 HTML_COMMENT_PATTERN = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
