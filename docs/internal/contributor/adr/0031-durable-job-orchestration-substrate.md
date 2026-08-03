@@ -114,7 +114,12 @@ Millisecond timestamps break ties within a band.
   at 10 minutes.
 - When a heartbeat expires and retries remain, the reconciler requeues the job
   with a computed backoff delay. `AttemptCount` on the record tracks attempts.
-- When retries are exhausted, the job transitions to Failed.
+- When retries are exhausted, a job without a current fenced sink intent
+  transitions directly to Failed. A job with any such intent instead records
+  requested status `Failed` and enters `OutputPublicationPhase.Terminalizing`.
+  The output reconciler conditionally aborts every uncommitted intent under its
+  attempt fence before changing the canonical status to Failed. Exhausting the
+  retry budget therefore never bypasses sink terminalization.
 
 ### Timeout Policy
 
