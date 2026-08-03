@@ -786,15 +786,18 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
-    public void Fingerprint_EmptyRasterSources_PreservesLegacyFingerprint()
+    public void Fingerprint_EmptyRasterSources_PreservesLegacyFingerprintPayload()
     {
         var protoPlan = CreateValidPlan();
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
 
-        var actual = GeoprocessingJobService.CreateRequestFingerprint(domainPlan);
+        var legacy = GeoprocessingJobService.CreateLegacyRequestFingerprint(domainPlan);
+        var current = GeoprocessingJobService.CreateRequestFingerprint(domainPlan);
 
-        actual.Should().Be(ComputeExpectedFingerprint(protoPlan),
+        legacy.Should().Be(ComputeExpectedFingerprint(protoPlan),
             "rolling deployment retries for legacy plans must match fingerprints written before typed raster sources existed");
+        current.Should().Be($"gp-v2:{legacy}",
+            "new records must remain distinguishable so placement or resource changes conflict safely");
     }
 
     [UnitTest]
