@@ -405,14 +405,11 @@ internal static class GeoprocessingServiceCollectionExtensions
             .GetSection("GdalWorker:AllowedRasterInputFormats")
             .GetChildren()
             .ToArray();
-        if (configuredFormats.Length == 0)
-        {
-            return new RasterEngineCapabilityRegistry();
-        }
-
         return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
-            configuredFormats
-                .Select(format => format.Value)
-                .OfType<string>());
+            configuredFormats.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
+                : configuredFormats
+                    .Select(format => format.Value)
+                    .OfType<string>());
     }
 }

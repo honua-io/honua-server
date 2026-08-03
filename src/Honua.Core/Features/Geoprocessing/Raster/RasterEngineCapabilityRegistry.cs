@@ -30,6 +30,13 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     private static readonly IReadOnlyList<string> DefaultRasterFormats =
         ReadOnly("image/tiff", "image/png", "image/jpeg");
 
+    /// <summary>
+    /// Default worker format names shared by worker option binding and serving-catalog
+    /// projection so their no-override contracts cannot drift.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultGdalRasterInputFormatNames { get; } =
+        ReadOnly("TIFF", "PNG", "JPEG");
+
     private readonly FrozenDictionary<string, RasterProcessCapability> _byProcessId;
 
     /// <summary>Creates the registry from the built-in capability roster.</summary>

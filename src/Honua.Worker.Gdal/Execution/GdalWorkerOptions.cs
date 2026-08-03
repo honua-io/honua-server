@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -123,12 +124,8 @@ internal sealed class GdalWorkerOptions
     /// the configured values over ConfigurationBinder's append-onto-defaults behavior.
     /// </para>
     /// </summary>
-    public IList<string> AllowedRasterInputFormats { get; set; } = new List<string>
-    {
-        "TIFF",
-        "PNG",
-        "JPEG",
-    };
+    public IList<string> AllowedRasterInputFormats { get; set; } =
+        new List<string>(RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames);
 
     /// <summary>
     /// Maximum number of zone features accepted in a <c>raster.zonal-statistics</c>
