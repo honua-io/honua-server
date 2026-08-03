@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
@@ -12,12 +13,332 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
 /// <summary>
 /// Contract tests for the durable submitter-identity snapshot that carries row-level security
-/// and field masking onto the background job worker (honua-server#3068). The snapshot is the
-/// whole mechanism: if capture or restore loses a claim, a restricted caller silently gets
-/// unrestricted job output.
+/// and field masking onto the background job worker (honua-server#3068), plus live role
+/// membership replacement on deferred authorization (honua-server#3081). If capture, restore,
+/// or membership replacement loses a restricting claim, a restricted caller can silently get
+/// broader job output.
 /// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
+    [UnitTest]
+    public async Task RevalidateRoleMembership_RoleRevoked_ReplacesOnlyRoleClaims()
+    {
+        var context = new JobSecurityContext(
+            "workflow-author",
+            TenantId: "tenant-a",
+            [
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+                new JobSecurityClaim("region", "west"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+        var restored = JobSecurityContextCapture.Restore(result.Context);
+        restored.IsInRole("restricted-analyst").Should().BeFalse();
+        restored.IsInRole("viewer").Should().BeTrue();
+        restored.FindFirst("region")?.Value.Should().Be("west");
+        restored.FindFirst("tenant_id")?.Value.Should().Be("tenant-a");
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_UnmanagedPrincipal_PreservesSnapshotExplicitly()
+    {
+        var context = new JobSecurityContext(
+            "external-author",
+            TenantId: null,
+            [new JobSecurityClaim(ClaimTypes.Role, "external-role")]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            new FixedMembershipSource(null),
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.SnapshotFallback);
+        result.Context.Should().BeSameAs(context);
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacySnapshot_UsesCapturedNameIdentifier()
+    {
+        var context = new JobSecurityContext(
+            "display-login",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-123"),
+                new JobSecurityClaim(ClaimTypes.Role, "workflow-author"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: false, Roles: []));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
+
+        source.ResolvedPrincipalId.Should().Be("managed-user-123");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Inactive);
+        result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacySnapshot_UsesCapturedSubject()
+    {
+        var context = new JobSecurityContext(
+            "display-login",
+            TenantId: null,
+            [
+                new JobSecurityClaim("sub", "managed-user-456"),
+                new JobSecurityClaim(ClaimTypes.Role, "workflow-author"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: []));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source, new RbacOptions());
+
+        source.ResolvedPrincipalId.Should().Be("managed-user-456");
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacyCustomRoleClaim_RemovesRevokedRole()
+    {
+        const string configuredRoleClaimType = "roles";
+        var context = new JobSecurityContext(
+            "managed-user-789",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-789"),
+                new JobSecurityClaim(configuredRoleClaimType, "restricted-analyst"),
+                new JobSecurityClaim("region", "west"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions { RoleClaimType = configuredRoleClaimType });
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Context.RoleClaimType.Should().Be(configuredRoleClaimType);
+        result.Context.Claims.Should().NotContain(claim =>
+            claim.Type == configuredRoleClaimType && claim.Value == "restricted-analyst");
+        result.Context.Claims.Should().Contain(claim =>
+            claim.Type == configuredRoleClaimType && claim.Value == "viewer");
+        result.Context.Claims.Should().Contain(claim =>
+            claim.Type == "region" && claim.Value == "west");
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_LegacyCustomRoleClaim_NormalizesCurrentRoleForRestore()
+    {
+        const string configuredRoleClaimType = "roles";
+        var context = new JobSecurityContext(
+            "managed-user-789",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-789"),
+                new JobSecurityClaim(configuredRoleClaimType, "viewer"),
+            ]);
+        var source = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: ["viewer"]));
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            source,
+            new RbacOptions { RoleClaimType = configuredRoleClaimType });
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Current);
+        result.Context.RoleClaimType.Should().Be(configuredRoleClaimType);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("viewer").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_ManagedPrincipalUnresolved_FailsClosed()
+    {
+        // A managed identity (carries the marker) that the live source can no longer resolve —
+        // a node-local store miss on another replica, or an identifier the store cannot match.
+        // Trusting the captured roles would let a revoked/deactivated managed identity keep
+        // authorizing deferred work, so this must fail closed rather than snapshot-fallback.
+        var context = new JobSecurityContext(
+            "managed-user-999",
+            TenantId: "tenant-a",
+            [
+                new JobSecurityClaim(JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                    JobSecurityContextClaimTypes.ManagedMembershipMarkerValue),
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-999"),
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+                new JobSecurityClaim("region", "west"),
+            ]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            new FixedMembershipSource(null),
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Context.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("restricted-analyst").Should().BeFalse();
+        // Non-role identity inputs (and the marker itself) are preserved.
+        result.Context.Claims.Should().Contain(claim => claim.Type == "region" && claim.Value == "west");
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_ManagedPrincipalWithNoResolvableIdentifier_FailsClosed()
+    {
+        // A managed snapshot whose identifier the source cannot key on (no NameIdentifier/sub and
+        // no PrincipalId) is still a managed miss: fail closed rather than trust the roles.
+        var context = new JobSecurityContext(
+            PrincipalId: null,
+            TenantId: null,
+            [
+                new JobSecurityClaim(JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                    JobSecurityContextClaimTypes.ManagedMembershipMarkerValue),
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+            ]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])),
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+        result.HasRemovedRoles.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_NoSourceConfigured_SnapshotFallbackEvenWhenManaged()
+    {
+        // With no membership authority configured, the marker's premise does not hold — the
+        // documented snapshot-fallback mode wins so these deployments are not broken.
+        var context = new JobSecurityContext(
+            "managed-user-1001",
+            TenantId: null,
+            [
+                new JobSecurityClaim(JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                    JobSecurityContextClaimTypes.ManagedMembershipMarkerValue),
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+            ]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context, source: null, new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.SnapshotFallback);
+        result.Context.Should().BeSameAs(context);
+    }
+
+    [UnitTest]
+    public async Task RevalidateRoleMembership_ManagedMarkerPresent_StillUsesLiveRolesWhenResolvable()
+    {
+        // The marker only governs the UNRESOLVED path; a resolvable managed identity revalidates
+        // to its live roles exactly as an unmarked one does.
+        var context = new JobSecurityContext(
+            "managed-user-1000",
+            TenantId: null,
+            [
+                new JobSecurityClaim(JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                    JobSecurityContextClaimTypes.ManagedMembershipMarkerValue),
+                new JobSecurityClaim(ClaimTypes.NameIdentifier, "managed-user-1000"),
+                new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+            ]);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            context,
+            new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])),
+            new RbacOptions());
+
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.Changed);
+        JobSecurityContextCapture.Restore(result.Context).IsInRole("viewer").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Capture_ManagedMembershipMarker_SurvivesClaimBudgetAndDrivesFailClosed()
+    {
+        // The marker is budget-exempt: even behind a flood of descriptive claims it must reach
+        // the durable snapshot, because losing it would downgrade a later unresolved
+        // revalidation from fail-closed to snapshot-fallback (a fail-OPEN).
+        var claims = new List<(string Type, string Value)>
+        {
+            (ClaimTypes.NameIdentifier, "managed-user-budget"),
+            (ClaimTypes.Role, "restricted-analyst"),
+            (JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                JobSecurityContextClaimTypes.ManagedMembershipMarkerValue),
+        };
+        for (var i = 0; i < 300; i++)
+        {
+            claims.Add(($"filler-{i}", i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        var captured = JobSecurityContextCapture.Capture(BuildPrincipal(claims.ToArray()), new RbacOptions());
+
+        captured.Claims.Should().Contain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker
+            && claim.Value == JobSecurityContextClaimTypes.ManagedMembershipMarkerValue);
+
+        // End to end: the captured marker makes an unresolved revalidation fail closed.
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured, new FixedMembershipSource(null), new RbacOptions());
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+    }
+
+    [UnitTest]
+    public async Task IsManagedMembership_ResolvableManagedIdentity_ReturnsTrue()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "managed-user-1"));
+        var managed = await JobSecurityContextCapture.IsManagedMembershipAsync(
+            principal,
+            new FixedMembershipSource(new PrincipalMembership(IsActive: true, Roles: ["viewer"])));
+        managed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task IsManagedMembership_UnresolvedOrNoSource_ReturnsFalse()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "federated-user"));
+        (await JobSecurityContextCapture.IsManagedMembershipAsync(principal, new FixedMembershipSource(null)))
+            .Should().BeFalse();
+        (await JobSecurityContextCapture.IsManagedMembershipAsync(principal, source: null))
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Capture_MembershipManaged_StampsMarkerThatDrivesFailClosed()
+    {
+        // The producer path: when the source owns this principal, Capture records the marker, and a
+        // later unresolved revalidation then fails closed end to end.
+        var principal = BuildPrincipal(
+            (ClaimTypes.NameIdentifier, "managed-user-2"),
+            (ClaimTypes.Role, "restricted-analyst"));
+
+        var captured = JobSecurityContextCapture.Capture(
+            principal, new RbacOptions(), tenantContext: null, membershipManaged: true);
+
+        captured.Claims.Should().Contain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker
+            && claim.Value == JobSecurityContextClaimTypes.ManagedMembershipMarkerValue);
+
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(
+            captured, new FixedMembershipSource(null), new RbacOptions());
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+    }
+
+    [UnitTest]
+    public void Capture_MembershipUnmanaged_DoesNotStampMarker()
+    {
+        var principal = BuildPrincipal((ClaimTypes.NameIdentifier, "federated-user"));
+        var captured = JobSecurityContextCapture.Capture(
+            principal, new RbacOptions(), tenantContext: null, membershipManaged: false);
+        captured.Claims.Should().NotContain(claim =>
+            claim.Type == JobSecurityContextClaimTypes.ManagedMembershipMarker);
+    }
+
     [UnitTest]
     public void Capture_ThenRestore_PreservesRoleAndPolicyClaims()
     {
@@ -288,6 +609,20 @@ public sealed class JobSecurityContextCaptureTests
             tenant = TenantId ?? string.Empty;
             reason = TenantId is null ? "no tenant context resolved" : null;
             return TenantId is not null;
+        }
+    }
+
+    private sealed class FixedMembershipSource(PrincipalMembership? membership)
+        : IPrincipalMembershipSource
+    {
+        public string? ResolvedPrincipalId { get; private set; }
+
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+        {
+            ResolvedPrincipalId = principalId;
+            return Task.FromResult(membership);
         }
     }
 }

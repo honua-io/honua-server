@@ -71,6 +71,13 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
 
    The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff; see [operations](../deploy/backup-and-restore.md#workflow-orchestration) for run lifecycle, failure policies, and crash-safety details.
 
+   Honua captures the publishing author's security context, then re-resolves current roles before
+   every cron or event firing when the configured identity source manages that author (including
+   SCIM/admin-managed users). Deactivating the author or removing a required role refuses the
+   firing. If the configured identity provider cannot answer membership queries, the durable role
+   snapshot remains authoritative and Honua logs a warning; republish the workflow after any role
+   revocation in that mode so later firings use the updated identity.
+
 5. Trigger a run on demand and watch it. The run id doubles as an operation id on the admin progress API:
 
    Run `POST /api/v1/console/workflow-publications/{publicationId}/runs` with `{}`, then use the returned `workflowRunId` in `GET /api/v1/admin/operations/{runId}`.

@@ -17,6 +17,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure;
@@ -57,6 +58,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
+    private readonly IPrincipalMembershipSource? _principalMembershipSource;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -75,9 +77,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
-        IOptions<RbacOptions>? rbacOptions = null)
+        IOptions<RbacOptions>? rbacOptions = null,
+        IPrincipalMembershipSource? principalMembershipSource = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
+        _principalMembershipSource = principalMembershipSource;
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
@@ -120,7 +124,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
         ILayerAccessAuthorizer? layerAccessAuthorizer = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IServiceScopeFactory? serviceScopeFactory = null)
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IPrincipalMembershipSource? principalMembershipSource = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -147,7 +152,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions)
+            limitsOptions,
+            rbacOptions: null,
+            principalMembershipSource: principalMembershipSource)
     {
     }
 
@@ -324,13 +331,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// Shared submit pipeline for both the caller-initiated submit path and the
     /// approval-resume path. When <paramref name="resumingApproved"/> is true the
     /// caller is the operation gateway replaying a proposal that already cleared the
-    /// baseline execute and approval gates at proposal-creation time; those two are
-    /// bypassed here so the resumed submission is not re-denied against the
-    /// reconstructed submitter principal (ADR-0064, #2814). Structural, executability,
-    /// and catalog validation always run, and so do the RESOURCE gates — mutating-process
-    /// tier and per-layer read — which are re-evaluated against the persisted submitter
-    /// snapshot because their answer can change while a proposal waits
-    /// (honua-server#3046 review).
+    /// approval gate at proposal-creation time. That approval is not requested twice,
+    /// but baseline execute authorization is rechecked against the revalidated submitter
+    /// principal (ADR-0064, #2814). Structural, executability, and catalog validation
+    /// always run, and so do the RESOURCE gates — mutating-process tier and per-layer
+    /// read — which are re-evaluated against the persisted submitter snapshot because
+    /// their answer can change while a proposal waits (honua-server#3046 review).
     /// </summary>
     private async Task<ExecutionJobRecord> SubmitJobCoreAsync(
         AnalysisPlan plan,
@@ -347,8 +353,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // it on the proposal, so a job resumed hours later still resolves the ORIGINAL
         // submitter's RLS predicate and field mask rather than the identity-only principal
         // the resume path reconstructs from Audit.RequestedBy.
-        var resolvedSecurityContext = ResolveSubmitterSecurityContext(
-            principal, submitterSecurityContext, inheritsSubmitterSecurityContext);
+        var membershipResult = await ResolveSubmitterSecurityContextAsync(
+                principal,
+                submitterSecurityContext,
+                inheritsSubmitterSecurityContext,
+                reportSnapshotFallback: resumingApproved,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        var resolvedSecurityContext = membershipResult.Context;
 
         // Identity the RESOURCE gates below are evaluated against. For an ordinary submit that
         // is the caller. For an approval resume it is the restored submitter snapshot, because
@@ -370,14 +382,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        if (!resumingApproved)
-        {
-            await _authorizer.EnsureAuthorizedAsync(
-                principal,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                cancellationToken).ConfigureAwait(false);
-        }
+        await _authorizer.EnsureAuthorizedAsync(
+            resumingApproved ? authorizationPrincipal : principal,
+            OperatorResourceType.Process,
+            OperatorOperation.Execute,
+            cancellationToken).ConfigureAwait(false);
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
@@ -429,32 +438,48 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Runs on the resume lane too, against the restored submitter identity: an approved
         // proposal must not retain update/delete authority that was withdrawn while it waited
         // (honua-server#3046 review).
-        if (ContainsMutatingProcess(plan))
+        try
         {
-            await _authorizer.EnsureAuthorizedAsync(
-                authorizationPrincipal,
-                OperatorResourceType.Process,
-                OperatorOperation.ExecuteMutatingProcess,
-                cancellationToken).ConfigureAwait(false);
-        }
+            if (ContainsMutatingProcess(plan))
+            {
+                await _authorizer.EnsureAuthorizedAsync(
+                    authorizationPrincipal,
+                    OperatorResourceType.Process,
+                    OperatorOperation.ExecuteMutatingProcess,
+                    cancellationToken).ConfigureAwait(false);
+            }
 
-        // Generic per-layer authorization for every declared catalog-layer parameter (#3046).
-        // This runs before a durable record is created and is re-evaluated on approval resume
-        // against the restored submitter snapshot, so a revoked grant or rebound numeric id
-        // cannot inherit the proposal-time decision.
-        await _authorizer
-            .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, _processCatalog, cancellationToken)
-            .ConfigureAwait(false);
-
-        // The enrichment-specific guard additionally resolves its indirect dataset layer and
-        // stamps source/dataset pins onto the plan (#2283/#3043). On approval resume the stored
-        // proposal already carries those live-requester bindings; the executor enforces them,
-        // while the generic gate above still rechecks every directly declared layer reference.
-        if (!resumingApproved)
-        {
-            plan = await _authorizer
-                .EnsureLayerReadAccessAsync(plan, authorizationPrincipal, cancellationToken)
+            // Generic per-layer authorization for every declared catalog-layer parameter (#3046).
+            // This runs before a durable record is created and is re-evaluated on approval resume
+            // against the restored submitter snapshot, so a revoked grant or rebound numeric id
+            // cannot inherit the proposal-time decision.
+            await _authorizer
+                .EnsurePlanLayerAccessAsync(authorizationPrincipal, plan, _processCatalog, cancellationToken)
                 .ConfigureAwait(false);
+
+            // The enrichment-specific guard additionally resolves its indirect dataset layer and
+            // stamps source/dataset pins onto the plan (#2283/#3043). On approval resume the stored
+            // proposal already carries those live-requester bindings; the executor enforces them,
+            // while the generic gate above still rechecks every directly declared layer reference.
+            if (!resumingApproved)
+            {
+                plan = await _authorizer
+                    .EnsureLayerReadAccessAsync(plan, authorizationPrincipal, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (GeoprocessingAuthorizationException ex)
+            when (membershipResult.HasRemovedRoles)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
+                _logger,
+                resolvedSecurityContext.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter's current role membership no longer authorizes this deferred operation.",
+                ex.ResourceType,
+                ex.Operation,
+                AuthorizationDenialReason.StalePrincipalMembership);
         }
 
         if (!resumingApproved)
@@ -1086,23 +1111,77 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// <exception cref="GeoprocessingAuthorizationException">
     /// Thrown when an inherited snapshot is required but absent.
     /// </exception>
-    private JobSecurityContext ResolveSubmitterSecurityContext(
+    private async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
         ClaimsPrincipal principal,
         JobSecurityContext? inherited,
-        bool inherits)
+        bool inherits,
+        bool reportSnapshotFallback,
+        CancellationToken cancellationToken)
     {
         if (!inherits)
         {
-            return _authorizer.CaptureSecurityContext(principal, _rbacOptions);
+            // Record managed provenance while the submitter is resolvable, so a deferred approval
+            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
+            return new JobSecurityContextMembershipResult(
+                _authorizer.CaptureSecurityContext(principal, _rbacOptions, membershipManaged),
+                JobSecurityContextMembershipStatus.Current);
         }
 
-        return inherited ?? throw new GeoprocessingAuthorizationException(
-            requiresAuthentication: false,
-            "This submission inherits its row/field security identity from a record that predates "
-            + "the submitter security context, so the original submitter's row-level security and "
-            + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
-            OperatorResourceType.Process,
-            OperatorOperation.Execute);
+        var snapshot = inherited ?? throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "This submission inherits its row/field security identity from a record that predates "
+                + "the submitter security context, so the original submitter's row-level security and "
+                + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+        var result = await JobSecurityContextCapture
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, _rbacOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback && reportSnapshotFallback)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipSnapshotFallback(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipInactive(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter identity is no longer active, so this deferred operation cannot resume.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.HasRemovedRoles)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter's current role membership no longer includes every role captured "
+                + "by this deferred operation, so its row-level security and field masking cannot "
+                + "be safely relaxed.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+
+        return result;
     }
 
     public async Task<ExecutionJobRecord> ResumeApprovedJobAsync(
@@ -1112,14 +1191,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(payload.Plan);
 
-        // The baseline execute and approval gates were satisfied when the proposal was
-        // created; re-run the submission with those two bypassed, attributing the job to
-        // the original submitter recorded in the payload. A synthetic principal carrying
+        // The approval gate was satisfied when the proposal was created; re-run the
+        // submission with only that gate bypassed, attributing the job to the original
+        // submitter recorded in the payload. A synthetic principal carrying
         // only the submitter identity preserves job ownership and partition-scoped
-        // admission without re-deriving the submitter's roles. The resource gates
-        // (mutating tier, per-layer read) are NOT bypassed — SubmitJobCoreAsync re-runs
-        // them against the payload's submitter snapshot, so a grant revoked while the
-        // proposal waited denies the resume (honua-server#3046 review).
+        // admission without re-deriving the submitter's roles. The baseline execute and
+        // resource gates (mutating tier, per-layer read) are NOT bypassed —
+        // SubmitJobCoreAsync re-runs them against the payload's revalidated submitter
+        // snapshot, so a grant revoked while the proposal waited denies the resume
+        // (honua-server#3046 review).
         var principal = BuildResumePrincipal(payload.RequestedBy);
         return await SubmitJobCoreAsync(
                 payload.Plan,

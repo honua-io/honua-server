@@ -35,8 +35,11 @@ public sealed record JobSecurityClaim(string Type, string Value);
 /// because a policy whose claim has no value translates to <c>FALSE</c> (deny all rows).
 /// </para>
 /// <para>
-/// The snapshot can only attenuate: it is exactly the identity the submitter presented, so a job
-/// can never resolve broader row/field visibility than its submitter had.
+/// The snapshot records exactly the identity the submitter presented. Deferred-submission lanes
+/// replace its role claims from the configured live membership source when one can resolve the
+/// principal. Deployments whose identity source cannot answer membership queries retain the
+/// snapshot as the explicit fallback authority, so operators must republish workflows and
+/// resubmit approvals after revoking roles in that mode (honua-server#3081).
 /// </para>
 /// </remarks>
 /// <param name="PrincipalId">Stable identifier of the submitting principal, when known.</param>
@@ -51,3 +54,32 @@ public sealed record JobSecurityContext(
     string? TenantId,
     IReadOnlyList<JobSecurityClaim> Claims,
     string? RoleClaimType = null);
+
+/// <summary>
+/// Well-known claim types carried inside a <see cref="JobSecurityContext"/> snapshot to drive
+/// deferred-lane role revalidation (honua-server#3081).
+/// </summary>
+public static class JobSecurityContextClaimTypes
+{
+    /// <summary>
+    /// Marks a captured principal whose role membership is authoritatively owned by the
+    /// configured live <c>IPrincipalMembershipSource</c> — a managed SCIM/OIDC-provisioned
+    /// identity rather than a federated identity the source does not mirror.
+    /// </summary>
+    /// <remarks>
+    /// The identity layer stamps this marker when it establishes the principal, so it travels
+    /// with the durable snapshot independently of which replica later revalidates. That
+    /// replica-independence is the whole point: a node-local membership store cannot tell
+    /// "this principal is not managed" from "this principal is managed but was provisioned on
+    /// another replica / under a different identifier", so on a resolution miss the snapshot
+    /// marker is the only trustworthy signal. When present, a deferred lane that cannot
+    /// re-resolve the principal MUST fail closed instead of trusting the captured role
+    /// snapshot, because those roles could otherwise keep authorizing deferred work after the
+    /// managed identity was deactivated or had roles revoked. The marker is produced upstream
+    /// (the OIDC/SCIM claims surface, honua-server#3062); this contract is its consumer.
+    /// </remarks>
+    public const string ManagedMembershipMarker = "honua:managed-membership";
+
+    /// <summary>Value stamped on <see cref="ManagedMembershipMarker"/> for a managed identity.</summary>
+    public const string ManagedMembershipMarkerValue = "true";
+}

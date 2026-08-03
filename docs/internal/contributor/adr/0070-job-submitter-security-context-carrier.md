@@ -120,6 +120,28 @@ role claims match zero RLS policies and therefore resolve to *no* row filter. Ei
 yields a non-null snapshot that sails past the fail-closed guards at the read seam, so the
 refusal has to happen at submit time.
 
+### Current role membership on deferred submissions
+
+The durable claim snapshot remains the carrier, but its role claims are not automatically
+authoritative forever. Before a cron/event firing authorizes a plan, and before an approval
+resume re-runs its resource gates, Honua asks `IPrincipalMembershipSource` for the captured
+principal's current account state and roles. The default implementation resolves identities
+mirrored into `IUserStore` by SCIM, OIDC provisioning, or the admin identity surface; providers
+can replace that seam with an identity-source-specific implementation.
+
+When membership resolves, current roles replace every captured role claim while tenant, OAuth
+scope-governance, and RLS attribute claims remain pinned. An inactive identity is refused
+immediately. If removed roles make the plan fail authorization, the firing/resume fails closed
+with the distinct `StalePrincipalMembership` reason; scheduled/event occurrences treat that as
+a permanent failure for that occurrence rather than retrying it forever.
+
+`null` from the membership source means the configured source does not manage that principal
+or cannot authoritatively query that identity-provider mode. That is an explicit compatibility
+fallback: Honua logs a warning and continues with the durable role snapshot. Source exceptions
+do not fall back; they propagate as transient failures. Operators using a non-queryable IdP must
+republish scheduled workflows and resubmit pending approvals after role revocation, because the
+old snapshot otherwise remains authoritative.
+
 ## Consequences
 
 - Job output for RLS/field-mask-restricted callers shrinks to match the synchronous
@@ -131,6 +153,9 @@ refusal has to happen at submit time.
   their snapshot is inherited and absent. They must be resubmitted too.
 - Policy changes take effect on already-queued jobs, because the predicate and mask are
   re-derived per read.
+- Role changes for managed identities take effect on cron/event firings and approval resumes.
+  Non-queryable identity-provider modes retain snapshot authority with a warning and require
+  republishing/resubmission after revocation.
 - Out-of-process backends (GDAL worker, AWS Batch) do not reopen catalog layers. Vector
   catalog reads go through the managed `source.honua-layer` connector. For a native raster
   process, a `rasterId` is first resolved to its owning `layerId` using registration metadata;

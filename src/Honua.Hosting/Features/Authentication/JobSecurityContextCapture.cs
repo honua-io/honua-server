@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Infrastructure.Authentication;
@@ -24,10 +25,13 @@ namespace Honua.Infrastructure.Authentication;
 /// resolution it is also the identity the two deferred-submission lanes authorize against —
 /// an approval resume and a cron/event-triggered workflow run — because on both the ambient
 /// principal is a synthetic stand-in (name-only, or the orchestrator carrying <c>role=admin</c>)
-/// and the real submitter is reachable only through this snapshot. That is sound precisely
-/// because the snapshot can only attenuate: it is exactly the claims the submitter presented,
-/// so authorizing against it can never grant more than authorizing the submitter live would
-/// have (honua-server#3046 review).
+/// and the real submitter is reachable only through this snapshot. Before either lane uses it,
+/// <see cref="RevalidateRoleMembershipAsync"/> replaces role claims from the configured
+/// <see cref="IPrincipalMembershipSource"/> when that source manages the identity. An inactive
+/// identity fails closed, and a removed role can no longer authorize the deferred operation.
+/// Identity-provider modes that cannot answer membership queries explicitly retain snapshot
+/// authority and emit an operator warning; in that fallback mode, revoking a role does not stop
+/// an already-published workflow or queued approval (honua-server#3081).
 /// </para>
 /// </remarks>
 internal static class JobSecurityContextCapture
@@ -84,6 +88,13 @@ internal static class JobSecurityContextCapture
         OperatorScopeCatalog.ScopeClaimType,
         OperatorScopeCatalog.ScpClaimType,
         OperatorScopeCatalog.ScopeClaimUri,
+
+        // The managed-membership marker is budget-exempt for the same "dropping it WIDENS
+        // authority" reason as the scope-governance claims: if a pathological token pushed the
+        // marker past the non-role claim budget, the durable snapshot would lose it and a later
+        // unresolved revalidation would fall back to the captured roles (fail OPEN) instead of
+        // failing closed. Truncation must never be able to relax a restriction (honua-server#3081).
+        JobSecurityContextClaimTypes.ManagedMembershipMarker,
     };
 
     /// <summary>
@@ -112,11 +123,20 @@ internal static class JobSecurityContextCapture
     /// authoritative over raw token claims, including an accepted admin header override or a
     /// custom configured tenant-claim type.
     /// </param>
+    /// <param name="membershipManaged">
+    /// Whether the configured live membership source positively resolved this principal at capture
+    /// time (a managed SCIM/OIDC identity). When true the durable snapshot is stamped with the
+    /// managed-membership marker so a later replica that cannot re-resolve the principal fails
+    /// closed instead of trusting the captured roles (honua-server#3081). Compute it with
+    /// <see cref="IsManagedMembershipAsync"/> from the same source the deferred lane revalidates
+    /// against.
+    /// </param>
     /// <returns>The captured snapshot.</returns>
     public static JobSecurityContext Capture(
         ClaimsPrincipal principal,
         RbacOptions options,
-        ITenantContext? tenantContext = null)
+        ITenantContext? tenantContext = null,
+        bool membershipManaged = false)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
@@ -142,12 +162,24 @@ internal static class JobSecurityContextCapture
             principal, captured, seen, exemptClaimTypes, includeMatching: false,
             limit: captured.Count + MaxCapturedNonRoleClaims);
 
+        // Stamp the managed-membership marker when the source owns this principal's roles. It is
+        // budget-exempt (see BudgetExemptClaimTypes) so it is captured here in full and can never
+        // be truncated into a fail-open (honua-server#3081).
+        if (membershipManaged &&
+            !captured.Any(claim => string.Equals(
+                claim.Type, JobSecurityContextClaimTypes.ManagedMembershipMarker, StringComparison.Ordinal)))
+        {
+            captured.Add(new JobSecurityClaim(
+                JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                JobSecurityContextClaimTypes.ManagedMembershipMarkerValue));
+        }
+
         var tenantId = tenantContext is null
             ? principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType)
             : tenantContext.TenantId;
 
         return new JobSecurityContext(
-            principal.Identity?.Name,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.Identity?.Name,
             tenantId,
             captured,
             options.EffectiveRoleClaimType);
@@ -206,6 +238,213 @@ internal static class JobSecurityContextCapture
             roleClaimType));
     }
 
+    /// <summary>
+    /// Replaces a durable snapshot's role claims with current membership from the configured
+    /// identity source. Non-role claims remain pinned because live revalidation is deliberately
+    /// limited to role membership (honua-server#3081).
+    /// </summary>
+    /// <remarks>
+    /// A source that cannot resolve this principal returns the original snapshot and an explicit
+    /// fallback status. A source exception propagates so a transient identity outage cannot be
+    /// mistaken for an authoritative snapshot decision. Inactive identities are returned with
+    /// no roles and an <see cref="JobSecurityContextMembershipStatus.Inactive"/> status so the
+    /// deferred lane can fail closed before any authorization gate. Legacy snapshots resolve a
+    /// captured stable subject claim before their older name-based principal identifier.
+    /// </remarks>
+    public static async Task<JobSecurityContextMembershipResult> RevalidateRoleMembershipAsync(
+        JobSecurityContext context,
+        IPrincipalMembershipSource? source,
+        RbacOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(options);
+
+        // Resolution of a managed identity can miss in three ways: no membership authority is
+        // configured, the snapshot carries no identifier the authority can key on, or the
+        // authority is asked and returns nothing. The first is the documented no-authority mode
+        // that always snapshot-falls-back. The other two are a genuine miss: for a NON-managed
+        // identity that is still the documented fallback, but for a managed one (carrying the
+        // marker) it means the source that OWNS this principal's roles could not confirm them
+        // HERE — a node-local store on another replica, or an identifier the store cannot match —
+        // and trusting the captured roles would let a revoked or deactivated managed identity keep
+        // authorizing deferred work. Fail closed in that case: strip the roles and report an
+        // explicit unresolved status. HasRemovedRoles is set so the existing deferred-lane callers
+        // refuse the operation through their role-removal branch unchanged (honua-server#3081).
+        JobSecurityContextMembershipResult SnapshotFallbackOrFailClosed() =>
+            SnapshotIndicatesManagedMembership(context)
+                ? new JobSecurityContextMembershipResult(
+                    StripRoleClaims(context, options),
+                    JobSecurityContextMembershipStatus.ManagedUnresolved,
+                    HasRemovedRoles: true)
+                : new JobSecurityContextMembershipResult(
+                    context,
+                    JobSecurityContextMembershipStatus.SnapshotFallback);
+
+        if (source is null)
+        {
+            // No membership authority configured at all: the marker's premise (roles owned by a
+            // live source) does not hold, so this is the documented snapshot-fallback mode.
+            return new JobSecurityContextMembershipResult(
+                context,
+                JobSecurityContextMembershipStatus.SnapshotFallback);
+        }
+
+        var principalId = ResolveMembershipPrincipalId(context);
+        if (principalId is null)
+        {
+            return SnapshotFallbackOrFailClosed();
+        }
+
+        var membership = await source
+            .ResolveMembershipAsync(principalId, cancellationToken)
+            .ConfigureAwait(false);
+        if (membership is null)
+        {
+            return SnapshotFallbackOrFailClosed();
+        }
+
+        var roleClaimType = options.EffectiveRoleClaimType;
+        var roleClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ClaimTypes.Role,
+            roleClaimType,
+        };
+        if (!string.IsNullOrWhiteSpace(context.RoleClaimType))
+        {
+            roleClaimTypes.Add(context.RoleClaimType);
+        }
+
+        var snapshotRoles = context.Claims
+            .Where(claim => roleClaimTypes.Contains(claim.Type) && !string.IsNullOrWhiteSpace(claim.Value))
+            .Select(static claim => claim.Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentRoles = membership.IsActive
+            ? membership.Roles
+                .Where(static role => !string.IsNullOrWhiteSpace(role))
+                .Select(static role => role.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+
+        var membershipIsCurrent = membership.IsActive && snapshotRoles.SetEquals(currentRoles);
+
+        var claims = context.Claims
+            .Where(claim => !roleClaimTypes.Contains(claim.Type))
+            .Concat(currentRoles.Select(role => new JobSecurityClaim(roleClaimType, role)))
+            .ToArray();
+        var revalidated = context with { Claims = claims, RoleClaimType = roleClaimType };
+
+        return new JobSecurityContextMembershipResult(
+            revalidated,
+            membershipIsCurrent
+                ? JobSecurityContextMembershipStatus.Current
+                : membership.IsActive
+                    ? JobSecurityContextMembershipStatus.Changed
+                    : JobSecurityContextMembershipStatus.Inactive,
+            HasRemovedRoles: snapshotRoles.Except(currentRoles, StringComparer.OrdinalIgnoreCase).Any());
+    }
+
+    private static string? ResolveMembershipPrincipalId(JobSecurityContext context)
+    {
+        var principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, ClaimTypes.NameIdentifier, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        principalId = context.Claims.FirstOrDefault(claim =>
+            string.Equals(claim.Type, "sub", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(claim.Value))?.Value;
+        if (principalId is not null)
+        {
+            return principalId;
+        }
+
+        return string.IsNullOrWhiteSpace(context.PrincipalId) ? null : context.PrincipalId;
+    }
+
+    /// <summary>
+    /// Whether the snapshot was captured for a principal whose role membership is authoritatively
+    /// owned by the live membership source (a managed SCIM/OIDC identity). Drives the fail-closed
+    /// decision when that source can no longer resolve the principal (honua-server#3081).
+    /// </summary>
+    /// <summary>
+    /// Whether the configured membership source positively resolves this live principal — i.e. the
+    /// source authoritatively owns its role membership (a managed SCIM/OIDC identity). Callers pass
+    /// the result to <see cref="Capture"/> so the durable snapshot records managed provenance,
+    /// enabling the deferred lane to fail closed on a later unresolved revalidation
+    /// (honua-server#3081). Best-effort: a null source, an unidentifiable principal, or a source
+    /// error yields <see langword="false"/> (unmarked → documented snapshot fallback, never a new
+    /// denial); cancellation propagates.
+    /// </summary>
+    public static async Task<bool> IsManagedMembershipAsync(
+        ClaimsPrincipal principal,
+        IPrincipalMembershipSource? source,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        if (source is null)
+        {
+            return false;
+        }
+
+        var principalId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("sub")
+            ?? principal.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(principalId))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await source.ResolveMembershipAsync(principalId, cancellationToken).ConfigureAwait(false)
+                is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static bool SnapshotIndicatesManagedMembership(JobSecurityContext context) =>
+        context.Claims.Any(claim =>
+            string.Equals(
+                claim.Type,
+                JobSecurityContextClaimTypes.ManagedMembershipMarker,
+                StringComparison.Ordinal)
+            && string.Equals(
+                claim.Value,
+                JobSecurityContextClaimTypes.ManagedMembershipMarkerValue,
+                StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Returns the snapshot with every role claim removed and the effective role claim type
+    /// pinned, so a fail-closed deferred lane resolves an empty role set even if a caller reads
+    /// the context without inspecting the membership status.
+    /// </summary>
+    private static JobSecurityContext StripRoleClaims(JobSecurityContext context, RbacOptions options)
+    {
+        var roleClaimType = options.EffectiveRoleClaimType;
+        var roleClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ClaimTypes.Role,
+            roleClaimType,
+        };
+        if (!string.IsNullOrWhiteSpace(context.RoleClaimType))
+        {
+            roleClaimTypes.Add(context.RoleClaimType);
+        }
+
+        var claims = context.Claims
+            .Where(claim => !roleClaimTypes.Contains(claim.Type))
+            .ToArray();
+        return context with { Claims = claims, RoleClaimType = roleClaimType };
+    }
+
     private static void AppendClaims(
         ClaimsPrincipal principal,
         List<JobSecurityClaim> captured,
@@ -240,3 +479,44 @@ internal static class JobSecurityContextCapture
         }
     }
 }
+
+/// <summary>
+/// Outcome of replacing a durable security snapshot's roles from a live membership source.
+/// </summary>
+internal enum JobSecurityContextMembershipStatus
+{
+    /// <summary>The configured source could not authoritatively resolve this principal.</summary>
+    SnapshotFallback,
+
+    /// <summary>The source resolved the same role set already present in the snapshot.</summary>
+    Current,
+
+    /// <summary>The source resolved a different active role set.</summary>
+    Changed,
+
+    /// <summary>The source resolved an inactive identity.</summary>
+    Inactive,
+
+    /// <summary>
+    /// The snapshot is for a managed identity (it carries the managed-membership marker) that the
+    /// configured source could not resolve — a node-local store miss on another replica, or an
+    /// identifier the store cannot match. The deferred lane must fail closed rather than trust the
+    /// captured role snapshot; the result also sets <c>HasRemovedRoles</c> so existing callers
+    /// refuse it through their role-removal branch (honua-server#3081).
+    /// </summary>
+    ManagedUnresolved,
+}
+
+/// <summary>
+/// A revalidated durable context plus the membership decision that produced it.
+/// </summary>
+/// <param name="Context">Snapshot with current roles when resolution succeeded.</param>
+/// <param name="Status">Membership resolution outcome.</param>
+/// <param name="HasRemovedRoles">
+/// Whether at least one captured role is absent now. Deferred callers must fail closed rather
+/// than use a role set that could select a less restrictive row or field policy.
+/// </param>
+internal sealed record JobSecurityContextMembershipResult(
+    JobSecurityContext Context,
+    JobSecurityContextMembershipStatus Status,
+    bool HasRemovedRoles = false);

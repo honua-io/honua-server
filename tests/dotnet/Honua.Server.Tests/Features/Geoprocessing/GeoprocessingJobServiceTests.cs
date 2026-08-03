@@ -13,6 +13,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -850,6 +851,96 @@ public sealed class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
 
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_SubmitterRestrictiveRoleRemoved_RefusesEvenWhenPlanGatesAllow()
+    {
+        var membershipSource = Substitute.For<IPrincipalMembershipSource>();
+        membershipSource
+            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<PrincipalMembership?>(
+                new PrincipalMembership(IsActive: true, Roles: [])));
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            principalMembershipSource: membershipSource);
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume-role-revoked",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        var act = async () => await sut.ResumeApprovedJobAsync(payload);
+
+        var thrown = (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()).Which;
+        thrown.DenialReason.Should().Be(AuthorizationDenialReason.StalePrincipalMembership);
+        thrown.Message.Should().Contain("current role membership");
+        await membershipSource.Received(1)
+            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_BaselineExecutionRevoked_RechecksRestoredCurrentSubmitter()
+    {
+        var membershipSource = Substitute.For<IPrincipalMembershipSource>();
+        membershipSource
+            .ResolveMembershipAsync("subject-123", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<PrincipalMembership?>(
+                new PrincipalMembership(IsActive: true, Roles: ["analyst"])));
+        ClaimsPrincipal? evaluatedPrincipal = null;
+        _authEvaluator
+            .EvaluateAsync(
+                Arg.Do<ClaimsPrincipal>(candidate => evaluatedPrincipal = candidate),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceType == OperatorResourceType.Process
+                    && request.Operation == OperatorOperation.Execute),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden(
+                "baseline process execution is no longer authorized")));
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            principalMembershipSource: membershipSource);
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-resume-baseline-revoked",
+            RequestedBy = "subject-123",
+            SubmitterSecurityContext = CreateSubmitterSecurityContext(),
+        };
+
+        var act = async () => await sut.ResumeApprovedJobAsync(payload);
+
+        var thrown = (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()).Which;
+        thrown.Operation.Should().Be(OperatorOperation.Execute);
+        evaluatedPrincipal.Should().NotBeNull();
+        evaluatedPrincipal!.Identity?.Name.Should().Be("subject-123");
+        evaluatedPrincipal.IsInRole("analyst").Should().BeTrue();
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
