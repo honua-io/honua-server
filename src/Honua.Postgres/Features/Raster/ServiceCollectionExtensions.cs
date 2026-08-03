@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Raster;
@@ -64,6 +66,11 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresSurfaceAnalysisService>>(),
                 schemaName));
+
+        services.AddScoped<PostgisSurfaceZonalPrimitiveDispatcher>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IRasterProviderExecutor,
+            PostgisSurfaceZonalRasterProviderExecutor>());
 
         services.AddScoped<ITerrainTileService>(provider =>
             new PostgresTerrainTileService(

@@ -137,14 +137,15 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-aot
-            type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-aot-
-            type=raw,value=trunk-aot
+            type=raw,value=nightly
+            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-
+            type=raw,value=trunk
           flavor: |
             suffix=-${{ matrix.arch }}
 
-      - name: Build and push
+      - name: Build nightly AOT candidate by digest
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -153,8 +154,7 @@ jobs:
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-alpine
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-alpine
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -162,11 +162,34 @@ jobs:
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
-          # not fail an otherwise-successful build+push. The cache is a build
-          # accelerator, not a release artifact.
+          # not fail an otherwise-successful build. The cache is an accelerator,
+          # not a release artifact.
           cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
+
+      - name: Verify nightly AOT candidate before registry publication
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified nightly AOT architecture tags
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
   build-lambda-aot:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
@@ -220,7 +243,8 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
-      - name: Build and push
+      - name: Build nightly Lambda AOT candidate by digest
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -229,8 +253,7 @@ jobs:
             DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
             DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -238,11 +261,34 @@ jobs:
           cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted GHA cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
-          # not fail an otherwise-successful build+push. The cache is a build
-          # accelerator, not a release artifact.
+          # not fail an otherwise-successful build. The cache is an accelerator,
+          # not a release artifact.
           cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
           provenance: false
           sbom: false
+
+      - name: Verify nightly Lambda AOT candidate before registry publication
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$CANDIDATE"
+          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Publish verified nightly Lambda AOT architecture tags
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
   manifest-lambda-aot:
     name: Publish Lambda AOT Manifests
@@ -338,10 +384,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-
-            type=raw,value=trunk
+            type=raw,value=nightly-jit
+            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-jit-
+            type=raw,value=trunk-jit
           flavor: |
             suffix=-${{ matrix.arch }}
 
@@ -402,10 +448,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-aot
-            type=raw,value=nightly-aot-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-aot-
-            type=raw,value=trunk-aot
+            type=raw,value=nightly
+            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-
+            type=raw,value=trunk
 
       - name: Create and push multi-arch manifests
         env:
@@ -413,9 +459,22 @@ jobs:
         run: |
           set -euo pipefail
           for tag in $TAGS; do
-            docker buildx imagetools create -t "$tag" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
+            repository="${tag%:*}"
+            tag_name="${tag##*:}"
+            case "$tag_name" in
+              nightly|trunk)
+                compatibility_tag="${repository}:${tag_name}-aot"
+                ;;
+              nightly-*)
+                compatibility_tag="${repository}:nightly-aot-${tag_name#nightly-}"
+                ;;
+              *)
+                echo "Unexpected AOT manifest tag: $tag" >&2
+                exit 1
+                ;;
+            esac
+            docker buildx imagetools create -t "$tag" -t "$compatibility_tag" \
+              "${tag}-amd64" "${tag}-arm64"
           done
 
   manifest-jit:
@@ -451,10 +510,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-{{date 'YYYYMMDD'}}
-            type=sha,prefix=nightly-
-            type=raw,value=trunk
+            type=raw,value=nightly-jit
+            type=raw,value=nightly-jit-{{date 'YYYYMMDD'}}
+            type=sha,prefix=nightly-jit-
+            type=raw,value=trunk-jit
 
       - name: Create and push multi-arch manifests
         env:
