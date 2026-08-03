@@ -25,7 +25,7 @@ public sealed class GdalRasterSemanticOracleTests
             GdalCli.Available("gdalsrsinfo").Should().BeTrue("the pinned worker image includes gdalsrsinfo");
             GdalCli.Available("gdallocationinfo").Should().BeTrue("the pinned worker image includes gdallocationinfo");
             var runtimeVersion = await GdalCli.VersionAsync(scratch);
-            runtimeVersion.Should().StartWith("GDAL 3.13.1");
+            runtimeVersion.Should().StartWith("GDAL 3.12.4");
 
             var fixture = RasterSemanticFixtureCatalog.Load()
                 .Single(candidate => candidate.Id == "surface.slope-plane-degrees.v1");
