@@ -5116,7 +5116,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
-        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Replay_WithoutSavedMapCapability_ReturnsForbidden"
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Replay_WithoutSavedMapCapability_ReturnsForbidden",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented",
@@ -5130,9 +5131,15 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_ConcurrentOperations_FanOutFollowsAssignedCursorOrder",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_LateJoinerAndStaleResume_GetSnapshotTailAndResyncRequired",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_ResumeCursorOutsideWindow_SnapshotKeepsRetainedOperations",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WhenPeerJoins_ReceivesParticipantJoinedPresenceEvent",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WhenPeerSendsCursorFrame_FanOutsCursorEvent",
-        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithAuthorizedJoin_ReceivesConnectedStatusAndSnapshot",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithAuthorizedJoin_ReceivesLiveStatusAndSnapshotEnvelopes",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithoutAuthorization_RejectsUpgrade"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
@@ -16158,6 +16165,34 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "post-api-v1-saved-maps-mapid-collaboration-checkpoints",
+      "route": "/api/v1/saved-maps/{mapId}/collaboration/checkpoints",
+      "method": "POST",
+      "family": "Portal Collaboration HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_PatchStyleWithNonStringStyleRef_IsRejectedAndStyleSurvives",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_WhitespaceOnlyLayerId_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ConcurrentDraftUpdateAfterApply_FailsClosedAndKeepsOperationsReplayable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_DraftDeletedDuringVersionSave_ReturnsNotFoundAndKeepsCursorUnadvanced",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReorderReferencingUnknownLayer_SurfacesStateConflict",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_UnresolvableMapId_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable"
+      ],
+      "proof_ledger_surface": "saved-map-collaboration",
+      "maturity": "implemented",
+      "capability": "collaboration.map-sessions"
+    },
+    {
       "id": "post-api-v1-saved-maps-mapid-collaboration-feature-locks-claim",
       "route": "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
       "method": "POST",
@@ -16212,7 +16247,25 @@
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_DuplicateOperationId_IsIdempotent",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutAuthentication_ReturnsUnauthorized",
-        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutSavedMapCapability_ReturnsForbidden"
+        "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_WithoutSavedMapCapability_ReturnsForbidden",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_ConcurrentOperations_FanOutFollowsAssignedCursorOrder",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_KindTheCheckpointApplierCannotApply_IsRejected",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_PatchStyleWithNonStringStyleRef_IsRejectedAndStyleSurvives",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Append_WhitespaceOnlyLayerId_IsRejectedAndMapStaysCheckpointable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ConcurrentDraftUpdateAfterApply_FailsClosedAndKeepsOperationsReplayable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReorderReferencingUnknownLayer_SurfacesStateConflict",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_ResumeCursorOutsideWindow_SnapshotKeepsRetainedOperations",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented",
@@ -16226,8 +16279,27 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog",
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_StudioIdentityModel_OwnerAllowed_NonOwnerAndUnresolvableDenied",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithAuthorizedSavedMapCapability_ReturnsSessionSnapshot",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithoutSavedMapCapability_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "saved-map-collaboration",
+      "maturity": "implemented",
+      "capability": "collaboration.map-sessions"
+    },
+    {
+      "id": "post-api-v1-saved-maps-mapid-collaboration-sessions-leave",
+      "route": "/api/v1/saved-maps/{mapId}/collaboration/sessions/leave",
+      "method": "POST",
+      "family": "Portal Collaboration HTTP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Leave_JoinedSession_RemovesPresence"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented",
