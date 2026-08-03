@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
 using Honua.PackageReview;
@@ -95,6 +96,7 @@ public sealed class AnalysisPlanPackageReviewAdapterTests
         var descriptor = new ObjectStoreCogRasterSourceDescriptor
         {
             Version = "object-v1",
+            Provider = CloudStorageProvider.AwsS3,
             StoreReference = "imagery-prod",
             ObjectKey = "tenant/source.tif",
             Content = new RasterContentIdentity

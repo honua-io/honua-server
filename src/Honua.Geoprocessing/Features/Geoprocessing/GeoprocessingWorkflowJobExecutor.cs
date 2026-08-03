@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
@@ -48,8 +49,10 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         string? idempotencyKey,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        JobSecurityContext? submitterSecurityContext = null,
         CancellationToken cancellationToken = default)
-        => _jobService.SubmitJobAsync(plan, idempotencyKey, principal, protocolMetadata, cancellationToken);
+        => _jobService.SubmitJobWithSecurityContextAsync(
+            plan, idempotencyKey, principal, protocolMetadata, submitterSecurityContext, cancellationToken);
 
     public Task<ExecutionJobRecord> GetJobAsync(
         string jobId,

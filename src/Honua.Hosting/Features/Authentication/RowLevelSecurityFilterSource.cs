@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -58,16 +59,18 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var principal = _httpContextAccessor.HttpContext?.User;
+        var principal = ResolvePrincipal();
         if (principal is null)
         {
-            // No request context (e.g. background job) — RLS is a request-scoped
-            // concern, so there is nothing to enforce here. The metadata permanent
-            // filter still applies independently.
+            // No request context and no job-security scope (e.g. tile seeding, an import
+            // worker, a scheduler) — there is no caller to constrain, so RLS has nothing to
+            // enforce here. The metadata permanent filter still applies independently.
+            // Geoprocessing reads never land here: JobSecurityScope is active for the whole
+            // job dispatch, so they either resolve the submitter or fail closed below.
             return null;
         }
 
-        var roles = EnumeratePrincipalRoles(principal, _rbacOptions);
+        var roles = PrincipalRoleSnapshot.Enumerate(principal, _rbacOptions);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -261,24 +264,37 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
+    /// <summary>
+    /// Resolves the principal RLS is evaluated against: the live request user when one exists,
+    /// otherwise the submitter snapshot pinned on the executing background job
+    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
+    /// server-internal read with no caller to constrain.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
+    /// cannot be constrained to the submitting caller, so it is refused rather than silently
+    /// returning every row.
+    /// </exception>
+    private ClaimsPrincipal? ResolvePrincipal()
     {
-        var roles = new List<string>();
-
-        foreach (var claim in principal.FindAll(ClaimTypes.Role).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
+        var requestPrincipal = _httpContextAccessor.HttpContext?.User;
+        if (requestPrincipal is not null)
         {
-            roles.Add(claim.Value);
+            return requestPrincipal;
         }
 
-        var roleClaimType = options.EffectiveRoleClaimType;
-        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
+        var scope = JobSecurityScope.Current;
+        if (scope is null)
         {
-            foreach (var claim in principal.FindAll(roleClaimType).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
-            {
-                roles.Add(claim.Value);
-            }
+            return null;
         }
 
-        return roles;
+        if (scope.Submitter is null)
+        {
+            throw new UnauthorizedAccessException(
+                "This job carries no submitter security context, so row-level security cannot be enforced on its reads.");
+        }
+
+        return JobSecurityContextCapture.Restore(scope.Submitter);
     }
 }

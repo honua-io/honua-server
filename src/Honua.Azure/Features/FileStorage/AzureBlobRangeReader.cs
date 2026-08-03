@@ -25,17 +25,51 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
     public CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
     /// <inheritdoc />
-    public async Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        CancellationToken cancellationToken = default)
+        => ReadRangeCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return ReadRangeCoreAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+    }
+
+    private async Task<byte[]> ReadRangeCoreAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string? expectedETag,
+        CancellationToken cancellationToken)
     {
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
         var response = await blobClient.DownloadStreamingAsync(
-            new BlobDownloadOptions { Range = range },
+            new BlobDownloadOptions
+            {
+                Range = range,
+                Conditions = string.IsNullOrWhiteSpace(expectedETag)
+                    ? null
+                    : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
+            },
             cancellationToken).ConfigureAwait(false);
+        using var download = response.Value;
 
         using var ms = new MemoryStream(length);
-        await response.Value.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
+        await download.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         return ms.ToArray();
     }
 
@@ -61,5 +95,23 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         return properties.Value.ContentLength;
+    }
+
+    /// <inheritdoc />
+    public async Task<CloudObjectMetadata> GetObjectMetadataAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
+        var response = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        var properties = response.Value;
+        return new CloudObjectMetadata
+        {
+            SizeBytes = properties.ContentLength,
+            Version = properties.VersionId,
+            ETag = properties.ETag.ToString(),
+            MediaType = properties.ContentType,
+        };
     }
 }

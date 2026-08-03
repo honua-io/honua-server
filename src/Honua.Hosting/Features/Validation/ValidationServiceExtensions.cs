@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation;
@@ -36,6 +37,13 @@ public static class ValidationServiceExtensions
         services.AddSingleton<ICommonQueryValidator, CommonQueryValidator>();
         services.AddSingleton<IRouteParameterValidator, RouteParameterValidator>();
         services.AddSingleton<IAccessPolicyEvaluator>(_ => new AccessPolicyEvaluator());
+
+        // Principal-based per-layer authorization seam (honua-server#3046). Shared by the
+        // geoprocessing submit pipeline so a job that reads a catalog layer is gated by the
+        // same decision the synchronous query surfaces apply. Needs the ambient request
+        // accessor to reach the request scope (and its tenant rail) from a singleton.
+        services.AddHttpContextAccessor();
+        services.AddSingleton<ILayerAccessAuthorizer, LayerAccessAuthorizer>();
         services.AddScoped<IFilterExpressionTranslator, FilterExpressionTranslator>();
         services.AddScoped<IFilterExpressionService, FilterExpressionService>();
         services.AddScoped<FeatureMutationValidator>();
