@@ -25,7 +25,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         _capabilities = capabilities;
         _logger = logger;
         _decisions = HonuaTelemetry.Meter.CreateCounter<long>(
-            "raster.execution.planning.decisions",
+            RasterExecutionTelemetry.Metrics.PlanningDecisions,
             unit: "{decision}",
             description: "Raster execution planning decisions and refusals.");
     }
@@ -65,10 +65,11 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
 
             _decisions.Add(
                 1,
-                new KeyValuePair<string, object?>("outcome", "reused"),
-                new KeyValuePair<string, object?>("engine", request.ExistingDecision.Engine.ToString()),
-                new KeyValuePair<string, object?>("placement", request.ExistingDecision.Placement.ToString()),
-                new KeyValuePair<string, object?>("reason", request.ExistingDecision.ReasonCode));
+                RasterExecutionTelemetry.CreatePlanningMetricTags(
+                    request.ExistingDecision.Engine,
+                    request.ExistingDecision.Placement,
+                    RasterTelemetryAdmissionClass.Accepted,
+                    RasterTelemetryOutcome.Reused));
             Log.Decision(
                 _logger,
                 request.ProcessId,
@@ -86,11 +87,11 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 $"Raster process '{request.ProcessId}' has no engine capability metadata.");
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
-            "raster.execution.plan",
+            RasterExecutionTelemetry.Activities.Plan,
             ActivityKind.Internal);
-        activity?.SetTag("honua.raster.process_id", request.ProcessId);
-        activity?.SetTag("honua.raster.policy_ref", request.Policy.PolicyRef);
-        activity?.SetTag("honua.raster.health_version", request.Health.Version);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.ProcessId, request.ProcessId);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.PolicyRef, request.Policy.PolicyRef);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.HealthVersion, request.Health.Version);
 
         var candidates = new List<Candidate>();
         var eliminations = new List<string>();
@@ -142,15 +143,29 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
                 : null,
         };
 
-        activity?.SetTag("honua.raster.engine", decision.Engine.ToString());
-        activity?.SetTag("honua.raster.placement", decision.Placement.ToString());
-        activity?.SetTag("honua.raster.reason_code", decision.ReasonCode);
+        activity?.SetTag(
+            RasterExecutionTelemetry.TraceAttributes.Engine,
+            RasterExecutionTelemetry.EngineValue(decision.Engine));
+        activity?.SetTag(
+            RasterExecutionTelemetry.TraceAttributes.Placement,
+            RasterExecutionTelemetry.PlacementValue(decision.Placement));
+        activity?.SetTag(
+            RasterExecutionTelemetry.TraceAttributes.Admission,
+            RasterExecutionTelemetry.AdmissionValue(RasterTelemetryAdmissionClass.Accepted));
+        activity?.SetTag(
+            RasterExecutionTelemetry.TraceAttributes.Outcome,
+            RasterExecutionTelemetry.OutcomeValue(RasterTelemetryOutcome.Selected));
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.ReasonCode, decision.ReasonCode);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.SemanticVersion, decision.SemanticVersion);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.ImplementationVersion, decision.ImplementationVersion);
+        activity?.SetTag(RasterExecutionTelemetry.TraceAttributes.ConfigurationVersion, decision.ConfigurationVersion);
         _decisions.Add(
             1,
-            new KeyValuePair<string, object?>("outcome", "selected"),
-            new KeyValuePair<string, object?>("engine", decision.Engine.ToString()),
-            new KeyValuePair<string, object?>("placement", decision.Placement.ToString()),
-            new KeyValuePair<string, object?>("reason", decision.ReasonCode));
+            RasterExecutionTelemetry.CreatePlanningMetricTags(
+                decision.Engine,
+                decision.Placement,
+                RasterTelemetryAdmissionClass.Accepted,
+                RasterTelemetryOutcome.Selected));
         Log.Decision(
             _logger,
             request.ProcessId,
@@ -534,12 +549,14 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         string message,
         bool isRetryable = false)
     {
+        var admission = RasterExecutionTelemetry.ClassifyPlanningRefusal(reasonCode, isRetryable);
         _decisions.Add(
             1,
-            new KeyValuePair<string, object?>("outcome", "refused"),
-            new KeyValuePair<string, object?>("engine", "none"),
-            new KeyValuePair<string, object?>("placement", "none"),
-            new KeyValuePair<string, object?>("reason", reasonCode));
+            RasterExecutionTelemetry.CreatePlanningMetricTags(
+                engine: null,
+                placement: null,
+                admission,
+                RasterTelemetryOutcome.Refused));
         Log.Refused(_logger, request.ProcessId, reasonCode, request.Policy.PolicyRef, message);
         return new RasterExecutionPlanningException(reasonCode, message, isRetryable);
     }
