@@ -55,6 +55,20 @@ public sealed record RasterOutputRegistrationTarget(
     }
 }
 
+/// <summary>
+/// Submission-time raster publication decision captured after the requesting principal has been
+/// authorized. Workflow orchestration persists this pin with the authorized plan so later
+/// system-principal dispatch cannot re-resolve a different store or mutable layer target.
+/// </summary>
+public sealed record RasterOutputPublicationPin
+{
+    /// <summary>Logical object-store registration used by the GP worker contract.</summary>
+    public required string StoreReference { get; init; }
+
+    /// <summary>Exact authorized registration operation and logical target.</summary>
+    public required RasterOutputRegistrationTarget RegistrationTarget { get; init; }
+}
+
 /// <summary>Request to make one staged output visible.</summary>
 public sealed record RasterOutputPublicationRequest
 {

@@ -7,6 +7,13 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Orchestration.Abstractions;
 
+/// <summary>Stable identity contract for trusted workflow-originated job calls.</summary>
+public static class WorkflowOrchestrationIdentity
+{
+    /// <summary>Authentication type stamped on synthesized workflow principals.</summary>
+    public const string AuthenticationType = "HonuaOrchestrator";
+}
+
 /// <summary>
 /// Shared abstraction the workflow orchestration engine uses to submit and observe
 /// canonical analysis-plan jobs. Implementations adapt a concrete job substrate
@@ -32,7 +39,9 @@ public interface IWorkflowJobExecutor
     /// concrete layer/dataset id exists only after expansion, so publication could not stamp a
     /// pin and the stored definition carries none. Discarding the bound plan therefore left
     /// reconciliation submitting an unpinned step, which the layer gate refuses
-    /// (honua-server#3043 review).
+    /// (honua-server#3043 review). Raster-producing plans likewise carry the exact authorized
+    /// output store, registration kind, and mutable layer target; system-principal dispatch
+    /// fails closed instead of re-reading live output configuration when that pin is absent.
     /// </returns>
     Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,

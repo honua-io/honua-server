@@ -14,6 +14,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Protocols.GeoServices.GPServer;
@@ -289,6 +290,96 @@ public sealed class GeoprocessingJobServiceTests
             .WhoseValue.Should().Be(RasterOutputRegistrationKind.ResultArtifact.ToString());
         job.Spec.Parameters.Should().ContainKey(RasterOutputWorkerContract.RegistrationTargetParameter)
             .WhoseValue.Should().Be("result-artifact");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task EnsurePlanExecutionTierAuthorized_RasterOutput_CapturesPublicationPin()
+    {
+        var authorized = await _sut.EnsurePlanExecutionTierAuthorizedAsync(
+            CreateRasterOutputPlan(),
+            CreatePrincipal());
+
+        authorized.RasterOutputPublication.Should().NotBeNull();
+        authorized.RasterOutputPublication!.StoreReference.Should().Be("gp-results");
+        authorized.RasterOutputPublication.RegistrationTarget.Kind
+            .Should().Be(RasterOutputRegistrationKind.ResultArtifact);
+        authorized.RasterOutputPublication.RegistrationTarget.TargetReference
+            .Should().Be("result-artifact");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_WorkflowRasterOutput_UsesPersistedMutableTargetPin()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var plan = CreateRasterOutputPlan() with
+        {
+            RasterOutputPublication = new RasterOutputPublicationPin
+            {
+                StoreReference = "requester-approved-store",
+                RegistrationTarget = new RasterOutputRegistrationTarget(
+                    RasterOutputRegistrationKind.CatalogObject,
+                    "layer.17")
+            }
+        };
+        var metadata = new Dictionary<string, string>
+        {
+            ["orchestration.runId"] = "wf-raster-pin"
+        };
+
+        var authorizedPlan = await _sut.EnsurePlanExecutionTierAuthorizedAsync(
+            plan,
+            CreateOrchestrationPrincipal());
+        authorizedPlan.RasterOutputPublication.Should().Be(plan.RasterOutputPublication,
+            "system-principal run authorization must preserve the requester's exact pin");
+
+        var job = await _sut.SubmitJobAsync(
+            authorizedPlan,
+            null,
+            CreateOrchestrationPrincipal(),
+            metadata);
+
+        job.Spec.Parameters[RasterOutputWorkerContract.StoreReferenceParameter]
+            .Should().Be("requester-approved-store");
+        job.Spec.Parameters[RasterOutputWorkerContract.RegistrationKindParameter]
+            .Should().Be(RasterOutputRegistrationKind.CatalogObject.ToString());
+        job.Spec.Parameters[RasterOutputWorkerContract.RegistrationTargetParameter]
+            .Should().Be("layer.17");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_WorkflowRasterOutputWithoutPublicationPin_FailsClosed()
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["orchestration.runId"] = "wf-raster-missing-pin"
+        };
+
+        var act = () => _sut.SubmitJobAsync(
+            CreateRasterOutputPlan(),
+            null,
+            CreateOrchestrationPrincipal(),
+            metadata);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*requester-authorized output target*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task EnsurePlanExecutionTierAuthorized_OrchestrationRasterWithoutPin_FailsClosed()
+    {
+        var act = () => _sut.EnsurePlanExecutionTierAuthorizedAsync(
+            CreateRasterOutputPlan(),
+            CreateOrchestrationPrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*requester-authorized output pin*");
     }
 
     [UnitTest]
@@ -3632,6 +3723,26 @@ public sealed class GeoprocessingJobServiceTests
         ]
     };
 
+    private static AnalysisPlan CreateRasterOutputPlan() => new()
+    {
+        PlanId = "plan-raster-output",
+        IntentId = "intent-raster-output",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-raster",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "raster.reproject",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["source"] = "AAAA",
+                    ["targetSrid"] = "3857"
+                }
+            }
+        ]
+    };
+
     private void DenyMutatingProcessPermission()
         => _authEvaluator
             .EvaluateAsync(
@@ -3685,4 +3796,12 @@ public sealed class GeoprocessingJobServiceTests
                 new Claim(ClaimTypes.Name, "Display Name"),
                 new Claim(ClaimTypes.NameIdentifier, "subject-123")
             ], "Test"));
+
+    private static ClaimsPrincipal CreateOrchestrationPrincipal()
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "workflow-requester"),
+                new Claim(ClaimTypes.Role, "orchestrator"),
+                new Claim(ClaimTypes.Role, "admin")
+            ], WorkflowOrchestrationIdentity.AuthenticationType));
 }

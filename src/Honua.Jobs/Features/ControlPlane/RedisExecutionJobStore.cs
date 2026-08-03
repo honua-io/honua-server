@@ -358,9 +358,30 @@ internal sealed partial class RedisExecutionJobStore(
                 }
 
                 var job = JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.ExecutionJobRecord);
-                if (job == null || IsTerminal(job.Status))
+                if (job == null)
                 {
                     staleIds.Add(validIds[i]);
+                    continue;
+                }
+
+                if (IsTerminal(job.Status))
+                {
+                    // A terminal record can be written before UpdateIndexesAsync adds the
+                    // projection outbox member. If the process stops in that window, the old
+                    // active membership is the only durable recovery signal. Return terminal
+                    // jobs that still carry a raster manifest so reconciliation can enqueue/
+                    // execute the idempotent projection callback; ordinary terminal jobs remain
+                    // stale active members and are cleaned up as before.
+                    if (job.ArtifactReferences.Any(reference =>
+                            RasterOutputArtifactReference.TryParseManifest(reference, out _, out _)))
+                    {
+                        jobs.Add(job);
+                    }
+                    else
+                    {
+                        staleIds.Add(validIds[i]);
+                    }
+
                     continue;
                 }
 
@@ -464,9 +485,10 @@ internal sealed partial class RedisExecutionJobStore(
     {
         // Enqueue before removing a terminal job from the active indexes. If the process dies
         // immediately after the authoritative job write, the old active membership remains and
-        // JobReconciliationService re-drives the marker directly; if it dies after this first
-        // step, the durable pending index is already present. There is no crash window in which
-        // both recovery paths are absent.
+        // ListActiveAsync returns a terminal record that still carries the manifest marker for
+        // JobReconciliationService to re-drive. If it dies after this first step, the durable
+        // pending index is already present. There is no crash window in which both recovery paths
+        // are absent.
         await EnqueueTerminalProjectionIfNeededAsync(job).ConfigureAwait(false);
         await UpdateActiveIndexesAsync(job).ConfigureAwait(false);
         await UpdateQueryIndexesAsync(previous, job).ConfigureAwait(false);
