@@ -112,12 +112,14 @@ internal static class ExecutionJobParameterKeys
     /// prefix encodes the step ordinal so a future multi-step plan does not require
     /// a separate substrate.
     /// </summary>
-    public const string GeoprocessingStepInputPrefix = "honua.geoprocessing.step.";
+    public const string GeoprocessingStepInputPrefix =
+        Honua.Core.Features.Geoprocessing.Raster.RasterProcessExecutionParameterKeys.StepInputPrefix;
 
     /// <summary>
     /// Prefix for source-generated, typed raster-source descriptors projected onto
     /// durable GP specifications. Values are JSON descriptors, never raster content
     /// except for the explicitly bounded inline source kind.
     /// </summary>
-    public const string GeoprocessingStepRasterSourcePrefix = "honua.geoprocessing.raster_source.";
+    public const string GeoprocessingStepRasterSourcePrefix =
+        Honua.Core.Features.Geoprocessing.Raster.RasterProcessExecutionParameterKeys.StepRasterSourcePrefix;
 }
