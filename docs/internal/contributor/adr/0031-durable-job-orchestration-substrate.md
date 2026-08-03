@@ -231,10 +231,18 @@ Millisecond timestamps break ties within a band.
 
 ### Artifact References
 
-- Workers publish artifact references through
-  `IJobExecutionContext.PublishArtifactAsync`.
-- References accumulate in `ExecutionJobRecord.ArtifactReferences` and are
-  available for result packaging after terminal state.
+- For jobs without fenced output intents, workers publish artifact references
+  through `IJobExecutionContext.PublishArtifactAsync`. Those references
+  accumulate in `ExecutionJobRecord.ArtifactReferences` and are available for
+  result packaging after terminal state.
+- A worker producing a fenced output set must not append its members to public
+  `ArtifactReferences`. It writes attempt-scoped references only to the private
+  sink-intent/staging records governed by ADR-0071. After every required member
+  is committed and the job-wide manifest becomes `Complete`, the coordinator
+  conditionally projects the complete winning set into `ArtifactReferences` in
+  one job-record update. A stale, partial, failed, or cancelled attempt therefore
+  exposes no public result references, including through intermediate job
+  projections.
 
 ### API/Worker Boundary
 
