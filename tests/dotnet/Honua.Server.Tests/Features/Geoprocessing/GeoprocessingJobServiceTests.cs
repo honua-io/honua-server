@@ -357,6 +357,81 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentRasterReplay_ReusesPersistedDecisionWithoutReplanning()
+    {
+        ExecutionJobRecord? created = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => created);
+        var realPlanner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var planner = Substitute.For<IRasterExecutionPlanner>();
+        var planCalls = 0;
+        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>()).Returns(call =>
+        {
+            planCalls++;
+            if (planCalls > 1)
+            {
+                throw new RasterExecutionPlanningException(
+                    "changed-health",
+                    "Planner health changed after the durable decision was created.");
+            }
+
+            return realPlanner.Plan(call.Arg<RasterExecutionPlanningRequest>());
+        });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-idempotent-raster",
+            IntentId = "intent-idempotent-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetSrs"] = "3857",
+                    },
+                },
+            ],
+        };
+
+        var first = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+        var replay = await sut.SubmitJobAsync(plan, "stable-raster-replay", CreateStablePrincipal());
+
+        replay.Should().BeSameAs(first);
+        replay.Spec.RasterExecution.Should().BeSameAs(first.Spec.RasterExecution);
+        planner.Received(1).Plan(Arg.Any<RasterExecutionPlanningRequest>());
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
