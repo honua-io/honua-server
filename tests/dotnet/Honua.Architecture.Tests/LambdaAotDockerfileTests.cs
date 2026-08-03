@@ -82,16 +82,15 @@ public sealed class LambdaAotDockerfileTests
         dockerfile.Should().Contain("grep -Eq 'not found|undefined symbol'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
-        foreach (var relativePath in new[]
+        foreach (var renderSource in new[]
         {
             "src/Honua.Hosting/Features/Rendering/LegendImageComposer.cs",
             "src/Honua.Server/Features/PrintingTools/Layout/LayoutComposer.cs",
             "src/Honua.Server/Features/Studio/Export/StudioDeliverableComposer.cs",
-        })
-        {
-            var renderSource = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+        }.Select(relativePath => File.ReadAllText(ArchitectureTestHelpers.CombinePath(
                 repositoryRoot,
-                relativePath.Replace('/', Path.DirectorySeparatorChar)));
+                relativePath.Replace('/', Path.DirectorySeparatorChar)))))
+        {
             renderSource.Should().Contain("RenderingTypeface.Default");
             renderSource.Should().NotContain("SKTypeface.Default");
         }
