@@ -140,6 +140,32 @@ public sealed record RasterGridMetadata
 
     /// <summary>Six-coefficient affine geotransform.</summary>
     public required IReadOnlyList<double> GeoTransform { get; init; }
+
+    /// <summary>
+    /// Per-band storage metadata emitted by the native preflight. Empty is retained for
+    /// compatibility with version-one result descriptors that are never imported into PostGIS;
+    /// durable PostGIS registration requires one entry per band.
+    /// </summary>
+    public IReadOnlyList<RasterBandMetadata> Bands { get; init; } = Array.Empty<RasterBandMetadata>();
+
+    /// <summary>
+    /// Conservative decoded pixel payload computed from dimensions and band data types. This is
+    /// metadata only and lets admission reject decompression bombs before reading the object.
+    /// </summary>
+    public long? DecodedSizeBytes { get; init; }
+}
+
+/// <summary>Native preflight metadata for one raster band.</summary>
+public sealed record RasterBandMetadata
+{
+    /// <summary>Allowlisted GDAL scalar type, for example <c>Byte</c> or <c>Float32</c>.</summary>
+    public required string DataType { get; init; }
+
+    /// <summary>
+    /// Canonical invariant NoData token, or <see langword="null"/> when the band has no NoData
+    /// value. String form preserves the valid GDAL <c>NaN</c> sentinel without non-standard JSON.
+    /// </summary>
+    public string? NoDataValue { get; init; }
 }
 
 /// <summary>Producing raster engine identity.</summary>

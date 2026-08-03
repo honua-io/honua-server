@@ -30,6 +30,20 @@ public sealed class PostgresRasterOutputRegistryTests
     }
 
     [Fact]
+    public void PostgisRegistration_UsesOrderedBoundedChunkStagingInsteadOfOnePayloadParameter()
+    {
+        var sql = PostgresRasterOutputRegistry.BuildPostgisLoadSql(
+            "honua.raster_data",
+            "honua.raster_output_import_chunks");
+
+        Assert.Equal(1024 * 1024, PostgresRasterOutputRegistry.PostgisImportChunkSizeBytes);
+        Assert.Contains("string_agg(content, ''::bytea ORDER BY chunk_ordinal)", sql, StringComparison.Ordinal);
+        Assert.Contains("idempotency_key = @idempotency_key", sql, StringComparison.Ordinal);
+        Assert.Contains("ST_FromGDALRaster(bytes)", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("@content", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CatalogRegistration_RejectsUnsupportedLocalStore()
     {
         var action = () => PostgresRasterOutputRegistry.EnsureCatalogProviderSupported(

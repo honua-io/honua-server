@@ -62,6 +62,20 @@ public sealed class RasterEngineCapabilityRegistryTests
     }
 
     [Fact]
+    public void BuiltInCapabilities_NativeWorkerAdvertisesOnlyImplementedSourceResidencies()
+    {
+        var capability = new RasterEngineCapabilityRegistry().Find("surface.slope");
+
+        Assert.NotNull(capability);
+        var gdal = capability.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
+        Assert.Equal(
+            new[] { RasterInputResidency.ObjectStoreCog, RasterInputResidency.Inline },
+            gdal.InputResidencies.OrderBy(residency => residency).ToArray());
+        Assert.DoesNotContain(RasterInputResidency.ObjectStoreZarr, gdal.InputResidencies);
+        Assert.DoesNotContain(RasterInputResidency.StagedArtifact, gdal.InputResidencies);
+    }
+
+    [Fact]
     public void ConfiguredGdalFormats_ProjectAcrossRasterExecutorsAndPreserveAuxiliaryInputs()
     {
         var registry = RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(

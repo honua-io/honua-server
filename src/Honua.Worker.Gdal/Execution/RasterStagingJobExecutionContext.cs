@@ -312,6 +312,11 @@ internal sealed partial class RasterStagingJobExecutionContext :
         }
 
         var coefficients = transform.EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        var bandMetadata = bands.EnumerateArray().Select(ReadBandMetadata).ToArray();
+        var decodedSizeBytes = ComputeDecodedSizeBytes(
+            size[0].GetInt64(),
+            size[1].GetInt64(),
+            bandMetadata);
         var crs = ResolveCrs(root);
         return new RasterGridMetadata
         {
@@ -319,8 +324,64 @@ internal sealed partial class RasterStagingJobExecutionContext :
             Height = size[1].GetInt64(),
             BandCount = bands.GetArrayLength(),
             GeoTransform = coefficients,
-            Crs = crs
+            Crs = crs,
+            Bands = bandMetadata,
+            DecodedSizeBytes = decodedSizeBytes
         };
+    }
+
+    private static RasterBandMetadata ReadBandMetadata(JsonElement band)
+    {
+        if (!band.TryGetProperty("type", out var typeElement)
+            || typeElement.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(typeElement.GetString()))
+        {
+            throw new InvalidDataException("gdalinfo output is missing a raster band data type.");
+        }
+
+        string? noDataValue = null;
+        if (band.TryGetProperty("noDataValue", out var noDataElement)
+            && noDataElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            noDataValue = noDataElement.ValueKind == JsonValueKind.String
+                ? noDataElement.GetString()
+                : noDataElement.GetRawText();
+            noDataValue = noDataValue?.Trim();
+        }
+
+        return new RasterBandMetadata
+        {
+            DataType = typeElement.GetString()!,
+            NoDataValue = string.IsNullOrWhiteSpace(noDataValue) ? null : noDataValue
+        };
+    }
+
+    private static long ComputeDecodedSizeBytes(
+        long width,
+        long height,
+        IReadOnlyCollection<RasterBandMetadata> bands)
+    {
+        long bytesPerPixel = 0;
+        foreach (var band in bands)
+        {
+            bytesPerPixel += band.DataType switch
+            {
+                "Byte" or "Int8" => 1,
+                "UInt16" or "Int16" => 2,
+                "UInt32" or "Int32" or "Float32" => 4,
+                "Float64" => 8,
+                _ => throw new InvalidDataException("Raster output uses a band data type outside the import allowlist.")
+            };
+        }
+
+        try
+        {
+            return checked(width * height * bytesPerPixel);
+        }
+        catch (OverflowException ex)
+        {
+            throw new InvalidDataException("Decoded raster output size exceeds the supported range.", ex);
+        }
     }
 
     private async Task<string> GetEngineVersionAsync(

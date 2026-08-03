@@ -228,6 +228,60 @@ public sealed class RasterOutputContractTests
         Assert.False(RasterOutputIdentity.IsArtifactId("https://example.test/output.tif"));
     }
 
+    [Fact]
+    public void PostgisImportPreflight_AcceptsExactAllowlistedBandAndDecodedSizeMetadata()
+    {
+        var grid = Grid() with
+        {
+            Bands =
+            [
+                new RasterBandMetadata { DataType = "UInt16", NoDataValue = "0" },
+                new RasterBandMetadata { DataType = "Float32", NoDataValue = "NaN" }
+            ],
+            DecodedSizeBytes = 4 * 4 * (2 + 4)
+        };
+
+        var result = RasterOutputDescriptorValidator.ValidateForPostgisImport(grid);
+
+        Assert.True(result.IsValid, string.Join(';', result.Errors.Select(error => error.Field)));
+    }
+
+    [Fact]
+    public void PostgisImportPreflight_RejectsUnknownCrsMissingBandsAndDecodedSizeMismatch()
+    {
+        var grid = Grid() with
+        {
+            Crs = "unknown",
+            Bands = [new RasterBandMetadata { DataType = "Complex64" }],
+            DecodedSizeBytes = 1
+        };
+
+        var result = RasterOutputDescriptorValidator.ValidateForPostgisImport(grid);
+
+        Assert.Contains(result.Errors, error => error.Field == "grid.crs");
+        Assert.Contains(result.Errors, error => error.Field == "grid.bands");
+    }
+
+    [Fact]
+    public void PostgisImportPreflight_RejectsDegenerateGridAndUnsafeNoData()
+    {
+        var grid = Grid() with
+        {
+            GeoTransform = [0, 1, 0, 4, 0, 0],
+            Bands =
+            [
+                new RasterBandMetadata { DataType = "Byte", NoDataValue = "Infinity" },
+                new RasterBandMetadata { DataType = "Byte" }
+            ],
+            DecodedSizeBytes = 32
+        };
+
+        var result = RasterOutputDescriptorValidator.ValidateForPostgisImport(grid);
+
+        Assert.Contains(result.Errors, error => error.Field == "grid.geoTransform");
+        Assert.Contains(result.Errors, error => error.Field == "grid.bands.noDataValue");
+    }
+
     internal static StagedRasterOutputDescriptor Stage() => new()
     {
         JobId = "job-42",

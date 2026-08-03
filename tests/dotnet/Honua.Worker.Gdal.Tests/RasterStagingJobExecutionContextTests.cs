@@ -41,7 +41,7 @@ public sealed class RasterStagingJobExecutionContextTests : IDisposable
                   "size": [512, 256],
                   "coordinateSystem": { "wkt": "PROJCRS[\"WGS 84 / Pseudo-Mercator\",ID[\"EPSG\",3857]]" },
                   "geoTransform": [100, 10, 0, 200, 0, -10],
-                  "bands": [{ "band": 1 }]
+                  "bands": [{ "band": 1, "type": "UInt16", "noDataValue": 0 }]
                 }
                 """
             },
@@ -96,6 +96,9 @@ public sealed class RasterStagingJobExecutionContextTests : IDisposable
         output.Grid.Crs.Should().Be("EPSG:3857");
         output.Grid.Width.Should().Be(512);
         output.Grid.Height.Should().Be(256);
+        output.Grid.Bands.Should().ContainSingle()
+            .Which.Should().Be(new RasterBandMetadata { DataType = "UInt16", NoDataValue = "0" });
+        output.Grid.DecodedSizeBytes.Should().Be(512L * 256L * 2L);
         output.Engine.Should().Be(new RasterProducingEngine("gdal", "GDAL 3.10.0"));
         output.Lineage.JobId.Should().Be("job-42");
         output.Lineage.Attempt.Should().Be(2);

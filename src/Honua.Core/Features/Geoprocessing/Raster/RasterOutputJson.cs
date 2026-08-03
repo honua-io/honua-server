@@ -19,6 +19,7 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 [JsonSerializable(typeof(RasterOutputPublicationManifest))]
 [JsonSerializable(typeof(StagedRasterOutputDescriptor[]))]
 [JsonSerializable(typeof(RasterGridMetadata))]
+[JsonSerializable(typeof(RasterBandMetadata))]
 [JsonSerializable(typeof(RasterProducingEngine))]
 [JsonSerializable(typeof(RasterOutputLineage))]
 [JsonSerializable(typeof(RasterOutputRetention))]
@@ -33,6 +34,15 @@ public sealed partial class RasterOutputJsonContext : JsonSerializerContext
 /// <summary>AOT-safe serialization helpers for versioned raster output descriptors.</summary>
 public static class RasterOutputJson
 {
+    // PostgreSQL jsonb canonicalizes object-key order, so the polymorphic discriminator is not
+    // guaranteed to remain the first property after a descriptor round-trip through the registry.
+    // Preserve source-generated metadata while allowing that database-safe ordering on reads.
+    private static readonly RasterOutputJsonContext _readContext = new(
+        new JsonSerializerOptions(RasterOutputJsonContext.Default.Options)
+        {
+            AllowOutOfOrderMetadataProperties = true
+        });
+
     /// <summary>Serializes a published descriptor with source-generated metadata.</summary>
     public static string Serialize(RasterOutputDescriptor descriptor)
     {
@@ -44,7 +54,7 @@ public static class RasterOutputJson
     public static RasterOutputDescriptor Deserialize(string json)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        return JsonSerializer.Deserialize(json, RasterOutputJsonContext.Default.RasterOutputDescriptor)
+        return JsonSerializer.Deserialize(json, _readContext.RasterOutputDescriptor)
             ?? throw new JsonException("Raster output descriptor cannot be null.");
     }
 

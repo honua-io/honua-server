@@ -573,9 +573,12 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                         InputMediaTypes = inputMediaTypes,
                         OutputMediaTypes = outputMediaTypes,
                     },
-                    // Typed object/staged resolution is #3090. The current executor contract is
-                    // deliberately honest: direct native reads support only bounded inline data.
-                    InputResidencies = ReadOnly(RasterInputResidency.Inline),
+                    // The isolated native worker opens immutable, ETag-pinned COG references
+                    // directly through provider VSI paths. Other external descriptor shapes stay
+                    // excluded until the worker has an equally strict reader for them.
+                    InputResidencies = ReadOnly(
+                        RasterInputResidency.Inline,
+                        RasterInputResidency.ObjectStoreCog),
                     OutputSinks = ReadOnly(RasterOutputSink.JobArtifact),
                     RequestExecutionAllowed = false,
                     DefaultPreference = gdalPreference,

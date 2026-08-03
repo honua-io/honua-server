@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit.Attributes;
 
@@ -113,6 +114,7 @@ public sealed class PostgisSurfaceZonalExecutionContractTests
     {
         var source = new ObjectStoreCogRasterSourceDescriptor
         {
+            Provider = CloudStorageProvider.AwsS3,
             StoreReference = "store-a",
             ObjectKey = "dem/source.tif",
             Version = "object-v1",

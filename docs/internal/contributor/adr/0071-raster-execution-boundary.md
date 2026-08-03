@@ -387,6 +387,42 @@ semantically equivalent, they are distinct capabilities or require explicit
 selection; the planner must not present them as interchangeable fallback
 engines.
 
+### Durable raster ingest and registration
+
+Raster ingest uses the same locality rule as analysis. A deliberately small,
+bounded direct upload may enter the existing PostGIS import seam. Larger uploads
+and registered object sources are durable GP work: the isolated native worker
+validates and, when necessary, normalizes the input into a pinned COG/GeoTIFF
+artifact. Local native execution is appropriate for bounded scratch work;
+external, high-scratch, or bursty work is eligible for the remote native backend
+so it does not consume serving or primary-database capacity.
+
+The native result manifest carries the canonical grid, per-band pixel type and
+NoData metadata, decoded-size estimate, checksum, lineage, and immutable object
+identity. No raster bytes are placed in the web heap, Redis, or the durable job
+record. Registration then follows the requested durable target:
+
+- an object-catalog target retains the immutable COG reference;
+- a PostGIS target verifies the native preflight and checksum while streaming
+  bounded chunks into the registration transaction, lets PostGIS decode the
+  staged payload, validates the decoded grid and bands, and uses PostGIS to
+  build statistics, Web Mercator overviews, and the footprint before visibility
+  commits;
+- cancellation or failure rolls back the raster, derived rows, staging chunks,
+  and visibility together, while an idempotent replay returns the already
+  committed descriptor.
+
+The current PostGIS serving schema deliberately retains one logical
+`raster_data` row per registered raster with `EXTERNAL` storage. That preserves
+the established raster ID, overview, statistics, footprint, and serving lookup
+contracts. `raster2pgsql`-style physical tiling is not executed by the web
+container and is not silently substituted during registration: adopting it
+requires a versioned storage/read-path change with equivalent ID and mosaic
+semantics. Out-of-database PostGIS rasters are likewise excluded from the
+baseline because they require a database-visible shared filesystem and weaken
+cloud portability. Either may be introduced later as an explicit provider
+capability, never as an undeclared fallback.
+
 ### Raster and 3D boundary
 
 - DEM-derived elevation, terrain tiles, hillshade and other raster surface

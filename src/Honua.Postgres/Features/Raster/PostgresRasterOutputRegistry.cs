@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using System.Security.Cryptography;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -19,6 +20,11 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
 {
+    internal const int PostgisImportChunkSizeBytes = 1024 * 1024;
+    private const int RasterImportLayerLockNamespace = 0x0484_5221;
+
+    private static readonly int[] _overviewFactors = [2, 4, 8, 16];
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IRasterOutputObjectStore _objectStore;
     private readonly CloudStorageOptions _storageOptions;
@@ -26,6 +32,10 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
     private readonly string _publicationTable;
     private readonly string _catalogTable;
     private readonly string _rasterTable;
+    private readonly string _rasterStatisticsTable;
+    private readonly string _rasterOverviewsTable;
+    private readonly string _rasterFootprintsTable;
+    private readonly string _importChunksTable;
 
     public PostgresRasterOutputRegistry(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -41,6 +51,10 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         _publicationTable = SchemaSearchPath.QualifyTable("raster_output_publications", schemaName);
         _catalogTable = SchemaSearchPath.QualifyTable("cloud_raster_catalog", schemaName);
         _rasterTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
+        _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
+        _rasterOverviewsTable = SchemaSearchPath.QualifyTable("raster_overviews", schemaName);
+        _rasterFootprintsTable = SchemaSearchPath.QualifyTable("raster_footprints", schemaName);
+        _importChunksTable = SchemaSearchPath.QualifyTable("raster_output_import_chunks", schemaName);
     }
 
     public async ValueTask<IAsyncDisposable> AcquireObjectLeaseAsync(
@@ -159,8 +173,26 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         }
         catch
         {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            await TryRollbackAsync(transaction).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private static async Task TryRollbackAsync(NpgsqlTransaction transaction)
+    {
+        try
+        {
+            if (transaction.Connection is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception rollbackFailure) when (rollbackFailure is ObjectDisposedException
+            or InvalidOperationException
+            or NpgsqlException)
+        {
+            // Preserve the original registration failure. A broken/disposed connection already
+            // guarantees PostgreSQL will discard the uncommitted staging transaction.
         }
     }
 
@@ -380,14 +412,18 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         }
 
         var layerId = ParseLayerTarget(command.Target.TargetReference);
-        var contentSize = command.PublishedObject.Content.SizeBytes;
-        if (contentSize > int.MaxValue)
+        var preflight = RasterOutputDescriptorValidator.ValidateForPostgisImport(command.PublishedObject.Grid);
+        if (!preflight.IsValid)
         {
-            throw new InvalidOperationException(
-                "PostGIS raster registration exceeds the PostgreSQL bytea parameter limit.");
+            throw new InvalidDataException("Published raster object failed PostGIS import preflight validation.");
         }
 
-        var content = await _objectStore.OpenReadAsync(
+        var expectedSrid = TryParseEpsg(command.PublishedObject.Grid.Crs);
+        if (expectedSrid is null or <= 0)
+        {
+            throw new InvalidDataException("PostGIS raster import requires a positive canonical EPSG CRS reference.");
+        }
+        await using var content = await _objectStore.OpenReadAsync(
             command.PublishedObject.StoreReference,
             command.PublishedObject.ObjectKey,
             cancellationToken).ConfigureAwait(false)
@@ -396,24 +432,66 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
                 command.PublishedObject.ObjectKey);
         if (!content.CanRead)
         {
-            await content.DisposeAsync().ConfigureAwait(false);
             throw new InvalidDataException("Published raster object did not provide a readable response stream.");
         }
 
-        await using var databaseContent = new NpgsqlKnownLengthReadStream(
+        await StagePostgisContentAsync(
+            connection,
+            transaction,
+            command.IdempotencyKey,
             content,
-            contentSize);
-        await using var insert = new NpgsqlCommand($"""
-            INSERT INTO {_rasterTable} (layer_id, name, raster)
-            VALUES (@layer_id, @name, ST_FromGDALRaster(@content))
-            RETURNING id
-            """, connection, transaction);
+            command.PublishedObject.Content,
+            cancellationToken).ConfigureAwait(false);
+        await AcquireLayerImportLockAsync(
+            connection,
+            transaction,
+            layerId,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureExternalRasterStorageAsync(
+            connection,
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await using var insert = new NpgsqlCommand(
+            BuildPostgisLoadSql(_rasterTable, _importChunksTable),
+            connection,
+            transaction)
+        {
+            CommandTimeout = 300
+        };
         insert.Parameters.AddWithValue("@layer_id", layerId);
         insert.Parameters.AddWithValue("@name", command.PublishedObject.OutputName);
-        insert.Parameters.Add(new NpgsqlParameter("@content", NpgsqlDbType.Bytea) { Value = databaseContent });
+        insert.Parameters.AddWithValue("@idempotency_key", command.IdempotencyKey);
         var rasterId = Convert.ToInt64(
             await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
             System.Globalization.CultureInfo.InvariantCulture);
+
+        await DeleteImportChunksAsync(
+            connection,
+            transaction,
+            command.IdempotencyKey,
+            cancellationToken).ConfigureAwait(false);
+        await ValidateDecodedRasterAsync(
+            connection,
+            transaction,
+            rasterId,
+            command.PublishedObject.Grid,
+            expectedSrid.Value,
+            cancellationToken).ConfigureAwait(false);
+        await ValidateLayerHomogeneityAsync(
+            connection,
+            transaction,
+            layerId,
+            rasterId,
+            expectedSrid.Value,
+            command.PublishedObject.Grid.BandCount,
+            cancellationToken).ConfigureAwait(false);
+        await BuildRequiredDerivedDataAsync(
+            connection,
+            transaction,
+            rasterId,
+            expectedSrid.Value,
+            cancellationToken).ConfigureAwait(false);
 
         return new PostgisRasterOutputDescriptor
         {
@@ -429,6 +507,358 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
             RasterId = rasterId,
             CatalogVersion = "raster-" + rasterId.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
+    }
+
+    private static async Task AcquireLayerImportLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(@namespace, @layer_id);",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@namespace", RasterImportLayerLockNamespace);
+        command.Parameters.AddWithValue("@layer_id", layerId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureExternalRasterStorageAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"ALTER TABLE {_rasterTable} ALTER COLUMN raster SET STORAGE EXTERNAL;",
+            connection,
+            transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ValidateLayerHomogeneityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int layerId,
+        long rasterId,
+        int srid,
+        int bandCount,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"""
+            SELECT COUNT(*), MIN(srid), MAX(srid), MIN(band_count), MAX(band_count)
+            FROM {_rasterTable}
+            WHERE layer_id = @layer_id
+              AND id <> @raster_id
+            """, connection, transaction);
+        command.Parameters.AddWithValue("@layer_id", layerId);
+        command.Parameters.AddWithValue("@raster_id", rasterId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            || reader.GetInt64(0) == 0)
+        {
+            return;
+        }
+
+        var minimumSrid = reader.GetInt32(1);
+        var maximumSrid = reader.GetInt32(2);
+        var minimumBands = reader.GetInt32(3);
+        var maximumBands = reader.GetInt32(4);
+        if (minimumSrid != maximumSrid
+            || minimumBands != maximumBands
+            || minimumSrid != srid
+            || minimumBands != bandCount)
+        {
+            throw new InvalidDataException(
+                "PostGIS raster registration would violate the target layer's SRID and band-count homogeneity contract.");
+        }
+    }
+
+    internal static string BuildPostgisLoadSql(string rasterTable, string importChunksTable) => $"""
+        WITH payload AS (
+            SELECT string_agg(content, ''::bytea ORDER BY chunk_ordinal) AS bytes
+            FROM {importChunksTable}
+            WHERE idempotency_key = @idempotency_key
+        )
+        INSERT INTO {rasterTable} (layer_id, name, raster)
+        SELECT @layer_id, @name, ST_FromGDALRaster(bytes)
+        FROM payload
+        WHERE bytes IS NOT NULL
+        RETURNING id
+        """;
+
+    private async Task StagePostgisContentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string idempotencyKey,
+        Stream content,
+        RasterContentIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        var hashName = identity.Checksum!.Algorithm switch
+        {
+            "sha256" => HashAlgorithmName.SHA256,
+            "sha512" => HashAlgorithmName.SHA512,
+            _ => throw new InvalidDataException("Published raster object uses an unsupported checksum algorithm.")
+        };
+        using var hash = IncrementalHash.CreateHash(hashName);
+        var buffer = new byte[PostgisImportChunkSizeBytes];
+        long totalBytes = 0;
+        var chunkOrdinal = 0;
+
+        await using var insert = new NpgsqlCommand($"""
+            INSERT INTO {_importChunksTable} (idempotency_key, chunk_ordinal, content)
+            VALUES (@idempotency_key, @chunk_ordinal, @content)
+            """, connection, transaction);
+        insert.Parameters.AddWithValue("@idempotency_key", idempotencyKey);
+        var ordinalParameter = insert.Parameters.Add("@chunk_ordinal", NpgsqlDbType.Integer);
+        var contentParameter = insert.Parameters.Add("@content", NpgsqlDbType.Bytea);
+
+        while (totalBytes < identity.SizeBytes)
+        {
+            var remaining = identity.SizeBytes - totalBytes;
+            var requested = (int)Math.Min(buffer.Length, remaining);
+            var read = await content.ReadAsync(buffer.AsMemory(0, requested), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new EndOfStreamException("Published raster object ended before its declared size.");
+            }
+
+            hash.AppendData(buffer, 0, read);
+            ordinalParameter.Value = chunkOrdinal++;
+            contentParameter.Value = buffer.AsMemory(0, read);
+            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            totalBytes += read;
+        }
+
+        if (await content.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false) != 0)
+        {
+            throw new InvalidDataException("Published raster object exceeds its declared size.");
+        }
+
+        var expectedChecksum = Convert.FromHexString(identity.Checksum.Value);
+        var actualChecksum = hash.GetHashAndReset();
+        if (!CryptographicOperations.FixedTimeEquals(expectedChecksum, actualChecksum))
+        {
+            throw new InvalidDataException("Published raster object checksum changed before PostGIS registration.");
+        }
+    }
+
+    private async Task DeleteImportChunksAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"""
+            DELETE FROM {_importChunksTable}
+            WHERE idempotency_key = @idempotency_key
+            """, connection, transaction);
+        command.Parameters.AddWithValue("@idempotency_key", idempotencyKey);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ValidateDecodedRasterAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long rasterId,
+        RasterGridMetadata expected,
+        int expectedSrid,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"""
+            SELECT ST_Width(raster), ST_Height(raster), ST_NumBands(raster), ST_SRID(raster),
+                   ST_UpperLeftX(raster), ST_UpperLeftY(raster),
+                   ST_ScaleX(raster), ST_ScaleY(raster), ST_SkewX(raster), ST_SkewY(raster)
+            FROM {_rasterTable}
+            WHERE id = @raster_id
+            """, connection, transaction);
+        command.Parameters.AddWithValue("@raster_id", rasterId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidDataException("Decoded PostGIS raster row was not found.");
+        }
+
+        if (reader.GetInt32(0) != expected.Width
+            || reader.GetInt32(1) != expected.Height
+            || reader.GetInt32(2) != expected.BandCount
+            || reader.GetInt32(3) != expectedSrid)
+        {
+            throw new InvalidDataException("Decoded PostGIS raster dimensions, bands, or CRS differ from native preflight metadata.");
+        }
+
+        var actualTransform = new[]
+        {
+            reader.GetDouble(4), reader.GetDouble(6), reader.GetDouble(8),
+            reader.GetDouble(5), reader.GetDouble(9), reader.GetDouble(7)
+        };
+        for (var index = 0; index < actualTransform.Length; index++)
+        {
+            var tolerance = Math.Max(1e-12, Math.Abs(expected.GeoTransform[index]) * 1e-10);
+            if (Math.Abs(actualTransform[index] - expected.GeoTransform[index]) > tolerance)
+            {
+                throw new InvalidDataException("Decoded PostGIS raster grid differs from native preflight metadata.");
+            }
+        }
+
+        await reader.CloseAsync().ConfigureAwait(false);
+        await ValidateDecodedBandsAsync(
+            connection,
+            transaction,
+            rasterId,
+            expected.Bands,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ValidateDecodedBandsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long rasterId,
+        IReadOnlyList<RasterBandMetadata> expectedBands,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"""
+            SELECT band_number, ST_BandPixelType(raster, band_number),
+                   ST_BandNoDataValue(raster, band_number)
+            FROM {_rasterTable}
+            CROSS JOIN LATERAL generate_series(1, ST_NumBands(raster)) AS band_number
+            WHERE id = @raster_id
+            ORDER BY band_number
+            """, connection, transaction);
+        command.Parameters.AddWithValue("@raster_id", rasterId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var observed = 0;
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var bandIndex = reader.GetInt32(0) - 1;
+            if (bandIndex < 0 || bandIndex >= expectedBands.Count
+                || !string.Equals(reader.GetString(1), ToPostgisPixelType(expectedBands[bandIndex].DataType), StringComparison.Ordinal)
+                || !NoDataMatches(reader, 2, expectedBands[bandIndex].NoDataValue))
+            {
+                throw new InvalidDataException("Decoded PostGIS raster band metadata differs from native preflight metadata.");
+            }
+
+            observed++;
+        }
+
+        if (observed != expectedBands.Count)
+        {
+            throw new InvalidDataException("Decoded PostGIS raster band count differs from native preflight metadata.");
+        }
+    }
+
+    private async Task BuildRequiredDerivedDataAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long rasterId,
+        int srid,
+        CancellationToken cancellationToken)
+    {
+        await using (var statistics = new NpgsqlCommand($"""
+            INSERT INTO {_rasterStatisticsTable}
+                (raster_data_id, band_number, min_value, max_value, mean_value, std_dev,
+                 valid_pixel_count, nodata_pixel_count)
+            SELECT @raster_id, calculated.band_number,
+                   (calculated.stats).min, (calculated.stats).max,
+                   (calculated.stats).mean, (calculated.stats).stddev,
+                   (calculated.stats).count,
+                   calculated.total_pixels - (calculated.stats).count
+            FROM (
+                SELECT band_number, ST_SummaryStats(raster, band_number) AS stats,
+                       ST_Width(raster)::bigint * ST_Height(raster)::bigint AS total_pixels
+                FROM {_rasterTable}
+                CROSS JOIN LATERAL generate_series(1, ST_NumBands(raster)) AS band_number
+                WHERE id = @raster_id
+            ) AS calculated
+            """, connection, transaction)
+        {
+            CommandTimeout = 300
+        })
+        {
+            statistics.Parameters.AddWithValue("@raster_id", rasterId);
+            var statisticsRows = await statistics.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (statisticsRows <= 0)
+            {
+                throw new InvalidDataException("PostGIS raster statistics were not created.");
+            }
+        }
+
+        foreach (var factor in _overviewFactors)
+        {
+            await using var overview = new NpgsqlCommand($"""
+                WITH source AS (
+                    SELECT ST_Transform(raster, 3857) AS rast
+                    FROM {_rasterTable}
+                    WHERE id = @raster_id
+                )
+                INSERT INTO {_rasterOverviewsTable}
+                    (raster_data_id, overview_factor, raster, ground_resolution)
+                SELECT @raster_id, @factor,
+                       ST_Rescale(rast, abs(ST_ScaleX(rast)) * @factor,
+                           -(abs(ST_ScaleX(rast)) * @factor), 'NearestNeighbor'),
+                       abs(ST_ScaleX(rast)) * @factor
+                FROM source
+                """, connection, transaction)
+            {
+                CommandTimeout = 300
+            };
+            overview.Parameters.AddWithValue("@raster_id", rasterId);
+            overview.Parameters.AddWithValue("@factor", factor);
+            if (await overview.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                throw new InvalidDataException("PostGIS raster overview pyramid was not created.");
+            }
+        }
+
+        await using var footprint = new NpgsqlCommand($"""
+            INSERT INTO {_rasterFootprintsTable}
+                (raster_data_id, footprint, seamline, srid, updated_at)
+            SELECT @raster_id, ST_ConvexHull(raster), ST_ConvexHull(raster), @srid, NOW()
+            FROM {_rasterTable}
+            WHERE id = @raster_id
+              AND ST_ConvexHull(raster) IS NOT NULL
+            """, connection, transaction);
+        footprint.Parameters.AddWithValue("@raster_id", rasterId);
+        footprint.Parameters.AddWithValue("@srid", srid);
+        if (await footprint.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new InvalidDataException("PostGIS raster footprint was not created.");
+        }
+    }
+
+    private static string ToPostgisPixelType(string dataType) => dataType switch
+    {
+        "Byte" => "8BUI",
+        "Int8" => "8BSI",
+        "UInt16" => "16BUI",
+        "Int16" => "16BSI",
+        "UInt32" => "32BUI",
+        "Int32" => "32BSI",
+        "Float32" => "32BF",
+        "Float64" => "64BF",
+        _ => throw new InvalidDataException("Raster band data type is outside the PostGIS import allowlist.")
+    };
+
+    private static bool NoDataMatches(NpgsqlDataReader reader, int ordinal, string? expected)
+    {
+        if (expected is null)
+        {
+            return reader.IsDBNull(ordinal);
+        }
+
+        if (reader.IsDBNull(ordinal)
+            || !double.TryParse(expected, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var expectedValue))
+        {
+            return false;
+        }
+
+        var actualValue = reader.GetDouble(ordinal);
+        return double.IsNaN(expectedValue)
+            ? double.IsNaN(actualValue)
+            : Math.Abs(actualValue - expectedValue) <= Math.Max(1e-12, Math.Abs(expectedValue) * 1e-12);
     }
 
     private async Task InsertVisibilityAsync(

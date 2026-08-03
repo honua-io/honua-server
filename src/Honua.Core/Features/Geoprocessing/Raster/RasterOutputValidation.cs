@@ -41,6 +41,9 @@ public static class RasterOutputValidationCodes
 
     /// <summary>The inline payload exceeds its configured byte ceiling.</summary>
     public const string InlinePayloadTooLarge = "inline_payload_too_large";
+
+    /// <summary>Native raster preflight metadata is missing, inconsistent, or unsafe to decode.</summary>
+    public const string InvalidImportPreflight = "invalid_import_preflight";
 }
 
 /// <summary>A caller-safe raster output validation failure.</summary>
@@ -62,6 +65,23 @@ public sealed record RasterOutputValidationResult
 /// <summary>Validates durable raster output descriptors without resolving or reading their content.</summary>
 public static class RasterOutputDescriptorValidator
 {
+    private const long MaximumImportDimension = 65_535;
+    private const int MaximumImportBands = 256;
+    private const long MaximumImportDecodedBytes = 1L << 40; // 1 TiB hard safety ceiling.
+
+    private static readonly Dictionary<string, int> _importDataTypeBytes =
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Byte"] = 1,
+            ["Int8"] = 1,
+            ["UInt16"] = 2,
+            ["Int16"] = 2,
+            ["UInt32"] = 4,
+            ["Int32"] = 4,
+            ["Float32"] = 4,
+            ["Float64"] = 8
+        };
+
     /// <summary>Validates a published output descriptor.</summary>
     public static RasterOutputValidationResult Validate(
         RasterOutputDescriptor descriptor,
@@ -120,6 +140,86 @@ public static class RasterOutputDescriptorValidator
                 Add(errors, RasterOutputValidationCodes.InvalidField, "outputType",
                     "Raster output descriptor type is not supported.");
                 break;
+        }
+
+        return new RasterOutputValidationResult { Errors = errors };
+    }
+
+    /// <summary>
+    /// Applies the stricter native-preflight contract required before a staged COG may be decoded
+    /// into PostGIS. Validation is metadata-only and therefore runs before object transfer.
+    /// </summary>
+    public static RasterOutputValidationResult ValidateForPostgisImport(RasterGridMetadata grid)
+    {
+        ArgumentNullException.ThrowIfNull(grid);
+        var errors = new List<RasterOutputValidationError>();
+
+        ValidateGrid(grid, errors);
+        if (string.Equals(grid.Crs, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.crs",
+                "PostGIS raster import requires a resolved CRS.");
+        }
+
+        if (grid.Width > MaximumImportDimension || grid.Height > MaximumImportDimension)
+        {
+            Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.dimensions",
+                "PostGIS raster dimensions exceed the supported staged-import grid ceiling.");
+        }
+
+        if (grid.BandCount > MaximumImportBands || grid.Bands is null || grid.Bands.Count != grid.BandCount)
+        {
+            Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.bands",
+                "PostGIS raster import requires one allowlisted preflight entry per band.");
+            return new RasterOutputValidationResult { Errors = errors };
+        }
+
+        long bytesPerPixel = 0;
+        foreach (var band in grid.Bands)
+        {
+            if (band is null || !_importDataTypeBytes.TryGetValue(band.DataType, out var byteWidth))
+            {
+                Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.bands.dataType",
+                    "PostGIS raster import encountered an unsupported band data type.");
+                continue;
+            }
+
+            bytesPerPixel += byteWidth;
+            if (band.NoDataValue is { } noData
+                && (!double.TryParse(noData, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsedNoData)
+                    || double.IsInfinity(parsedNoData)))
+            {
+                Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.bands.noDataValue",
+                    "Raster band NoData metadata is not a finite number or NaN sentinel.");
+            }
+        }
+
+        long expectedDecodedBytes;
+        try
+        {
+            expectedDecodedBytes = checked(grid.Width * grid.Height * bytesPerPixel);
+        }
+        catch (OverflowException)
+        {
+            expectedDecodedBytes = -1;
+        }
+
+        if (expectedDecodedBytes <= 0 || expectedDecodedBytes > MaximumImportDecodedBytes
+            || grid.DecodedSizeBytes != expectedDecodedBytes)
+        {
+            Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.decodedSizeBytes",
+                "Decoded raster size is missing, inconsistent, or exceeds the import safety ceiling.");
+        }
+
+        if (grid.GeoTransform is { Count: 6 } transform)
+        {
+            var determinant = (transform[1] * transform[5]) - (transform[2] * transform[4]);
+            if (determinant == 0d || double.IsNaN(determinant) || double.IsInfinity(determinant))
+            {
+                Add(errors, RasterOutputValidationCodes.InvalidImportPreflight, "grid.geoTransform",
+                    "PostGIS raster import requires a non-degenerate output grid.");
+            }
         }
 
         return new RasterOutputValidationResult { Errors = errors };
