@@ -169,24 +169,23 @@ Millisecond timestamps break ties within a band.
 
 ### Cancellation
 
-- API-side cancellation first branches on the durable output-publication phase.
-  A job in `Finalizing` follows the claim-independent fenced transition to
+- API-side cancellation is a compare-and-set retry loop over the complete job
+  record, not a one-time phase read. Each iteration re-reads the record version,
+  canonical status, publication phase, claim, and cancellation fields. A
+  terminal record returns its existing outcome. Any version or predicate
+  conflict restarts the loop and reclassifies the new phase; notifier delivery
+  never substitutes for a durable winning update.
+- A job in `Finalizing` follows the claim-independent fenced transition to
   `Terminalizing` defined above. A job already in `Terminalizing` is handled
   idempotently by the output reconciler; an existing requested terminal status
-  is not overwritten. These branches run before execution-claim inspection so
-  a released execution claim cannot cause finalization cancellation to be
+  is not overwritten. These cases are evaluated before execution-claim state,
+  on every retry, so a concurrent `Running` to `Finalizing` handoff cannot be
   misclassified as unclaimed execution.
-- API-side cancellation first attempts to signal in-flight workers via the
-  process-local `IJobCancellationNotifier`. The worker registers its per-job
-  cancellation token source before the `Provisioning → Running` transition so
-  that operator cancellation arriving during that window is delivered through
-  the token rather than as a direct store write.
-- When the local notifier confirms the signal was delivered, the worker owns
-  the terminal state transition and the API returns immediately.
-- When no local notifier can reach the worker (the common case in split
-  API/worker deployments), the API checks the job's claim state:
-  - **Unclaimed** (`ClaimedBy` is null): the API removes the job from the queue
-    and marks it Cancelled directly when it owns no fenced output intent.
+- While publication phase is `None`, the retry loop branches on canonical
+  execution/claim state:
+  - **Queued and unclaimed**: when no fenced output intent exists, the API uses
+    a CAS over the expected version, `Queued` status, absent claim, and phase
+    `None` to mark the job Cancelled, then removes the queue member idempotently.
     When prepared intents exist, the API instead uses a job-store
     compare-and-set on the expected record version, canonical `Queued` status,
     absent claim, and publication phase `None`. The winning update changes the
@@ -198,13 +197,18 @@ Millisecond timestamps break ties within a band.
     claimed branch; if cancellation wins, the queue entry is no longer eligible
     for execution. The output reconciler aborts the referenced intents under
     their fences before changing the canonical status to Cancelled.
-  - **Actively claimed**: the API persists `CancellationRequestedAt` on the
-    `ExecutionJobRecord` as a durable cancellation signal. The worker observes
-    this signal during its next heartbeat read and cancels locally. If the
-    worker's heartbeat expires before it processes the signal, the reconciler
-    honours the request instead of retrying. It first aborts fenced output
-    intents under `OutputPublicationPhase.Terminalizing`, when present, and
-    only then writes the terminal Cancelled status.
+  - **Provisioning or Running execution**: the API conditionally persists
+    `CancellationRequestedAt` against the expected version, phase `None`,
+    status, claim/attempt, and fencing token. Only after this durable write wins
+    does it best-effort signal `IJobCancellationNotifier`. The worker registers
+    its per-job token source before the `Provisioning → Running` transition and
+    observes the durable field during heartbeat reads. If the local notifier is
+    absent, stale, or races with completion, the persisted signal remains the
+    authority. A handoff CAS that saw the earlier record now fails because the
+    version/cancellation predicate changed; it must re-read and enter
+    `Terminalizing` instead of `Finalizing`. If the worker heartbeat expires,
+    the reconciler honours the request rather than retrying and aborts fenced
+    output intents before writing terminal Cancelled.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 - When the reconciler requeues or terminally fails a job (heartbeat or timeout
