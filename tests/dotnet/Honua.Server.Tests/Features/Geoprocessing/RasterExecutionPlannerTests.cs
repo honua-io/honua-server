@@ -245,8 +245,48 @@ public sealed class RasterExecutionPlannerTests
         var act = () => planner.Plan(request);
 
         act.Should().Throw<RasterExecutionPlanningException>()
-            .Where(exception => !exception.IsRetryable)
-            .WithMessage("*No canonical PostGIS raster IProcessExecutor*");
+            .Where(exception =>
+                !exception.IsRetryable
+                && exception.ReasonCode == "capability-unavailable")
+            .WithMessage("*No available PostGIS raster provider capability*");
+    }
+
+    [Fact]
+    public void Plan_RequiredProviderTemporarilyUnhealthy_IsRetryable()
+    {
+        var process = CreateRegistry().Find("raster.clip")!;
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(
+            [
+                process with
+                {
+                    Engines = process.Engines
+                        .Select(engine => engine.Engine == RasterEngine.Postgis
+                            ? engine with
+                            {
+                                IsAvailable = false,
+                                UnavailabilityReason = "PostGIS health probe is failing.",
+                                UnavailabilityIsRetryable = true,
+                            }
+                            : engine)
+                        .ToArray(),
+                },
+            ]),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var request = Request(
+            RasterInputResidency.Postgis,
+            Cost(decodedBytes: 8 * MiB, scratchBytes: 16 * MiB, databaseWork: 100_000)) with
+        {
+            Policy = Policy(requiredEngine: RasterEngine.Postgis),
+        };
+
+        var act = () => planner.Plan(request);
+
+        act.Should().Throw<RasterExecutionPlanningException>()
+            .Where(exception =>
+                exception.IsRetryable
+                && exception.ReasonCode == "capability-unavailable")
+            .WithMessage("*PostGIS health probe is failing*");
     }
 
     [Fact]

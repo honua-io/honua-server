@@ -15,8 +15,7 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 {
     private const string SemanticVersion = "1.0.0";
     private const string PostgisUnavailableReason =
-        "No canonical PostGIS raster IProcessExecutor is registered for this process; "
-        + "PostGIS GP execution is tracked by honua-server#3095 and #3096.";
+        "No available PostGIS raster provider capability is registered for this process.";
     private const string KrigingUnavailableReason =
         "No kriging-capable numerical backend is registered; the bundled GDAL worker does not "
         + "implement kriging and PostGIS has no canonical kriging executor.";
@@ -104,6 +103,37 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         return new RasterEngineCapabilityRegistry(BuildConfiguredBuiltIns(
             allowedRasterInputFormats,
             skippedGdalDrivers ?? DefaultGdalSkippedDriverNames));
+    }
+
+    /// <summary>
+    /// Creates the built-in registry with PostGIS availability projected from provider-neutral
+    /// executor discovery. Unknown processes, semantic drift, malformed declarations, and two
+    /// providers claiming the same current semantic variant fail composition.
+    /// </summary>
+    /// <param name="providerCapabilities">Capabilities discovered from provider executors.</param>
+    /// <param name="allowedRasterInputFormats">Effective native-worker raster input formats.</param>
+    /// <param name="skippedGdalDrivers">Effective native-worker driver denial set.</param>
+    /// <returns>A registry whose advertised PostGIS availability is backed by a real executor.</returns>
+    public static RasterEngineCapabilityRegistry CreateForProviderCapabilities(
+        IEnumerable<RasterProviderCapability> providerCapabilities,
+        IEnumerable<string> allowedRasterInputFormats,
+        IEnumerable<string>? skippedGdalDrivers = null)
+    {
+        ArgumentNullException.ThrowIfNull(providerCapabilities);
+        ArgumentNullException.ThrowIfNull(allowedRasterInputFormats);
+
+        var builtIns = BuildConfiguredBuiltIns(
+            allowedRasterInputFormats,
+            skippedGdalDrivers ?? DefaultGdalSkippedDriverNames);
+        var discovered = providerCapabilities.ToArray();
+        ValidateProviderCapabilities(discovered, builtIns);
+
+        return new RasterEngineCapabilityRegistry(builtIns.Select(process => process with
+        {
+            Engines = process.Engines
+                .Select(engine => ProjectProviderCapability(process, engine, discovered))
+                .ToArray(),
+        }));
     }
 
     /// <inheritdoc />
@@ -401,6 +431,95 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         };
     }
 
+    private static RasterEngineCapability ProjectProviderCapability(
+        RasterProcessCapability process,
+        RasterEngineCapability engine,
+        IReadOnlyList<RasterProviderCapability> discovered)
+    {
+        if (engine.Engine != RasterEngine.Postgis)
+        {
+            return engine;
+        }
+
+        var capability = discovered.SingleOrDefault(candidate =>
+            candidate.Engine == engine.Engine
+            && string.Equals(candidate.Variant.ProcessId, process.ProcessId, StringComparison.Ordinal)
+            && string.Equals(candidate.Variant.SemanticVersion, process.SemanticVersion, StringComparison.Ordinal));
+        if (capability is null)
+        {
+            return engine;
+        }
+
+        var available = capability.Availability == RasterProviderAvailability.Available;
+        return engine with
+        {
+            ProviderId = capability.ProviderId,
+            ProviderPolicyVersion = capability.PolicyVersion,
+            ImplementationVersion = capability.Variant.ImplementationVersion,
+            IsAvailable = available,
+            UnavailabilityReason = available ? null : capability.UnavailabilityReason,
+            UnavailabilityIsRetryable = capability.Availability == RasterProviderAvailability.Unhealthy,
+        };
+    }
+
+    private static void ValidateProviderCapabilities(
+        IReadOnlyList<RasterProviderCapability> discovered,
+        IReadOnlyList<RasterProcessCapability> builtIns)
+    {
+        var known = builtIns.ToDictionary(process => process.ProcessId, StringComparer.Ordinal);
+        var routes = new HashSet<(RasterEngine Engine, string ProcessId, string SemanticVersion)>();
+        foreach (var capability in discovered)
+        {
+            if (capability is null
+                || capability.Variant is null
+                || capability.Engine != RasterEngine.Postgis
+                || !Enum.IsDefined(capability.Availability)
+                || string.IsNullOrWhiteSpace(capability.ProviderId)
+                || string.IsNullOrWhiteSpace(capability.PolicyVersion)
+                || string.IsNullOrWhiteSpace(capability.Variant.ProcessId)
+                || string.IsNullOrWhiteSpace(capability.Variant.SemanticVersion)
+                || string.IsNullOrWhiteSpace(capability.Variant.ImplementationVersion))
+            {
+                throw new InvalidOperationException(
+                    "PostGIS raster provider capability discovery returned an invalid declaration.");
+            }
+
+            if ((capability.Availability == RasterProviderAvailability.Available)
+                == !string.IsNullOrWhiteSpace(capability.UnavailabilityReason))
+            {
+                throw new InvalidOperationException(
+                    $"PostGIS raster capability '{capability.Variant.ProcessId}' must carry an "
+                    + "unavailability reason exactly when it is unhealthy or unavailable.");
+            }
+
+            if (!known.TryGetValue(capability.Variant.ProcessId, out var process))
+            {
+                throw new InvalidOperationException(
+                    $"PostGIS raster provider advertises unknown process "
+                    + $"'{capability.Variant.ProcessId}'.");
+            }
+
+            if (!string.Equals(
+                    capability.Variant.SemanticVersion,
+                    process.SemanticVersion,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"PostGIS raster provider semantic version "
+                    + $"'{capability.Variant.SemanticVersion}' for '{capability.Variant.ProcessId}' "
+                    + $"does not match canonical version '{process.SemanticVersion}'.");
+            }
+
+            var route = (capability.Engine, capability.Variant.ProcessId, capability.Variant.SemanticVersion);
+            if (!routes.Add(route))
+            {
+                throw new InvalidOperationException(
+                    $"More than one PostGIS raster provider claims current semantic variant "
+                    + $"'{capability.Variant.ProcessId}@{capability.Variant.SemanticVersion}'.");
+            }
+        }
+    }
+
     private static RasterProcessCapability Create(
         string processId,
         string requiredCapability,
@@ -426,6 +545,8 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                 new RasterEngineCapability
                 {
                     Engine = RasterEngine.Postgis,
+                    ProviderId = "postgis",
+                    ProviderPolicyVersion = "postgis-raster-v1",
                     ImplementationVersion = $"honua.postgis.{processId}@{SemanticVersion}",
                     RequiredCapabilities = ReadOnly(requiredCapability),
                     Formats = new RasterFormatRestrictions
@@ -443,6 +564,8 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                 new RasterEngineCapability
                 {
                     Engine = RasterEngine.GdalNative,
+                    ProviderId = "gdal-native",
+                    ProviderPolicyVersion = "gdal-native-v1",
                     ImplementationVersion = $"honua.gdal-native.{processId}@{SemanticVersion}",
                     RequiredCapabilities = ReadOnly(requiredCapability),
                     Formats = new RasterFormatRestrictions
@@ -581,6 +704,13 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                         + "unavailability reason exactly when it is unavailable.",
                         nameof(capabilities));
                 }
+
+                if (engine.IsAvailable && engine.UnavailabilityIsRetryable)
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' engine '{engine.Engine}' cannot mark an available capability as retryable-unavailable.",
+                        nameof(capabilities));
+                }
             }
 
             if (engines.Count != Enum.GetValues<RasterEngine>().Length)
@@ -669,17 +799,17 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 
     private static GdalRasterInputFormat? ToGdalRasterInputFormat(string format) =>
         format.Trim().ToUpperInvariant() switch
-    {
-        "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
-        "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
-        "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
-        "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
-        "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
-        "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
-        "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
-        "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
-        _ => null,
-    };
+        {
+            "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
+            "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
+            "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
+            "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
+            "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
+            "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
+            "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
+            "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
+            _ => null,
+        };
 
     private static ReadOnlyCollection<T> ReadOnly<T>(params T[] values)
         => Array.AsReadOnly(values);

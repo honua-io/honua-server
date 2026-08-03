@@ -24,10 +24,11 @@ public sealed class GeoprocessingIsolationTests
     private static readonly string[] BannedProjectReferences =
     {
         "Honua.Server",
+        "Honua.Postgres",
     };
 
     [ArchitectureTest]
-    public void HonuaGeoprocessingCsproj_ShouldNotReference_HonuaServer()
+    public void HonuaGeoprocessingCsproj_ShouldNotReference_ServerOrPostgres()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var geoprocessingCsproj = ArchitectureTestHelpers.CombinePath(
@@ -52,8 +53,10 @@ public sealed class GeoprocessingIsolationTests
                 "Honua.Geoprocessing was carved out of Honua.Server so the geoprocessing " +
                 "surface can be referenced by the remaining Phase 1 protocol extractions " +
                 "(OgcApi.Processes, GeoServices/GPServer) without pulling Honua.Server " +
-                "transitively. A back-reference to Honua.Server would re-introduce the cycle " +
-                "the carve was designed to break. Move the dependency into Honua.Core / " +
+                "transitively, and provider-neutral raster execution must not pull Postgres " +
+                "SQL/client types into the GP layer. A back-reference to Honua.Server or " +
+                "Honua.Postgres would violate that dependency direction. Move the contract " +
+                "into Honua.Core and keep provider implementation in Honua.Postgres, or use " +
                 "Honua.Hosting / Honua.Jobs / Honua.Core.Abstractions, or extract a new " +
                 "lower-tier helper assembly.");
     }

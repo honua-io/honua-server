@@ -168,6 +168,12 @@ public sealed record RasterExecutionDecision
     /// <summary>Selected raster engine.</summary>
     public required RasterEngine Engine { get; init; }
 
+    /// <summary>Stable provider identity pinned for execution and retry.</summary>
+    public string? ProviderId { get; init; }
+
+    /// <summary>Provider capability-policy version pinned for execution and retry.</summary>
+    public string? ProviderPolicyVersion { get; init; }
+
     /// <summary>Selected physical execution placement.</summary>
     public required RasterExecutionPlacement Placement { get; init; }
 

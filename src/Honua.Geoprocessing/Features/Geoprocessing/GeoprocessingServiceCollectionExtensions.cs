@@ -82,8 +82,10 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
         // catalog so catalog definitions project the exact same immutable descriptor instances.
-        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(_ =>
-            CreateRasterEngineCapabilityRegistry(configuration));
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(sp =>
+            CreateRasterEngineCapabilityRegistry(
+                configuration,
+                sp.GetServices<IRasterProviderExecutor>()));
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
@@ -424,7 +426,8 @@ internal static class GeoprocessingServiceCollectionExtensions
     }
 
     private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IEnumerable<IRasterProviderExecutor> providerExecutors)
     {
         var configuredFormats = configuration
             .GetSection("GdalWorker:AllowedRasterInputFormats")
@@ -434,16 +437,27 @@ internal static class GeoprocessingServiceCollectionExtensions
             .GetSection("GdalWorker:Hardening:SkipDrivers")
             .GetChildren()
             .ToArray();
-        return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
-            configuredFormats.Length == 0
-                ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
-                : configuredFormats
-                    .Select(format => format.Value)
-                    .OfType<string>(),
-            configuredSkippedDrivers.Length == 0
-                ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
-                : configuredSkippedDrivers
-                    .Select(driver => driver.Value)
-                    .OfType<string>());
+        var allowedFormats = configuredFormats.Length == 0
+            ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
+            : configuredFormats
+                .Select(format => format.Value)
+                .OfType<string>();
+        var skippedDrivers = configuredSkippedDrivers.Length == 0
+            ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
+            : configuredSkippedDrivers
+                .Select(driver => driver.Value)
+                .OfType<string>();
+        var providerCapabilities = providerExecutors
+            .SelectMany(executor => executor.Capabilities)
+            .ToArray();
+
+        return providerCapabilities.Length == 0
+            ? RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+                allowedFormats,
+                skippedDrivers)
+            : RasterEngineCapabilityRegistry.CreateForProviderCapabilities(
+                providerCapabilities,
+                allowedFormats,
+                skippedDrivers);
     }
 }

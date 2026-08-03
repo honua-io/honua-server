@@ -24,11 +24,10 @@ public interface IJobExecutor
     /// This is the worker-side half of the runtime-profile claim fence. The default
     /// implementation returns <see cref="RuntimeProfiles.DefaultAccepted"/>
     /// (managed/default only) so that every existing executor — and the lean
-    /// dispatcher composed from them — is correctly fenced and can NEVER claim a
-    /// <see cref="RuntimeProfiles.Native"/> job without opting in. An undeclared set
-    /// therefore means "managed/default only", NOT "accept any profile". The
-    /// heavyweight GDAL worker (added in a later stream) overrides this to declare
-    /// <c>{ "native" }</c>.
+    /// dispatcher composed from them — is correctly fenced and can NEVER claim an
+    /// isolated runtime profile without opting in. An undeclared set therefore means
+    /// "managed/default only", NOT "accept any profile". Native GIS, PostGIS raster,
+    /// and custom-code workers each override this with their exclusive canonical set.
     ///
     /// <para>
     /// A job whose <see cref="ExecutionJobSpec.RuntimeProfile"/> is <c>null</c> or

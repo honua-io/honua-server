@@ -92,6 +92,22 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         activity?.SetTag("honua.raster.policy_ref", request.Policy.PolicyRef);
         activity?.SetTag("honua.raster.health_version", request.Health.Version);
 
+        if (request.Policy.RequiredEngine is { } requiredEngine)
+        {
+            var requiredCapability = process.Engines.SingleOrDefault(candidate =>
+                candidate.Engine == requiredEngine);
+            if (requiredCapability is null || !requiredCapability.IsAvailable)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "required capability unavailable");
+                throw Refuse(
+                    request,
+                    "capability-unavailable",
+                    $"Required raster engine '{requiredEngine}' is unavailable for "
+                    + $"'{request.ProcessId}': {requiredCapability?.UnavailabilityReason ?? "no capability is registered"}.",
+                    requiredCapability?.UnavailabilityIsRetryable == true);
+            }
+        }
+
         var candidates = new List<Candidate>();
         var eliminations = new List<string>();
         var hasRetryableBlocker = false;
@@ -123,6 +139,8 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         {
             ProcessId = request.ProcessId,
             Engine = selected.Capability.Engine,
+            ProviderId = selected.Capability.ProviderId ?? ProviderIdFor(selected.Capability.Engine),
+            ProviderPolicyVersion = selected.Capability.ProviderPolicyVersion ?? request.Policy.PolicyRef,
             Placement = selected.Placement,
             InputResidencies = Array.AsReadOnly(request.InputResidencies.ToArray()),
             OutputSink = request.OutputSink,
@@ -173,6 +191,7 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
         if (!capability.IsAvailable)
         {
             eliminations.Add($"{engineName}: {capability.UnavailabilityReason}");
+            hasRetryableBlocker |= capability.UnavailabilityIsRetryable;
             return;
         }
 
@@ -386,6 +405,13 @@ internal sealed partial class RasterExecutionPlanner : IRasterExecutionPlanner
 
         return capability.DefaultPreference == RasterEngineDefaultPreference.Preferred ? 3 : 4;
     }
+
+    private static string ProviderIdFor(RasterEngine engine) => engine switch
+    {
+        RasterEngine.Postgis => "postgis",
+        RasterEngine.GdalNative => "gdal-native",
+        _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, "Unknown raster engine."),
+    };
 
     private static int RankPlacement(RasterExecutionPlanningRequest request, Candidate candidate)
     {

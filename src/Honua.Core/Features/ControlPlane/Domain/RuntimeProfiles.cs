@@ -7,12 +7,11 @@ namespace Honua.Core.Features.ControlPlane.Domain;
 /// Canonical semantics for the job runtime-profile claim fence.
 /// </summary>
 /// <remarks>
-/// The server runs a lean serving image (GDAL-free, fast cold-start) that executes
-/// <see cref="Managed"/>-profile jobs, and — separately — a heavyweight GDAL worker
-/// that executes <see cref="Native"/>-profile jobs. The job queue's claim path uses
-/// these helpers to guarantee that a worker only ever claims a job whose effective
-/// runtime profile is in the worker's accepted set: the lean worker never claims a
-/// <c>native</c> job, and the native worker only claims <c>native</c> jobs.
+/// The server runs a lean serving image (GDAL-free, fast cold-start) for
+/// <see cref="Managed"/> jobs. Separate workers exclusively claim native GIS,
+/// managed PostGIS raster, and untrusted custom-code profiles. The queue's claim
+/// path uses these helpers to guarantee that a worker only claims a job whose
+/// effective runtime profile is in its accepted set.
 ///
 /// <para>
 /// SAFE (fail-closed) semantics: a job whose <c>RuntimeProfile</c> is <c>null</c> or
@@ -32,9 +31,7 @@ public static class RuntimeProfiles
     public const string Managed = "managed";
 
     /// <summary>
-    /// The heavyweight native runtime profile served by the GDAL worker image.
-    /// Defined here for shared reference; the GDAL worker itself is added in a later
-    /// stream and is not part of this substrate.
+    /// The heavyweight native runtime profile served by the isolated GDAL worker image.
     /// </summary>
     public const string Native = "native";
 
@@ -45,6 +42,12 @@ public static class RuntimeProfiles
     public const string RasterPostgis = "raster-postgis";
 
     /// <summary>
+    /// Isolated untrusted custom-code runtime profile. Custom code is never compatible with
+    /// the managed, native GIS, or managed PostGIS raster worker profiles.
+    /// </summary>
+    public const string CustomCode = "custom-code";
+
+    /// <summary>
     /// The accepted-profile set applied to any executor/worker that does not override
     /// it: managed/default jobs only. This keeps every existing trunk executor — and
     /// the lean dispatcher composed from them — fenced so it can never claim a
@@ -52,6 +55,18 @@ public static class RuntimeProfiles
     /// </summary>
     public static IReadOnlySet<string> DefaultAccepted { get; } =
         new HashSet<string>(StringComparer.Ordinal) { Managed };
+
+    /// <summary>Exclusive accepted-profile set for the isolated native GIS worker.</summary>
+    public static IReadOnlySet<string> NativeAccepted { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { Native };
+
+    /// <summary>Exclusive accepted-profile set for the managed PostGIS raster worker.</summary>
+    public static IReadOnlySet<string> RasterPostgisAccepted { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { RasterPostgis };
+
+    /// <summary>Exclusive accepted-profile set for the custom-code Batch dispatcher.</summary>
+    public static IReadOnlySet<string> CustomCodeAccepted { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { CustomCode };
 
     /// <summary>
     /// Normalizes a job's raw <c>RuntimeProfile</c> string to its effective profile:

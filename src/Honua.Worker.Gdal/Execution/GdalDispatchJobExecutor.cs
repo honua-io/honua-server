@@ -24,9 +24,6 @@ namespace Honua.Worker.Gdal.Execution;
 /// </summary>
 internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
 {
-    private static readonly IReadOnlySet<string> NativeProfileSet =
-        new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
-
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GdalDispatchJobExecutor> _logger;
 
@@ -60,7 +57,7 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
-    public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
+    public IReadOnlySet<string> AcceptedRuntimeProfiles => RuntimeProfiles.NativeAccepted;
 
     /// <summary>Process ids this dispatcher can route.</summary>
     public IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;

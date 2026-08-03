@@ -94,6 +94,18 @@ public sealed record RasterEngineCapability
     public required RasterEngine Engine { get; init; }
 
     /// <summary>
+    /// Stable provider identity selected with this implementation. Legacy/custom descriptors that
+    /// omit it are normalized by the planner to the engine's canonical provider identity.
+    /// </summary>
+    public string? ProviderId { get; init; }
+
+    /// <summary>
+    /// Stable provider capability-policy version. Legacy/custom descriptors that omit it are
+    /// normalized by the planner to the decision's operator policy reference.
+    /// </summary>
+    public string? ProviderPolicyVersion { get; init; }
+
+    /// <summary>
     /// Stable, semantic-versioned implementation identifier, for example
     /// <c>honua.gdal-native.surface.slope@1.0.0</c>.
     /// </summary>
@@ -127,6 +139,12 @@ public sealed record RasterEngineCapability
     /// Actionable reason the engine is unavailable, or <see langword="null"/> when available.
     /// </summary>
     public string? UnavailabilityReason { get; init; }
+
+    /// <summary>
+    /// Whether the unavailable state is transient and the same request may succeed after provider
+    /// health recovers. Permanent capability or policy absence remains non-retryable.
+    /// </summary>
+    public bool UnavailabilityIsRetryable { get; init; }
 }
 
 /// <summary>Engine capability metadata attached to one canonical public process ID.</summary>

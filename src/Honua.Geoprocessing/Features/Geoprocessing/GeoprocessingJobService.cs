@@ -352,6 +352,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         bool resumingApproved,
         CancellationToken cancellationToken = default)
     {
+        if (protocolMetadata?.ContainsKey(RasterProviderExecutionParameterKeys.TenantId) == true)
+        {
+            throw new GeoprocessingValidationException(
+                $"Parameter '{RasterProviderExecutionParameterKeys.TenantId}' is server-owned and cannot be supplied by callers.");
+        }
+
         // Centralize submit-path authorization here so every adapter (GPServer,
         // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
         // through the shared pipeline rather than relying on caller discipline
@@ -493,6 +499,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
+
+        if (rasterDecision?.Engine == RasterEngine.Postgis)
+        {
+            var tenantId = principal.FindFirst(CustomCodeOwnerScopeCapture.TenantClaimType)?.Value;
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                throw new GeoprocessingPreconditionFailedException(
+                    "PostGIS raster execution requires an authenticated tenant identity.");
+            }
+
+            // Server-owned, overwrite semantics: protocol metadata cannot choose a tenant.
+            specParams[RasterProviderExecutionParameterKeys.TenantId] = tenantId;
+        }
 
         // Phase 0/1 auth spine: pin the submitter's owner snapshot when the job
         // declares a custom-code resource scope. The declared scope is validated to
@@ -1200,11 +1219,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// under, read DATA-DRIVEN from the process catalog rather than hard-coded
     /// here. Each <see cref="ProcessDefinition"/> declares its required
     /// <see cref="ProcessDefinition.RuntimeProfile"/> (managed by default; native
-    /// for the out-of-process GDAL <c>gdal.*</c> family). The effective job profile
-    /// is the first non-managed profile among the plan's processes — a single plan
-    /// step that requires the native worker forces the whole job onto the native
-    /// profile so the claim fence routes it to the GDAL worker and away from the
-    /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
+    /// for the out-of-process GDAL <c>gdal.*</c> family). A pinned raster decision
+    /// takes precedence and selects the exclusive PostGIS or native raster profile.
+    /// Otherwise, the effective job profile is the first non-managed profile among
+    /// the plan's processes. Returns <c>null</c> (managed/default) when no process
     /// requires a specialized profile, leaving the spec profile-agnostic.
     /// </summary>
     private string? ResolveRequiredRuntimeProfile(
@@ -1707,6 +1725,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             && !string.Equals(requestedBy, callerName, StringComparison.Ordinal))
         {
             throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+        }
+
+        if (string.Equals(
+                RuntimeProfiles.Normalize(existing.Spec.RuntimeProfile),
+                RuntimeProfiles.RasterPostgis,
+                StringComparison.Ordinal))
+        {
+            var callerTenant = principal.FindFirst(CustomCodeOwnerScopeCapture.TenantClaimType)?.Value;
+            var pinnedTenant = existing.Spec.Parameters.GetValueOrDefault(
+                RasterProviderExecutionParameterKeys.TenantId);
+            if (string.IsNullOrWhiteSpace(callerTenant)
+                || string.IsNullOrWhiteSpace(pinnedTenant)
+                || !string.Equals(callerTenant, pinnedTenant, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+            }
         }
 
         var existingFingerprint = existing.Audit.RequestFingerprint;

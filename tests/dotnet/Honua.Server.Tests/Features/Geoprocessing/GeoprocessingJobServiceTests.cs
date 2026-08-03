@@ -667,6 +667,56 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentPostgisRasterReplayFromDifferentTenant_IsRejected()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "postgis-cross-tenant-replay";
+        var existing = CreateJobRecord(
+            GeoprocessingJobService.CreateJobId(idempotencyKey),
+            ExecutionJobStatus.Queued,
+            owner: "subject-123") with
+        {
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = "subject-123",
+                RequestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan),
+            },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = "test-workload",
+                RuntimeProfile = RuntimeProfiles.RasterPostgis,
+                Parameters = new Dictionary<string, string>
+                {
+                    [RasterProviderExecutionParameterKeys.TenantId] = "tenant-a",
+                },
+            },
+        };
+        _jobStore.GetAsync(existing.OperationId, Arg.Any<CancellationToken>()).Returns(existing);
+        var otherTenant = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "subject-123"),
+            new Claim(CustomCodeOwnerScopeCapture.TenantClaimType, "tenant-b"),
+        ], "Test"));
+
+        var act = async () => await _sut.SubmitJobAsync(
+            plan,
+            idempotencyKey,
+            otherTenant);
+
+        await act.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -820,6 +870,117 @@ public sealed class GeoprocessingJobServiceTests
         job.CurrentPhase.Should().Be("Queued: raster decision native-local-budget");
         await _jobStore.Received(1).TryCreateAsync(
             Arg.Is<ExecutionJobRecord>(record => record.Spec.RasterExecution != null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_PostgisRasterDecision_PinsAuthenticatedTenantAndDedicatedProfile()
+    {
+        _jobStore.TryCreateAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        var decision = new RasterExecutionDecision
+        {
+            ProcessId = "conversion.raster-format",
+            Engine = RasterEngine.Postgis,
+            ProviderId = "postgis",
+            ProviderPolicyVersion = "postgis-raster-v1",
+            Placement = RasterExecutionPlacement.DurablePostgis,
+            InputResidencies = [RasterInputResidency.Postgis],
+            OutputSink = RasterOutputSink.JobArtifact,
+            Cost = new RasterCostEstimate
+            {
+                ProcessId = "conversion.raster-format",
+                Engine = RasterEngine.Postgis,
+                SourceCount = 1,
+                BandCount = 1,
+                ZoneCount = 0,
+                InputPixels = 512,
+                OutputPixels = 512,
+                DecodedBytes = 4096,
+                ExpectedScratchBytes = 4096,
+                ExpectedDatabaseWork = 512,
+                UnknownInputs = [],
+                RequestExecutionAllowed = false,
+            },
+            SemanticVersion = "1.0.0",
+            ImplementationVersion = "honua.postgis.conversion.raster-format@1.0.0",
+            ReasonCode = "postgis-source-local",
+            Reason = "test",
+            PolicyRef = "raster-default",
+            ConfigurationVersion = "raster-execution-v1",
+            HealthVersion = "health-v1",
+        };
+        var planner = Substitute.For<IRasterExecutionPlanner>();
+        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>()).Returns(decision);
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "test-user"),
+            new Claim(CustomCodeOwnerScopeCapture.TenantClaimType, "tenant-a"),
+        ], "Test"));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-postgis-decision",
+            IntentId = "intent-postgis-decision",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "conversion.raster-format",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = CreateTiffHeaderBase64(width: 32, height: 16, bands: 1),
+                        ["targetFormat"] = "GTiff",
+                    },
+                },
+            ],
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, principal);
+
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.RasterPostgis);
+        job.Spec.RasterExecution.Should().BeSameAs(decision);
+        job.Spec.Parameters[RasterProviderExecutionParameterKeys.TenantId].Should().Be("tenant-a");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CallerSuppliedRasterTenantParameter_IsRejectedAsServerOwned()
+    {
+        var act = async () => await _sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [RasterProviderExecutionParameterKeys.TenantId] = "caller-controlled-tenant",
+            });
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*raster.tenant_id*server-owned*");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }

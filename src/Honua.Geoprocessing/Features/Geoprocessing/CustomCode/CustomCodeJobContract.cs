@@ -23,7 +23,8 @@ public static class CustomCodeJobContract
     /// the custom-code Batch workload. A job carrying this profile is never claimed
     /// by the lean managed dispatcher or the native GDAL worker.
     /// </summary>
-    public const string RuntimeProfile = "custom-code";
+    public const string RuntimeProfile =
+        Honua.Core.Features.ControlPlane.Domain.RuntimeProfiles.CustomCode;
 
     /// <summary>
     /// The current integer version of the serving↔GP-worker job contract (ADR-0060 principle #3b).

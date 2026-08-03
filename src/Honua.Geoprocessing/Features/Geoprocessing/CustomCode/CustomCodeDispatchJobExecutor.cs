@@ -28,9 +28,6 @@ namespace Honua.Geoprocessing.CustomCode;
 /// </remarks>
 internal sealed partial class CustomCodeDispatchJobExecutor : IJobExecutor
 {
-    private static readonly IReadOnlySet<string> CustomCodeProfileSet =
-        new HashSet<string>(StringComparer.Ordinal) { CustomCodeJobContract.RuntimeProfile };
-
     private readonly ILogger<CustomCodeDispatchJobExecutor> _logger;
 
     /// <summary>Creates the custom-code dispatch executor.</summary>
@@ -44,7 +41,7 @@ internal sealed partial class CustomCodeDispatchJobExecutor : IJobExecutor
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
     /// <inheritdoc />
-    public IReadOnlySet<string> AcceptedRuntimeProfiles => CustomCodeProfileSet;
+    public IReadOnlySet<string> AcceptedRuntimeProfiles => RuntimeProfiles.CustomCodeAccepted;
 
     /// <inheritdoc />
     public Task<JobExecutionResult> ExecuteAsync(
