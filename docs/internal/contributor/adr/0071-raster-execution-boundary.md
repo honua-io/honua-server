@@ -287,25 +287,45 @@ a layer.
 - A completed visibility decision is never retained solely in the expiring job
   record. The success CAS places the job under a retention hold instead of the
   normal Redis TTL. Using its completion token, the output reconciler
-  conditionally changes the durable `PromotionReady` manifest to `Complete`;
-  only that exact winning set can be acknowledged. After the durable state is
-  readable, the reconciler records the acknowledgement and releases the job to
-  its ordinary retention policy. Long-lived catalog, tile, coverage, object,
-  and result readers then use the durable `Complete` manifest and do not depend
-  on the execution job still existing. A crash leaves the held job and ready
-  manifest recoverable. If cancellation wins the job CAS, no completion token
-  exists, the durable manifest cannot become `Complete`, and terminalization
-  aborts or quarantines the staged versions without altering the previously
-  published raster.
+  first finalizes every destination reservation for that exact winning set.
+  For PostGIS destinations, one catalog-database transaction conditionally
+  changes each normalized destination row from a pending reservation naming
+  the completion token and expected previous target version to a current
+  published pointer naming that token, clears the reservation, and changes the
+  durable `PromotionReady` manifest to `Complete`. All predicates must match or
+  the transaction changes nothing. Repeating the transaction is idempotent
+  when every current pointer already names the token and no competing
+  reservation exists. For a mixed-sink set, each object marker first advances
+  to the completion token but remains in a token-owned committed hold that
+  rejects another reservation while the durable manifest still hides the set;
+  the PostGIS transaction then finalizes its destinations and the manifest
+  together, after which the reconciler conditionally releases those object
+  holds. An object-only set similarly changes its durable object manifest to
+  `Complete` only after every stable marker names the token under a committed
+  hold, then releases the holds. Thus successful acknowledgement never leaves
+  a PostGIS destination reserved indefinitely or keeps its stable
+  pointer on the previous output. Only that exact winning set can be
+  acknowledged. After the durable state is readable, the reconciler records
+  the acknowledgement and releases the job to its ordinary retention policy.
+  Long-lived catalog, tile, coverage, object, and result readers then use the
+  durable `Complete` manifest and do not depend on the execution job still
+  existing. A crash leaves the held job, ready manifest, and token-owned
+  reservations recoverable. If cancellation wins the job CAS, no completion
+  token exists, the durable manifest cannot become `Complete`, and
+  terminalization conditionally releases its reservations and aborts or
+  quarantines the staged versions without altering the previously published
+  raster.
 - Object outputs remain at immutable attempt-scoped keys. The stable object is
   the destination publication record described above, represented by a small
   intent/commit marker at the stable key. The coordinator snapshots its current
   ETag as the expected target version before dispatch, reserves it for the
-  winning completion token with create-if-absent or `If-Match`, and finalizes
-  that reservation with `If-Match` on the reservation ETag. Advancing a
-  reservation therefore changes its ETag before another job or attempt can
-  publish, so both a stale attempt and a competing job fail the destination
-  CAS. Only the coordinator may write the stable marker;
+  winning completion token with create-if-absent or `If-Match`, and advances
+  that reservation to a token-owned committed hold with `If-Match` on the
+  reservation ETag. The hold is cleared conditionally only after the durable
+  output-set manifest is `Complete`; until then another reservation fails.
+  Advancing or releasing a reservation changes its ETag before another job or
+  attempt can publish, so both a stale attempt and a competing job fail the
+  destination CAS. Only the coordinator may write the stable marker;
   worker credentials permit writes only under the attempt-scoped staging key.
   The reconciler may resolve the immutable artifact named by a committed
   marker, but public/result readers expose it only through a `Complete`
