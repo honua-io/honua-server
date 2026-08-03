@@ -41,7 +41,20 @@ public sealed class RasterSemanticOracleTests
                 Assert.True(fixtures.TryGetValue(evidenceId, out var fixture));
                 Assert.Contains(fixture!.ProcessId, engine.RequiredCapabilities);
                 Assert.Equal(process.SemanticVersion, fixture.SemanticVersion);
+                Assert.Contains(fixture.Variant, engine.VerifiedSemanticVariants);
             });
+
+            if (engine.SemanticConformance is RasterSemanticConformanceStatus.Verified
+                or RasterSemanticConformanceStatus.Restricted)
+            {
+                Assert.All(engine.VerifiedSemanticVariants, variant =>
+                    Assert.Contains(
+                        engine.SemanticEvidenceFixtureIds,
+                        evidenceId => string.Equals(
+                            fixtures[evidenceId].Variant,
+                            variant,
+                            StringComparison.Ordinal)));
+            }
 
             if (engine.Engine == RasterEngine.Postgis && engine.IsAvailable)
             {
