@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.PrintingTools.Models;
 using SkiaSharp;
 
@@ -321,7 +322,7 @@ internal static class LayoutComposer
         };
 
     private static SKFont CreateFont(float size, bool bold = false) =>
-        new(SKTypeface.Default, size)
+        new(RenderingTypeface.Default, size)
         {
             Embolden = bold
         };
