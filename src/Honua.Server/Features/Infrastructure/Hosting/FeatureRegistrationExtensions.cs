@@ -27,6 +27,7 @@ using Honua.Server.Features.Mobile.FieldCollection.Automations;
 using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
+using Honua.Server.Features.FileStorage;
 using Honua.Ai.Grounding.Spec;
 using Honua.Protocols.GeoServices.GeometryService;
 using Honua.Geoprocessing;
@@ -325,6 +326,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapDataEnrichmentEndpoints();
         endpoints.MapGPServerEndpoints();
+        endpoints.MapRasterOutputDownloadEndpoints();
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapTemporalHistoryEndpoints();
         endpoints.MapTemporalHistorySliceEndpoints();

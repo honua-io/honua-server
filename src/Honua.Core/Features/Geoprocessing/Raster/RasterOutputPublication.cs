@@ -22,7 +22,10 @@ public enum RasterOutputRegistrationKind
     /// <summary>Register a stable result artifact without creating another raster target.</summary>
     ResultArtifact,
 
-    /// <summary>Register the immutable COG or Zarr object in the raster catalog.</summary>
+    /// <summary>
+    /// Register the immutable COG in the cloud raster catalog. Zarr uses the
+    /// separate versioned-hierarchy catalog and cannot use this target.
+    /// </summary>
     CatalogObject,
 
     /// <summary>Import and register the staged raster in PostGIS.</summary>
@@ -207,6 +210,19 @@ public sealed record RasterOutputRegistrationResult(
     bool AlreadyRegistered);
 
 /// <summary>
+/// Visible registration resolved by its stable artifact identity. The published object is
+/// retained separately because PostGIS registrations return a database descriptor while
+/// catalog/result registrations return the object descriptor itself.
+/// </summary>
+/// <param name="PublishedObject">Immutable object originally promoted by the publisher.</param>
+/// <param name="Output">Visible result descriptor created by the registration transaction.</param>
+/// <param name="RegistrationKind">Registration target that governs visibility and retention.</param>
+public sealed record RasterOutputRegistrationResolution(
+    ObjectStoreRasterOutputDescriptor PublishedObject,
+    RasterOutputDescriptor Output,
+    RasterOutputRegistrationKind RegistrationKind);
+
+/// <summary>
 /// Transactional visibility seam for raster outputs. Provider implementations must use a unique
 /// idempotency key and one database transaction for the optional catalog/PostGIS target plus the
 /// durable visible-result row. A failure must not leave a row observable as a successful result.
@@ -227,6 +243,15 @@ public interface IRasterOutputRegistry
     /// <summary>Creates or replays an atomic, idempotent output registration.</summary>
     Task<RasterOutputRegistrationResult> RegisterAtomicallyAsync(
         RasterOutputRegistrationCommand command,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a currently visible output by stable artifact identity without returning a
+    /// provider URL or credential. Expired result artifacts must not resolve; catalog and
+    /// PostGIS registrations remain resolvable according to their catalog lifecycle.
+    /// </summary>
+    Task<RasterOutputRegistrationResolution?> ResolveVisibleAsync(
+        string artifactId,
         CancellationToken cancellationToken = default);
 
     /// <summary>Checks whether an immutable published object is referenced by a visible result.</summary>
@@ -378,7 +403,11 @@ public sealed class RasterOutputPublisher
                 Target = request.RegistrationTarget
             },
             cancellationToken).ConfigureAwait(false);
-        EnsureRegisteredIdentity(objectOutput, registration.Output, request.RegistrationTarget.Kind);
+        EnsureRegisteredIdentity(
+            objectOutput,
+            registration.Output,
+            request.RegistrationTarget.Kind,
+            registration.AlreadyRegistered);
 
         return new RasterOutputPublicationResult
         {
@@ -433,8 +462,8 @@ public sealed class RasterOutputPublisher
         var extension = encoding switch
         {
             RasterOutputEncoding.CloudOptimizedGeoTiff => ".tif",
-            RasterOutputEncoding.Zarr => ".zarr",
-            _ => throw new InvalidOperationException("Only COG and Zarr staging encodings can be object-published.")
+            _ => throw new InvalidOperationException(
+                "The single-object raster publisher only accepts COG outputs; Zarr requires a multi-object hierarchy publisher.")
         };
         return $"raster/published/{artifactId.AsSpan(5, 2)}/{artifactId}{extension}";
     }
@@ -473,13 +502,15 @@ public sealed class RasterOutputPublisher
     private static void EnsureRegisteredIdentity(
         ObjectStoreRasterOutputDescriptor expected,
         RasterOutputDescriptor actual,
-        RasterOutputRegistrationKind registrationKind)
+        RasterOutputRegistrationKind registrationKind,
+        bool isReplay)
     {
         if (!string.Equals(expected.ArtifactId, actual.ArtifactId, StringComparison.Ordinal)
             || !string.Equals(expected.OutputName, actual.OutputName, StringComparison.Ordinal)
             || expected.Content != actual.Content || !GridEquals(expected.Grid, actual.Grid)
-            || expected.Engine != actual.Engine || !LineageEquals(expected.Lineage, actual.Lineage)
-            || expected.Retention != actual.Retention)
+            || expected.Engine != actual.Engine
+            || !LineageEquals(expected.Lineage, actual.Lineage, ignoreAttempt: isReplay)
+            || (!isReplay && expected.Retention != actual.Retention))
         {
             throw new InvalidOperationException("Registry returned a raster output with a different durable identity.");
         }
@@ -518,10 +549,13 @@ public sealed class RasterOutputPublisher
         && actual.GeoTransform is not null
         && expected.GeoTransform.SequenceEqual(actual.GeoTransform);
 
-    private static bool LineageEquals(RasterOutputLineage expected, RasterOutputLineage? actual) =>
+    private static bool LineageEquals(
+        RasterOutputLineage expected,
+        RasterOutputLineage? actual,
+        bool ignoreAttempt) =>
         actual is not null
         && string.Equals(expected.JobId, actual.JobId, StringComparison.Ordinal)
-        && expected.Attempt == actual.Attempt
+        && (ignoreAttempt || expected.Attempt == actual.Attempt)
         && string.Equals(expected.ProcessId, actual.ProcessId, StringComparison.Ordinal)
         && actual.SourceArtifactIds is not null
         && expected.SourceArtifactIds.SequenceEqual(actual.SourceArtifactIds, StringComparer.Ordinal);

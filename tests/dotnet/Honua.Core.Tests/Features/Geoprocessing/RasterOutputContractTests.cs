@@ -140,6 +140,23 @@ public sealed class RasterOutputContractTests
     }
 
     [Fact]
+    public void StageValidator_RejectsZarrUntilMultiObjectHierarchyContractIsUsed()
+    {
+        var result = RasterOutputDescriptorValidator.Validate(Stage() with
+        {
+            Encoding = RasterOutputEncoding.Zarr,
+            Content = Content(32, new string('a', 64)) with
+            {
+                MediaType = "application/vnd+zarr"
+            }
+        });
+
+        Assert.Contains(result.Errors, error => error.Field == "encoding"
+            && error.Code == RasterOutputValidationCodes.InvalidField
+            && error.Message.Contains("multi-object hierarchy", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void StageValidator_RequiresExactAttemptKeyAndLogicalStoreReference()
     {
         var stage = Stage() with
@@ -195,6 +212,20 @@ public sealed class RasterOutputContractTests
             "job-42",
             "elevation",
             new RasterChecksum("sha256", "not-hex")));
+    }
+
+    [Fact]
+    public void ArtifactIdValidator_AcceptsOnlyCanonicalLowercaseIdentity()
+    {
+        var artifactId = RasterOutputIdentity.CreateArtifactId(
+            "job-42",
+            "elevation",
+            new RasterChecksum("sha256", new string('a', 64)));
+
+        Assert.True(RasterOutputIdentity.IsArtifactId(artifactId));
+        Assert.False(RasterOutputIdentity.IsArtifactId(artifactId.ToUpperInvariant()));
+        Assert.False(RasterOutputIdentity.IsArtifactId("rast_0123456789abcdef"));
+        Assert.False(RasterOutputIdentity.IsArtifactId("https://example.test/output.tif"));
     }
 
     internal static StagedRasterOutputDescriptor Stage() => new()

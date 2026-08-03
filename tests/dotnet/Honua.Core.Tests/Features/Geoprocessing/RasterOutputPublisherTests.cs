@@ -29,6 +29,36 @@ public sealed class RasterOutputPublisherTests
     }
 
     [Fact]
+    public async Task PublishAsync_LaterAttemptWithSameContentReusesCommittedOutput()
+    {
+        var firstStage = RasterOutputContractTests.Stage();
+        var retryStage = firstStage with
+        {
+            Attempt = firstStage.Attempt + 1,
+            ObjectKey = RasterOutputWorkerContract.BuildStagingObjectKey(
+                firstStage.JobId,
+                firstStage.Attempt + 1,
+                firstStage.OutputName),
+            Lineage = firstStage.Lineage with { Attempt = firstStage.Attempt + 1 }
+        };
+        var store = new RecordingObjectStore(firstStage);
+        var registry = new RecordingRegistry();
+        var publisher = new RasterOutputPublisher(store, registry);
+
+        var first = await publisher.PublishAsync(Request(firstStage));
+        var retry = await publisher.PublishAsync(Request(retryStage) with
+        {
+            PublishedAt = Request(firstStage).PublishedAt.AddMinutes(10),
+            RetainUntil = Request(firstStage).RetainUntil.AddMinutes(10)
+        });
+
+        Assert.Equal(first.Output, retry.Output);
+        Assert.Equal(2, registry.RegisterCalls);
+        Assert.Single(registry.Registrations);
+        Assert.Single(store.PublishedKeys);
+    }
+
+    [Fact]
     public async Task PublishAsync_RegistrationFailureNeverReturnsVisibleSuccessAndCanReplay()
     {
         var stage = RasterOutputContractTests.Stage();
@@ -399,6 +429,23 @@ public sealed class RasterOutputPublisherTests
             string objectKey,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(VisibleKeys.Contains(objectKey));
+
+        public Task<RasterOutputRegistrationResolution?> ResolveVisibleAsync(
+            string artifactId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Registrations.TryGetValue(artifactId, out var output)
+                || output is not ObjectStoreRasterOutputDescriptor published)
+            {
+                return Task.FromResult<RasterOutputRegistrationResolution?>(null);
+            }
+
+            return Task.FromResult<RasterOutputRegistrationResolution?>(new(
+                published,
+                output,
+                RasterOutputRegistrationKind.ResultArtifact));
+        }
     }
 
     private sealed class SemaphoreLease(SemaphoreSlim semaphore) : IAsyncDisposable

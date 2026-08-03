@@ -284,6 +284,23 @@ public sealed class LocalRasterOutputObjectStoreTests : IDisposable
                 output => string.Equals(output.StoreReference, storeReference, StringComparison.Ordinal)
                     && string.Equals(output.ObjectKey, objectKey, StringComparison.Ordinal)));
         }
+
+        public Task<RasterOutputRegistrationResolution?> ResolveVisibleAsync(
+            string artifactId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Registrations.TryGetValue(artifactId, out var output)
+                || output is not ObjectStoreRasterOutputDescriptor published)
+            {
+                return Task.FromResult<RasterOutputRegistrationResolution?>(null);
+            }
+
+            return Task.FromResult<RasterOutputRegistrationResolution?>(new(
+                published,
+                output,
+                RasterOutputRegistrationKind.ResultArtifact));
+        }
     }
 
     private sealed class NoopAsyncDisposable : IAsyncDisposable

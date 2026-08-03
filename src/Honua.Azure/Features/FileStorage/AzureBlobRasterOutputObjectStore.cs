@@ -148,7 +148,7 @@ internal sealed class AzureBlobRasterOutputObjectStore : IRasterOutputObjectStor
         {
             var response = await _container.GetBlobClient(PhysicalKey(objectKey))
                 .DownloadStreamingAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            return response.Value.Content;
+            return new BlobDownloadStream(response.Value);
         }
         catch (RequestFailedException exception) when (exception.Status == 404)
         {

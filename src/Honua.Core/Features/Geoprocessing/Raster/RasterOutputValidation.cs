@@ -160,11 +160,10 @@ public static class RasterOutputDescriptorValidator
         }
 
         ValidateContent(descriptor.Content, errors);
-        if (descriptor.Encoding is not RasterOutputEncoding.CloudOptimizedGeoTiff
-            and not RasterOutputEncoding.Zarr)
+        if (descriptor.Encoding is not RasterOutputEncoding.CloudOptimizedGeoTiff)
         {
             Add(errors, RasterOutputValidationCodes.InvalidField, "encoding",
-                "Staged raster outputs must use the COG or Zarr encoding.");
+                "Single-object staged raster outputs must use the COG encoding; Zarr requires a multi-object hierarchy manifest.");
         }
 
         ValidateGrid(descriptor.Grid, errors);

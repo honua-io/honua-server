@@ -167,6 +167,56 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
     }
 
+    public async Task<RasterOutputRegistrationResolution?> ResolveVisibleAsync(
+        string artifactId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!RasterOutputIdentity.IsArtifactId(artifactId))
+        {
+            return null;
+        }
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var query = new NpgsqlCommand($"""
+            SELECT target_kind, published_descriptor::text, output_descriptor::text
+            FROM {_publicationTable}
+            WHERE idempotency_key = @artifact_id
+              AND (target_kind IN ('CatalogObject', 'PostgisRaster')
+                   OR (target_kind = 'ResultArtifact' AND expires_at > NOW()))
+            """, connection.Connection);
+        query.Parameters.AddWithValue("@artifact_id", artifactId);
+        await using var reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        if (!Enum.TryParse<RasterOutputRegistrationKind>(reader.GetString(0), out var registrationKind)
+            || !Enum.IsDefined(registrationKind))
+        {
+            throw new InvalidDataException("Raster publication contains an invalid registration kind.");
+        }
+
+        var published = RasterOutputJson.Deserialize(reader.GetString(1))
+            as ObjectStoreRasterOutputDescriptor
+            ?? throw new InvalidDataException("Raster publication contains an invalid source descriptor.");
+        var output = RasterOutputJson.Deserialize(reader.GetString(2));
+        if (!RasterOutputDescriptorValidator.Validate(published).IsValid
+            || !RasterOutputDescriptorValidator.Validate(output).IsValid
+            || !string.Equals(published.ArtifactId, artifactId, StringComparison.Ordinal)
+            || !string.Equals(output.ArtifactId, artifactId, StringComparison.Ordinal)
+            || (registrationKind == RasterOutputRegistrationKind.PostgisRaster
+                ? output is not PostgisRasterOutputDescriptor
+                : output is not ObjectStoreRasterOutputDescriptor objectOutput
+                    || !CompleteIdentityEquals(published, objectOutput)))
+        {
+            throw new InvalidDataException("Raster publication contains an invalid visible descriptor.");
+        }
+
+        return new RasterOutputRegistrationResolution(published, output, registrationKind);
+    }
+
     private static async Task AcquireRegistrationTransactionLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -211,7 +261,7 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
             ?? throw new InvalidDataException("Raster publication replay contains an invalid source descriptor.");
         if (!string.Equals(targetKind, command.Target.Kind.ToString(), StringComparison.Ordinal)
             || !string.Equals(targetReference, command.Target.TargetReference, StringComparison.Ordinal)
-            || !CompleteIdentityEquals(existingPublished, command.PublishedObject))
+            || !ReplayIdentityEquals(existingPublished, command.PublishedObject))
         {
             throw new InvalidOperationException(
                 "Raster publication idempotency key was replayed with a different target or object identity.");
@@ -233,6 +283,12 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         RasterOutputRegistrationCommand command,
         CancellationToken cancellationToken)
     {
+        if (command.PublishedObject.Encoding != RasterOutputEncoding.CloudOptimizedGeoTiff)
+        {
+            throw new InvalidOperationException(
+                "Cloud raster catalog registration requires a single-object COG; Zarr requires the versioned hierarchy catalog.");
+        }
+
         var layerId = ParseLayerTarget(command.Target.TargetReference);
         var (provider, container, prefix) = ResolvePhysicalStore(command.PublishedObject.StoreReference);
         var physicalKey = string.IsNullOrWhiteSpace(prefix)
@@ -275,13 +331,29 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         }
 
         var layerId = ParseLayerTarget(command.Target.TargetReference);
-        await using var content = await _objectStore.OpenReadAsync(
+        var contentSize = command.PublishedObject.Content.SizeBytes;
+        if (contentSize > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                "PostGIS raster registration exceeds the PostgreSQL bytea parameter limit.");
+        }
+
+        var content = await _objectStore.OpenReadAsync(
             command.PublishedObject.StoreReference,
             command.PublishedObject.ObjectKey,
             cancellationToken).ConfigureAwait(false)
             ?? throw new FileNotFoundException(
                 "Published raster object was not found during PostGIS registration.",
                 command.PublishedObject.ObjectKey);
+        if (!content.CanRead)
+        {
+            await content.DisposeAsync().ConfigureAwait(false);
+            throw new InvalidDataException("Published raster object did not provide a readable response stream.");
+        }
+
+        await using var databaseContent = new NpgsqlKnownLengthReadStream(
+            content,
+            contentSize);
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO {_rasterTable} (layer_id, name, raster)
             VALUES (@layer_id, @name, ST_FromGDALRaster(@content))
@@ -289,7 +361,7 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
             """, connection, transaction);
         insert.Parameters.AddWithValue("@layer_id", layerId);
         insert.Parameters.AddWithValue("@name", command.PublishedObject.OutputName);
-        insert.Parameters.Add(new NpgsqlParameter("@content", NpgsqlDbType.Bytea) { Value = content });
+        insert.Parameters.Add(new NpgsqlParameter("@content", NpgsqlDbType.Bytea) { Value = databaseContent });
         var rasterId = Convert.ToInt64(
             await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
             System.Globalization.CultureInfo.InvariantCulture);
@@ -400,6 +472,21 @@ internal sealed class PostgresRasterOutputRegistry : IRasterOutputRegistry
         ObjectStoreRasterOutputDescriptor left,
         ObjectStoreRasterOutputDescriptor right) =>
         string.Equals(RasterOutputJson.Serialize(left), RasterOutputJson.Serialize(right), StringComparison.Ordinal);
+
+    private static bool ReplayIdentityEquals(
+        ObjectStoreRasterOutputDescriptor committed,
+        ObjectStoreRasterOutputDescriptor candidate)
+    {
+        // Artifact IDs intentionally omit the attempt so identical output from a later worker
+        // attempt reuses one object/catalog row. The first committed descriptor remains the
+        // authoritative producer/retention record; every other immutable field must still match.
+        var normalizedCandidate = candidate with
+        {
+            Lineage = candidate.Lineage with { Attempt = committed.Lineage.Attempt },
+            Retention = committed.Retention
+        };
+        return CompleteIdentityEquals(committed, normalizedCandidate);
+    }
 
     private static int ParseLayerTarget(string targetReference)
     {

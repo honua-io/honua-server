@@ -32,7 +32,10 @@ public enum RasterOutputEncoding
     /// <summary>A Cloud Optimized GeoTIFF object.</summary>
     CloudOptimizedGeoTiff,
 
-    /// <summary>A Zarr hierarchy or array.</summary>
+    /// <summary>
+    /// A Zarr hierarchy or array. Reserved for the dedicated multi-object publication
+    /// contract; the single-object staging publisher does not accept this encoding.
+    /// </summary>
     Zarr,
 
     /// <summary>A PostGIS raster registered in a tenant catalog.</summary>
@@ -77,7 +80,11 @@ public abstract record RasterOutputDescriptor
     public required RasterOutputRetention Retention { get; init; }
 }
 
-/// <summary>A published COG or Zarr output in an operator-registered object store.</summary>
+/// <summary>
+/// A published raster output in an operator-registered object store. The current
+/// single-object publisher produces COG descriptors; Zarr requires a separate
+/// versioned-hierarchy publication contract.
+/// </summary>
 public sealed record ObjectStoreRasterOutputDescriptor : RasterOutputDescriptor
 {
     /// <summary>Logical object-store registration, not a bucket URL or credential.</summary>
@@ -233,6 +240,8 @@ public sealed record RasterOutputPublicationManifest
 /// <summary>Deterministic identities for retry-safe raster publication.</summary>
 public static class RasterOutputIdentity
 {
+    private const string ArtifactPrefix = "rast_";
+
     /// <summary>Creates an attempt-independent artifact ID from job, output, and content identity.</summary>
     public static string CreateArtifactId(string jobId, string outputName, RasterChecksum checksum)
     {
@@ -256,7 +265,29 @@ public static class RasterOutputIdentity
 
         var material = Encoding.UTF8.GetBytes(string.Concat(
             jobId, "\0", outputName, "\0", checksum.Algorithm, ":", checksumValue.ToUpperInvariant()));
-        return "rast_" + Convert.ToHexString(SHA256.HashData(material)).ToLowerInvariant();
+        return ArtifactPrefix + Convert.ToHexString(SHA256.HashData(material)).ToLowerInvariant();
+    }
+
+    /// <summary>Checks the canonical content-derived artifact identifier shape.</summary>
+    public static bool IsArtifactId(string? value)
+    {
+        if (value is not { Length: 69 }
+            || !value.StartsWith(ArtifactPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        for (var index = ArtifactPrefix.Length; index < value.Length; index++)
+        {
+            var character = value[index];
+            if ((character < '0' || character > '9')
+                && (character < 'a' || character > 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

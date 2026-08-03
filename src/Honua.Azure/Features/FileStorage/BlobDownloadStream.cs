@@ -14,6 +14,7 @@ internal sealed class BlobDownloadStream : Stream
 {
     private readonly BlobDownloadStreamingResult _result;
     private readonly Stream _inner;
+    private bool _disposed;
 
     public BlobDownloadStream(BlobDownloadStreamingResult result)
     {
@@ -43,19 +44,20 @@ internal sealed class BlobDownloadStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !_disposed)
         {
-            _inner.Dispose();
+            _disposed = true;
+            // The SDK result owns and disposes its content stream.
             _result.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
-    public override async ValueTask DisposeAsync()
+    public override ValueTask DisposeAsync()
     {
-        await _inner.DisposeAsync().ConfigureAwait(false);
-        _result.Dispose();
-        await base.DisposeAsync().ConfigureAwait(false);
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
     }
 }

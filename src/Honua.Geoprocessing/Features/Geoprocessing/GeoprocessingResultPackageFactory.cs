@@ -181,12 +181,22 @@ internal static class GeoprocessingResultPackageFactory
             ["sourceArtifactIds"] = string.Join(",", output.Lineage.SourceArtifactIds)
         };
 
+        var stableUri = output switch
+        {
+            ObjectStoreRasterOutputDescriptor
+            {
+                Encoding: RasterOutputEncoding.CloudOptimizedGeoTiff
+            } => "/api/v1/geoprocessing/raster-outputs/" + output.ArtifactId,
+            PostgisRasterOutputDescriptor => "urn:honua:postgis-raster:" + output.ArtifactId,
+            _ => "urn:honua:raster:" + output.ArtifactId
+        };
+
         return new ArtifactRef
         {
             ArtifactId = output.ArtifactId,
             Kind = ArtifactKind.Raster,
             Label = output.OutputName,
-            Uri = "urn:honua:raster:" + output.ArtifactId,
+            Uri = stableUri,
             ContentType = output.Content.MediaType,
             Metadata = metadata
         };
