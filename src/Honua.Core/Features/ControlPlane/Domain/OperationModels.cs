@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
@@ -931,6 +932,12 @@ public sealed record ExecutionJobSpec
     /// contract) so existing/back-compat specs remain valid.
     /// </summary>
     public int ContractVersion { get; init; } = 1;
+
+    /// <summary>
+    /// Durable raster engine and placement decision pinned before execution. This remains
+    /// <see langword="null"/> for non-raster and legacy jobs.
+    /// </summary>
+    public RasterExecutionDecision? RasterExecution { get; init; }
 
     /// <summary>
     /// Opaque backend-specific parameters.

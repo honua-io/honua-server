@@ -208,6 +208,19 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__Executors__MaxArtifactBytes` | `52428800` (50 MiB) | Max single artifact payload a built-in executor publishes. |
 | `Geoprocessing__Executors__OutputRootDirectory` | OS temp dir | Root for file-sink outputs; traversal outside is rejected. |
 | `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | Retention TTL for durable result packages. |
+| `Geoprocessing__RasterExecution__ConfigurationVersion` | `raster-execution-v1` | Stable budget/config snapshot identifier persisted on each raster decision. Bump when routing policy changes. |
+| `Geoprocessing__RasterExecution__PolicyRef` | `raster-default` | Operator policy reference exposed in decision telemetry and job state. |
+| `Geoprocessing__RasterExecution__PostgisEnabled` / `NativeGdalEnabled` | `true` | Allow or disable an engine without changing public process IDs. A required disabled engine fails closed. |
+| `Geoprocessing__RasterExecution__RequestExecutionEnabled` / `DurablePostgisEnabled` | `true` | Allow bounded request or durable PostGIS placements. The durable GP submission path never selects request execution. |
+| `Geoprocessing__RasterExecution__LocalNativeWorkerEnabled` / `RemoteNativeBackendEnabled` | `true` | Allow isolated local-GDAL or configured remote native placement. GDAL is never loaded into the web process. |
+| `Geoprocessing__RasterExecution__RequiredEngine` / `RequiredPlacement` | *(unset)* | Force an engine or placement (`Postgis`/`GdalNative`; `Request`/`DurablePostgis`/`LocalNativeWorker`/`RemoteBackend`). Unavailable forced choices are rejected rather than silently changed. |
+| `Geoprocessing__RasterExecution__PreferredEngine` | *(unset)* | Engine preference applied only after capability, residency, format, health, and budget gates. |
+| `Geoprocessing__RasterExecution__DatabaseHealth` | `Healthy` | Configured database raster-lane snapshot (`Healthy`, `Pressured`, or `Unavailable`). Pressured/unavailable snapshots eliminate PostGIS before execution. |
+| `Geoprocessing__RasterExecution__HealthSnapshotVersion` | `configured-health-v1` | Stable identifier persisted with the current database/worker health snapshot. Bump when configured health inputs change. |
+| `Geoprocessing__RasterExecution__LocalNativeWorkerAvailable` | `true` | Operational availability of the isolated local native worker. |
+| `Geoprocessing__RasterExecution__MaxRequestDecodedBytes` / `MaxRequestScratchBytes` / `MaxRequestDatabaseWork` | `67108864` / `134217728` / `10000000` | Independent bounded-request ceilings. |
+| `Geoprocessing__RasterExecution__MaxDatabaseDecodedBytes` / `MaxDatabaseScratchBytes` / `MaxDatabaseWork` | `2147483648` / `4294967296` / `500000000` | Durable PostGIS admission ceilings protecting the database SLO. |
+| `Geoprocessing__RasterExecution__MaxLocalDecodedBytes` / `MaxLocalScratchBytes` | `1073741824` / `8589934592` | Local native-worker ceilings; larger eligible work prefers the configured remote backend. |
 | `Geoprocessing__ImageryInference__Provider` | *(unset — lane dormant)* | Cloud inference backend for `imagery.classify`. Supported: `http` (generic REST speaking Honua's own JSON inference contract — not the OpenAI chat-completions format; implement it directly or put a thin gateway in front of your model server). `sagemaker`/`vertex`/`azureml` are recognized but fail clearly until SDK adapters land. |
 | `Geoprocessing__ImageryInference__Endpoint` | *(unset)* | Absolute http(s) invocation URL of the inference endpoint. Never echoed to callers. |
 | `Geoprocessing__ImageryInference__ApiKey` | *(unset)* | Backend API key: a secret reference (resolved through the secret store), a literal, or unset to fall back to `HONUA_IMAGERY_INFERENCE_API_KEY`. Never logged. |

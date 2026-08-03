@@ -457,6 +457,125 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_PersistsPlannerDecisionBeforeExecution()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var planner = new RasterExecutionPlanner(
+            new RasterEngineCapabilityRegistry(),
+            NullLogger<RasterExecutionPlanner>.Instance);
+        var plannerOptions = new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+            new RasterExecutionPlannerOptions());
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: plannerOptions);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native-decision",
+            IntentId = "intent-native-decision",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857"
+                    }
+                }
+            ]
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Engine.Should().Be(RasterEngine.GdalNative);
+        job.Spec.RasterExecution.Placement.Should().Be(RasterExecutionPlacement.LocalNativeWorker);
+        job.Spec.RasterExecution.ReasonCode.Should().Be("native-local-budget");
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+        job.CurrentPhase.Should().Be("Queued: raster decision native-local-budget");
+        await _jobStore.Received(1).TryCreateAsync(
+            Arg.Is<ExecutionJobRecord>(record => record.Spec.RasterExecution != null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RasterPlan_PlansBeforeLegacySourceMaterialization()
+    {
+        var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        resolver.ResolveAsync(
+                Arg.Any<RasterSourceReference>(),
+                Arg.Any<long>(),
+                Arg.Any<CancellationToken>())
+            .Returns(RasterSourceResolution.Success([1, 2, 3]));
+        var planner = Substitute.For<IRasterExecutionPlanner>();
+        planner.Plan(Arg.Any<RasterExecutionPlanningRequest>())
+            .Returns(_ => throw new RasterExecutionPlanningException(
+                "metadata-only-refusal",
+                "Metadata-only raster planning refused the request."));
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            rasterSourceResolver: resolver,
+            rasterExecutionPlanner: planner,
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions()));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-catalog-reference",
+            IntentId = "intent-catalog-reference",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "surface.slope",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["rasterId"] = "42",
+                    },
+                },
+            ],
+        };
+
+        var act = () => sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingAdmissionException>()
+            .WithMessage("*Metadata-only raster planning refused*");
+        await resolver.DidNotReceive().ResolveAsync(
+            Arg.Any<RasterSourceReference>(),
+            Arg.Any<long>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ManagedReprojectFastPath_LeavesRuntimeProfileUnstamped()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

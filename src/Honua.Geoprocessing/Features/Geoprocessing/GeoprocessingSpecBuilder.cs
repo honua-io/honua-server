@@ -132,10 +132,12 @@ internal static class GeoprocessingSpecBuilder
     /// The data-driven runtime profile (<c>native</c> for a gdal.* step; <c>null</c>
     /// leaves the job managed/default). Drives the claim fence to the right worker.
     /// </param>
+    /// <param name="rasterExecution">Optional durable raster engine/placement decision.</param>
     public static ExecutionJobSpec BuildNoWorkloadSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
-        string? requiredRuntimeProfile)
+        string? requiredRuntimeProfile,
+        RasterExecutionDecision? rasterExecution = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(specParams);
@@ -153,6 +155,7 @@ internal static class GeoprocessingSpecBuilder
             // claim fence routes the job to the GDAL worker and away from the lean
             // dispatcher. Null leaves the job managed/default.
             RuntimeProfile = requiredRuntimeProfile,
+            RasterExecution = rasterExecution,
             ContractVersion = ResolveRequiredContractVersion(plan),
             Parameters = specParams,
         };

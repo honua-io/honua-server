@@ -119,6 +119,19 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
 
+        // Raster engine/placement planning (#3092). Capability metadata comes from the
+        // provider-neutral registry; operator budgets and policy remain configuration-driven.
+        // The planner is pure over immutable snapshots and never loads raster payload bytes.
+        services
+            .AddOptions<RasterExecutionPlannerOptions>()
+            .Bind(configuration.GetSection(RasterExecutionPlannerOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(
+                options => options.HasDefinedEnumValues(),
+                "Raster execution engine, placement, and database health values must be defined enum members.")
+            .ValidateOnStart();
+        services.TryAddSingleton<IRasterExecutionPlanner, RasterExecutionPlanner>();
+
         // Cohesive sub-services the shared job service delegates to (authorization/approval,
         // admission+queue+workload+backend dispatch, the custom-code submit-token gate, and
         // raster-input/result-package artifacts). Registered as singletons so the production

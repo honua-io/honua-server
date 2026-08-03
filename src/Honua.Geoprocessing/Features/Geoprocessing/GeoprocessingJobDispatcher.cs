@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing.CustomCode;
@@ -66,6 +67,8 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
     private readonly IOperationGateway? _operationGateway;
+    private readonly IRasterExecutionPlanner? _rasterExecutionPlanner;
+    private readonly IOptionsMonitor<RasterExecutionPlannerOptions>? _rasterExecutionOptions;
 
     /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
@@ -80,7 +83,9 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        IOperationGateway? operationGateway = null)
+        IOperationGateway? operationGateway = null,
+        IRasterExecutionPlanner? rasterExecutionPlanner = null,
+        IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -90,9 +95,53 @@ internal sealed class GeoprocessingJobDispatcher
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
         _operationGateway = operationGateway;
+        _rasterExecutionPlanner = rasterExecutionPlanner;
+        _rasterExecutionOptions = rasterExecutionOptions;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
+
+    /// <summary>
+    /// Plans a raster job from metadata, capability, workload availability, health, budgets,
+    /// and operator policy. Returns <see langword="null"/> for non-raster plans or when the
+    /// optional planner is not composed (legacy/test hosts).
+    /// </summary>
+    public async Task<RasterExecutionDecision?> PlanRasterExecutionAsync(
+        AnalysisPlan plan,
+        ProcessDefinition? definition,
+        CancellationToken cancellationToken)
+    {
+        if (definition?.RasterEngineCapabilities is null
+            || _rasterExecutionPlanner is null
+            || _rasterExecutionOptions is null)
+        {
+            return null;
+        }
+
+        var remoteWorkload = await FindRemoteRasterWorkloadAsync(cancellationToken).ConfigureAwait(false);
+        var remoteBackendAvailable = remoteWorkload is not null
+            && _backends.Resolve(remoteWorkload.Backend, remoteWorkload.TargetKind) is not null;
+        var request = RasterExecutionPlanningRequestFactory.Create(
+            plan,
+            definition.RasterEngineCapabilities,
+            _rasterExecutionOptions.CurrentValue,
+            remoteBackendAvailable,
+            remoteBackendAvailable ? remoteWorkload!.Backend : null);
+
+        try
+        {
+            return _rasterExecutionPlanner.Plan(request);
+        }
+        catch (RasterExecutionPlanningException ex)
+        {
+            throw new GeoprocessingAdmissionException(
+                ExecutionAdmissionOutcome.Denied,
+                ExecutionAdmissionDimension.Cost,
+                $"raster:{ex.ReasonCode}",
+                ex.Message,
+                retryAfterSeconds: 30);
+        }
+    }
 
     /// <summary>
     /// Evaluates execution admission for the submission. Returns the admitted decision, or
@@ -204,10 +253,18 @@ internal sealed class GeoprocessingJobDispatcher
     /// geoprocessing workload over the always-present local baseline. Returns <c>null</c> when
     /// no workload registry is configured.
     /// </summary>
-    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(bool isCustomCode, CancellationToken cancellationToken)
+    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
+        bool isCustomCode,
+        CancellationToken cancellationToken,
+        RasterExecutionDecision? rasterDecision = null)
     {
         if (_workloadRegistry == null)
         {
+            if (rasterDecision?.Placement == RasterExecutionPlacement.RemoteBackend)
+            {
+                throw RemoteRasterPlacementUnavailable(rasterDecision);
+            }
+
             return null;
         }
 
@@ -233,6 +290,26 @@ internal sealed class GeoprocessingJobDispatcher
                         !string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
             .ToArray();
 
+        if (rasterDecision is not null)
+        {
+            if (rasterDecision.Placement == RasterExecutionPlacement.RemoteBackend)
+            {
+                var workload = geoprocessingWorkloads
+                    .Where(workload =>
+                        !string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                        && string.Equals(workload.Backend, rasterDecision.Backend, StringComparison.Ordinal))
+                    .OrderBy(workload => workload.WorkloadId, StringComparer.Ordinal)
+                    .FirstOrDefault();
+                return workload ?? throw RemoteRasterPlacementUnavailable(rasterDecision);
+            }
+
+            // Request execution is not emitted by the durable submit path. Durable PostGIS and
+            // local native both use the local queue, whose runtime-profile claim fence sends the
+            // job to the dedicated worker rather than the lightweight serving dispatcher.
+            return geoprocessingWorkloads.FirstOrDefault(workload =>
+                string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal));
+        }
+
         // When the operator has supplied a remote (e.g. AWS Batch) GP workload
         // alongside the always-present local/Kubernetes baseline, prefer the remote
         // one so a fully-configured substrate routes GP execution off-box. The
@@ -243,6 +320,34 @@ internal sealed class GeoprocessingJobDispatcher
         return geoprocessingWorkloads.FirstOrDefault(d =>
                    !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
                ?? geoprocessingWorkloads.FirstOrDefault();
+    }
+
+    private static GeoprocessingAdmissionException RemoteRasterPlacementUnavailable(
+        RasterExecutionDecision decision)
+        => new(
+            ExecutionAdmissionOutcome.Denied,
+            ExecutionAdmissionDimension.Backpressure,
+            "raster:remote-backend-unavailable",
+            $"The pinned raster backend '{decision.Backend}' is no longer available; submit may be retried after backend recovery.",
+            retryAfterSeconds: 30);
+
+    private async Task<ExecutionJobDefinition?> FindRemoteRasterWorkloadAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_workloadRegistry == null)
+        {
+            return null;
+        }
+
+        var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
+        return definitions
+            .Where(definition =>
+                definition.Kind == ExecutionJobKind.Geoprocessing
+                && !string.Equals(definition.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal)
+                && !string.Equals(definition.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+            .OrderBy(definition => definition.Backend, StringComparer.Ordinal)
+            .ThenBy(definition => definition.WorkloadId, StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 
     /// <summary>

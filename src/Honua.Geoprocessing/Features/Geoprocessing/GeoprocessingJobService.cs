@@ -116,7 +116,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperationGateway? operationGateway = null,
         IOperatorScopeAuthorizer? scopeAuthorizer = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IServiceScopeFactory? serviceScopeFactory = null)
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IRasterExecutionPlanner? rasterExecutionPlanner = null,
+        IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -133,7 +135,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
                 logger),
             new GeoprocessingJobDispatcher(
-                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
+                logger,
+                executorOptions,
+                progressStore,
+                jobQueue,
+                workloadRegistry,
+                backends,
+                admissionEvaluator,
+                operationGateway,
+                rasterExecutionPlanner,
+                rasterExecutionOptions),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -433,11 +444,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        var rasterDefinition = !isCustomCode && plan.Steps[0].ProcessId is { } rasterProcessId
+            ? _processCatalog.GetProcess(rasterProcessId)
+            : null;
+        var rasterDecision = await _dispatcher
+            .PlanRasterExecutionAsync(plan, rasterDefinition, cancellationToken)
+            .ConfigureAwait(false);
+
         // Resolve any native raster/surface step that references a registered catalog
         // raster by layerId/rasterId, materializing the bytes onto the canonical base64
-        // 'source' input the worker reads (#2264). The fingerprint above is computed on
-        // the caller's original (reference-carrying) plan so idempotency keys map to the
-        // request, not the resolved payload; the spec below carries the resolved bytes.
+        // 'source' input the worker reads (#2264). Planning above consumes only the caller's
+        // validated descriptors/reference metadata, never the materialized payload. The
+        // fingerprint is likewise computed on the original reference-carrying plan so
+        // idempotency keys map to the request; the legacy spec below carries resolved bytes.
         plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
@@ -473,7 +492,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var partitionKey = ResolvePartitionKey(specParams);
-        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        var costWeight = ResolveAdmissionCostWeight(plan, rasterDecision);
         var priority = ResolvePriority(specParams);
 
         var admission = await _dispatcher.EnsureAdmittedAsync(
@@ -489,19 +508,30 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+        var workload = await _dispatcher
+            .ResolveWorkloadAsync(isCustomCode, cancellationToken, rasterDecision)
+            .ConfigureAwait(false);
         // A custom-code job forces the custom-code runtime profile so the claim
         // fence routes it to the custom-code Batch workload (and away from the lean
         // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
         var requiredRuntimeProfile = isCustomCode
             ? CustomCodeJobContract.RuntimeProfile
-            : ResolveRequiredRuntimeProfile(plan);
+            : ResolveRequiredRuntimeProfile(plan, rasterDecision);
         // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
         // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
         // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
         // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
         var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
-        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
+        var spec = BuildSpec(
+            plan,
+            specParams,
+            workload,
+            requiredRuntimeProfile,
+            resourceProfile,
+            rasterDecision);
+        var queuedPhase = rasterDecision is null
+            ? "Queued"
+            : $"Queued: raster decision {rasterDecision.ReasonCode}";
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -510,7 +540,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
-            CurrentPhase = "Queued",
+            CurrentPhase = queuedPhase,
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
@@ -540,7 +570,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         try
         {
-            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId, queuedPhase);
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -1041,6 +1071,26 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "GeoprocessingApprovalResume"));
     }
 
+    private static double ResolveAdmissionCostWeight(
+        AnalysisPlan plan,
+        RasterExecutionDecision? rasterDecision)
+    {
+        if (rasterDecision is null)
+        {
+            return Math.Max(plan.Steps.Count, 1);
+        }
+
+        if (rasterDecision.Cost.UsesConservativeValues)
+        {
+            return 1_000d;
+        }
+
+        var decodedWeight = rasterDecision.Cost.DecodedBytes / (64d * 1024d * 1024d);
+        var scratchWeight = rasterDecision.Cost.ExpectedScratchBytes / (128d * 1024d * 1024d);
+        var databaseWeight = rasterDecision.Cost.ExpectedDatabaseWork / 10_000_000d;
+        return Math.Clamp(decodedWeight + scratchWeight + databaseWeight, 1d, 1_000d);
+    }
+
     private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
     {
         if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
@@ -1085,8 +1135,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
     /// requires a specialized profile, leaving the spec profile-agnostic.
     /// </summary>
-    private string? ResolveRequiredRuntimeProfile(AnalysisPlan plan)
+    private string? ResolveRequiredRuntimeProfile(
+        AnalysisPlan plan,
+        RasterExecutionDecision? rasterDecision = null)
     {
+        if (rasterDecision is not null)
+        {
+            return rasterDecision.Engine == RasterEngine.Postgis
+                ? RuntimeProfiles.RasterPostgis
+                : RuntimeProfiles.Native;
+        }
+
         foreach (var step in plan.Steps)
         {
             if (string.IsNullOrWhiteSpace(step.ProcessId))
@@ -1193,7 +1252,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile,
-        GpResourceProfile resourceProfile)
+        GpResourceProfile resourceProfile,
+        RasterExecutionDecision? rasterDecision = null)
     {
         if (workload == null)
         {
@@ -1203,7 +1263,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // plan (issue #2180). The per-job resource profile is NOT projected here: the
             // batch.* sizing keys are meaningless to the local/Kubernetes baseline and would
             // break the local-runner spec-parity invariant.
-            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);
+            return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(
+                plan,
+                specParams,
+                requiredRuntimeProfile,
+                rasterDecision);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
@@ -1237,6 +1301,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ContractVersion = GeoprocessingSpecBuilder.ResolveRequiredContractVersion(
                 plan,
                 workload.ContractVersion),
+            RasterExecution = rasterDecision,
             Parameters = specParams
         };
     }
