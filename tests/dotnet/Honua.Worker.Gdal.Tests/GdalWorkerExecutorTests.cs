@@ -81,6 +81,7 @@ public sealed class GdalWorkerExecutorTests
             "surface.viewshed",
             "conversion.polygonize",
             "conversion.rasterize",
+            "conversion.raster-format",
         });
     }
 
@@ -106,6 +107,7 @@ public sealed class GdalWorkerExecutorTests
             new GdalVectorReprojectJobExecutor(runner, options, NullLogger<GdalVectorReprojectJobExecutor>.Instance),
             new GdalVectorSourceReadJobExecutor(runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
+            new GdalRasterFormatConvertJobExecutor(runner, options, NullLogger<GdalRasterFormatConvertJobExecutor>.Instance),
             new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             new GdalRasterReprojectCatalogJobExecutor(runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),

@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Geoprocessing;
@@ -49,9 +50,34 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     private readonly ImmutableArray<ProcessDefinition> _all;
     private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;
 
-    public BuiltInProcessCatalog(ILogger<BuiltInProcessCatalog>? logger = null)
+    public BuiltInProcessCatalog(
+        ILogger<BuiltInProcessCatalog>? logger = null,
+        IRasterEngineCapabilityRegistry? rasterEngineCapabilities = null)
     {
         var definitions = BuildDefinitions();
+        var rasterRegistry = rasterEngineCapabilities ?? new RasterEngineCapabilityRegistry();
+        var catalogProcessIds = definitions
+            .Select(definition => definition.ProcessId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var capability in rasterRegistry.Processes)
+        {
+            if (!catalogProcessIds.Contains(capability.ProcessId))
+            {
+                throw new InvalidOperationException(
+                    $"Raster engine registry references unknown catalog process "
+                    + $"'{capability.ProcessId}'.");
+            }
+        }
+
+        for (var i = 0; i < definitions.Length; i++)
+        {
+            var capability = rasterRegistry.Find(definitions[i].ProcessId);
+            if (capability is not null)
+            {
+                definitions[i] = definitions[i] with { RasterEngineCapabilities = capability };
+            }
+        }
+
         _all = definitions.ToImmutableArray();
         _processes = definitions.ToFrozenDictionary(d => d.ProcessId, StringComparer.Ordinal);
         _byCategory = definitions

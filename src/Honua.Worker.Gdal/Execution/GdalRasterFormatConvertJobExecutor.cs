@@ -14,7 +14,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// <c>conversion.raster-format</c> process (#2138). Exports a source raster into
 /// another raster format (GTiff, PNG, JPEG, COG) via the real GDAL
 /// <c>gdal_translate -of &lt;driver&gt;</c> CLI, replacing the previous
-/// validation-only catalog stub. Reads a base64 GeoTIFF source, runs the
+/// validation-only catalog stub. Reads a base64 source in the worker's configured
+/// raster input allowlist, runs the
 /// translation in an isolated scratch workspace, and publishes the converted
 /// raster as a canonical data-URI artifact with the target format's content type.
 /// GDAL execution failures surface as proper GP job failures with sanitized

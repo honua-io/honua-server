@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
@@ -77,6 +78,14 @@ public sealed record ProcessDefinition
     /// routing decision in the catalog rather than hard-coded in the submit path.
     /// </summary>
     public string RuntimeProfile { get; init; } = RuntimeProfiles.Managed;
+
+    /// <summary>
+    /// Provider-neutral raster engine metadata for this canonical process ID, or
+    /// <see langword="null"/> when the process is not a raster-engine candidate. This augments
+    /// rather than replaces <see cref="RuntimeProfile"/>; final engine/placement planning is a
+    /// separate step and non-raster routing retains its existing profile behavior.
+    /// </summary>
+    public RasterProcessCapability? RasterEngineCapabilities { get; init; }
 }
 
 /// <summary>

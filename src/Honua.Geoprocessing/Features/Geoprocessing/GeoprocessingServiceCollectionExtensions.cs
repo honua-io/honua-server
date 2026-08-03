@@ -4,6 +4,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
@@ -78,6 +79,11 @@ internal static class GeoprocessingServiceCollectionExtensions
                 services.AddHostedService(sp => sp.GetRequiredService<WorkspaceCleanupService>());
             }
         }
+
+        // Provider-neutral raster engine/cost metadata (#3091). Registered before the process
+        // catalog so catalog definitions project the exact same immutable descriptor instances.
+        services.TryAddSingleton<IRasterEngineCapabilityRegistry>(_ =>
+            CreateRasterEngineCapabilityRegistry(configuration));
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
@@ -390,5 +396,29 @@ internal static class GeoprocessingServiceCollectionExtensions
         {
             services.AddSingleton<IProcessExecutor>(sp => sp.GetRequiredService<TExecutor>());
         }
+    }
+
+    private static RasterEngineCapabilityRegistry CreateRasterEngineCapabilityRegistry(
+        IConfiguration configuration)
+    {
+        var configuredFormats = configuration
+            .GetSection("GdalWorker:AllowedRasterInputFormats")
+            .GetChildren()
+            .ToArray();
+        var configuredSkippedDrivers = configuration
+            .GetSection("GdalWorker:Hardening:SkipDrivers")
+            .GetChildren()
+            .ToArray();
+        return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+            configuredFormats.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
+                : configuredFormats
+                    .Select(format => format.Value)
+                    .OfType<string>(),
+            configuredSkippedDrivers.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
+                : configuredSkippedDrivers
+                    .Select(driver => driver.Value)
+                    .OfType<string>());
     }
 }
