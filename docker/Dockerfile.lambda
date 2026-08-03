@@ -130,6 +130,10 @@ ENV PORT=8080 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
+LABEL honua.runtime.profile="web-debug" \
+      honua.runtime.compilation="jit" \
+      honua.runtime.distribution="non-production"
+
 EXPOSE 8080
 
 CMD ["Honua.Server"]
