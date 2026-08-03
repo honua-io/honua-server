@@ -4,9 +4,12 @@
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
+using DbUp;
+using DbUp.Helpers;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Collaboration.Operations;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -125,11 +128,16 @@ public sealed class PostgresSavedMapOperationLogRepositoryTests(PostgresFixture 
             "Migrations",
             "092_CreateSavedMapOperationLog.sql");
         var migration = await File.ReadAllTextAsync(migrationPath);
-        migration = migration.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(fixture.DataSource.ConnectionString)
+            .JournalTo(new NullJournal())
+            .WithScript("092_CreateSavedMapOperationLog.sql", migration)
+            .WithVariable("HonuaSchema", SchemaSearchPath.ValidateAndQuote(schema))
+            .WithTransaction()
+            .Build();
+        var result = upgrader.PerformUpgrade();
 
-        await using var connection = await fixture.DataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand(migration, connection);
-        await command.ExecuteNonQueryAsync();
+        Assert.True(result.Successful, $"migration should complete successfully: {result.Error}");
     }
 
     private static string FindRepositoryRoot()

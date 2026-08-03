@@ -13,7 +13,7 @@ namespace Honua.Architecture.Tests;
 /// embedded <c>*.sql</c> migrations through DbUp with variable substitution
 /// ENABLED, which treats a dollar-delimited token that has an inner word — a
 /// NAMED dollar-quote tag such as <c>$ddl$</c> or <c>$func$</c> — as a variable
-/// reference and fails the whole migration with
+/// reference and fails the whole migration when the variable is not explicitly bound with
 /// "Variable &lt;name&gt; has no value defined" BEFORE the SQL ever runs. The
 /// substitution scans the entire script text, including comments.
 /// </summary>
@@ -25,10 +25,11 @@ namespace Honua.Architecture.Tests;
 /// container, no database — and runs in the architecture-tests job (which is not
 /// subject to the server-test matrix's fail-fast cancellation).
 ///
-/// The fix when this fails: use ONLY the anonymous <c>$$</c> dollar-quote (which
-/// DbUp ignores, as it has no inner word) for any plpgsql <c>DO</c>/function body,
-/// and write the inner DDL as direct statements or single-quoted <c>EXECUTE</c>
-/// strings. See <c>043_CreatePgRoutingTopology.sql</c> for the canonical pattern.
+/// The fix when this fails: bind an intentional migration variable in the runner, or use
+/// ONLY the anonymous <c>$$</c> dollar-quote (which DbUp ignores, as it has no inner word)
+/// for any plpgsql <c>DO</c>/function body and write the inner DDL as direct statements or
+/// single-quoted <c>EXECUTE</c> strings. See <c>043_CreatePgRoutingTopology.sql</c> for the
+/// canonical pattern.
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class MigrationScriptDbUpSafetyTests
@@ -52,8 +53,11 @@ public sealed class MigrationScriptDbUpSafetyTests
         RegexOptions.Compiled,
         TimeSpan.FromSeconds(2));
 
+    private static readonly HashSet<string> _definedMigrationVariables =
+        ["$HonuaSchema$"];
+
     [ArchitectureTest]
-    public void MigrationScripts_ShouldNotUseNamedDollarQuoteTags_ForDbUpCompatibility()
+    public void MigrationScripts_ShouldNotUseUndefinedVariableOrNamedDollarQuoteTags()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
@@ -79,7 +83,13 @@ public sealed class MigrationScriptDbUpSafetyTests
                 var tags = matches
                     .Select(m => m.Value)
                     .Distinct(StringComparer.Ordinal)
+                    .Where(tag => !_definedMigrationVariables.Contains(tag))
                     .OrderBy(t => t, StringComparer.Ordinal);
+
+                if (!tags.Any())
+                {
+                    continue;
+                }
 
                 var relativeFile = Path.GetRelativePath(repositoryRoot, file).Replace('\\', '/');
                 violations.Add($"{relativeFile}: {string.Join(", ", tags)}");
@@ -92,7 +102,8 @@ public sealed class MigrationScriptDbUpSafetyTests
         violations.Should().BeEmpty(
             "DbUp's variable substitution treats named dollar-quote tags as variables and fails the migration with "
             + "\"Variable <name> has no value defined\" before the SQL runs (it scans comments too). Use only the "
-            + "anonymous \"$$\" dollar-quote with direct plpgsql statements / single-quoted EXECUTE, as in "
+            + "variables explicitly bound by PostgresDatabaseMigrationRunner or the anonymous \"$$\" dollar-quote "
+            + "with direct plpgsql statements / single-quoted EXECUTE, as in "
             + "043_CreatePgRoutingTopology.sql. Offending scripts:\n  "
             + string.Join("\n  ", violations));
     }
@@ -112,5 +123,22 @@ public sealed class MigrationScriptDbUpSafetyTests
         _namedDollarQuoteTag.IsMatch("DO $$ BEGIN PERFORM 1; END $$;").Should().BeFalse();
         _namedDollarQuoteTag.IsMatch("DO $$\nBEGIN\nEND\n$$;").Should().BeFalse();
         _namedDollarQuoteTag.IsMatch("SELECT $$word$$;").Should().BeFalse();
+    }
+
+    [ArchitectureTest]
+    public void SavedMapOperationLogMigration_ShouldUseConfiguredMetadataSchemaVariable()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var migrationPath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            "src",
+            "Honua.Server",
+            "Migrations",
+            "092_CreateSavedMapOperationLog.sql");
+        var sql = File.ReadAllText(migrationPath);
+
+        sql.Should().Contain("$HonuaSchema$.saved_map_operation_log_heads");
+        sql.Should().Contain("$HonuaSchema$.saved_map_operations");
+        sql.Should().NotContain("honua.saved_map_operation");
     }
 }

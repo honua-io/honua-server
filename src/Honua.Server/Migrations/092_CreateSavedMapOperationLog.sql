@@ -5,7 +5,9 @@
 -- The head row is the per-map serialization point for cursor assignment. Keeping the
 -- checkpoint cursor on that same row gives operation replay and checkpoint replay one
 -- durability/locking story instead of pairing a durable log with process-local state.
-CREATE TABLE IF NOT EXISTS honua.saved_map_operation_log_heads (
+CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
+
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.saved_map_operation_log_heads (
     map_id              text PRIMARY KEY,
     head_cursor         bigint NOT NULL DEFAULT 0 CHECK (head_cursor >= 0),
     checkpoint_cursor   bigint NOT NULL DEFAULT 0 CHECK (checkpoint_cursor >= 0),
@@ -14,7 +16,7 @@ CREATE TABLE IF NOT EXISTS honua.saved_map_operation_log_heads (
         CHECK (checkpoint_cursor <= head_cursor)
 );
 
-CREATE TABLE IF NOT EXISTS honua.saved_map_operations (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.saved_map_operations (
     map_id              text NOT NULL,
     server_cursor       bigint NOT NULL CHECK (server_cursor > 0),
     operation_id        text NOT NULL,
@@ -27,15 +29,15 @@ CREATE TABLE IF NOT EXISTS honua.saved_map_operations (
     PRIMARY KEY (map_id, server_cursor),
     CONSTRAINT fk_saved_map_operations_head
         FOREIGN KEY (map_id)
-        REFERENCES honua.saved_map_operation_log_heads (map_id)
+        REFERENCES $HonuaSchema$.saved_map_operation_log_heads (map_id)
         ON DELETE CASCADE,
     CONSTRAINT uq_saved_map_operations_operation_id
         UNIQUE (map_id, operation_id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_saved_map_operations_idempotency_key
-    ON honua.saved_map_operations (map_id, idempotency_key)
+    ON $HonuaSchema$.saved_map_operations (map_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_saved_map_operations_replay
-    ON honua.saved_map_operations (map_id, server_cursor);
+    ON $HonuaSchema$.saved_map_operations (map_id, server_cursor);
