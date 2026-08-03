@@ -154,4 +154,65 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
         document.RootElement.GetProperty("features").EnumerateArray().Should()
             .HaveCount(ProviderSmokeData.Parcels.Count);
     }
+
+    [IntegrationTest]
+    [Protocol(ProtocolNames.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureServer_ApplyEdits_RetriedAfterReadOnlyRejection_Repeats405InsteadOfConflict()
+    {
+        // honua-server#3052: the read-only rejection is raised as NotSupportedException AFTER the
+        // handler has reserved the Idempotency-Key. Before the fix nothing released that
+        // reservation, so a client retrying inside the ~60s reservation window found no replay
+        // value, lost TryReserveAsync, and was answered with the idempotency conflict instead of a
+        // repeat of the documented 405. This is the most visible instance of the leak because on a
+        // read/query-only provider EVERY keyed edit fails, so EVERY keyed retry degraded to a
+        // conflict.
+        var payload = /*lang=json,strict*/ """
+            {
+              "adds": [
+                {
+                  "attributes": { "name": "Should Not Exist", "area": 3.5, "type": "residential" },
+                  "geometry": { "x": -122.38, "y": 37.83 }
+                }
+              ]
+            }
+            """;
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+
+        var first = await PostApplyEditsWithIdempotencyKeyAsync(payload, idempotencyKey);
+        var firstBody = await first.Content.ReadAsStringAsync();
+        first.StatusCode.Should().Be(HttpStatusCode.OK, firstBody);
+        using (var firstDocument = JsonDocument.Parse(firstBody))
+        {
+            firstDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(405, firstBody);
+        }
+
+        var retry = await PostApplyEditsWithIdempotencyKeyAsync(payload, idempotencyKey);
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        retry.StatusCode.Should().Be(HttpStatusCode.OK, retryBody);
+        using (var retryDocument = JsonDocument.Parse(retryBody))
+        {
+            // GeoServices reports errors Esri-style (HTTP 200 + error envelope), so the conflict
+            // this guards against is body code 409, not an HTTP 409.
+            var retryCode = retryDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+            retryCode.Should().NotBe(409,
+                "the rejected edit released its reservation, so the retry is not a concurrent request");
+            retryCode.Should().Be(405, retryBody);
+        }
+    }
+
+    private async Task<HttpResponseMessage> PostApplyEditsWithIdempotencyKeyAsync(string payload, string idempotencyKey)
+    {
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/applyEdits")
+        {
+            Content = content,
+        };
+        request.Headers.Add("X-API-Key", "provider-smoke-admin");
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await Client.SendAsync(request);
+    }
 }

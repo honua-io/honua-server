@@ -8,6 +8,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -3186,6 +3188,176 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
         requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
         return await _fixture.Client.SendAsync(requestMessage);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
+    {
+        // #3052: the rollbackOnFailure validation-failure response returns before the handler
+        // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
+        // held for the whole reservation window. A client retrying inside that window found no
+        // replay value, lost the reserve, and got 409 Conflict instead of a deterministic repeat of
+        // the original rejection.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var editsRequest = new ApplyEditsRequest
+        {
+            Updates = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = 987654321,
+                        ["name"] = "no such row"
+                    }
+                }
+            },
+            RollbackOnFailure = true
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var firstResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        firstResponse.Be200Ok();
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
+        var first = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            firstBody, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        first.Should().NotBeNull();
+        first!.Success.Should().BeFalse("updating a non-existent objectid with rollbackOnFailure must fail");
+
+        var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        secondResponse.Be200Ok();
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        ShouldNotBeIdempotencyConflict(secondBody,
+            "the failed request released its reservation, so the retry must not be treated as a concurrent request");
+        secondBody.Should().Be(firstBody, "the retry must reproduce the original rejection deterministically");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
+    {
+        // #3052: a committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
+        // re-attempted rather than replaying a no-op failure — but before the fix the still-held
+        // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var editsRequest = new ApplyEditsRequest
+        {
+            Deletes = new object[] { 987654321 }
+        };
+
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var firstResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        firstResponse.Be200Ok();
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
+        var first = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            firstBody, FeatureServerJsonContext.Default.ApplyEditsResponse);
+        first.Should().NotBeNull();
+        first!.Success.Should().BeFalse("deleting a non-existent objectid commits no rows");
+        first.DeleteResults.Should().HaveCount(1);
+        first.DeleteResults![0].Success.Should().BeFalse();
+
+        var secondResponse = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+        secondResponse.Be200Ok();
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+        ShouldNotBeIdempotencyConflict(secondBody,
+            "a zero-row commit records nothing, so its reservation must be released for the retry");
+        secondBody.Should().Be(firstBody, "the retry is genuinely re-attempted and reaches the same outcome");
+    }
+
+    /// <summary>
+    /// Asserts an <c>applyEdits</c> response is not the #3052 idempotency conflict. GeoServices
+    /// reports errors Esri-style (HTTP 200 with an <c>{"error":{"code":...}}</c> body), so a leaked
+    /// reservation surfaces as body code 409, not as an HTTP 409 status.
+    /// </summary>
+    private static void ShouldNotBeIdempotencyConflict(string body, string because)
+    {
+        using var document = JsonDocument.Parse(body);
+        if (document.RootElement.TryGetProperty("error", out var error) &&
+            error.TryGetProperty("code", out var code))
+        {
+            code.GetInt32().Should().NotBe(409, because);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
+    {
+        // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
+        // reservation is genuinely held, a second request carrying the same key must be rejected as a
+        // conflict rather than executing a duplicate edit. Reserving directly through the store makes
+        // the race deterministic — no timing window to lose.
+        //
+        // This also pins the conflict body's shape: the branch used to build its payload with
+        // Results.Conflict(new { ... }), an anonymous type that cannot be serialized once
+        // reflection-based serialization is off (Honua.Server sets
+        // JsonSerializerIsReflectionEnabledByDefault=false), so it was neither AOT-safe nor
+        // Esri-shaped. It now goes through the shared error helper like every other GeoServices
+        // error, carrying code 409 in the standard envelope.
+        var idempotencyKey = Guid.NewGuid().ToString("n");
+        var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
+        // The store scopes a key to the resolved edit principal. This fixture's client is
+        // unauthenticated, so the handler resolves EditPrincipal.Anonymous and scopes to
+        // "anonymous"; "admin" (the ClaimTypes.Name an admin API key stamps) is reserved as well so
+        // the test does not silently depend on the fixture's auth posture. A principal outside both
+        // cannot make this test pass by accident — the reservation would miss, the edit would apply,
+        // and the assertions below would fail on a success body.
+        var heldScopes = new[] { "anonymous", "admin" }
+            .Select(principal => new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, principal, idempotencyKey))
+            .ToArray();
+        foreach (var heldScope in heldScopes)
+        {
+            (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
+        }
+
+        var editsRequest = new ApplyEditsRequest
+        {
+            Adds = new[]
+            {
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = $"Conflicted-{idempotencyKey}"
+                    },
+                    Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
+                }
+            }
+        };
+        var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+
+        var response = await PostApplyEditsWithIdempotencyKeyAsync(json, idempotencyKey);
+
+        // GeoServices REST signals errors Esri-style: HTTP 200 with an {"error":{"code":...}} body.
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(
+            "a held reservation must reject the concurrent request instead of applying the edit: {0}", body);
+        error.GetProperty("code").GetInt32().Should().Be(409, body);
+
+        // The loser must not release a reservation it never owned: the in-flight request's key is
+        // still held after the conflict, so a third request would still be rejected rather than
+        // racing the owner into a duplicate edit.
+        foreach (var heldScope in heldScopes)
+        {
+            (await store.TryReserveAsync(heldScope)).Should().BeNull(
+                "the rejected request must leave the owner's reservation untouched");
+        }
+
+        // Nothing was written by the rejected request.
+        var countResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?where=name='Conflicted-{idempotencyKey}'&returnCountOnly=true&f=json");
+        countResponse.Be200Ok();
+        var countQuery = JsonSerializer.Deserialize<QueryResponse>(
+            await countResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.QueryResponse);
+        countQuery!.Count.Should().Be(0);
     }
 
     [IntegrationTest]

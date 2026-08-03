@@ -127,7 +127,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task TryReserveAsync_ConcurrentSameScope_NonRedisCache_ExactlyOneWins()
     {
         // Arrange: MemoryDistributedCache configured but no IConnectionMultiplexer.
-        // Prior to the fix TryReserveAsync returned true unconditionally here.
+        // Prior to the fix TryReserveAsync handed out a reservation unconditionally here.
         var store = new DistributedApplyEditsIdempotencyStore(
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
@@ -142,11 +142,137 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var results = await Task.WhenAll(tasks);
 
         // Assert: exactly one winner (BH7-002).
-        results.Count(static r => r).Should().Be(1,
+        results.Count(static token => token is not null).Should().Be(1,
             "ConcurrentDictionary.TryAdd is the fallback for non-Redis IDistributedCache; " +
             "exactly one concurrent caller must win the reservation so only one edit executes");
-        results.Count(static r => !r).Should().Be(9,
+        results.Count(static token => token is null).Should().Be(9,
             "all other concurrent callers must lose the reservation and return 409");
+    }
+
+    // ─── #3052: reservation release ──────────────────────────────────────────────
+
+    /// <summary>
+    /// #3052: a reservation that will never be replaced by a recorded response (the edit failed
+    /// before dispatch, was rejected, rolled back, or committed no rows) must be releasable, so the
+    /// client's retry wins the reservation again instead of losing it and getting a 409.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_AfterReservation_AllowsTheSameKeyToReserveAgain()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "release-then-retry");
+
+        var token = await store.TryReserveAsync(scope);
+        token.Should().NotBeNull();
+        (await store.TryReserveAsync(scope)).Should().BeNull("the reservation is still held");
+
+        await store.ReleaseAsync(scope, token!);
+
+        (await store.TryReserveAsync(scope)).Should().NotBeNull(
+            "a released reservation must not pin the key for the rest of the reservation window");
+    }
+
+    /// <summary>
+    /// #3052: the in-process fallback path (no IDistributedCache configured) must release too.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_WithInProcessFallback_AllowsTheSameKeyToReserveAgain()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            cache: null,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "release-then-retry-fallback");
+
+        var token = await store.TryReserveAsync(scope);
+        token.Should().NotBeNull();
+        await store.ReleaseAsync(scope, token!);
+
+        (await store.TryReserveAsync(scope)).Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// #3052 correctness guard, the direction that matters most: release is a compare-and-delete on
+    /// the pending sentinel. Once a response has been recorded the key must stay reserved for the
+    /// whole dedupe window, otherwise a late release would discard the replay value and let a
+    /// duplicate retry re-apply an already-committed edit.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_AfterRecordedResponse_LeavesTheReplayValueIntact()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "recorded-then-released");
+
+        var token = await store.TryReserveAsync(scope);
+        token.Should().NotBeNull();
+        await store.SetAsync(scope, SampleResponse(objectId: 1234));
+
+        await store.ReleaseAsync(scope, token!);
+
+        var replay = await store.TryGetAsync(scope);
+        replay.Should().NotBeNull("a recorded response must survive a release");
+        replay!.AddResults![0].ObjectId.Should().Be(1234);
+    }
+
+    /// <summary>
+    /// #3052: releasing a key that was never reserved is a harmless no-op rather than a throw —
+    /// the handler calls it from a finally block on already-failing paths.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_WithoutReservation_IsANoOp()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "never-reserved");
+
+        await store.ReleaseAsync(scope, "a-token-that-never-reserved-anything");
+
+        (await store.TryReserveAsync(scope)).Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// #3052 (Codex P1): a reservation carries a token unique to its owner, so a request whose
+    /// reservation has already lapsed cannot delete the reservation that now belongs to someone
+    /// else. Reproduces the lapse without waiting out the reservation window: the first owner
+    /// releases (as the reservation window expiring would do), a retry re-reserves the key, and the
+    /// first owner's late release must then be a no-op.
+    ///
+    /// Before the fix every reservation stored the identical pending sentinel, so the
+    /// compare-and-delete matched the successor's reservation and freed it — after which a third
+    /// same-key request could execute alongside the retry and duplicate its rows.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ReleaseAsync_WithLapsedOwnersToken_LeavesTheSuccessorsReservationHeld()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = Scope(key: "lapsed-owner");
+
+        var lapsedToken = await store.TryReserveAsync(scope);
+        lapsedToken.Should().NotBeNull();
+
+        // The first owner's window lapses and a retry acquires the key for itself.
+        await store.ReleaseAsync(scope, lapsedToken!);
+        var successorToken = await store.TryReserveAsync(scope);
+        successorToken.Should().NotBeNull();
+        successorToken.Should().NotBe(lapsedToken, "each reservation must be uniquely identifiable");
+
+        // The original request finally unwinds and releases the token it was handed.
+        await store.ReleaseAsync(scope, lapsedToken!);
+
+        (await store.TryReserveAsync(scope)).Should().BeNull(
+            "the successor still owns the key, so a late release from the lapsed owner must not " +
+            "free it and let a third request execute concurrently");
     }
 
     [UnitTest]
