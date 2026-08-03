@@ -272,19 +272,12 @@ internal sealed class CatalogRasterSourceResolver(
             return null;
         }
 
-        int? resolved = null;
-        foreach (var publication in publications)
-        {
-            var storageLayerId = snapshot.ResolveStorageLayerId(publication);
-            if (storageLayerId is null || (resolved is not null && resolved.Value != storageLayerId.Value))
-            {
-                return null;
-            }
+        var storageLayerIds = publications
+            .Select(snapshot.ResolveStorageLayerId)
+            .Distinct()
+            .ToArray();
 
-            resolved = storageLayerId.Value;
-        }
-
-        return resolved;
+        return storageLayerIds.Length == 1 ? storageLayerIds[0] : null;
     }
 
     private static bool IsLive(MetadataV2Publication publication)

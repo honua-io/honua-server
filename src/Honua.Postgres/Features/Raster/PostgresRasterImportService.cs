@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Frozen;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
@@ -21,18 +20,6 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterImportService : IRasterImportService
 {
-    private static readonly FrozenDictionary<string, SupportedRasterFormat> _extensionMap =
-        new Dictionary<string, SupportedRasterFormat>(StringComparer.OrdinalIgnoreCase)
-        {
-            [".tif"] = SupportedRasterFormat.GeoTiff,
-            [".tiff"] = SupportedRasterFormat.GeoTiff,
-            [".png"] = SupportedRasterFormat.PngWorldFile,
-            [".jpg"] = SupportedRasterFormat.JpegWorldFile,
-            [".jpeg"] = SupportedRasterFormat.JpegWorldFile,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly string[] _supportedExtensions = [".tif", ".tiff", ".png", ".jpg", ".jpeg"];
-
     // GeoTIFF magic bytes: "II" (little-endian) or "MM" (big-endian) followed by 42
     private static readonly byte[] _tiffLittleEndian = [0x49, 0x49, 0x2A, 0x00];
     private static readonly byte[] _tiffBigEndian = [0x4D, 0x4D, 0x00, 0x2A];
@@ -73,14 +60,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     }
 
     /// <inheritdoc />
-    public SupportedRasterFormat? DetectFormat(string fileName)
-    {
-        var extension = Path.GetExtension(fileName);
-        return _extensionMap.TryGetValue(extension, out var format) ? format : null;
-    }
+    public SupportedRasterFormat? DetectFormat(string fileName) =>
+        RasterImportFormatDetector.DetectFormat(fileName);
 
     /// <inheritdoc />
-    public string[] GetSupportedExtensions() => _supportedExtensions;
+    public string[] GetSupportedExtensions() => [.. RasterImportFormatDetector.SupportedExtensions];
 
     /// <inheritdoc />
     public async Task<RasterImportResult> ImportAsync(
