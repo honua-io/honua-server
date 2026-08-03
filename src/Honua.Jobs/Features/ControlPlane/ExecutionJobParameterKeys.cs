@@ -113,4 +113,11 @@ internal static class ExecutionJobParameterKeys
     /// a separate substrate.
     /// </summary>
     public const string GeoprocessingStepInputPrefix = "honua.geoprocessing.step.";
+
+    /// <summary>
+    /// Prefix for source-generated, typed raster-source descriptors projected onto
+    /// durable GP specifications. Values are JSON descriptors, never raster content
+    /// except for the explicitly bounded inline source kind.
+    /// </summary>
+    public const string GeoprocessingStepRasterSourcePrefix = "honua.geoprocessing.raster_source.";
 }

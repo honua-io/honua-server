@@ -642,6 +642,26 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_NativeStandaloneRasterSources_AcceptTypedDescriptors()
+    {
+        foreach (var processId in new[]
+                 {
+                     "proximity.euclidean-distance",
+                     "proximity.euclidean-allocation",
+                     "gdal.gdalwarp",
+                 })
+        {
+            var definition = _catalog.GetProcess(processId);
+
+            definition.Should().NotBeNull();
+            definition!.Parameters.Should().ContainSingle(parameter =>
+                parameter.Name == "source" && parameter.AcceptsRasterSource);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_RasterMapAlgebra_WithDisallowedExpression_ProducesViolation()
     {
         var plan = CreateSingleStepPlan(

@@ -470,6 +470,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 ?? snapshot.DefaultMemoryRequest,
             MemoryLimit = Normalize(parameters.GetValueOrDefault(KubernetesJobParameterKeys.MemoryLimit))
                 ?? snapshot.DefaultMemoryLimit,
+            EphemeralStorageRequest = Normalize(
+                parameters.GetValueOrDefault(KubernetesJobParameterKeys.EphemeralStorageRequest)),
+            EphemeralStorageLimit = Normalize(
+                parameters.GetValueOrDefault(KubernetesJobParameterKeys.EphemeralStorageLimit)),
             NodeSelector = nodeSelector ?? new Dictionary<string, string>(StringComparer.Ordinal),
             ServiceAccount = Normalize(parameters.GetValueOrDefault(KubernetesJobParameterKeys.ServiceAccount))
                 ?? snapshot.DefaultServiceAccount,
@@ -858,6 +862,8 @@ internal static class KubernetesJobParameterKeys
     public const string CpuLimit = "k8s.cpu_limit";
     public const string MemoryRequest = "k8s.memory_request";
     public const string MemoryLimit = "k8s.memory_limit";
+    public const string EphemeralStorageRequest = "k8s.ephemeral_storage_request";
+    public const string EphemeralStorageLimit = "k8s.ephemeral_storage_limit";
     public const string ActiveDeadlineSeconds = "k8s.active_deadline_seconds";
     public const string TtlSecondsAfterFinished = "k8s.ttl_seconds_after_finished";
     public const string EnvironmentPrefix = "k8s.env.";

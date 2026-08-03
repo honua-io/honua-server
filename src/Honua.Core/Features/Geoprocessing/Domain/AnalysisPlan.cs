@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Raster;
+
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
 /// <summary>
@@ -59,6 +61,14 @@ public sealed record AnalysisPlanStep
     /// Opaque step-specific parameters matching the ControlPlane Parameters pattern.
     /// </summary>
     public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Typed raster inputs keyed by the process parameter they bind (for example
+    /// <c>source</c>). Reference descriptors are projected onto the durable worker
+    /// contract without materializing raster bytes in the serving process.
+    /// </summary>
+    public IReadOnlyDictionary<string, RasterSourceDescriptor> RasterSources { get; init; } =
+        new Dictionary<string, RasterSourceDescriptor>();
 
     /// <summary>
     /// Step identifiers that must complete before this step can execute.
