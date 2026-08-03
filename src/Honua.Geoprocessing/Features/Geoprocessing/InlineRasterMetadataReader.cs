@@ -11,7 +11,6 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal static class InlineRasterMetadataReader
 {
-    private const int MaxHeaderBytes = 64 * 1024;
     private const int MaxIfdEntries = 3000;
 
     public static bool TryReadBase64(string? encoded, out InlineRasterMetadata metadata)
@@ -22,16 +21,438 @@ internal static class InlineRasterMetadataReader
             return false;
         }
 
-        var charCount = Math.Min(encoded.Length, MaxHeaderBytes / 3 * 4);
-        charCount -= charCount % 4;
-        if (charCount == 0)
+        return Base64ByteReader.TryCreate(encoded, out var reader)
+            && TryReadBase64(reader, out metadata);
+    }
+
+    private static bool TryReadBase64(
+        Base64ByteReader reader,
+        out InlineRasterMetadata metadata)
+    {
+        metadata = default;
+        if (!reader.TryReadByte(0, out var byteOrder0)
+            || !reader.TryReadByte(1, out var byteOrder1))
         {
             return false;
         }
 
-        var buffer = GC.AllocateUninitializedArray<byte>(charCount / 4 * 3);
-        return Convert.TryFromBase64Chars(encoded.AsSpan(0, charCount), buffer, out var bytesWritten)
-            && TryRead(buffer.AsSpan(0, bytesWritten), out metadata);
+        var littleEndian = byteOrder0 == (byte)'I' && byteOrder1 == (byte)'I';
+        var bigEndian = byteOrder0 == (byte)'M' && byteOrder1 == (byte)'M';
+        if (!littleEndian && !bigEndian
+            || !reader.TryReadUInt16(2, littleEndian, out var magic))
+        {
+            return false;
+        }
+
+        return magic switch
+        {
+            42 => TryReadBase64ClassicTiff(reader, littleEndian, out metadata),
+            43 => TryReadBase64BigTiff(reader, littleEndian, out metadata),
+            _ => false,
+        };
+    }
+
+    private static bool TryReadBase64ClassicTiff(
+        Base64ByteReader reader,
+        bool littleEndian,
+        out InlineRasterMetadata metadata)
+    {
+        metadata = default;
+        if (!reader.TryReadUInt32(4, littleEndian, out var ifdOffset)
+            || !reader.TryReadUInt16(ifdOffset, littleEndian, out var entryCount)
+            || entryCount > MaxIfdEntries)
+        {
+            return false;
+        }
+
+        var entriesOffset = (ulong)ifdOffset + sizeof(ushort);
+        return reader.Contains(entriesOffset, entryCount * 12L)
+            && TryReadBase64Dimensions(
+                reader,
+                littleEndian,
+                entriesOffset,
+                entryCount,
+                entrySize: 12,
+                inlineSize: 4,
+                isBigTiff: false,
+                out metadata);
+    }
+
+    private static bool TryReadBase64BigTiff(
+        Base64ByteReader reader,
+        bool littleEndian,
+        out InlineRasterMetadata metadata)
+    {
+        metadata = default;
+        if (!reader.TryReadUInt16(4, littleEndian, out var offsetSize)
+            || offsetSize != 8
+            || !reader.TryReadUInt16(6, littleEndian, out var reserved)
+            || reserved != 0
+            || !reader.TryReadUInt64(8, littleEndian, out var ifdOffset)
+            || !reader.TryReadUInt64(ifdOffset, littleEndian, out var entryCount)
+            || entryCount > MaxIfdEntries)
+        {
+            return false;
+        }
+
+        var entriesOffset = ifdOffset + sizeof(ulong);
+        return entriesOffset >= ifdOffset
+            && reader.Contains(entriesOffset, checked((long)entryCount * 20))
+            && TryReadBase64Dimensions(
+                reader,
+                littleEndian,
+                entriesOffset,
+                (int)entryCount,
+                entrySize: 20,
+                inlineSize: 8,
+                isBigTiff: true,
+                out metadata);
+    }
+
+    private static bool TryReadBase64Dimensions(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entriesOffset,
+        int entryCount,
+        int entrySize,
+        int inlineSize,
+        bool isBigTiff,
+        out InlineRasterMetadata metadata)
+    {
+        metadata = default;
+        ulong? width = null;
+        ulong? height = null;
+        ulong bands = 1;
+        ulong sampleBytes = 8;
+        double? pixelScaleX = null;
+        double? pixelScaleY = null;
+
+        for (var index = 0; index < entryCount; index++)
+        {
+            var entryOffset = entriesOffset + (ulong)(index * entrySize);
+            if (!reader.TryReadUInt16(entryOffset, littleEndian, out var tag))
+            {
+                return false;
+            }
+
+            if (tag == 33550)
+            {
+                if (TryReadBase64PixelScale(
+                        reader,
+                        littleEndian,
+                        entryOffset,
+                        inlineSize,
+                        isBigTiff,
+                        out var scaleX,
+                        out var scaleY))
+                {
+                    pixelScaleX = scaleX;
+                    pixelScaleY = scaleY;
+                }
+
+                continue;
+            }
+
+            if (tag is not (256 or 257 or 258 or 277))
+            {
+                continue;
+            }
+
+            var valueRead = tag == 258
+                ? TryReadBase64MaximumEntryValue(
+                    reader,
+                    littleEndian,
+                    entryOffset,
+                    inlineSize,
+                    isBigTiff,
+                    out var value)
+                : TryReadBase64FirstEntryValue(
+                    reader,
+                    littleEndian,
+                    entryOffset,
+                    inlineSize,
+                    isBigTiff,
+                    out value);
+            if (!valueRead || value == 0)
+            {
+                return false;
+            }
+
+            switch (tag)
+            {
+                case 256:
+                    width = value;
+                    break;
+                case 257:
+                    height = value;
+                    break;
+                case 258:
+                    if (value > ulong.MaxValue - 7)
+                    {
+                        return false;
+                    }
+
+                    sampleBytes = Math.Max(sampleBytes, (value + 7) / 8);
+                    break;
+                case 277:
+                    bands = value;
+                    break;
+            }
+        }
+
+        if (width is null
+            || height is null
+            || width > long.MaxValue
+            || height > long.MaxValue
+            || bands > long.MaxValue
+            || sampleBytes > long.MaxValue)
+        {
+            return false;
+        }
+
+        metadata = new InlineRasterMetadata(
+            (long)width,
+            (long)height,
+            (long)bands,
+            (long)sampleBytes,
+            pixelScaleX,
+            pixelScaleY);
+        return true;
+    }
+
+    private static bool TryReadBase64PixelScale(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out double scaleX,
+        out double scaleY)
+    {
+        scaleX = 0;
+        scaleY = 0;
+        if (!reader.TryReadUInt16(entryOffset + 2, littleEndian, out var type)
+            || type != 12
+            || !TryReadBase64EntryCount(reader, littleEndian, entryOffset, isBigTiff, out var count)
+            || count is < 2 or > 16
+            || count > ulong.MaxValue / sizeof(double))
+        {
+            return false;
+        }
+
+        var valueBytes = count * sizeof(double);
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12UL : 8UL);
+        if (!TryResolveBase64DataOffset(
+                reader,
+                littleEndian,
+                valueFieldOffset,
+                valueBytes,
+                inlineSize,
+                isBigTiff,
+                out var dataOffset)
+            || !reader.TryReadDouble(dataOffset, littleEndian, out scaleX)
+            || !reader.TryReadDouble(dataOffset + sizeof(double), littleEndian, out scaleY))
+        {
+            return false;
+        }
+
+        return double.IsFinite(scaleX)
+            && double.IsFinite(scaleY)
+            && scaleX > 0
+            && scaleY > 0;
+    }
+
+    private static bool TryReadBase64MaximumEntryValue(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out ulong value)
+    {
+        value = 0;
+        if (!reader.TryReadUInt16(entryOffset + 2, littleEndian, out var type))
+        {
+            return false;
+        }
+
+        var typeSize = ResolveTypeSize(type);
+        if (typeSize == 0
+            || !TryReadBase64EntryCount(reader, littleEndian, entryOffset, isBigTiff, out var count)
+            || count == 0
+            || count > 1024
+            || count > ulong.MaxValue / (ulong)typeSize)
+        {
+            return false;
+        }
+
+        var valueBytes = count * (ulong)typeSize;
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12UL : 8UL);
+        if (!TryResolveBase64DataOffset(
+                reader,
+                littleEndian,
+                valueFieldOffset,
+                valueBytes,
+                inlineSize,
+                isBigTiff,
+                out var dataOffset)
+            || !reader.Contains(dataOffset, checked((long)valueBytes)))
+        {
+            return false;
+        }
+
+        for (ulong index = 0; index < count; index++)
+        {
+            if (!TryReadBase64EntryValue(
+                    reader,
+                    dataOffset + index * (ulong)typeSize,
+                    littleEndian,
+                    type,
+                    out var candidate))
+            {
+                return false;
+            }
+
+            value = Math.Max(value, candidate);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadBase64FirstEntryValue(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entryOffset,
+        int inlineSize,
+        bool isBigTiff,
+        out ulong value)
+    {
+        value = 0;
+        if (!reader.TryReadUInt16(entryOffset + 2, littleEndian, out var type))
+        {
+            return false;
+        }
+
+        var typeSize = ResolveTypeSize(type);
+        if (typeSize == 0
+            || !TryReadBase64EntryCount(reader, littleEndian, entryOffset, isBigTiff, out var count)
+            || count == 0
+            || count > ulong.MaxValue / (ulong)typeSize)
+        {
+            return false;
+        }
+
+        var valueBytes = count * (ulong)typeSize;
+        var valueFieldOffset = entryOffset + (isBigTiff ? 12UL : 8UL);
+        return TryResolveBase64DataOffset(
+                reader,
+                littleEndian,
+                valueFieldOffset,
+                valueBytes,
+                inlineSize,
+                isBigTiff,
+                out var dataOffset)
+            && TryReadBase64EntryValue(reader, dataOffset, littleEndian, type, out value);
+    }
+
+    private static bool TryReadBase64EntryCount(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong entryOffset,
+        bool isBigTiff,
+        out ulong count)
+    {
+        if (isBigTiff)
+        {
+            return reader.TryReadUInt64(entryOffset + 4, littleEndian, out count);
+        }
+
+        var read = reader.TryReadUInt32(entryOffset + 4, littleEndian, out var classicCount);
+        count = classicCount;
+        return read;
+    }
+
+    private static bool TryResolveBase64DataOffset(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong valueFieldOffset,
+        ulong valueBytes,
+        int inlineSize,
+        bool isBigTiff,
+        out ulong dataOffset)
+    {
+        if (valueBytes <= (ulong)inlineSize)
+        {
+            dataOffset = valueFieldOffset;
+            return reader.Contains(dataOffset, checked((long)valueBytes));
+        }
+
+        return isBigTiff
+            ? reader.TryReadUInt64(valueFieldOffset, littleEndian, out dataOffset)
+                && valueBytes <= long.MaxValue
+                && reader.Contains(dataOffset, (long)valueBytes)
+            : TryReadClassicBase64DataOffset(
+                reader,
+                littleEndian,
+                valueFieldOffset,
+                valueBytes,
+                out dataOffset);
+    }
+
+    private static bool TryReadClassicBase64DataOffset(
+        Base64ByteReader reader,
+        bool littleEndian,
+        ulong valueFieldOffset,
+        ulong valueBytes,
+        out ulong dataOffset)
+    {
+        var read = reader.TryReadUInt32(valueFieldOffset, littleEndian, out var classicOffset);
+        dataOffset = classicOffset;
+        return read
+            && valueBytes <= long.MaxValue
+            && reader.Contains(dataOffset, (long)valueBytes);
+    }
+
+    private static bool TryReadBase64EntryValue(
+        Base64ByteReader reader,
+        ulong offset,
+        bool littleEndian,
+        ushort type,
+        out ulong value)
+    {
+        value = 0;
+        switch (type)
+        {
+            case 1:
+                if (!reader.TryReadByte(offset, out var byteValue))
+                {
+                    return false;
+                }
+
+                value = byteValue;
+                return true;
+            case 3:
+                if (!reader.TryReadUInt16(offset, littleEndian, out var ushortValue))
+                {
+                    return false;
+                }
+
+                value = ushortValue;
+                return true;
+            case 4:
+                if (!reader.TryReadUInt32(offset, littleEndian, out var uintValue))
+                {
+                    return false;
+                }
+
+                value = uintValue;
+                return true;
+            case 16:
+            case 18:
+                return reader.TryReadUInt64(offset, littleEndian, out value);
+            default:
+                return false;
+        }
     }
 
     public static bool TryRead(ReadOnlySpan<byte> payload, out InlineRasterMetadata metadata)
@@ -409,6 +830,157 @@ internal static class InlineRasterMetadataReader
 
     private static bool Contains(ReadOnlySpan<byte> payload, int offset, int length)
         => offset >= 0 && length >= 0 && offset <= payload.Length - length;
+
+    /// <summary>
+    /// Provides bounded random access to an inline base64 payload. TIFF metadata can live well
+    /// beyond the initial header (the first IFD offset is file-defined), so admission reads only
+    /// the aligned base64 quanta that contain each required field instead of decoding the raster.
+    /// </summary>
+    private readonly struct Base64ByteReader
+    {
+        private readonly string _encoded;
+
+        private Base64ByteReader(string encoded, int decodedLength)
+        {
+            _encoded = encoded;
+            DecodedLength = decodedLength;
+        }
+
+        private int DecodedLength { get; }
+
+        public static bool TryCreate(string encoded, out Base64ByteReader reader)
+        {
+            reader = default;
+            if (encoded.Length == 0 || encoded.Length % 4 != 0)
+            {
+                return false;
+            }
+
+            var padding = encoded[^1] == '=' ? 1 : 0;
+            if (encoded.Length > 1 && encoded[^2] == '=')
+            {
+                padding++;
+            }
+
+            for (var index = 0; index < encoded.Length - padding; index++)
+            {
+                if (encoded[index] == '=' || char.IsWhiteSpace(encoded[index]))
+                {
+                    return false;
+                }
+            }
+
+            var decodedLength = checked(encoded.Length / 4 * 3 - padding);
+            reader = new Base64ByteReader(encoded, decodedLength);
+            return true;
+        }
+
+        public bool Contains(ulong offset, long length)
+            => length >= 0
+                && offset <= (ulong)DecodedLength
+                && (ulong)length <= (ulong)DecodedLength - offset;
+
+        public bool TryReadByte(ulong offset, out byte value)
+        {
+            Span<byte> bytes = stackalloc byte[1];
+            var read = TryReadBytes(offset, bytes);
+            value = read ? bytes[0] : default;
+            return read;
+        }
+
+        public bool TryReadUInt16(ulong offset, bool littleEndian, out ushort value)
+        {
+            Span<byte> bytes = stackalloc byte[sizeof(ushort)];
+            if (!TryReadBytes(offset, bytes))
+            {
+                value = default;
+                return false;
+            }
+
+            value = littleEndian
+                ? BinaryPrimitives.ReadUInt16LittleEndian(bytes)
+                : BinaryPrimitives.ReadUInt16BigEndian(bytes);
+            return true;
+        }
+
+        public bool TryReadUInt32(ulong offset, bool littleEndian, out uint value)
+        {
+            Span<byte> bytes = stackalloc byte[sizeof(uint)];
+            if (!TryReadBytes(offset, bytes))
+            {
+                value = default;
+                return false;
+            }
+
+            value = littleEndian
+                ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
+                : BinaryPrimitives.ReadUInt32BigEndian(bytes);
+            return true;
+        }
+
+        public bool TryReadUInt64(ulong offset, bool littleEndian, out ulong value)
+        {
+            Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+            if (!TryReadBytes(offset, bytes))
+            {
+                value = default;
+                return false;
+            }
+
+            value = littleEndian
+                ? BinaryPrimitives.ReadUInt64LittleEndian(bytes)
+                : BinaryPrimitives.ReadUInt64BigEndian(bytes);
+            return true;
+        }
+
+        public bool TryReadDouble(ulong offset, bool littleEndian, out double value)
+        {
+            if (!TryReadUInt64(offset, littleEndian, out var bits))
+            {
+                value = default;
+                return false;
+            }
+
+            value = BitConverter.Int64BitsToDouble(unchecked((long)bits));
+            return true;
+        }
+
+        private bool TryReadBytes(ulong offset, Span<byte> destination)
+        {
+            if (destination.Length == 0 || !Contains(offset, destination.Length))
+            {
+                return false;
+            }
+
+            var byteOffset = checked((int)offset);
+            var alignedByteOffset = byteOffset - byteOffset % 3;
+            var leadingBytes = byteOffset - alignedByteOffset;
+            var encodedOffset = alignedByteOffset / 3 * 4;
+            var encodedLength = (leadingBytes + destination.Length + 2) / 3 * 4;
+            if (encodedOffset > _encoded.Length - encodedLength)
+            {
+                return false;
+            }
+
+            // Primitive TIFF fields are at most eight bytes, plus two alignment bytes.
+            Span<byte> decoded = stackalloc byte[12];
+            return Convert.TryFromBase64Chars(
+                    _encoded.AsSpan(encodedOffset, encodedLength),
+                    decoded,
+                    out var bytesWritten)
+                && bytesWritten >= leadingBytes + destination.Length
+                && CopyDecodedBytes(decoded, leadingBytes, destination);
+        }
+
+        private static bool CopyDecodedBytes(
+            ReadOnlySpan<byte> decoded,
+            int leadingBytes,
+            Span<byte> destination)
+        {
+            decoded.Slice(leadingBytes, destination.Length).CopyTo(destination);
+            return true;
+        }
+    }
 }
 
 /// <summary>Trusted dimensions read from a bounded inline TIFF header.</summary>
