@@ -84,6 +84,9 @@ class ResolvePolicyTests(unittest.TestCase):
             "unclosed raw script block": f"<script>\n{marker}",
             "raw block-level HTML": f"<div>\n{marker}\n</div>",
             "raw custom-element HTML": f"<honua-example>\n{marker}\n</honua-example>",
+            "raw processing instruction": f"<?xml\n{marker}\n?>",
+            "raw declaration": f"<!DOCTYPE\n{marker}\n>",
+            "raw CDATA section": f"<![CDATA[\n{marker}\n]]>",
             "indented code": f"    {marker}",
         }
 
@@ -114,6 +117,9 @@ class ResolvePolicyTests(unittest.TestCase):
         bodies = {
             "closed raw container": f"<pre>example</pre>\n{marker}",
             "blank-terminated HTML block": f"<div>\nexample\n</div>\n\n{marker}",
+            "closed processing instruction": f"<?xml?>\n{marker}",
+            "closed declaration": f"<!DOCTYPE html>\n{marker}",
+            "closed CDATA section": f"<![CDATA[example]]>\n{marker}",
         }
 
         for scenario, body in bodies.items():

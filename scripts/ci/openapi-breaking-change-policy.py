@@ -31,6 +31,11 @@ RAW_HTML_CONTAINER_START_PATTERN = re.compile(
     r"^[ ]{0,3}<(?P<tag>pre|script|style|textarea)(?:[ \t]|>|$)",
     re.IGNORECASE,
 )
+RAW_HTML_DELIMITED_BLOCK_PATTERNS = (
+    (re.compile(r"^[ ]{0,3}<\?"), re.compile(r"\?>")),
+    (re.compile(r"^[ ]{0,3}<![A-Z]"), re.compile(r">")),
+    (re.compile(r"^[ ]{0,3}<!\[CDATA\["), re.compile(r"\]\]>")),
+)
 HTML_BLOCK_TAG_PATTERN = re.compile(
     r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|"
     r"center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|"
@@ -125,6 +130,19 @@ def _remove_non_rendered_markdown(markdown: str) -> str:
             closing_tag = re.compile(rf"</{re.escape(tag)}[ \t]*>", re.IGNORECASE)
             if closing_tag.search(line, raw_html_container.end()) is None:
                 raw_html_end_pattern = closing_tag
+            continue
+
+        delimited_html_block = False
+        for opening_pattern, closing_pattern in RAW_HTML_DELIMITED_BLOCK_PATTERNS:
+            opening_match = opening_pattern.match(line)
+            if opening_match is None:
+                continue
+
+            if closing_pattern.search(line, opening_match.end()) is None:
+                raw_html_end_pattern = closing_pattern
+            delimited_html_block = True
+            break
+        if delimited_html_block:
             continue
 
         if (
