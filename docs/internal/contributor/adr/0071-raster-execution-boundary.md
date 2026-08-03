@@ -237,11 +237,29 @@ a layer.
   one. Finalization is a sink-local compare-and-set against both the token and
   record version; checking the coordinator's Redis job state before writing is
   only an optimization and is not the fence.
-- PostGIS materialization and catalog registration finalize the sink-local
-  record in the same database transaction as the output mutation and
-  registration. A unique job/output key plus a conditional update on the
-  expected token and record version makes a competing or stale attempt fail
-  without exposing its staged data.
+- PostGIS materialization is first written to an attempt-scoped staging or
+  versioned relation. Its catalog row carries the output-set manifest identity
+  and an explicit publication-candidate state. Committing a member's sink-local
+  record, staged relation, and candidate registration occurs in one database
+  transaction. A unique job/output key plus a conditional update on the
+  expected token and record version makes a competing or stale attempt fail,
+  but that member commit alone never replaces the currently published raster.
+  `QueryCatalogAsync`, tile/coverage reads, and every other public catalog path
+  require both the candidate registration and the authoritative job-wide
+  manifest to be `Complete`; they must filter an incomplete manifest rather
+  than relying only on `ArtifactReferences` or the catalog row's local state.
+- After every required sink member and registration is durably committed in
+  its private state, one PostGIS transaction makes every PostGIS member in the
+  winning set promotion-ready while it remains hidden by the incomplete
+  manifest. Only then may the coordinator use the final job-store CAS to change
+  that manifest to `Complete`, project the full reference set, and mark the job
+  `Succeeded`. This CAS is the single product-visibility fence and contends with
+  cancellation on the same job record. Object/result readers and PostGIS
+  catalog readers all consult it, so its success exposes the already-ready set
+  together without claiming a cross-store transaction. A crash or cancellation
+  before that final CAS leaves every new PostGIS member hidden; terminalization
+  aborts or quarantines those staged versions without altering the previously
+  published raster.
 - Object outputs remain at immutable attempt-scoped keys. The stable object is
   a small intent/commit marker: the coordinator creates or advances the intent
   before dispatch using create-if-absent or `If-Match` on its prior ETag, and
