@@ -580,6 +580,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             UpdatedAt = now,
             CurrentPhase = queuedPhase,
             RetryPolicy = ResolveRetryPolicy(resourceProfile, placement.Workload),
+            TimeoutPolicy = ResolveTimeoutPolicy(resourceProfile),
             Audit = new OperationAuditInfo
             {
                 IdempotencyKey = resolvedKey,
@@ -1315,6 +1316,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         return JobRetryPolicy.Default with { MaxAttempts = totalAttempts };
     }
+
+    private static JobTimeoutPolicy? ResolveTimeoutPolicy(GpResourceProfile resourceProfile)
+        => resourceProfile.TimeoutSeconds is { } timeoutSeconds
+            ? JobTimeoutPolicy.Default with { MaxDuration = TimeSpan.FromSeconds(timeoutSeconds) }
+            : null;
 
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,

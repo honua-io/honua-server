@@ -98,6 +98,26 @@ public sealed class GpWorkloadPlacementPlannerTests
     }
 
     [UnitTest]
+    public void Select_LocalBackendCannotClaimRemoteExecutionClass()
+    {
+        var contradictory = Local(parameters: new Dictionary<string, string>
+        {
+            [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+        });
+
+        var act = () => Select(
+            [contradictory],
+            NativeResources(),
+            requestParameters: new Dictionary<string, string>
+            {
+                [GpWorkloadPlacementParameterKeys.Mode] = "remote",
+            });
+
+        act.Should().Throw<GeoprocessingAdmissionException>()
+            .WithMessage("*execution class declaration 'remote' contradicts backend 'local'*");
+    }
+
+    [UnitTest]
     public void Select_OperatorForcedRemoteCannotBeOverriddenByLocalRequest()
     {
         var act = () => Select(

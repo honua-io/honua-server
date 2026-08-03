@@ -146,6 +146,15 @@ internal static class GpWorkloadPlacementPlanner
         {
             incompatibilities.Add($"execution class declaration '{declaredClass}' is invalid");
         }
+        else if (declaredClass is not null
+            && !string.Equals(
+                declaredClass,
+                isLocal ? LocalClass : RemoteClass,
+                StringComparison.Ordinal))
+        {
+            incompatibilities.Add(
+                $"execution class declaration '{declaredClass}' contradicts backend '{workload.Backend}'");
+        }
 
         if (workload.Parameters.TryGetValue(GpWorkloadPlacementParameterKeys.Enabled, out var enabledRaw))
         {
@@ -440,21 +449,8 @@ internal static class GpWorkloadPlacementPlanner
     };
 
     private static bool IsLocal(ExecutionJobDefinition workload)
-    {
-        var declaredClass = Read(workload.Parameters, GpWorkloadPlacementParameterKeys.ExecutionClass);
-        if (string.Equals(declaredClass, LocalClass, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (string.Equals(declaredClass, RemoteClass, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+        => string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
             || workload.TargetKind == BatchComputeTargetKind.LocalProcess;
-    }
 
     private static bool BackendAvailable(
         ExecutionJobDefinition workload,

@@ -1726,6 +1726,32 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().NotContainKey("batch.ephemeral_gib");
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithLocalTimeoutRequest_SetsDurableTimeoutPolicy()
+    {
+        _jobStore.TryCreateAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                [GpResourceProfile.TimeoutSecondsRequestKey] = "30",
+            });
+
+        job.TimeoutPolicy.Should().NotBeNull();
+        job.TimeoutPolicy!.MaxDuration.Should().Be(TimeSpan.FromSeconds(30));
+        job.Spec.Parameters.Should().NotContainKey(GpResourceProfile.BatchTimeoutSecondsKey,
+            "local execution uses the shared durable timeout rather than provider parameters");
+    }
+
     private GeoprocessingJobService BuildBatchWorkloadService(out IBatchComputeBackend backend)
     {
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
