@@ -191,19 +191,21 @@ jobs:
             echo "staging_image=${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Classify stable release tag
+      - name: Classify mutable latest promotion
         id: release_kind
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          stable=false
+          promote_latest=false
           if [[ "$GITHUB_REF_TYPE" == "tag" &&
-                "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
-            stable=true
+                "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]] ||
+             [[ "$GITHUB_REF_TYPE" == "branch" && "$RELEASE_TAG" == "$DEFAULT_BRANCH" ]]; then
+            promote_latest=true
           fi
-          echo "stable=${stable}" >> "$GITHUB_OUTPUT"
+          echo "promote_latest=${promote_latest}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -219,7 +221,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
             type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
-            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.stable }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}
 
       - name: Add explicit arch suffixes to image tags
         id: arch_tags
@@ -469,19 +471,21 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Classify stable release tag
+      - name: Classify mutable latest promotion
         id: release_kind
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          stable=false
+          promote_latest=false
           if [[ "$GITHUB_REF_TYPE" == "tag" &&
-                "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
-            stable=true
+                "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]] ||
+             [[ "$GITHUB_REF_TYPE" == "branch" && "$RELEASE_TAG" == "$DEFAULT_BRANCH" ]]; then
+            promote_latest=true
           fi
-          echo "stable=${stable}" >> "$GITHUB_OUTPUT"
+          echo "promote_latest=${promote_latest}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -497,7 +501,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
             type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
-            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.stable }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}
 
       - name: Create and push multi-arch manifests
         shell: bash

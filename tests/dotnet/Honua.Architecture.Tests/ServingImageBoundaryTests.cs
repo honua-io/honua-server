@@ -229,17 +229,25 @@ public sealed class ServingImageBoundaryTests
         genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
         genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
         genericDeploy.Should().Contain("compatibility_alias: -aot");
-        genericDeploy.Should().Contain("- name: Classify stable release tag", Exactly.Twice());
+        genericDeploy.Should().Contain("- name: Classify mutable latest promotion", Exactly.Twice());
         genericDeploy.Should().Contain(
-            "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.stable }}",
+            "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}",
             Exactly.Twice());
-        genericDeploy.Should().Contain("latest=false", Exactly.Twice(),
-            "only the explicit stable-release rule may create mutable latest aliases");
+        genericDeploy.Should().Contain("            latest=false", Exactly.Twice(),
+            "only the explicit promotion classifier may create mutable latest aliases");
         genericDeploy.Should().Contain(
             "\"$RELEASE_TAG\" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+(\\+[0-9A-Za-z.-]+)?$",
             Exactly.Twice(),
             "only stable semantic-version tags may advance latest and latest-jit");
-        genericDeploy.Should().NotContain("enable={{is_default_branch}}");
+        genericDeploy.Should().Contain(
+            "\"$GITHUB_REF_TYPE\" == \"branch\" && \"$RELEASE_TAG\" == \"$DEFAULT_BRANCH\"",
+            Exactly.Twice(),
+            "explicit default-branch dispatches must preserve their existing latest behavior");
+        genericDeploy.Should().NotContain("enable={{is_default_branch}}",
+            "a v* tag ref is never the default branch and would silently leave latest stale");
+        genericDeploy.Should().NotContain(
+            "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ startsWith(github.ref, 'refs/tags/v')",
+            "preview and RC v* tags must not advance stable latest aliases");
         genericDeploy.Should().Contain("needs: build-and-push",
             "multi-architecture latest aliases must wait for verified architecture publications");
 
