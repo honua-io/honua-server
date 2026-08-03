@@ -227,13 +227,43 @@ public sealed class GdalProcessExecutorModeRegistrationTests
             {
                 ["GdalWorker:AllowedRasterInputFormats:0"] = "TIFF",
                 ["GdalWorker:AllowedRasterInputFormats:1"] = "JPEG2000",
+                ["GdalWorker:Hardening:SkipDrivers:0"] = "VRT",
+                ["GdalWorker:Hardening:SkipDrivers:1"] = "WMS",
             });
 
         var registry = provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
-        var capability = registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId);
-        var gdal = capability!.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
+        var conversion = registry.Find(GdalRasterFormatConvertJobExecutor.HandledProcessId)!;
+        var surface = registry.Find("surface.slope")!;
+        var clip = registry.Find(GdalRasterClipJobExecutor.HandledProcessId)!;
+        var conversionInputs = conversion.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
+        var surfaceInputs = surface.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
+        var clipInputs = clip.Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats.InputMediaTypes;
 
-        gdal.Formats.InputMediaTypes.Should().Equal("image/tiff", "image/jp2");
+        conversionInputs.Should().Equal("image/tiff", "image/jp2");
+        surfaceInputs.Should().Equal("image/tiff", "image/jp2");
+        clipInputs.Should().Equal("image/tiff", "image/jp2", "application/wkb");
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_AllowedFormatWhoseDriversRemainSkipped_FailsClosed()
+    {
+        using var provider = BuildProvider(
+            static (services, config) => services.AddGdalProcessExecutors(config),
+            new Dictionary<string, string?>
+            {
+                ["GdalWorker:AllowedRasterInputFormats:0"] = "JPEG2000",
+            });
+
+        var act = () => provider.GetRequiredService<IRasterEngineCapabilityRegistry>();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*JPEG2000*SkipDrivers*");
     }
 
     [UnitTest]

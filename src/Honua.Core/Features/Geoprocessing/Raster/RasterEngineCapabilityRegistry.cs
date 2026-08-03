@@ -13,7 +13,6 @@ namespace Honua.Core.Features.Geoprocessing.Raster;
 /// </summary>
 public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabilityRegistry
 {
-    private const string RasterFormatConversionProcessId = "conversion.raster-format";
     private const string SemanticVersion = "1.0.0";
     private const string PostgisUnavailableReason =
         "No canonical PostGIS raster IProcessExecutor is registered for this process; "
@@ -37,11 +36,24 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     public static IReadOnlyList<string> DefaultGdalRasterInputFormatNames { get; } =
         ReadOnly("TIFF", "PNG", "JPEG");
 
+    /// <summary>
+    /// Default GDAL driver denials shared by worker hardening and capability projection.
+    /// This keeps every composition root honest about formats the isolated worker can open.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultGdalSkippedDriverNames { get; } = ReadOnly(
+        "VRT", "GTI", "DERIVED", "GDALG", "MRF",
+        "WMS", "WMTS", "WCS", "HTTP", "STACIT", "STACTA",
+        "OGR_VRT", "WFS", "OAPIF", "NGW", "PLMOSAIC", "EEDA", "EEDAI",
+        "JP2OpenJPEG", "JP2ECW", "JP2KAK", "JP2MrSID", "JP2Lura", "JPEG2000",
+        "GIF", "BIGGIF", "BMP", "HFA", "NITF", "ENVI", "RMF");
+
     private readonly FrozenDictionary<string, RasterProcessCapability> _byProcessId;
 
     /// <summary>Creates the registry from the built-in capability roster.</summary>
     public RasterEngineCapabilityRegistry()
-        : this(BuildBuiltIns())
+        : this(BuildConfiguredBuiltIns(
+            DefaultGdalRasterInputFormatNames,
+            DefaultGdalSkippedDriverNames))
     {
     }
 
@@ -54,11 +66,12 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     {
         ArgumentNullException.ThrowIfNull(capabilities);
 
-        var ordered = capabilities
+        var supplied = capabilities.ToArray();
+        ValidateCapabilities(supplied);
+        var ordered = supplied
             .Select(SnapshotCapability)
             .OrderBy(capability => capability.ProcessId, StringComparer.Ordinal)
             .ToArray();
-        ValidateCapabilities(ordered);
 
         Processes = Array.AsReadOnly(ordered);
         _byProcessId = ordered.ToFrozenDictionary(
@@ -67,54 +80,30 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
     }
 
     /// <summary>
-    /// Creates the built-in registry with the GDAL raster-format conversion inputs projected
-    /// from the worker's effective input allowlist.
+    /// Creates the built-in registry with every native raster input projected from the
+    /// worker's effective format allowlist and driver-denial policy.
     /// </summary>
     /// <param name="allowedRasterInputFormats">
     /// GDAL format names admitted by the worker, such as <c>TIFF</c>, <c>PNG</c>, or
     /// <c>JPEG2000</c>.
     /// </param>
-    /// <returns>A registry whose native conversion metadata matches the supplied allowlist.</returns>
+    /// <param name="skippedGdalDrivers">
+    /// GDAL driver short names disabled by worker hardening. When omitted, the restrictive
+    /// default denial set is used.
+    /// </param>
+    /// <returns>A registry whose native raster-input metadata matches the effective policy.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the allowlist contains no recognized raster format.
+    /// Thrown when the allowlist contains no recognized raster format, or when every bundled
+    /// driver for an allowed format remains disabled by the hardening policy.
     /// </exception>
     public static RasterEngineCapabilityRegistry CreateForGdalRasterInputFormats(
-        IEnumerable<string> allowedRasterInputFormats)
+        IEnumerable<string> allowedRasterInputFormats,
+        IEnumerable<string>? skippedGdalDrivers = null)
     {
         ArgumentNullException.ThrowIfNull(allowedRasterInputFormats);
-
-        var inputMediaTypes = allowedRasterInputFormats
-            .Where(format => !string.IsNullOrWhiteSpace(format))
-            .Select(ToRasterInputMediaType)
-            .Where(mediaType => mediaType is not null)
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (inputMediaTypes.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "GdalWorker:AllowedRasterInputFormats must contain at least one recognized "
-                + "raster format.");
-        }
-
-        var configured = BuildBuiltIns().Select(process =>
-            process.ProcessId != RasterFormatConversionProcessId
-                ? process
-                : process with
-                {
-                    Engines = process.Engines
-                        .Select(engine => engine.Engine != RasterEngine.GdalNative
-                            ? engine
-                            : engine with
-                            {
-                                Formats = engine.Formats with
-                                {
-                                    InputMediaTypes = inputMediaTypes,
-                                },
-                            })
-                        .ToArray(),
-                });
-        return new RasterEngineCapabilityRegistry(configured);
+        return new RasterEngineCapabilityRegistry(BuildConfiguredBuiltIns(
+            allowedRasterInputFormats,
+            skippedGdalDrivers ?? DefaultGdalSkippedDriverNames));
     }
 
     /// <inheritdoc />
@@ -316,6 +305,76 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         Create("surface.viewshed", "surface.viewshed", GeoTiff, GeoTiff),
     ];
 
+    private static RasterProcessCapability[] BuildConfiguredBuiltIns(
+        IEnumerable<string> allowedRasterInputFormats,
+        IEnumerable<string> skippedGdalDrivers)
+    {
+        var formats = allowedRasterInputFormats
+            .Where(format => !string.IsNullOrWhiteSpace(format))
+            .Select(ToGdalRasterInputFormat)
+            .Where(format => format is not null)
+            .Cast<GdalRasterInputFormat>()
+            .DistinctBy(format => format.Name, StringComparer.Ordinal)
+            .ToArray();
+        if (formats.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "GdalWorker:AllowedRasterInputFormats must contain at least one recognized "
+                + "raster format.");
+        }
+
+        var skipped = skippedGdalDrivers
+            .Where(driver => !string.IsNullOrWhiteSpace(driver))
+            .Select(driver => driver.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var disabledFormats = formats
+            .Where(format => format.DriverNames.All(skipped.Contains))
+            .Select(format => format.Name)
+            .ToArray();
+        if (disabledFormats.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "GdalWorker:AllowedRasterInputFormats enables format(s) whose GDAL drivers "
+                + $"are all disabled by GdalWorker:Hardening:SkipDrivers: {string.Join(", ", disabledFormats)}.");
+        }
+
+        var inputMediaTypes = formats
+            .Select(format => format.MediaType)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return BuildBuiltIns()
+            .Select(process => process with
+            {
+                Engines = process.Engines
+                    .Select(engine => ProjectGdalRasterInputFormats(engine, inputMediaTypes))
+                    .ToArray(),
+            })
+            .ToArray();
+    }
+
+    private static RasterEngineCapability ProjectGdalRasterInputFormats(
+        RasterEngineCapability engine,
+        IReadOnlyList<string> inputMediaTypes)
+    {
+        if (engine.Engine != RasterEngine.GdalNative
+            || !engine.Formats.InputMediaTypes.Any(IsGdalRasterMediaType))
+        {
+            return engine;
+        }
+
+        var projected = inputMediaTypes
+            .Concat(engine.Formats.InputMediaTypes.Where(mediaType => !IsGdalRasterMediaType(mediaType)))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return engine with
+        {
+            Formats = engine.Formats with
+            {
+                InputMediaTypes = projected,
+            },
+        };
+    }
+
     private static RasterProcessCapability Create(
         string processId,
         string requiredCapability,
@@ -382,6 +441,11 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         var processIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var process in capabilities)
         {
+            if (process is null)
+            {
+                throw new ArgumentException("Raster capability descriptors must be non-null.", nameof(capabilities));
+            }
+
             if (string.IsNullOrWhiteSpace(process.ProcessId))
             {
                 throw new ArgumentException("Raster capability process IDs must be non-empty.", nameof(capabilities));
@@ -394,7 +458,8 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     nameof(capabilities));
             }
 
-            if (!SemanticVersionPattern().IsMatch(process.SemanticVersion))
+            if (string.IsNullOrWhiteSpace(process.SemanticVersion)
+                || !SemanticVersionPattern().IsMatch(process.SemanticVersion))
             {
                 throw new ArgumentException(
                     $"Raster process '{process.ProcessId}' has invalid semantic version "
@@ -402,9 +467,29 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
                     nameof(capabilities));
             }
 
+            if (process.Engines is null || process.Engines.Count == 0)
+            {
+                throw new ArgumentException(
+                    $"Raster process '{process.ProcessId}' must describe every known raster engine.",
+                    nameof(capabilities));
+            }
+
             var engines = new HashSet<RasterEngine>();
             foreach (var engine in process.Engines)
             {
+                if (engine is null
+                    || engine.Formats is null
+                    || engine.RequiredCapabilities is null
+                    || engine.Formats.InputMediaTypes is null
+                    || engine.Formats.OutputMediaTypes is null
+                    || engine.InputResidencies is null
+                    || engine.OutputSinks is null)
+                {
+                    throw new ArgumentException(
+                        $"Raster process '{process.ProcessId}' has incomplete engine metadata.",
+                        nameof(capabilities));
+                }
+
                 if (!Enum.IsDefined(engine.Engine))
                 {
                     throw new ArgumentException(
@@ -450,8 +535,11 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 
                 if (string.IsNullOrWhiteSpace(engine.ImplementationVersion)
                     || engine.RequiredCapabilities.Count == 0
+                    || engine.RequiredCapabilities.Any(string.IsNullOrWhiteSpace)
                     || engine.Formats.InputMediaTypes.Count == 0
+                    || engine.Formats.InputMediaTypes.Any(string.IsNullOrWhiteSpace)
                     || engine.Formats.OutputMediaTypes.Count == 0
+                    || engine.Formats.OutputMediaTypes.Any(string.IsNullOrWhiteSpace)
                     || engine.InputResidencies.Count == 0
                     || engine.OutputSinks.Count == 0)
                 {
@@ -525,16 +613,21 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
         }
     }
 
-    private static string? ToRasterInputMediaType(string format) => format.Trim().ToUpperInvariant() switch
+    private static bool IsGdalRasterMediaType(string mediaType) => mediaType is
+        "image/tiff" or "image/png" or "image/jpeg" or "image/jp2" or "image/gif"
+        or "image/bmp" or "application/vnd.nitf" or "application/x-erdas-hfa";
+
+    private static GdalRasterInputFormat? ToGdalRasterInputFormat(string format) =>
+        format.Trim().ToUpperInvariant() switch
     {
-        "TIFF" => "image/tiff",
-        "PNG" => "image/png",
-        "JPEG" => "image/jpeg",
-        "JPEG2000" => "image/jp2",
-        "GIF" => "image/gif",
-        "BMP" => "image/bmp",
-        "NITF" => "application/vnd.nitf",
-        "HFA" => "application/x-erdas-hfa",
+        "TIFF" => new("TIFF", "image/tiff", ReadOnly("GTiff")),
+        "PNG" => new("PNG", "image/png", ReadOnly("PNG")),
+        "JPEG" => new("JPEG", "image/jpeg", ReadOnly("JPEG")),
+        "JPEG2000" => new("JPEG2000", "image/jp2", ReadOnly("JP2OpenJPEG")),
+        "GIF" => new("GIF", "image/gif", ReadOnly("GIF")),
+        "BMP" => new("BMP", "image/bmp", ReadOnly("BMP")),
+        "NITF" => new("NITF", "application/vnd.nitf", ReadOnly("NITF")),
+        "HFA" => new("HFA", "application/x-erdas-hfa", ReadOnly("HFA")),
         _ => null,
     };
 
@@ -543,4 +636,9 @@ public sealed partial class RasterEngineCapabilityRegistry : IRasterEngineCapabi
 
     [GeneratedRegex("^[0-9]+\\.[0-9]+\\.[0-9]+$", RegexOptions.CultureInvariant)]
     private static partial Regex SemanticVersionPattern();
+
+    private sealed record GdalRasterInputFormat(
+        string Name,
+        string MediaType,
+        IReadOnlyList<string> DriverNames);
 }

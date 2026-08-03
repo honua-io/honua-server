@@ -168,7 +168,11 @@ public static class GdalWorkerServiceCollectionExtensions
                 provider
                     .GetRequiredService<IOptions<GdalWorkerOptions>>()
                     .Value
-                    .AllowedRasterInputFormats));
+                    .AllowedRasterInputFormats,
+                provider
+                    .GetRequiredService<IOptions<GdalHardeningOptions>>()
+                    .Value
+                    .SkipDrivers));
 
         // Restrictive-by-default GDAL runtime hardening (#2765): the driver-skip and
         // remote-VSI-disable policy every GDAL/OGR subprocess inherits. Bound here so

@@ -405,11 +405,20 @@ internal static class GeoprocessingServiceCollectionExtensions
             .GetSection("GdalWorker:AllowedRasterInputFormats")
             .GetChildren()
             .ToArray();
+        var configuredSkippedDrivers = configuration
+            .GetSection("GdalWorker:Hardening:SkipDrivers")
+            .GetChildren()
+            .ToArray();
         return RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
             configuredFormats.Length == 0
                 ? RasterEngineCapabilityRegistry.DefaultGdalRasterInputFormatNames
                 : configuredFormats
                     .Select(format => format.Value)
+                    .OfType<string>(),
+            configuredSkippedDrivers.Length == 0
+                ? RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames
+                : configuredSkippedDrivers
+                    .Select(driver => driver.Value)
                     .OfType<string>());
     }
 }

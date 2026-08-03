@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal;
 using Honua.Worker.Gdal.Execution;
@@ -75,6 +76,8 @@ public sealed class GdalWorkerOptionsConfigBindingTests
         var hardening = provider.GetRequiredService<IOptions<GdalHardeningOptions>>().Value;
 
         worker.AllowedRasterInputFormats.Should().BeEquivalentTo(new[] { "TIFF", "PNG", "JPEG" });
+        hardening.SkipDrivers.Should().Equal(
+            RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames);
         hardening.SkipDrivers.Should().Contain("JP2OpenJPEG").And.Contain("VRT").And.Contain("NITF");
     }
 

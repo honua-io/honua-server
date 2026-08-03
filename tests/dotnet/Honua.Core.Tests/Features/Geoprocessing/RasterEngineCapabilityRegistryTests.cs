@@ -41,10 +41,12 @@ public sealed class RasterEngineCapabilityRegistryTests
         var capability = new RasterEngineCapabilityRegistry().Find("raster.clip");
 
         Assert.NotNull(capability);
-        Assert.All(capability.Engines, engine =>
-            Assert.Equal(
-                new[] { "image/tiff", "application/wkb" },
-                engine.Formats.InputMediaTypes));
+        var postgis = capability.Engines.Single(engine => engine.Engine == RasterEngine.Postgis);
+        var gdal = capability.Engines.Single(engine => engine.Engine == RasterEngine.GdalNative);
+        Assert.Equal(new[] { "image/tiff", "application/wkb" }, postgis.Formats.InputMediaTypes);
+        Assert.Equal(
+            new[] { "image/tiff", "image/png", "image/jpeg", "application/wkb" },
+            gdal.Formats.InputMediaTypes);
     }
 
     [Fact]
@@ -57,6 +59,39 @@ public sealed class RasterEngineCapabilityRegistryTests
             Assert.Equal(
                 new[] { "image/tiff", "image/png", "image/jpeg" },
                 engine.Formats.InputMediaTypes));
+    }
+
+    [Fact]
+    public void ConfiguredGdalFormats_ProjectAcrossRasterExecutorsAndPreserveAuxiliaryInputs()
+    {
+        var registry = RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+            ["JPEG2000"],
+            ["VRT", "WMS"]);
+
+        Assert.Equal(
+            new[] { "image/jp2" },
+            GdalInputs(registry, "surface.slope"));
+        Assert.Equal(
+            new[] { "image/jp2", "application/wkb" },
+            GdalInputs(registry, "raster.clip"));
+        Assert.Equal(
+            new[] { "image/jp2", "application/geo+json" },
+            GdalInputs(registry, "raster.zonal-statistics"));
+        Assert.Equal(
+            new[] { "application/geo+json" },
+            GdalInputs(registry, "conversion.rasterize"));
+    }
+
+    [Fact]
+    public void ConfiguredGdalFormatWithEveryBackingDriverSkipped_IsRejected()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RasterEngineCapabilityRegistry.CreateForGdalRasterInputFormats(
+                ["JPEG2000"],
+                RasterEngineCapabilityRegistry.DefaultGdalSkippedDriverNames));
+
+        Assert.Contains("JPEG2000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SkipDrivers", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,6 +216,44 @@ public sealed class RasterEngineCapabilityRegistryTests
         Assert.Contains("undefined", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("requiredCapabilities", null)]
+    [InlineData("requiredCapabilities", " ")]
+    [InlineData("inputMediaTypes", null)]
+    [InlineData("inputMediaTypes", "")]
+    [InlineData("outputMediaTypes", null)]
+    [InlineData("outputMediaTypes", "\t")]
+    public void Constructor_NullOrBlankStringMetadataEntries_AreRejected(
+        string field,
+        string? value)
+    {
+        var template = new RasterEngineCapabilityRegistry().Processes[0];
+        var engine = template.Engines[0];
+        var malformedEngine = field switch
+        {
+            "requiredCapabilities" => engine with { RequiredCapabilities = [value!] },
+            "inputMediaTypes" => engine with
+            {
+                Formats = engine.Formats with { InputMediaTypes = [value!] },
+            },
+            "outputMediaTypes" => engine with
+            {
+                Formats = engine.Formats with { OutputMediaTypes = [value!] },
+            },
+            _ => throw new InvalidOperationException($"Unknown test field '{field}'."),
+        };
+        var malformed = template with
+        {
+            Engines = [malformedEngine, template.Engines[1]],
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new RasterEngineCapabilityRegistry([malformed]));
+
+        Assert.Equal("capabilities", exception.ParamName);
+        Assert.Contains("incomplete", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Constructor_SnapshotsTheFullDescriptorGraph()
     {
@@ -235,4 +308,13 @@ public sealed class RasterEngineCapabilityRegistryTests
 
         Assert.Equal("input", exception.ParamName);
     }
+
+    private static IReadOnlyList<string> GdalInputs(
+        RasterEngineCapabilityRegistry registry,
+        string processId) => registry
+            .Find(processId)!
+            .Engines
+            .Single(engine => engine.Engine == RasterEngine.GdalNative)
+            .Formats
+            .InputMediaTypes;
 }
