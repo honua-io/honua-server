@@ -940,9 +940,76 @@ public sealed record ExecutionJobSpec
     public RasterExecutionDecision? RasterExecution { get; init; }
 
     /// <summary>
+    /// Durable compute-placement decision selected before the job record is created. The
+    /// backend envelope above is the executable target; this snapshot records why that target
+    /// was selected and the resource/runtime request used to prove it compatible.
+    /// </summary>
+    public ExecutionPlacementDecision? ComputePlacement { get; init; }
+
+    /// <summary>
     /// Opaque backend-specific parameters.
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
+}
+
+/// <summary>
+/// Provider-neutral resource requirements considered when selecting a batch-compute workload.
+/// </summary>
+public sealed record ExecutionResourceRequirements
+{
+    /// <summary>Requested virtual CPU count.</summary>
+    public int? Vcpus { get; init; }
+
+    /// <summary>Requested memory in mebibytes.</summary>
+    public int? MemoryMib { get; init; }
+
+    /// <summary>Requested GPU count.</summary>
+    public int? GpuCount { get; init; }
+
+    /// <summary>Maximum execution time for one attempt, in seconds.</summary>
+    public int? TimeoutSeconds { get; init; }
+
+    /// <summary>Requested maximum number of attempts.</summary>
+    public int? RetryAttempts { get; init; }
+
+    /// <summary>Requested ephemeral scratch storage in gibibytes.</summary>
+    public int? EphemeralGib { get; init; }
+
+    /// <summary>Requested CPU architecture, when constrained.</summary>
+    public string? Architecture { get; init; }
+}
+
+/// <summary>
+/// Immutable explanation of the workload/backend selected for an execution job.
+/// </summary>
+public sealed record ExecutionPlacementDecision
+{
+    /// <summary>Placement-policy/configuration version used to make the decision.</summary>
+    public required string PolicyVersion { get; init; }
+
+    /// <summary>Selected workload identifier, or null for the implicit local baseline.</summary>
+    public string? WorkloadId { get; init; }
+
+    /// <summary>Selected backend adapter identifier.</summary>
+    public required string Backend { get; init; }
+
+    /// <summary>Selected backend family.</summary>
+    public required BatchComputeTargetKind TargetKind { get; init; }
+
+    /// <summary>Runtime profile the selected workload must be able to execute.</summary>
+    public string? RuntimeProfile { get; init; }
+
+    /// <summary>Stable machine-readable reason for the decision.</summary>
+    public required string ReasonCode { get; init; }
+
+    /// <summary>Operator-readable explanation of the decision.</summary>
+    public required string Reason { get; init; }
+
+    /// <summary>Whether the selected lane is an explicitly allowed fallback.</summary>
+    public bool FallbackApplied { get; init; }
+
+    /// <summary>Per-job resource requirements used by compatibility checks.</summary>
+    public required ExecutionResourceRequirements Resources { get; init; }
 }
 
 /// <summary>

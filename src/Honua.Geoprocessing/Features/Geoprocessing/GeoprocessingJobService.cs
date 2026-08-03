@@ -118,7 +118,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IHttpContextAccessor? httpContextAccessor = null,
         IServiceScopeFactory? serviceScopeFactory = null,
         IRasterExecutionPlanner? rasterExecutionPlanner = null,
-        IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null)
+        IOptionsMonitor<RasterExecutionPlannerOptions>? rasterExecutionOptions = null,
+        IOptionsMonitor<GpWorkloadPlacementOptions>? workloadPlacementOptions = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -144,7 +145,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 admissionEvaluator,
                 operationGateway,
                 rasterExecutionPlanner,
-                rasterExecutionOptions),
+                rasterExecutionOptions,
+                workloadPlacementOptions),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -507,9 +509,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var workload = await _dispatcher
-            .ResolveWorkloadAsync(isCustomCode, cancellationToken, rasterDecision)
-            .ConfigureAwait(false);
         // A custom-code job forces the custom-code runtime profile so the claim
         // fence routes it to the custom-code Batch workload (and away from the lean
         // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
@@ -521,13 +520,32 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
         // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
         var resourceProfile = ResolveResourceProfile(plan, specParams, isCustomCode);
+        var placement = await _dispatcher
+            .ResolveWorkloadAsync(
+                isCustomCode,
+                requiredRuntimeProfile,
+                resourceProfile,
+                specParams,
+                cancellationToken,
+                rasterDecision)
+            .ConfigureAwait(false);
+        if (rasterDecision?.Placement == RasterExecutionPlacement.RemoteBackend
+            && placement.Workload is not null)
+        {
+            // Raster planning proves that remote native execution is required; workload
+            // placement then chooses the compatible provider envelope. Finalize the durable
+            // raster snapshot with that exact backend before the job record is persisted.
+            rasterDecision = rasterDecision with { Backend = placement.Workload.Backend };
+        }
+
         var spec = BuildSpec(
             plan,
             specParams,
-            workload,
+            placement.Workload,
             requiredRuntimeProfile,
             resourceProfile,
-            rasterDecision);
+            rasterDecision,
+            placement.Decision);
         var queuedPhase = rasterDecision is null
             ? "Queued"
             : $"Queued: raster decision {rasterDecision.ReasonCode}";
@@ -1252,7 +1270,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile,
         GpResourceProfile resourceProfile,
-        RasterExecutionDecision? rasterDecision = null)
+        RasterExecutionDecision? rasterDecision = null,
+        ExecutionPlacementDecision? placementDecision = null)
     {
         if (workload == null)
         {
@@ -1266,7 +1285,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 plan,
                 specParams,
                 requiredRuntimeProfile,
-                rasterDecision);
+                rasterDecision,
+                placementDecision);
         }
 
         // Project the plan's id / process-definitions / output kinds / step inputs onto
@@ -1276,7 +1296,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Project the per-job resource profile onto the batch.* params BEFORE merging the workload
         // defaults: set-if-absent semantics make explicit request params win over the per-job
         // profile, and the per-job profile win over the workload's baseline sizing.
-        resourceProfile.ProjectOnto(specParams);
+        if (!string.Equals(workload.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            resourceProfile.ProjectOnto(specParams, workload.TargetKind);
+        }
 
         foreach (var kv in workload.Parameters)
         {
@@ -1301,6 +1324,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 plan,
                 workload.ContractVersion),
             RasterExecution = rasterDecision,
+            ComputePlacement = placementDecision,
             Parameters = specParams
         };
     }

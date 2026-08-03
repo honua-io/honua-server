@@ -133,11 +133,13 @@ internal static class GeoprocessingSpecBuilder
     /// leaves the job managed/default). Drives the claim fence to the right worker.
     /// </param>
     /// <param name="rasterExecution">Optional durable raster engine/placement decision.</param>
+    /// <param name="computePlacement">Optional durable workload/backend placement decision.</param>
     public static ExecutionJobSpec BuildNoWorkloadSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
         string? requiredRuntimeProfile,
-        RasterExecutionDecision? rasterExecution = null)
+        RasterExecutionDecision? rasterExecution = null,
+        ExecutionPlacementDecision? computePlacement = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(specParams);
@@ -156,6 +158,7 @@ internal static class GeoprocessingSpecBuilder
             // dispatcher. Null leaves the job managed/default.
             RuntimeProfile = requiredRuntimeProfile,
             RasterExecution = rasterExecution,
+            ComputePlacement = computePlacement,
             ContractVersion = ResolveRequiredContractVersion(plan),
             Parameters = specParams,
         };

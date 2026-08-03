@@ -517,6 +517,114 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RemoteRasterPlan_FinalizesCompatibleBackendBeforeSubmission()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-limited",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aaa-limited",
+                WorkloadName = "Limited remote raster lane",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "4096",
+                },
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "gp-remote-compatible",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "zzz-compatible",
+                WorkloadName = "Compatible remote raster lane",
+                Parameters = new Dictionary<string, string>
+                {
+                    [GpWorkloadPlacementParameterKeys.ExecutionClass] = "remote",
+                    [GpWorkloadPlacementParameterKeys.RuntimeProfiles] = RuntimeProfiles.Native,
+                    [GpWorkloadPlacementParameterKeys.MaxMemoryMib] = "8192",
+                },
+            },
+        ]);
+        var limitedBackend = Substitute.For<IBatchComputeBackend>();
+        limitedBackend.BackendName.Returns("aaa-limited");
+        limitedBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        var compatibleBackend = Substitute.For<IBatchComputeBackend>();
+        compatibleBackend.BackendName.Returns("zzz-compatible");
+        compatibleBackend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        compatibleBackend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "remote-raster-1",
+            });
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [limitedBackend, compatibleBackend],
+            rasterExecutionPlanner: new RasterExecutionPlanner(
+                new RasterEngineCapabilityRegistry(),
+                NullLogger<RasterExecutionPlanner>.Instance),
+            rasterExecutionOptions: new StaticOptionsMonitor<RasterExecutionPlannerOptions>(
+                new RasterExecutionPlannerOptions
+                {
+                    RequiredPlacement = RasterExecutionPlacement.RemoteBackend,
+                }));
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-remote-raster",
+            IntentId = "intent-remote-raster",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857",
+                    },
+                },
+            ],
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Backend.Should().Be("zzz-compatible");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.Backend.Should().Be("zzz-compatible");
+        job.Spec.RasterExecution.Should().NotBeNull();
+        job.Spec.RasterExecution!.Backend.Should().Be("zzz-compatible");
+        await compatibleBackend.Received(1).StartAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.Spec.RasterExecution != null
+                && record.Spec.RasterExecution.Backend == "zzz-compatible"),
+            Arg.Any<CancellationToken>());
+        await limitedBackend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_RasterPlan_ResolvesLegacySourceBeforePlanningAndKeepsReferenceFingerprint()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -1058,7 +1166,6 @@ public sealed class GeoprocessingJobServiceTests
                 Backend = "aws-batch",
                 WorkloadName = "Remote geoprocessing",
                 ArtifactReference = "ecr/honua-gp:latest",
-                RuntimeProfile = "py311",
                 Parameters = new Dictionary<string, string>
                 {
                     ["queue"] = "gp-primary"
@@ -1165,11 +1272,10 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersBatchAndCarriesTierParams()
+    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersLowLatencyLocalForModestJob()
     {
-        // Both the always-present local baseline AND a fully-configured AWS Batch GP
-        // workload are registered. The service must prefer the Batch workload and
-        // route the job to the honua-aws-batch backend, carrying the queue + tier ARNs.
+        // A configured remote backend must not capture every ordinary job. The managed
+        // geometry operation fits the local envelope, so it stays on the low-latency queue.
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
         var batchBackend = Substitute.For<IBatchComputeBackend>();
         batchBackend.BackendName.Returns("honua-aws-batch");
@@ -1227,17 +1333,13 @@ public sealed class GeoprocessingJobServiceTests
 
         var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
 
-        job.Spec.WorkloadId.Should().Be("geoprocessing-aws-batch");
-        job.Spec.Backend.Should().Be("honua-aws-batch");
-        job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
-        job.Spec.Parameters.Should().ContainKey("batch.job_queue_arn")
-            .WhoseValue.Should().Be("arn:aws:batch:us-east-1:123:job-queue/honua-gp");
-        job.Spec.Parameters.Should().ContainKey("batch.region").WhoseValue.Should().Be("us-east-1");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.s");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.xl");
-        await batchBackend.Received().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
-        await _jobQueue.DidNotReceive().EnqueueAsync(
-            Arg.Any<string>(),
+        job.Spec.WorkloadId.Should().Be("geoprocessing-local");
+        job.Spec.Backend.Should().Be("local");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.ReasonCode.Should().Be("gp:low-latency-local");
+        await batchBackend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+        await _jobQueue.Received().EnqueueAsync(
+            job.OperationId,
             Arg.Any<OperationPriority>(),
             Arg.Any<CancellationToken>());
     }
@@ -1257,6 +1359,10 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().ContainKey("batch.vcpus").WhoseValue.Should().Be("1");
         job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
         job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("20");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.Backend.Should().Be("honua-aws-batch");
+        job.Spec.ComputePlacement.ReasonCode.Should().Be("gp:remote-fallback");
+        job.Spec.ComputePlacement.Resources.MemoryMib.Should().Be(2048);
     }
 
     [UnitTest]
@@ -1277,6 +1383,9 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().ContainKey("batch.ephemeral_gib").WhoseValue.Should().Be("150");
         // Unspecified dimensions still come from the derived default.
         job.Spec.Parameters.Should().ContainKey("batch.memory_mib").WhoseValue.Should().Be("2048");
+        job.Spec.ComputePlacement.Should().NotBeNull();
+        job.Spec.ComputePlacement!.ReasonCode.Should().Be("gp:resource-threshold-offload");
+        job.Spec.ComputePlacement.Resources.Vcpus.Should().Be(8);
     }
 
     [UnitTest]

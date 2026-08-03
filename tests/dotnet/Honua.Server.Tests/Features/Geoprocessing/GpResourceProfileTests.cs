@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
@@ -199,5 +200,43 @@ public sealed class GpResourceProfileTests
         GpResourceProfile.Empty.ProjectOnto(specParams);
 
         specParams.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void ProjectOnto_KubernetesTargetWritesSupportedDynamicResources()
+    {
+        var profile = new GpResourceProfile
+        {
+            Vcpus = 4,
+            MemoryMib = 8192,
+            TimeoutSeconds = 900,
+            EphemeralGib = 100,
+        };
+        var specParams = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        profile.ProjectOnto(specParams, BatchComputeTargetKind.KubernetesJob);
+
+        specParams["k8s.cpu_request"].Should().Be("4");
+        specParams["k8s.cpu_limit"].Should().Be("4");
+        specParams["k8s.memory_request"].Should().Be("8192Mi");
+        specParams["k8s.memory_limit"].Should().Be("8192Mi");
+        specParams["k8s.active_deadline_seconds"].Should().Be("900");
+        specParams.Should().NotContainKey("batch.ephemeral_gib");
+    }
+
+    [UnitTest]
+    public void ProjectOnto_AzureBatchTargetWritesSupportedExecutionPolicy()
+    {
+        var profile = new GpResourceProfile
+        {
+            TimeoutSeconds = 61,
+            RetryAttempts = 3,
+        };
+        var specParams = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        profile.ProjectOnto(specParams, BatchComputeTargetKind.AzureBatch);
+
+        specParams["azure.batch.task_timeout_minutes"].Should().Be("2");
+        specParams["azure.batch.max_task_retry_count"].Should().Be("3");
     }
 }

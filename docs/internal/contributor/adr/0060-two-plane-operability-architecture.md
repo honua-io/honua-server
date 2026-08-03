@@ -32,6 +32,21 @@ Executor set (semantics owned by Honua, mechanics by the executor):
 - Serving: **YARP-embedded** (default; single-container, on-prem, air-gapped — the proxy ships *inside* Honua), **Envoy-xDS** (K8s / service-mesh / scale), plus existing ECS/ALB, Lambda, Container Apps, Functions.
 - GP: **local process-pool** and **K8s Jobs** (neutral), plus existing AWS Batch, Azure Batch.
 
+### GP placement is per job, not per deployment
+
+Merely configuring a cloud executor does not make it the global default for every ordinary GP
+job. Before durable job creation, Honua compares the job's runtime profile and declared CPU,
+memory, GPU, timeout, retry, architecture, and ephemeral-storage request with each workload's
+declared compatibility envelope and current capacity snapshot. Modest work prefers the
+low-latency local lane; resource thresholds, object-store affinity, and local capacity pressure
+prefer a compatible remote lane. The selected workload/backend, policy version, resource request,
+reason code, and fallback flag are persisted before provider submission.
+
+Forced isolation and a raster engine/placement decision are hard requirements: absence or
+incompatibility is a refusal, not an implicit change of execution semantics. Ordinary placement
+preferences may cross lanes only through the explicit local/remote fallback policy. Custom code
+remains outside this ordinary policy and retains the AWS-Batch-only fence from ADR-0063.
+
 ### Four workstreams
 1. **Substrate-neutral executors** — `YarpRollingDeployBackend` (serving) + local/K8s-Jobs `IBatchComputeBackend` (GP), as peers to the cloud executors. Breaks cloud-lock; delivers the on-prem/air-gapped story.
 2. **One catalog spanning both planes** — desired-state including serving config **and** GP compute-env / queue / **worker-image version**; both backends project from it. Upgrade = a single diff bumping serving *and* worker images together.

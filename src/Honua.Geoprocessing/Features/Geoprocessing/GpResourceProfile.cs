@@ -100,6 +100,17 @@ internal sealed record GpResourceProfile
     internal const string BatchEphemeralGibKey = "batch.ephemeral_gib";
     internal const string BatchArchKey = "batch.arch";
 
+    // Provider-specific projections for the other provider-neutral compute targets. Fixed-pool
+    // dimensions (for example Azure vCPU/memory and local-process host capacity) are validated
+    // through placement.* workload declarations rather than invented as backend overrides.
+    internal const string KubernetesCpuRequestKey = "k8s.cpu_request";
+    internal const string KubernetesCpuLimitKey = "k8s.cpu_limit";
+    internal const string KubernetesMemoryRequestKey = "k8s.memory_request";
+    internal const string KubernetesMemoryLimitKey = "k8s.memory_limit";
+    internal const string KubernetesActiveDeadlineSecondsKey = "k8s.active_deadline_seconds";
+    internal const string AzureRetryAttemptsKey = "azure.batch.max_task_retry_count";
+    internal const string AzureTimeoutMinutesKey = "azure.batch.task_timeout_minutes";
+
     // Conservative per-class default tiers (heuristic). Ephemeral GiB values line up with the
     // honua-iac job-definition pool ceilings (s=20, m=50, l=100).
     private const int ManagedVcpus = 1;
@@ -241,6 +252,65 @@ internal sealed record GpResourceProfile
             specParams.TryAdd(BatchArchKey, Arch);
         }
     }
+
+    /// <summary>
+    /// Projects dynamic dimensions understood by the selected provider. Dimensions that cannot be
+    /// overridden at submission time remain in <see cref="ExecutionPlacementDecision.Resources"/>
+    /// and are admitted only when the workload's declared capacity can satisfy them.
+    /// </summary>
+    public void ProjectOnto(IDictionary<string, string> specParams, BatchComputeTargetKind targetKind)
+    {
+        ArgumentNullException.ThrowIfNull(specParams);
+
+        switch (targetKind)
+        {
+            case BatchComputeTargetKind.AwsBatch:
+                ProjectOnto(specParams);
+                break;
+            case BatchComputeTargetKind.KubernetesJob:
+                if (Vcpus is { } vcpus)
+                {
+                    var cpu = vcpus.ToString(CultureInfo.InvariantCulture);
+                    specParams.TryAdd(KubernetesCpuRequestKey, cpu);
+                    specParams.TryAdd(KubernetesCpuLimitKey, cpu);
+                }
+
+                if (MemoryMib is { } memoryMib)
+                {
+                    var memory = memoryMib.ToString(CultureInfo.InvariantCulture) + "Mi";
+                    specParams.TryAdd(KubernetesMemoryRequestKey, memory);
+                    specParams.TryAdd(KubernetesMemoryLimitKey, memory);
+                }
+
+                Set(specParams, KubernetesActiveDeadlineSecondsKey, TimeoutSeconds);
+                break;
+            case BatchComputeTargetKind.AzureBatch:
+                Set(specParams, AzureRetryAttemptsKey, RetryAttempts);
+                if (TimeoutSeconds is { } timeoutSeconds)
+                {
+                    var minutes = Math.Max(1, (int)Math.Ceiling(timeoutSeconds / 60d));
+                    Set(specParams, AzureTimeoutMinutesKey, minutes);
+                }
+
+                break;
+            case BatchComputeTargetKind.LocalProcess:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, "Unsupported batch target kind.");
+        }
+    }
+
+    /// <summary>Converts the internal selection profile to its durable provider-neutral snapshot.</summary>
+    public ExecutionResourceRequirements ToExecutionRequirements() => new()
+    {
+        Vcpus = Vcpus,
+        MemoryMib = MemoryMib,
+        GpuCount = GpuCount,
+        TimeoutSeconds = TimeoutSeconds,
+        RetryAttempts = RetryAttempts,
+        EphemeralGib = EphemeralGib,
+        Architecture = Arch,
+    };
 
     private static void Set(IDictionary<string, string> specParams, string key, int? value)
     {

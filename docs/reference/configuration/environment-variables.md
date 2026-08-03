@@ -208,6 +208,14 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__Executors__MaxArtifactBytes` | `52428800` (50 MiB) | Max single artifact payload a built-in executor publishes. |
 | `Geoprocessing__Executors__OutputRootDirectory` | OS temp dir | Root for file-sink outputs; traversal outside is rejected. |
 | `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | Retention TTL for durable result packages. |
+| `Geoprocessing__WorkloadPlacement__PolicyVersion` | `gp-placement-v1` | Stable policy/config identifier persisted in `ExecutionJobSpec.ComputePlacement`. |
+| `Geoprocessing__WorkloadPlacement__LocalExecutionEnabled` / `RemoteExecutionEnabled` | `true` | Enable candidate lanes without changing workload catalog entries. Disabled lanes are never fallback targets. |
+| `Geoprocessing__WorkloadPlacement__ForceRemoteIsolation` | `false` | Require ordinary non-raster GP jobs to use a compatible remote workload; unavailable remote execution is rejected. Custom-code routing remains AWS-Batch-only and separate. |
+| `Geoprocessing__WorkloadPlacement__AllowRemoteFallback` / `AllowLocalFallback` | `true` | Explicit fallback policy for preferred (not forced or raster-pinned) placement. |
+| `Geoprocessing__WorkloadPlacement__AllowPressuredLocalFallback` | `false` | Permit a pressured local workload only as the final fallback. |
+| `Geoprocessing__WorkloadPlacement__LocalCapacity` | `Healthy` | Aggregate local-lane capacity snapshot (`Healthy`, `Pressured`, or `Unavailable`). Pressure prefers remote burst execution. |
+| `Geoprocessing__WorkloadPlacement__MaxLowLatencyLocalVcpus` / `MaxLowLatencyLocalMemoryMib` / `MaxLowLatencyLocalGpuCount` | `4` / `8192` / `0` | Compute envelope that remains on the low-latency local lane. Larger jobs prefer remote execution. |
+| `Geoprocessing__WorkloadPlacement__MaxLowLatencyLocalTimeoutSeconds` / `MaxLowLatencyLocalRetryAttempts` / `MaxLowLatencyLocalEphemeralGib` | `3600` / `3` / `100` | Execution and scratch envelope that remains local. |
 | `Geoprocessing__RasterExecution__ConfigurationVersion` | `raster-execution-v1` | Stable budget/config snapshot identifier persisted on each raster decision. Bump when routing policy changes. |
 | `Geoprocessing__RasterExecution__PolicyRef` | `raster-default` | Operator policy reference exposed in decision telemetry and job state. |
 | `Geoprocessing__RasterExecution__PostgisEnabled` / `NativeGdalEnabled` | `true` | Allow or disable an engine without changing public process IDs. A required disabled engine fails closed. |

@@ -132,6 +132,18 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddSingleton<IRasterExecutionPlanner, RasterExecutionPlanner>();
 
+        // Per-job local/offload placement (#3093). Resource/runtime compatibility is
+        // evaluated against declarative ControlPlane workload envelopes before a durable
+        // backend choice is written; the policy never changes custom-code routing.
+        services
+            .AddOptions<GpWorkloadPlacementOptions>()
+            .Bind(configuration.GetSection(GpWorkloadPlacementOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(
+                options => options.HasDefinedEnumValues(),
+                "Geoprocessing workload-placement capacity must be a defined enum member.")
+            .ValidateOnStart();
+
         // Cohesive sub-services the shared job service delegates to (authorization/approval,
         // admission+queue+workload+backend dispatch, the custom-code submit-token gate, and
         // raster-input/result-package artifacts). Registered as singletons so the production
