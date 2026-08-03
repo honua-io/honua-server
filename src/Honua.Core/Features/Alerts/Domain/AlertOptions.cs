@@ -20,7 +20,11 @@ public sealed class AlertOptions
     /// <summary>
     /// Enables alert processing workers.
     /// </summary>
-    public bool Enabled { get; init; }
+    /// <remarks>
+    /// This property deliberately uses a setter because the source-generated configuration binder cannot
+    /// assign init-only properties when binding an existing options instance.
+    /// </remarks>
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Optional downward-only cap on the license-derived alert edition (#2998). When null
