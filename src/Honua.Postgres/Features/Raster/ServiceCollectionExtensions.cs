@@ -2,10 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Postgres.Features.Raster;
 
@@ -14,6 +18,50 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the isolated PostGIS raster worker pool and governance boundary. This method is
+    /// intentionally separate from <see cref="AddPostgresRasterStore"/> and must only be called by
+    /// the dedicated <c>raster-postgis</c> worker composition.
+    /// </summary>
+    public static IServiceCollection AddPostgisRasterExecutionGovernance(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<PostgisRasterExecutionOptions>()
+            .Bind(configuration.GetSection(PostgisRasterExecutionOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<PostgisRasterExecutionOptions>,
+                PostgisRasterExecutionOptionsValidator>());
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var connectionString = configuration.GetConnectionString(
+                PostgisRasterExecutionOptions.ConnectionStringName);
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    $"ConnectionStrings:{PostgisRasterExecutionOptions.ConnectionStringName} is required " +
+                    "for the dedicated PostGIS raster worker.");
+            }
+
+            return PostgisRasterDataSource.Create(
+                connectionString,
+                serviceProvider.GetRequiredService<IOptions<PostgisRasterExecutionOptions>>().Value);
+        });
+        services.TryAddSingleton<PostgisRasterAdmissionController>();
+        services.TryAddSingleton<IPostgisRasterExecutionSessionFactory>(serviceProvider =>
+            new PostgisRasterExecutionSessionFactory(
+                serviceProvider.GetRequiredService<PostgisRasterDataSource>(),
+                serviceProvider.GetRequiredService<PostgisRasterAdmissionController>(),
+                serviceProvider.GetRequiredService<IOptions<PostgisRasterExecutionOptions>>(),
+                serviceProvider.GetService<ITenantSchemaResolver>()));
+        return services;
+    }
+
     /// <summary>
     /// Registers the PostgreSQL raster store services with dependency injection.
     /// </summary>

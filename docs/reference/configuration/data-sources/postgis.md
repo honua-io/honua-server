@@ -87,6 +87,42 @@ Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeou
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
 
+## Dedicated raster worker pool
+
+The `raster-postgis` worker has a separate, opt-in data source and governance policy. It is not
+registered by the ordinary managed/web composition and never falls back to
+`ConnectionStrings__DefaultConnection`. The dedicated connection must authenticate as the exact
+role configured by `RequiredRole`; a role mismatch fails before raster operation SQL is allowed.
+Provision that role outside the web container with only the table/schema privileges required by
+the enabled raster operations.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ConnectionStrings__RasterPostgis` | none | **Required by the `raster-postgis` worker.** Dedicated Npgsql connection string and pool. |
+| `Geoprocessing__Raster__Postgis__RequiredRole` | `honua_raster_gp` | Exact database role required on every governed connection. |
+| `Geoprocessing__Raster__Postgis__SearchPathSchema` | `honua` | Fixed safe schema when tenant-schema routing is disabled. |
+| `Geoprocessing__Raster__Postgis__RequireTenantSchema` | `false` | Require the configured tenant schema resolver and fail closed when it cannot resolve a tenant. |
+| `Geoprocessing__Raster__Postgis__MaxConcurrency` | `4` | Process-wide PostGIS raster attempts and dedicated pool maximum. |
+| `Geoprocessing__Raster__Postgis__MaxConcurrencyPerTenant` | `2` | Default concurrent attempt ceiling for one tenant. |
+| `Geoprocessing__Raster__Postgis__QueueTimeout` | `00:00:05` | Combined wait budget for per-tenant and global admission. |
+| `Geoprocessing__Raster__Postgis__StatementTimeout` | `00:10:00` | Server-side statement timeout applied before operation SQL. |
+| `Geoprocessing__Raster__Postgis__LockTimeout` | `00:00:10` | Server-side lock timeout applied before operation SQL. |
+| `Geoprocessing__Raster__Postgis__IdleInTransactionTimeout` | `00:01:00` | Server-side idle transaction timeout applied before operation SQL. |
+
+`Geoprocessing__Raster__Postgis__WorkLimits` contains positive ceilings for
+`MaxSourceCount`, `MaxBandCount`, `MaxZoneCount`, `MaxInputPixels`, `MaxOutputPixels`,
+`MaxDecodedBytes`, `MaxScratchBytes`, and `MaxDatabaseWork`. Unknown cost inputs are rejected.
+Per-tenant limits use
+`Geoprocessing__Raster__Postgis__Tenants__<tenant-id>__MaxConcurrency` and sparse
+`...__WorkLimits__<dimension>` overrides. Tenant overrides may only tighten the global values;
+omitted dimensions inherit them.
+
+Every acquired connection is non-multiplexed and reset when returned to its dedicated pool. Honua
+checks `current_user`, then applies the tenant id, durable operation id, attempt number,
+`search_path`, and all three server-side timeouts before handing the connection to provider code.
+The durable job cancellation token is passed to Npgsql commands so cancellation actively
+interrupts database work.
+
 ## Related pages
 
 - [Data sources overview](README.md)
