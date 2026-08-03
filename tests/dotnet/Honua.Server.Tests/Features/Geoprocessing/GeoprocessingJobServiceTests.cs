@@ -288,19 +288,18 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public void ValidatePlan_TypedRasterBoundToNonGeoprocessStep_ReportsBindingFailure()
     {
-        foreach (var kind in new[]
+        foreach (var sourceStep in new[]
                  {
                      AnalysisPlanStepKind.QueryFeatures,
                      AnalysisPlanStepKind.Aggregate,
                      AnalysisPlanStepKind.RenderMap,
                      AnalysisPlanStepKind.Export,
-                 })
+                 }.Select(kind => CreateTypedRasterPlan("source").Steps[0] with
+                 {
+                     Kind = kind,
+                     ProcessId = null,
+                 }))
         {
-            var sourceStep = CreateTypedRasterPlan("source").Steps[0] with
-            {
-                Kind = kind,
-                ProcessId = null,
-            };
             var plan = CreateValidPlan() with { Steps = [BufferStep("step-1"), sourceStep] };
 
             var result = _sut.ValidatePlan(plan, CreatePrincipal());
