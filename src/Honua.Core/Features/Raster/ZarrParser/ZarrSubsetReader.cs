@@ -201,9 +201,8 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         // only checked the metadata-declared size after the read had already allocated raw buffers.
         // An attacker-controlled Zarr store can write chunk objects much larger than the declared
         // chunk dimensions; with MaxDegreeOfParallelism=8, that yielded up to 4.3 GB of temporary
-        // allocation per request. By computing chunkBytes first and using it as the read ceiling,
-        // the network read is bounded to the expected uncompressed size (compressed data is always
-        // smaller than its uncompressed form, so this ceiling is safe for both codecs).
+        // allocation per request. The network read is now bounded to the expected uncompressed
+        // size plus a small fixed allowance when a codec wrapper is present.
         var chunkBytes = ComputeChunkBytes(array, elementSize);
         if (chunkBytes > MaxBytesPerRequest)
         {
@@ -212,11 +211,38 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
                 $"Re-chunk the Zarr store with smaller chunk dimensions before serving it.");
         }
 
+        var encodedReadCeiling = array.Compressor is null
+            ? chunkBytes
+            : checked(chunkBytes + ZarrReadSupportMatrix.MaxEncodedChunkOverheadBytes);
+
         byte[]? raw;
         try
         {
-            // chunkBytes <= MaxBytesPerRequest (256 MiB), so the cast to int is safe.
-            raw = await reader.ReadRangeAsync(bucket, chunkPath, 0, (int)chunkBytes, cancellationToken).ConfigureAwait(false);
+            // Compressed payloads can be slightly larger than their decoded chunk
+            // (notably small or incompressible zlib/gzip chunks). Permit a fixed,
+            // tightly bounded wrapper/codec allowance without returning to the old
+            // ~512 MiB per-chunk read ceiling.
+            raw = await reader.ReadRangeAsync(bucket, chunkPath, 0, (int)encodedReadCeiling, cancellationToken).ConfigureAwait(false);
+            if (raw.LongLength > encodedReadCeiling)
+            {
+                throw new InvalidDataException(
+                    $"Zarr chunk reader returned {raw.LongLength:N0} bytes, exceeding the encoded read ceiling of {encodedReadCeiling:N0} bytes.");
+            }
+
+            // A full ceiling-sized response may be either an exact-size object or a
+            // truncated prefix. Resolve that ambiguity only at the boundary so the
+            // common path avoids an extra object-store metadata request. This also
+            // prevents a large encoded object whose prefix happens to decode to the
+            // declared chunk from bypassing the encoded-size fence.
+            if (array.Compressor is not null && raw.LongLength == encodedReadCeiling)
+            {
+                var objectSize = await reader.GetObjectSizeAsync(bucket, chunkPath, cancellationToken).ConfigureAwait(false);
+                if (objectSize > encodedReadCeiling)
+                {
+                    throw new InvalidDataException(
+                        $"Zarr encoded chunk is {objectSize:N0} bytes, exceeding the encoded read ceiling of {encodedReadCeiling:N0} bytes.");
+                }
+            }
         }
         catch (FileNotFoundException)
         {
@@ -402,6 +428,13 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             {
                 throw new InvalidDataException(
                     $"Zarr {compressor} chunk decoded to {totalRead} bytes; expected {destination.Length}.");
+            }
+
+            Span<byte> surplus = stackalloc byte[1];
+            if (decoder.Read(surplus) != 0)
+            {
+                throw new InvalidDataException(
+                    $"Zarr {compressor} chunk decodes beyond the expected {destination.Length} bytes.");
             }
             return;
         }

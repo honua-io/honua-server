@@ -95,6 +95,116 @@ public class ZarrSubsetReaderTests
     }
 
     [Fact]
+    public async Task ReadSubsetAsync_SmallZlibChunkLargerThanDecodedShape_DecodesCorrectly()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "datasets/small-zlib",
+            rows: 1,
+            cols: 1,
+            chunkRows: 1,
+            chunkCols: 1,
+            sample: (_, _) => 42.5f,
+            srid: 4326,
+            xMin: 0,
+            yMin: 0,
+            xMax: 1,
+            yMax: 1);
+        var compressedChunk = objects["datasets/small-zlib/temperature/0.0"];
+        compressedChunk.Length.Should().BeGreaterThan(sizeof(float));
+
+        var trackingReader = new TrackingZarrRangeReader(new InMemoryZarrRangeReader(objects));
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(
+            new InMemoryZarrRangeReader(objects), "bucket", "datasets/small-zlib");
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "temperature",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 1, 1 }
+        };
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            trackingReader, "bucket", "datasets/small-zlib", metadata, request);
+
+        BitConverter.ToSingle(subset.Data).Should().Be(42.5f);
+        trackingReader.RecordedLengths.Should().ContainSingle(length => length > sizeof(float));
+        trackingReader.RecordedLengths.Should().AllSatisfy(length => length.Should().BeLessThan(128 * 1024));
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_CompressedObjectBeyondEncodedCeiling_RejectsTruncatedPrefix()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "datasets/oversized-zlib",
+            rows: 1,
+            cols: 1,
+            chunkRows: 1,
+            chunkCols: 1,
+            sample: (_, _) => 42.5f,
+            srid: 4326,
+            xMin: 0,
+            yMin: 0,
+            xMax: 1,
+            yMax: 1);
+        var originalChunk = objects["datasets/oversized-zlib/temperature/0.0"];
+        var oversizedChunk = new byte[1024 * 1024];
+        Array.Copy(originalChunk, oversizedChunk, originalChunk.Length);
+        objects["datasets/oversized-zlib/temperature/0.0"] = oversizedChunk;
+
+        var trackingReader = new TrackingZarrRangeReader(new InMemoryZarrRangeReader(objects));
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(
+            new InMemoryZarrRangeReader(objects), "bucket", "datasets/oversized-zlib");
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "temperature",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 1, 1 }
+        };
+
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(
+            trackingReader, "bucket", "datasets/oversized-zlib", metadata, request);
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*encoded chunk*exceeding the encoded read ceiling*");
+        trackingReader.RecordedLengths.Should().ContainSingle();
+        trackingReader.RecordedLengths[0].Should().BeLessThan(128 * 1024);
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_CompressedChunkDecodingBeyondDeclaredShape_IsRejected()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "datasets/decoded-surplus",
+            rows: 1,
+            cols: 2,
+            chunkRows: 1,
+            chunkCols: 2,
+            sample: (_, column) => column + 1,
+            srid: 4326,
+            xMin: 0,
+            yMin: 0,
+            xMax: 2,
+            yMax: 1);
+        objects["datasets/decoded-surplus/temperature/.zarray"] = System.Text.Encoding.UTF8.GetBytes(
+            """{"chunks":[1,1],"compressor":{"id":"zlib","level":1},"dtype":"<f4","fill_value":"NaN","filters":null,"order":"C","shape":[1,1],"zarr_format":2}""");
+
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(
+            reader, "bucket", "datasets/decoded-surplus");
+        var request = new ZarrSubsetRequest
+        {
+            Variable = "temperature",
+            Start = new[] { 0, 0 },
+            Stop = new[] { 1, 1 }
+        };
+
+        var act = () => new ZarrSubsetReader().ReadSubsetAsync(
+            reader, "bucket", "datasets/decoded-surplus", metadata, request);
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*decodes beyond the expected 4 bytes*");
+    }
+
+    [Fact]
     public async Task ReadSubsetAsync_V3UncompressedCPrefixedChunks_ReturnsContiguousRowMajor()
     {
         var objects = ZarrFixtureBuilder.BuildV3SingleArray(
@@ -290,7 +400,7 @@ public class ZarrSubsetReaderTests
     /// must be the metadata-declared chunk byte count, not int.MaxValue/4 (~512 MB).
     /// Before the fix, eight parallel 512 MB reads could allocate ~4.3 GB of temporary
     /// buffers for a request where the per-request cap is 256 MiB.
-    /// After the fix the ceiling equals chunkBytes so the allocation is bounded.
+    /// For an uncompressed chunk the ceiling equals chunkBytes, so the allocation is bounded.
     /// </summary>
     [Fact]
     public async Task ReadSubsetAsync_UncompressedChunk_ReadLengthBoundedToChunkBytes()
@@ -430,7 +540,7 @@ public class ZarrSubsetReaderTests
         private readonly List<int> _lengths = new();
 
         /// <summary>All <c>length</c> values recorded from calls to <see cref="ReadRangeAsync"/>.</summary>
-        public IReadOnlyList<int> RecordedLengths => _lengths;
+        public List<int> RecordedLengths => _lengths;
 
         public CloudStorageProvider Provider => inner.Provider;
 

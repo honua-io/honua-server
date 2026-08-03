@@ -26,6 +26,7 @@ internal static class ZarrReadSupportMatrix
 {
     internal const int MaxMetadataDocumentBytes = 64 * 1024;
     internal const int MaxVariables = 64;
+    internal const int MaxEncodedChunkOverheadBytes = 64 * 1024;
 
     private static readonly DataTypeSupport[] DataTypes =
     [
@@ -119,10 +120,10 @@ internal static class ZarrReadSupportMatrix
             new(ZarrFormatVersion.V3, "format", "Zarr v3", true, "Root array or manifest-backed group."),
 
             new(ZarrFormatVersion.V2, "codec", "none", true, "Raw C-order chunk bytes."),
-            new(ZarrFormatVersion.V2, "codec", "zlib", true, "RFC 1950 zlib framing."),
+            new(ZarrFormatVersion.V2, "codec", "zlib", true, $"RFC 1950 zlib framing; encoded chunk <= decoded size + {MaxEncodedChunkOverheadBytes} bytes."),
             new(ZarrFormatVersion.V2, "codec", "other", false, "Filters and other numcodecs require GP conversion."),
             new(ZarrFormatVersion.V3, "codec", "bytes", true, "Required first codec with explicit little endianness."),
-            new(ZarrFormatVersion.V3, "codec", "gzip", true, "Optional sole compression codec after bytes."),
+            new(ZarrFormatVersion.V3, "codec", "gzip", true, $"Optional sole compression codec after bytes; encoded chunk <= decoded size + {MaxEncodedChunkOverheadBytes} bytes."),
             new(ZarrFormatVersion.V3, "codec", "other", false, "Including zstd, blosc, sharding_indexed, and crc32c."),
 
             new(ZarrFormatVersion.V2, "endian", "little / one-byte not-applicable", true, "Explicit '<' for multi-byte and '|' for one-byte values."),
