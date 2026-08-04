@@ -550,14 +550,12 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasterExpr = BuildColormapExpression(rasterExpr, colormap);
         }
 
-        // 2. Resize to output dimensions if specified
-        if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
-        {
-            rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
-            extraParams.Add(("@outputWidth", query.OutputWidth.Value));
-            extraParams.Add(("@outputHeight", query.OutputHeight.Value));
-        }
-        else if (query.PixelSize is { } pixelSize)
+        // 2. Rescale by pixel size (WCS/pixel-based sizing) only when explicit output
+        // dimensions were not requested. This stays before reprojection so the pixel size is
+        // honoured in the source CRS units. Explicit output dimensions are applied as the final
+        // step below so the produced image is exactly OutputWidth x OutputHeight.
+        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
+        if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
             var algorithm = query.ResamplingAlgorithm switch
             {
@@ -577,11 +575,22 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
 
-        // 3. Reproject output if requested
+        // 3. Reproject output if requested.
         if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
         {
             rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
+        }
+
+        // 4. Resize to the exact requested output dimensions LAST — after any reprojection — so
+        // the produced image is exactly OutputWidth x OutputHeight and ST_Width/ST_Height echo the
+        // requested size. Resizing before ST_Transform let the reprojection resample onto a new
+        // grid and drift the output off the requested size (the exportImage size contract).
+        if (hasOutputDimensions)
+        {
+            rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
+            extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
+            extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
         }
 
         // COG export: use creation options for proper internal tiling.
@@ -1723,13 +1732,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             postMergeRasterExpr = BuildColormapExpression(postMergeRasterExpr, colormap);
         }
 
-        if (query.OutputWidth is > 0 && query.OutputHeight is > 0)
-        {
-            postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
-            extraParams.Add(("@outputWidth", query.OutputWidth.Value));
-            extraParams.Add(("@outputHeight", query.OutputHeight.Value));
-        }
-        else if (query.PixelSize is { } pixelSize)
+        // Rescale by pixel size only when explicit output dimensions were not requested; it stays
+        // before reprojection so the pixel size is honoured in the source CRS units. Explicit
+        // output dimensions are applied as the final step below.
+        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
+        if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
             var algorithm = query.ResamplingAlgorithm switch
             {
@@ -1753,6 +1760,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
+        }
+
+        // Resize to the exact requested output dimensions LAST — after any reprojection — so the
+        // produced mosaic image is exactly OutputWidth x OutputHeight and its reported width/height
+        // echo the requested size (the exportImage size contract).
+        if (hasOutputDimensions)
+        {
+            postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
+            extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
+            extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
         }
 
         var creationOptionsClause = "";

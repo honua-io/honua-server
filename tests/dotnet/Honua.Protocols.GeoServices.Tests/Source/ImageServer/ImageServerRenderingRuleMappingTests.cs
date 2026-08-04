@@ -256,14 +256,33 @@ public sealed class ImageServerRenderingRuleMappingTests
     }
 
     [UnitTest]
-    public void MapRenderingRule_StretchWithoutStretchType_IsInvalid()
+    public void MapRenderingRule_StretchWithoutStretchType_DefaultsToMinMax()
     {
+        // ArcGIS applies a default (min-max / DRA) display stretch when a Stretch function
+        // carries no explicit StretchType, so a bare Stretch renders instead of 400-ing.
         var document = Parse("""{"rasterFunction":"Stretch","rasterFunctionArguments":{}}""");
 
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
-        mapping.Supported.Should().BeFalse();
+        mapping.Supported.Should().BeTrue();
         mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Stretch.Should().NotBeNull();
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+    }
+
+    [UnitTest]
+    public void MapRenderingRule_BareStretchNoArguments_DefaultsToMinMax()
+    {
+        // The Esri SDK certification harness sends exactly this renderingRule; it must render
+        // (a supported MinMax stretch) rather than be rejected as a malformed chain.
+        var document = Parse("""{"rasterFunction":"Stretch"}""");
+
+        var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
+
+        mapping.Supported.Should().BeTrue();
+        mapping.IsNotImplemented.Should().BeFalse();
+        mapping.Stretch.Should().NotBeNull();
+        mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
     }
 
     [UnitTest]

@@ -227,6 +227,57 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithMalformedBbox_AsImage_ReturnsBadRequest()
+    {
+        // CERT-ERRH-01: a binary image export (f=image) whose bbox cannot be parsed must be
+        // rejected with a real HTTP 4xx. An image client expects raster bytes and cannot
+        // interpret a 200 "success" carrying a JSON error envelope, so the malformed request
+        // has to surface as a genuine failure rather than the PA-070/PA-117 200 body.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=garbage&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // The body is still the GeoServices {"error":{"code":400,...}} envelope.
+        var content = await response.Content.ReadAsStringAsync();
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("json");
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(content);
+        error.GetProperty("code").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithMalformedBbox_AsJson_ReturnsErrorEnvelopeWithHttp200()
+    {
+        // f=json keeps the established GeoServices convention (HTTP 200 + error body); only the
+        // binary image path escalates to a real 4xx. Every JSON-format caller parses the body.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=garbage&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithValidBbox_AsImage_ReturnsImage()
+    {
+        // CERT-RNDR-01: a valid image export must still render real image bytes and must not be
+        // over-rejected by the malformed-bbox guard.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_ReturnsImageJson()
     {
         var response = await _fixture.Client.GetAsync(

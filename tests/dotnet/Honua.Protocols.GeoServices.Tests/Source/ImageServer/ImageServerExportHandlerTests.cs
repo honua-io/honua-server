@@ -169,6 +169,111 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithSize_ResponseEchoesRequestedDimensions()
+    {
+        // The exportImage size contract: a size=W,H request produces an exactly WxH image and the
+        // JSON response reports width=W, height=H. The store resizes to the requested dimensions as
+        // its final step (after any reprojection), so the produced RasterResult carries W,H and the
+        // handler echoes them here.
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                var query = capturedQuery.Value;
+                return CreateTestRasterResult() with
+                {
+                    Width = query.OutputWidth ?? 0,
+                    Height = query.OutputHeight ?? 0,
+                };
+            });
+        SetupTemporaryStorage();
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        // Distinct, non-square dimensions like the certification probe (size=200,150) so an ignored
+        // size or an axis swap is caught.
+        var request = CreateRequest(rawSize: "200,150", imageSr: "4326", bboxSr: "4326", bbox: "-180,-90,180,90");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>().Which;
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputWidth.Should().Be(200);
+        capturedQuery.Value.OutputHeight.Should().Be(150);
+        jsonResult.Value!.Width.Should().Be(200);
+        jsonResult.Value.Height.Should().Be(150);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBareStretchRenderingRule_AppliesDefaultMinMaxStretch()
+    {
+        // The Esri SDK certification harness sends renderingRule={"rasterFunction":"Stretch"} with no
+        // StretchType. It must render (default MinMax stretch) rather than be rejected as malformed.
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        SetupTemporaryStorage();
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(renderingRule: "{\"rasterFunction\":\"Stretch\"}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.Stretch.Should().NotBeNull();
+        capturedQuery.Value.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithNullTimeToken_ExportsWithoutTemporalFilter()
+    {
+        // Esri clients send time=null to mean "no temporal filter". The handler must treat the literal
+        // token as the absence of a time constraint (no timestamp on the raster selection) and export,
+        // rather than reject it as an invalid instant with HTTP 400.
+        RasterSelectionQuery? capturedSelection = null;
+        _rasterStore.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedSelection = callInfo.ArgAt<RasterSelectionQuery>(1);
+                return new[] { CreateTestRasterInfo() };
+            });
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+        SetupTemporaryStorage();
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = new ExportImageRequest
+        {
+            Bbox = "-180,-90,180,90",
+            BboxSr = "4326",
+            ImageSr = "4326",
+            Size = "128,128",
+            Format = "png",
+            Time = "null",
+            F = "json",
+        };
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedSelection.Should().NotBeNull();
+        capturedSelection!.Value.Timestamp.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithoutSize_UsesArcGisDefaultDimensions()
     {
         SetupLayerAndRasters();

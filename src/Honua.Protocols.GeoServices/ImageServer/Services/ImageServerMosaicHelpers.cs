@@ -22,6 +22,14 @@ internal static class ImageServerMosaicHelpers
             return true;
         }
 
+        // Esri clients send time=null (and the ArcGIS JS API sends an empty value) to mean
+        // "no temporal filter / all times". Treat the literal token as the absence of a time
+        // constraint rather than attempting to parse it as an ISO 8601 instant.
+        if (string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (value.Contains(',') || value.Contains('/'))
         {
             error = "Only single instant timestamps are supported for raster temporal mosaics.";
