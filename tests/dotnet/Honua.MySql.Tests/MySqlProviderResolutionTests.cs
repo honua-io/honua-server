@@ -110,7 +110,9 @@ public sealed class MySqlProviderResolutionTests
 
         Assert.IsType<ReadOnlyFeatureWriter>(writer);
         var feature = Feature.Create(0, null);
-        await Assert.ThrowsAsync<NotSupportedException>(() => writer.CreateAsync(1, feature));
+        // ReadOnlyFeatureWriter throws the specific ReadOnlyFeatureWriteException (a
+        // NotSupportedException subclass); ThrowsAsync matches the exact runtime type.
+        await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() => writer.CreateAsync(1, feature));
     }
 
     [Fact]
