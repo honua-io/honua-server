@@ -7,10 +7,12 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
@@ -23,7 +25,10 @@ public sealed class CatalogRasterSourceResolverTests
         var store = Substitute.For<ICogStore>();
         store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
         await using var services = BuildServices(store, BuildSnapshot((42, 900)));
-        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+        var resolver = new CatalogRasterSourceResolver(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new CogDecodedSizeInspector(),
+            Options.Create(new CatalogRasterSourceOptions()));
 
         var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(null, 91));
 
@@ -37,7 +42,10 @@ public sealed class CatalogRasterSourceResolverTests
         store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
         store.GetAsync(404, Arg.Any<CancellationToken>()).Returns((CogRegistration?)null);
         await using var services = BuildServices(store, BuildSnapshot((42, 900)));
-        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+        var resolver = new CatalogRasterSourceResolver(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new CogDecodedSizeInspector(),
+            Options.Create(new CatalogRasterSourceOptions()));
 
         var mismatched = await resolver.ResolveLayerIdAsync(new RasterSourceReference(7, 91));
         var unknown = await resolver.ResolveLayerIdAsync(new RasterSourceReference(null, 404));
@@ -53,7 +61,10 @@ public sealed class CatalogRasterSourceResolverTests
         store.ListByLayerAsync(42, Arg.Any<CancellationToken>())
             .Returns([CreateRegistration(91, layerId: 42)]);
         await using var services = BuildServices(store, BuildSnapshot((42, 900)));
-        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+        var resolver = new CatalogRasterSourceResolver(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new CogDecodedSizeInspector(),
+            Options.Create(new CatalogRasterSourceOptions()));
 
         var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(900, null));
 
@@ -68,7 +79,10 @@ public sealed class CatalogRasterSourceResolverTests
         var store = Substitute.For<ICogStore>();
         store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
         await using var services = BuildServices(store, BuildSnapshot((42, 900), (42, 901)));
-        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+        var resolver = new CatalogRasterSourceResolver(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new CogDecodedSizeInspector(),
+            Options.Create(new CatalogRasterSourceOptions()));
 
         var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(null, 91));
 
@@ -83,7 +97,10 @@ public sealed class CatalogRasterSourceResolverTests
         await using var services = BuildServices(
             store,
             BuildSnapshot((42, 900), (42, (int?)null)));
-        var resolver = new CatalogRasterSourceResolver(services.GetRequiredService<IServiceScopeFactory>());
+        var resolver = new CatalogRasterSourceResolver(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new CogDecodedSizeInspector(),
+            Options.Create(new CatalogRasterSourceOptions()));
 
         var result = await resolver.ResolveLayerIdAsync(new RasterSourceReference(null, 91));
 
