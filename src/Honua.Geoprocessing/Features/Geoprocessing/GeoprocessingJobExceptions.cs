@@ -18,6 +18,12 @@ internal enum AuthorizationDenialReason
 
     /// <summary>The presented OAuth bearer token's scopes do not permit the operation.</summary>
     InsufficientScope,
+
+    /// <summary>
+    /// Live identity membership no longer authorizes a deferred submission that the durable
+    /// role snapshot previously authorized.
+    /// </summary>
+    StalePrincipalMembership,
 }
 
 /// <summary>

@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Collaboration.Checkpoints;
 using Honua.Server.Features.Collaboration.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,8 +15,10 @@ namespace Honua.Server.Features.Collaboration.Operations;
 /// HTTP adapter over the saved-map collaborative edit operation log (#972): a durable op-log
 /// append with monotonic server cursors plus idempotent dedupe, and a replay/catchup read from a
 /// known cursor. Conflicts and out-of-window cursors surface as typed responses rather than silent
-/// overwrites. Authorization reuses the fail-closed saved-map collaboration authorizer so join and
-/// op-log writes share one identity/RBAC seam.
+/// overwrites. Authorization reuses the shared saved-map collaboration authorizer (the
+/// Studio-lifecycle-backed authorizer by default, #2999) so join and op-log writes share one
+/// identity/RBAC seam. Accepted appends are echoed onto the live session stream as
+/// server-ordered <c>operation-appended</c> envelopes.
 /// </summary>
 internal static class SavedMapOperationEndpoints
 {
@@ -38,27 +41,49 @@ internal static class SavedMapOperationEndpoints
             .Produces<ApiResponse<SavedMapOperationAppendApiResponse>>(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("", HandleReplay)
             .WithDisplayName("Replay Saved Map Collaboration Operations")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<ApiResponse<SavedMapOperationReplayApiResponse>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleAppend(
         string mapId,
         [FromBody] SavedMapOperationAppendApiRequest request,
-        [FromServices] ISavedMapOperationLogRepository repository,
+        [FromServices] SavedMapOperationAppendCoordinator coordinator,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         HttpContext context)
     {
+        // One canonical log key per draft regardless of the GUID textual form in the route
+        // (honua-server#2999): appends, replay, sessions, and checkpoints must all agree.
+        mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
         {
             return authorizationError;
+        }
+
+        // Same fail-closed continuity rule as the checkpoint surface (honua-server#2999
+        // review): in a declared multi-replica deployment with a process-local op log, two
+        // replicas would each run an independent per-map cursor sequence — both could accept
+        // "cursor 1" and broadcast conflicting committed operations that can never be
+        // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
+        // make authoritative. A single instance (even one using Redis for cache/jobs) is
+        // authoritative over its own log and is unaffected.
+        if (!coordinator.CanAcceptEdits)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map collaborative edits are unavailable in multi-replica deployments " +
+                "until the collaboration operation log is backed by a replica-shared store; a " +
+                "process-local log cannot assign authoritative operation cursors across replicas.");
         }
 
         if (!TryValidate(request, out var validationError) ||
@@ -73,6 +98,28 @@ internal static class SavedMapOperationEndpoints
         if (request.BaseCursor < 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "baseCursor must be zero or positive.");
+        }
+
+        // Only kinds the checkpoint applier can express on the Studio composition body may enter
+        // a checkpointable log (honua-server#2999 review). Admitting one it cannot apply would
+        // wedge the map: every later checkpoint 422s while the operation is retained, then fails
+        // the continuity guard once it is pruned, so the session could never produce another
+        // saved version. Reject at the door instead.
+        if (!SavedMapOperationDraftApplier.IsCheckpointable(request.Kind.Value))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Operation kind '{request.Kind.Value}' cannot be applied to a saved-map " +
+                "checkpoint and is not accepted by the collaboration operation log.");
+        }
+
+        // Same reasoning one level deeper: a well-known kind carrying a payload the applier
+        // cannot express (for example SetLayerVisibility without 'layerId') would take a
+        // permanent cursor and then fail every checkpoint — 422 while retained, 409 on the
+        // continuity guard once pruned. Validate the payload shape before it can be committed.
+        if (!SavedMapOperationPayloadValidator.TryValidate(request.Kind.Value, request.Payload, out var payloadError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, payloadError);
         }
 
         var actorId = ResolveActorId(request.ActorId, context.User);
@@ -94,7 +141,13 @@ internal static class SavedMapOperationEndpoints
             IdempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim()
         };
 
-        var result = await repository.AppendAsync(appendRequest, context.RequestAborted).ConfigureAwait(false);
+        // Cursor assignment and live fan-out happen inside ONE per-map serialization point: two
+        // concurrent appends must reach subscribers in the same order the log assigned their
+        // cursors, otherwise live clients would apply same-aspect edits in the reverse of the
+        // order replay and checkpointing use (honua-server#2999 review).
+        var result = await coordinator
+            .AppendAndPublishAsync(mapId, appendRequest, context.RequestAborted)
+            .ConfigureAwait(false);
 
         var response = new SavedMapOperationAppendApiResponse
         {
@@ -128,13 +181,31 @@ internal static class SavedMapOperationEndpoints
         string mapId,
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
+        [FromServices] CollaborationCapabilitySource capabilities,
         HttpContext context,
         [FromQuery] long? since = null)
     {
+        mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
         {
             return authorizationError;
+        }
+
+        // Read paths must fail closed on exactly the capability they advertise (honua-server#2999
+        // review). In a declared multi-replica deployment backed by a process-local log the join
+        // handshake reports Replay=false, yet this handler would still answer 200 from node-local
+        // state — during a scale-out or a rolling topology change two replicas could hand the same
+        // client contradictory histories, each looking authoritative. Refusing is the honest
+        // answer: the client falls back to the durable saved state instead of a partial log.
+        if (!capabilities.Current.Replay)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Saved-map collaboration operation replay is unavailable in multi-replica " +
+                "deployments until the collaboration operation log is backed by a replica-shared " +
+                "store; this node's process-local log cannot prove it observed every accepted " +
+                "edit, so its history could contradict another replica's.");
         }
 
         var sinceCursor = since.GetValueOrDefault(0);

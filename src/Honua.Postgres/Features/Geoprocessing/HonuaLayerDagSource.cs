@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -44,6 +45,22 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         if (request.LayerId is not { } layerId)
         {
             throw new InvalidOperationException("source.honua-layer requires a layerId.");
+        }
+
+        // Fail closed on a background read that cannot be constrained to its submitter
+        // (honua-server#3068). This connector is THE seam every layer-sourced geoprocessing
+        // process reads a catalog layer through, so the guard covers the whole family
+        // (analytics.*, generalization.*, conversion.feature-project, enrichment, and the
+        // source.honua-layer connector itself) without any per-executor opt-in.
+        //
+        // An active job scope with no submitter snapshot means the record predates the
+        // snapshot, or was written by a path that does not capture one. Reading anyway would
+        // resolve no RLS predicate and an empty field mask, i.e. hand back every row and every
+        // attribute; refusing is the only safe outcome.
+        if (JobSecurityScope.Current is { Submitter: null })
+        {
+            throw new UnauthorizedAccessException(
+                "This job carries no submitter security context, so its layer reads cannot be constrained to the submitting caller.");
         }
 
         var query = BuildQuery(request);

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -326,6 +327,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     private readonly ConcurrentDictionary<string, string> _idempotency = new(StringComparer.Ordinal);
     private readonly List<AnalysisPlan> _submitted = [];
     private readonly List<IReadOnlyDictionary<string, string>?> _submittedMetadata = [];
+    private readonly List<JobSecurityContext?> _submittedSecurityContexts = [];
     private readonly List<string> _cancelled = [];
     private int _seq;
 
@@ -337,6 +339,12 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     /// creation (#2798).
     /// </summary>
     public HashSet<string> DenyExecutionAuthorizationForPlanIds { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional role required by a plan's fake execution gate. Used to prove that live role
+    /// membership, rather than the publication snapshot, controls a triggered firing.
+    /// </summary>
+    public Dictionary<string, string> RequiredExecutionRoleForPlanIds { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Plans passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so tests
@@ -353,9 +361,33 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         }
     }
 
-    private readonly List<AnalysisPlan> _executionAuthChecked = [];
+    /// <summary>
+    /// Principals passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so
+    /// tests can assert WHICH identity the gate evaluated — a triggered run must be authorized
+    /// as the workflow's author, not as the admin-carrying orchestrator (#3046).
+    /// </summary>
+    public IReadOnlyList<ClaimsPrincipal> ExecutionAuthorizationPrincipals
+    {
+        get
+        {
+            lock (_executionAuthChecked)
+            {
+                return _executionAuthPrincipals.ToArray();
+            }
+        }
+    }
 
-    public Task EnsurePlanExecutionAuthorizedAsync(
+    private readonly List<AnalysisPlan> _executionAuthChecked = [];
+    private readonly List<ClaimsPrincipal> _executionAuthPrincipals = [];
+
+    /// <summary>
+    /// When set, rewrites the plan the gate returns, standing in for the per-layer bindings the
+    /// real gate stamps. Run creation must persist THIS instance, not the one it passed in
+    /// (honua-server#3043 review).
+    /// </summary>
+    public Func<AnalysisPlan, AnalysisPlan>? OnBindExecutionPlan { get; set; }
+
+    public Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -363,6 +395,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         lock (_executionAuthChecked)
         {
             _executionAuthChecked.Add(plan);
+            _executionAuthPrincipals.Add(principal);
         }
 
         if (DenyExecutionAuthorizationForPlanIds.Contains(plan.PlanId))
@@ -371,7 +404,14 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
                 $"Requesting principal is not authorized to execute mutating plan '{plan.PlanId}'.");
         }
 
-        return Task.CompletedTask;
+        if (RequiredExecutionRoleForPlanIds.TryGetValue(plan.PlanId, out var requiredRole)
+            && !principal.IsInRole(requiredRole))
+        {
+            throw new UnauthorizedAccessException(
+                $"Requesting principal lacks current role '{requiredRole}' for plan '{plan.PlanId}'.");
+        }
+
+        return Task.FromResult(OnBindExecutionPlan?.Invoke(plan) ?? plan);
     }
 
     /// <summary>
@@ -475,13 +515,35 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         };
     }
 
+    /// <summary>
+    /// Submitter security contexts passed alongside each step submission, in call order, so
+    /// tests can assert the workflow engine replays the RUN REQUESTER's row/field security
+    /// identity rather than the admin-carrying orchestrator principal's (#3068).
+    /// </summary>
+    public IReadOnlyList<JobSecurityContext?> SubmittedSecurityContexts
+    {
+        get
+        {
+            lock (_submitted)
+            {
+                return _submittedSecurityContexts.ToArray();
+            }
+        }
+    }
+
     public Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        JobSecurityContext? submitterSecurityContext = null,
         CancellationToken cancellationToken = default)
     {
+        lock (_submitted)
+        {
+            _submittedSecurityContexts.Add(submitterSecurityContext);
+        }
+
         if (!string.IsNullOrWhiteSpace(idempotencyKey) &&
             _idempotency.TryGetValue(idempotencyKey, out var existingJobId) &&
             _jobs.TryGetValue(existingJobId, out var existing))

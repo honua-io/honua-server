@@ -338,13 +338,23 @@ public static class ToolboxTranslationIssueCodes
     public const string UnsatisfiedConditionalInputs = "unsatisfied-conditional-inputs";
 
     /// <summary>
-    /// The mapping leaves a parameter both unmapped and without a declared default, so its
-    /// value is undetermined at translation time. Branch-dependent requirements keyed on a
-    /// caller-supplied discriminator (for example <c>analytics.cluster-managed</c>, where
-    /// <c>k</c> is required only when <c>algorithm=kmeans</c>) cannot be proven for every
-    /// branch, so the tool is reported as reviewable rather than certified executable.
+    /// The mapping leaves a parameter both unmapped and without a declared default, and the
+    /// discriminator its requiredness turns on carries a value domain the catalog does not
+    /// enumerate (<c>transform.computed-field</c>'s <c>op</c>), so a caller can select a
+    /// branch no static analysis visits. The tool is reported as reviewable rather than
+    /// certified executable. Where the domain IS enumerable the exact per-branch answer is
+    /// reported under <see cref="ConditionalBranchRequirement"/> instead (#3048).
     /// </summary>
     public const string UnverifiableConditionalBranches = "unverifiable-conditional-branches";
+
+    /// <summary>
+    /// An unmapped, defaultless parameter the canonical validator requires on a SPECIFIC,
+    /// named branch of a discriminator whose value domain the catalog enumerates — for example
+    /// <c>analytics.cluster-managed</c>'s <c>k</c> under <c>algorithm=kmeans</c>. Unlike
+    /// <see cref="UnverifiableConditionalBranches"/> this is an exact statement: the branches
+    /// listed are the complete set that faults, and every other admissible value executes.
+    /// </summary>
+    public const string ConditionalBranchRequirement = "conditional-branch-requirement";
 
     /// <summary>
     /// The target process cannot complete as a job at all, whatever the parameters: either

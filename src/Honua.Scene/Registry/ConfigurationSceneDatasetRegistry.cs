@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -90,8 +91,22 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             TilesetFileName = string.IsNullOrWhiteSpace(entry.TilesetFileName)
                 ? "tileset.json"
                 : entry.TilesetFileName!,
-            AccessPolicy = entry.AccessPolicy
+            AccessPolicy = CloneAccessPolicy(entry.AccessPolicy)
         };
         return true;
     }
+
+    // The registry is frozen after construction, but AccessPolicy is a mutable record with
+    // settable arrays; store a defensive copy so a caller holding the source entry cannot
+    // mutate a policy already published into the frozen registry (#3055 review).
+    private static AccessPolicy? CloneAccessPolicy(AccessPolicy? policy)
+        => policy is null
+            ? null
+            : new AccessPolicy
+            {
+                AllowAnonymous = policy.AllowAnonymous,
+                AllowAnonymousWrite = policy.AllowAnonymousWrite,
+                AllowedRoles = policy.AllowedRoles?.ToArray(),
+                AllowedWriteRoles = policy.AllowedWriteRoles?.ToArray(),
+            };
 }

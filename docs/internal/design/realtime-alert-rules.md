@@ -4,6 +4,12 @@
 The engine ships as shared, un-gated infrastructure with pipeline telemetry, a dispatch-backlog health
 check, a per-channel notification rate cap, and a second consumer (ops deploy/job-event notifications).
 It remains OFF by default operationally (`Alerts:Enabled`, default `false`).
+
+> **Upgrade note (#3055):** The binding fix makes `Alerts:Enabled` (or `Alerts__Enabled` as an
+> environment variable) effective with the source-generated configuration binder. Deployments that
+> already set it to `true` will start the alert processing workers after upgrading and restarting.
+> Remove the setting or set it to `false` before upgrading if activation is not intended.
+
 **Issue:** honua-server#1169 (GA promotion: honua-server#2427)
 **Owner (UI side):** honua-console `/operate/alerts/rules` editor (rule authoring + per-rule delivery-state)
 **Audience:** the engineer/agent implementing the honua-server side

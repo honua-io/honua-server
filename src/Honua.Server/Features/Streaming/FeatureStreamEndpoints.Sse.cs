@@ -40,13 +40,15 @@ internal static partial class FeatureStreamEndpoints
     }
 
     private static async Task HandleSseStream(
-        FeatureStreamSessionManager sessionManager,
-        IFeatureChangeEventStore eventStore,
-        FeatureStreamOptions options,
+        FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
-        IStreamSubscriptionFilter? subscriptionFilter)
+        IStreamSubscriptionFilter? subscriptionFilter,
+        FeatureStreamSubscriptionMode mode)
     {
+        var sessionManager = deps.SessionManager;
+        var eventStore = deps.EventStore;
+        var options = deps.Options.Value;
         var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
@@ -132,9 +134,70 @@ internal static partial class FeatureStreamEndpoints
         // so that large replay backlogs are not truncated by the buffer limit.
         // Live broadcasts flow into the channel concurrently; the drain deduplicates
         // using the replay cursor so events are delivered exactly once.
-        bool hasReplay = cursor.HasValue;
+        var defaultGeneration = sessionManager.GetDefaultSubscriptionGeneration(session.SessionId);
+
+        // Snapshot-then-delta: a baseline replaces the delta stream when the subscription is
+        // fresh, or when the supplied resume cursor has fallen outside the retained window.
+        string? snapshotReason = null;
+        if (mode == FeatureStreamSubscriptionMode.Snapshot && subscriptionFilter is StreamSubscriptionFilter)
+        {
+            try
+            {
+                snapshotReason = cursor.HasValue
+                    ? await ResolveResnapshotReasonAsync(eventStore, cursor.Value, linkedCts.Token).ConfigureAwait(false)
+                    : FeatureStreamSnapshotReasons.Initial;
+            }
+            catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+
+        bool hasReplay = cursor.HasValue || snapshotReason is not null;
         long replayCursor = 0;
-        if (hasReplay)
+        if (snapshotReason is not null)
+        {
+            try
+            {
+                var snapshotResult = await EmitSnapshotAsync(
+                    deps,
+                    logger,
+                    new SseSnapshotSink(context.Response),
+                    session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    defaultGeneration,
+                    (StreamSubscriptionFilter)subscriptionFilter!,
+                    snapshotReason,
+                    linkedCts.Token).ConfigureAwait(false);
+
+                // A truncated baseline must not become a resumable checkpoint, and withholding
+                // the snapshot-end id is not sufficient on its own: continuing into delta
+                // delivery lets the FIRST subsequent feature-change publish an id, which
+                // advances Last-Event-ID past the incomplete baseline and makes the reconnect
+                // look replayable. The features the cap dropped did not change, so no delta
+                // will ever carry them. End the stream instead — the client reconnects with no
+                // Last-Event-ID and takes a fresh snapshot (honua-server#3038 review).
+                if (!snapshotResult.Complete)
+                {
+                    return;
+                }
+
+                replayCursor = snapshotResult.BaselineCursor;
+            }
+            catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+            {
+                return; // Client disconnected during snapshot.
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+        }
+        else if (hasReplay)
         {
             try
             {
@@ -148,7 +211,8 @@ internal static partial class FeatureStreamEndpoints
                     sessionManager,
                     linkedCts.Token,
                     subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    defaultGeneration).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
@@ -162,11 +226,17 @@ internal static partial class FeatureStreamEndpoints
                     sessionManager,
                     linkedCts.Token,
                     subscriptionFilter,
-                    FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    defaultGeneration).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
                 return; // Admin disconnect, slow-consumer removal, or request aborted during replay.
+            }
+            catch (FeatureStreamReplayWindowGapException)
+            {
+                sessionManager.DisconnectSession(session.SessionId);
+                return;
             }
             catch (IOException)
             {
@@ -308,7 +378,8 @@ internal static partial class FeatureStreamEndpoints
                                 sessionManager,
                                 linkedCts.Token,
                                 subscriptionFilter,
-                                FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                                FeatureStreamSessionManager.DefaultSubscriptionId,
+                                defaultGeneration).ConfigureAwait(false);
                             if (replayCursor > prev)
                             {
                                 progress = true;
@@ -337,15 +408,26 @@ internal static partial class FeatureStreamEndpoints
                     }
                     else
                     {
+                        var liveEnvelope = StampSequence(
+                            message.Envelope,
+                            sessionManager,
+                            session.SessionId,
+                            FeatureStreamSessionManager.DefaultSubscriptionId,
+                            defaultGeneration);
+                        if (liveEnvelope is null)
+                        {
+                            continue;
+                        }
+
                         await WriteSseEventAsync(
                             context.Response,
                             "feature-change",
-                            message.Envelope,
+                            liveEnvelope,
                             FeatureStreamJsonContext.Default.FeatureStreamEnvelope,
-                            message.Envelope.Cursor,
+                            liveEnvelope.Cursor,
                             linkedCts.Token).ConfigureAwait(false);
 
-                        replayCursor = message.Envelope.Cursor;
+                        replayCursor = liveEnvelope.Cursor;
                     }
 
                     await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
@@ -375,6 +457,10 @@ internal static partial class FeatureStreamEndpoints
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
         {
             // Normal shutdown.
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            sessionManager.DisconnectSession(session.SessionId);
         }
         catch (IOException)
         {

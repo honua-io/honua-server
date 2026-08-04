@@ -44,6 +44,11 @@ internal static class DataEnrichmentServiceCollectionExtensions
             sp.GetService<ICacheService>(),
             sp.GetService<ISchemaContext>()));
 
+        // Neutral resolver seam (#2283) consumed by the enrichment.enrich
+        // geoprocessing job executor, so the async batch path resolves datasets
+        // through the same merged catalog as POST /api/enrich.
+        services.AddScoped<IEnrichmentDatasetResolver, EnrichmentDatasetResolver>();
+
         return services;
     }
 }

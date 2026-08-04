@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
+using Honua.Geoprocessing.Execution;
 
 namespace Honua.Geoprocessing;
 
@@ -27,84 +28,66 @@ internal static partial class ProcessPlanValidator
     // (SpatialAnalyticsRequestHandlers.Clusters/SpatialJoin/Density/BufferAggregate).
     // Comparison is case-insensitive so validator and handler treat the same
     // caller input the same way.
-    private static readonly HashSet<string> ClusterAlgorithmValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "dbscan", "kmeans", "k-means"
-    };
+    //
+    // Every token set below is built from ProcessValueDomains, which BuiltInProcessCatalog
+    // publishes verbatim as ProcessParameterSpec.AllowedValues, so the enforced domain and
+    // the advertised choice list cannot drift apart (#3048).
+    private static readonly HashSet<string> ClusterAlgorithmValues =
+        new(ProcessValueDomains.ClusterAlgorithm, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> SpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "contains", "within", "dwithin"
-    };
+    private static readonly HashSet<string> SpatialJoinPredicateValues =
+        new(ProcessValueDomains.SpatialJoinPredicate, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> DensityModeValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "hex", "hexgrid", "hex-grid", "square", "squaregrid", "square-grid"
-    };
+    private static readonly HashSet<string> DensityModeValues =
+        new(ProcessValueDomains.DensityMode, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> BufferAggregateUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "meters", "meter", "m",
-        "kilometers", "kilometer", "km",
-        "feet", "foot", "ft",
-        "miles", "mile", "mi"
-    };
+    private static readonly HashSet<string> BufferAggregateUnitValues =
+        new(ProcessValueDomains.BufferAggregateUnit, StringComparer.OrdinalIgnoreCase);
 
     // gdaldem emits degrees by default and percent slope under -p; radians are
     // not a first-class gdaldem output, so the native worker rejects them up
     // front. The validator stays in lockstep so plans accepted here are also
     // accepted by the executor at runtime.
-    private static readonly HashSet<string> SurfaceSlopeUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "degrees", "degree", "percent"
-    };
+    private static readonly HashSet<string> SurfaceSlopeUnitValues =
+        new(ProcessValueDomains.SurfaceSlopeUnit, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterResamplingValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "nearestneighbor", "nearest-neighbor", "nearest",
-        "bilinear",
-        "cubic", "bicubic",
-        "lanczos"
-    };
+    private static readonly HashSet<string> RasterResamplingValues =
+        new(ProcessValueDomains.RasterResampling, StringComparer.OrdinalIgnoreCase);
 
     // Mosaic overlap operators the native worker (GdalRasterMosaicJobExecutor) can
     // express through gdalwarp source ordering. Statistical operators are not yet
     // available and are rejected so a plan accepted here is also accepted by the
     // worker rather than failing at the CLI boundary.
-    private static readonly HashSet<string> RasterMosaicOperatorValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "first", "last"
-    };
+    private static readonly HashSet<string> RasterMosaicOperatorValues =
+        new(ProcessValueDomains.RasterMosaicOperator, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterFormatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "gtiff", "geotiff", "tiff", "tif",
-        "png",
-        "jpeg", "jpg",
-        "cog"
-    };
+    private static readonly HashSet<string> RasterFormatValues =
+        new(ProcessValueDomains.RasterFormat, StringComparer.OrdinalIgnoreCase);
 
     // gdal_calc.py --type values accepted by the calc-family executors
     // (raster.map-algebra / raster.spectral-index / raster.reclassify). Mirrors
     // GdalCalcInputs.TryNormalizeDataType so a plan accepted here is accepted by
     // the worker.
-    private static readonly HashSet<string> RasterCalcDataTypeValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "byte", "int16", "uint16", "int32", "uint32", "float32", "float64"
-    };
+    private static readonly HashSet<string> RasterCalcDataTypeValues =
+        new(ProcessValueDomains.RasterCalcDataType, StringComparer.OrdinalIgnoreCase);
 
     // Spectral-index presets the native worker (GdalRasterSpectralIndexJobExecutor)
     // recognizes, with the band roles each requires.
-    private static readonly HashSet<string> SpectralIndexValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "ndvi", "ndwi", "ndbi", "savi", "evi"
-    };
+    private static readonly HashSet<string> SpectralIndexValues =
+        new(ProcessValueDomains.SpectralIndex, StringComparer.OrdinalIgnoreCase);
 
     // Euclidean-distance units the native worker passes to gdal_proximity -distunits.
-    private static readonly HashSet<string> ProximityDistanceUnitValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "GEO", "PIXEL"
-    };
+    private static readonly HashSet<string> ProximityDistanceUnitValues =
+        new(ProcessValueDomains.ProximityDistanceUnit, StringComparer.OrdinalIgnoreCase);
+
+    // imagery.classify's task token, matched case-SENSITIVELY against the cloud
+    // backends' spelling (unlike every other domain here).
+    private static readonly HashSet<string> ImageryClassifyTaskValues =
+        new(ProcessValueDomains.ImageryClassifyTask, StringComparer.Ordinal);
+
+    // conversion.polygonize pixel connectedness; numeric tokens, so ordinal.
+    private static readonly HashSet<string> PolygonizeConnectednessValues =
+        new(ProcessValueDomains.PolygonizeConnectedness, StringComparer.Ordinal);
 
     // NumPy element-wise functions the map-algebra allow-list admits. Mirrors
     // MapAlgebraExpression.AllowedFunctions in the worker.
@@ -115,15 +98,11 @@ internal static partial class ProcessPlanValidator
         "sin", "cos", "tan", "arctan", "nan_to_num"
     };
 
-    private static readonly HashSet<string> GeometryFormatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "wkt", "geojson", "wkb", "ewkt"
-    };
+    private static readonly HashSet<string> GeometryFormatValues =
+        new(ProcessValueDomains.GeometryFormat, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> RasterZonalStatisticValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "count", "sum", "mean", "min", "max", "stddev", "variance"
-    };
+    private static readonly HashSet<string> RasterZonalStatisticValues =
+        new(ProcessValueDomains.RasterZonalStatistic, StringComparer.OrdinalIgnoreCase);
 
     // Mirrors SpatialAnalyticsRequestHandlers.TryParseStatisticType so the
     // validator rejects the same statisticType values the handler would reject.
@@ -207,7 +186,8 @@ internal static partial class ProcessPlanValidator
                     continue;
                 }
 
-                if (!step.Inputs.ContainsKey(param.Name))
+                if (!step.Inputs.ContainsKey(param.Name)
+                    && !(param.AcceptsRasterSource && step.RasterSources?.ContainsKey(param.Name) == true))
                 {
                     violations.Add(new GeoprocessingValidationFailure
                     {
@@ -231,6 +211,23 @@ internal static partial class ProcessPlanValidator
                 unknownInputs.Add(inputName);
                 if (string.Equals(step.ProcessId, "sink.external-postgis", StringComparison.Ordinal)
                     && string.Equals(inputName, "connectionString", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // The submit-time layer gate stamps the requester-authorized dataset layer onto
+                // the step and authoring surfaces persist it with the plan, so a scheduled
+                // workflow's stored plan legitimately carries this input. It is deliberately not
+                // a catalog parameter -- it is server-owned, not caller-supplied -- and catalog
+                // validation runs BEFORE the gate, so rejecting it here would fail every
+                // correctly pinned workflow step (#3043 review).
+                //
+                // Admitting it is not a forgery hole: GeoprocessingLayerAccessGuard strips any
+                // caller-supplied value before writing the layer it actually authorized, so a
+                // value that survives validation is overwritten rather than trusted.
+                if (string.Equals(step.ProcessId, EnrichmentJobExecutor.HandledProcessId, StringComparison.Ordinal)
+                    && (string.Equals(inputName, EnrichmentJobExecutor.AuthorizedDatasetLayerInput, StringComparison.Ordinal)
+                        || string.Equals(inputName, EnrichmentJobExecutor.AuthorizedSourceLayerInput, StringComparison.Ordinal)))
                 {
                     continue;
                 }
@@ -416,6 +413,9 @@ internal static partial class ProcessPlanValidator
             case "analytics.spatial-join-managed":
                 ValidateManagedSpatialJoinSemantics(step, violations);
                 break;
+            case "enrichment.enrich":
+                ValidateEnrichmentSemantics(step, violations);
+                break;
             case "analytics.cluster-managed":
                 ValidateManagedClusterSemantics(step, violations);
                 break;
@@ -537,7 +537,7 @@ internal static partial class ProcessPlanValidator
 
         if (step.Inputs.TryGetValue("task", out var task)
             && !string.IsNullOrWhiteSpace(task)
-            && task is not ("classification" or "segmentation" or "detection"))
+            && !ImageryClassifyTaskValues.Contains(task))
         {
             AddEnumViolation(step, "task", task, "classification, segmentation, detection", violations);
         }
@@ -620,25 +620,19 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    private static readonly HashSet<string> SpatialFilterPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "within"
-    };
+    private static readonly HashSet<string> SpatialFilterPredicateValues =
+        new(ProcessValueDomains.SpatialFilterPredicate, StringComparer.OrdinalIgnoreCase);
 
     // Managed spatial-join (analytics.spatial-join-managed) allow-lists mirror the
     // ManagedSpatialJoinExecutor body so the validator rejects the same predicate /
     // statistic spellings the executor refuses at runtime. Distinct from the
     // PostGIS-protocol analytics.spatial-join (which also has 'contains') because
     // this managed join has no 'dwithin'/distance support.
-    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "intersects", "contains", "within"
-    };
+    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues =
+        new(ProcessValueDomains.ManagedSpatialJoinPredicate, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> ManagedSpatialJoinStatValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "count", "sum", "mean", "avg", "average", "min", "max"
-    };
+    private static readonly HashSet<string> ManagedSpatialJoinStatValues =
+        new(ProcessValueDomains.ManagedSpatialJoinStat, StringComparer.OrdinalIgnoreCase);
 
     // analytics.spatial-join-managed reads two inline FeatureCollection data URIs
     // (input target + join reference), an optional predicate, and a 'statistics'
@@ -685,6 +679,250 @@ internal static partial class ProcessPlanValidator
                     $"statistic '{statName}' requires a join field, e.g. 'fieldName:{statName}'", violations);
                 return;
             }
+        }
+    }
+
+    // enrichment.enrich (#2283) allow-lists mirror the EnrichmentJobExecutor body
+    // so the validator rejects the same method/predicate/aggregate spellings the
+    // executor refuses at runtime.
+    private static readonly HashSet<string> EnrichmentMethodValues =
+        new(ProcessValueDomains.EnrichmentMethod, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> EnrichmentDistanceMethodValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "within-distance", "within_distance", "dwithin"
+    };
+
+    // The nearest spellings EnrichmentJobExecutor.BuildPlan maps onto its nearest branch,
+    // which carries attributes but computes no aggregates.
+    private static readonly HashSet<string> EnrichmentNearestMethodValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "nearest-neighbor", "nearest_neighbor", "nearest"
+    };
+
+    // Enrichment owns its raw-'predicate' allow-list rather than borrowing the
+    // PostGIS analytics.spatial-join set: the two happen to agree today, but they are
+    // different contracts, and a change on the spatial-join side must not silently
+    // widen or narrow what enrichment accepts. These four values are exactly what
+    // EnrichmentJobExecutor.ParsePredicate maps and what the catalog advertises for
+    // this parameter, so validation accepts precisely what execution runs. Note the
+    // deliberately similar SpatialFilterPredicateValues elsewhere in this file is the
+    // transform.spatial-filter set (intersects/within only) and is NOT applicable
+    // here (#3043 review).
+    private static readonly HashSet<string> EnrichmentPredicateValues =
+        new(ProcessValueDomains.EnrichmentPredicate, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> EnrichmentAggregateStatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "mean", "avg", "average", "min", "max", "stddev", "std"
+    };
+
+    // enrichment.enrich (#2283) resolves the enrichment dataset at execution, so
+    // dataset-dependent defaults (default predicate) cannot be validated here.
+    // This mirrors the executor's submit-time-checkable rules: exactly one source
+    // (layerId XOR input), the method/predicate enums, the conditional distance
+    // when the caller explicitly requests within-distance, and the 'aggregates'
+    // field:stat grammar shared with the statistics tool pack.
+    private static void ValidateEnrichmentSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerIdRaw)
+            && !string.IsNullOrWhiteSpace(layerIdRaw);
+        var hasInline = step.Inputs.TryGetValue("input", out var inputRaw)
+            && !string.IsNullOrWhiteSpace(inputRaw);
+        if (hasLayerId == hasInline)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = hasLayerId ? "INVALID_PARAMETER_VALUE" : "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' must supply EXACTLY ONE source for process '{step.ProcessId}': "
+                    + "'layerId' (registered source layer) or 'input' (staged FeatureCollection data URI).",
+                FieldPath = $"steps[{step.StepId}].inputs.layerId"
+            });
+        }
+
+        // 'where'/'bbox' window the source.honua-layer read and are documented in the
+        // catalog as layer-source-only. EnrichmentJobExecutor's inline branch parses the
+        // staged FeatureCollection verbatim and applies neither, so accepting the
+        // combination silently enriched every staged feature — an over-broad result the
+        // caller never asked for. Refuse it at submission instead (#3043 review).
+        if (hasInline)
+        {
+            RejectLayerOnlySourceFilter(step, "where", violations);
+            RejectLayerOnlySourceFilter(step, "bbox", violations);
+        }
+        else if (step.Inputs.TryGetValue("bbox", out var bboxRaw) && !string.IsNullOrWhiteSpace(bboxRaw))
+        {
+            // Without this, a malformed bbox cleared the generic text-type check, queued a
+            // job, and only failed deep inside the provider read as a generic source-read
+            // error instead of an actionable parameter violation (#3043 review).
+            ValidateBboxSyntax(step, bboxRaw, violations);
+        }
+
+        var hasMethod = step.Inputs.TryGetValue("method", out var methodRaw)
+            && !string.IsNullOrWhiteSpace(methodRaw);
+        if (hasMethod && !EnrichmentMethodValues.Contains(methodRaw!.Trim()))
+        {
+            AddEnumViolation(step, "method", methodRaw!,
+                "intersects, point-in-polygon, within, within-distance, nearest-neighbor", violations);
+        }
+
+        // Only validate 'predicate' when it can actually take effect. EnrichmentJobExecutor's
+        // BuildPlan reads it solely in its `case ""` branch — i.e. when 'method' is absent — so
+        // 'method' genuinely takes precedence, as the published contract says and as the
+        // wantsDistance computation below already assumes. Validating it unconditionally rejected
+        // plans the executor would have run happily, and made an async submission fail where the
+        // equivalent synchronous POST /api/enrich request succeeded (#3043 review).
+        if (!hasMethod
+            && step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !EnrichmentPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, contains, within, dwithin", violations);
+        }
+
+        var wantsDistance =
+            (hasMethod && EnrichmentDistanceMethodValues.Contains(methodRaw!.Trim()))
+            || (!hasMethod
+                && step.Inputs.TryGetValue("predicate", out var effectivePredicate)
+                && string.Equals(effectivePredicate?.Trim(), "dwithin", StringComparison.OrdinalIgnoreCase));
+        if (wantsDistance)
+        {
+            RequireConditionalParameter(step, "distance", "method=within-distance", violations);
+        }
+
+        if (step.Inputs.TryGetValue("distance", out var distanceRaw)
+            && !string.IsNullOrWhiteSpace(distanceRaw)
+            && (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
+                || !double.IsFinite(distance)
+                || distance <= 0))
+        {
+            AddRangeViolationIfNew(step, "distance", "expected a finite positive number (CRS units)", violations);
+        }
+
+        if (step.Inputs.TryGetValue("maxCarriedMatchValues", out var budgetRaw)
+            && !string.IsNullOrWhiteSpace(budgetRaw)
+            && (!long.TryParse(budgetRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var budget)
+                || budget < 0))
+        {
+            AddRangeViolationIfNew(step, "maxCarriedMatchValues", "expected a non-negative integer", violations);
+        }
+
+        if (step.Inputs.TryGetValue("maxInputFeatures", out var maxInputRaw)
+            && !string.IsNullOrWhiteSpace(maxInputRaw)
+            && (!int.TryParse(maxInputRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxInput)
+                || maxInput <= 0))
+        {
+            AddRangeViolationIfNew(step, "maxInputFeatures", "expected a positive integer", violations);
+        }
+
+        if (!step.Inputs.TryGetValue("aggregates", out var aggregatesRaw)
+            || string.IsNullOrWhiteSpace(aggregatesRaw))
+        {
+            return;
+        }
+
+        // The catalog advertises 'aggregates' as "join methods only", and the executor's
+        // nearest branch returns straight after AnnotateNearest without ever consulting
+        // plan.Stats — so this combination used to succeed while silently omitting every
+        // requested statistic. Aggregates summarise a MATCH SET; nearest-neighbor produces a
+        // single closest feature per target and has no set to summarise, so there is nothing
+        // meaningful to compute here. Refuse at submission rather than queue a job whose
+        // output cannot carry what the request asked for (#3043 review).
+        if (hasMethod && EnrichmentNearestMethodValues.Contains(methodRaw!.Trim()))
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "INVALID_PARAMETER_VALUE",
+                Message = $"Step '{step.StepId}' supplies 'aggregates' with method='{methodRaw!.Trim()}' for process "
+                    + $"'{step.ProcessId}': aggregates are computed over the matched dataset features and are "
+                    + "supported on the join methods only (intersects, point-in-polygon, within, within-distance). "
+                    + "The nearest-neighbor method annotates each target with its single closest dataset feature "
+                    + "(NEAR_DIST) and has no match set to aggregate — remove 'aggregates', or use a join method.",
+                FieldPath = $"steps[{step.StepId}].inputs.aggregates"
+            });
+            return;
+        }
+
+        foreach (var token in aggregatesRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = token.Split(':', StringSplitOptions.TrimEntries);
+            var statName = parts.Length >= 2 ? parts[1] : parts[0];
+            var field = parts.Length >= 2 ? parts[0] : string.Empty;
+
+            if (!EnrichmentAggregateStatValues.Contains(statName))
+            {
+                AddRangeViolationIfNew(step, "aggregates",
+                    $"unsupported statistic '{statName}' in '{token}' (allowed: count, sum, mean, min, max, stddev)", violations);
+                return;
+            }
+
+            if (!string.Equals(statName, "count", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(field))
+            {
+                AddRangeViolationIfNew(step, "aggregates",
+                    $"statistic '{statName}' requires a dataset field, e.g. 'fieldName:{statName}'", violations);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds a violation for a source-layer windowing filter supplied alongside a staged
+    /// inline source, where the executor cannot apply it.
+    /// </summary>
+    private static void RejectLayerOnlySourceFilter(
+        AnalysisPlanStep step,
+        string parameterName,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameterName, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        violations.Add(new GeoprocessingValidationFailure
+        {
+            Code = "INVALID_PARAMETER_VALUE",
+            Message = $"Step '{step.StepId}' supplies '{parameterName}' with a staged 'input' source for process "
+                + $"'{step.ProcessId}': '{parameterName}' windows the registered source layer read and is only "
+                + $"valid with 'layerId'. A staged FeatureCollection is enriched verbatim — remove "
+                + $"'{parameterName}', or filter the staged collection before submitting it.",
+            FieldPath = $"steps[{step.StepId}].inputs.{parameterName}"
+        });
+    }
+
+    // Shared four-ordinate bbox syntax check for every process that takes a
+    // 'minX,minY,maxX,maxY' region or window. Deliberately mirrors the executor-side
+    // contract (the region readers and source.honua-layer's BuildSpatialFilter): four
+    // comma-separated numeric ordinates, nothing more. The raster-side
+    // RasterParsingHelpers.TryParseBoundingBox additionally rejects inverted, degenerate,
+    // and out-of-range extents, which the feature-source path normalizes through
+    // NetTopologySuite's Envelope rather than refusing — validating with it here would
+    // fail submissions the executor runs happily.
+    private static void ValidateBboxSyntax(
+        AnalysisPlanStep step,
+        string bbox,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // double.TryParse accepts "NaN", "Infinity", and "-Infinity", so a syntax-only check
+        // let bbox=NaN,0,1,1 clear submission and reach BuildSpatialFilter, which builds an
+        // envelope from those ordinates and then either fails deep in the provider path as a
+        // generic read error or produces a filter the caller never asked for. Every ordinate
+        // must be finite to be a coordinate at all (#3043 review).
+        // RemoveEmptyEntries would silently drop a MISSING ordinate, so `0,,1,2,3` collapsed to
+        // four values, passed, and the source parser then read it as `0,1,2,3` — a different
+        // window than the caller supplied. Split without it so a blank ordinate is a rejection
+        // (honua-server#3043 review).
+        var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
+        var ok = parts.Length == 4
+            && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate)
+                && double.IsFinite(ordinate));
+        if (!ok)
+        {
+            AddRangeViolationIfNew(step, "bbox",
+                $"expected 'minX,minY,maxX,maxY' with four finite numeric values, got '{bbox}'", violations);
         }
     }
 
@@ -821,14 +1059,7 @@ internal static partial class ProcessPlanValidator
         }
         else if (hasBbox)
         {
-            var parts = bbox!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            var ok = parts.Length == 4
-                && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
-            if (!ok)
-            {
-                AddRangeViolationIfNew(step, "bbox",
-                    $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
-            }
+            ValidateBboxSyntax(step, bbox!, violations);
         }
     }
 
@@ -855,25 +1086,17 @@ internal static partial class ProcessPlanValidator
     // GeoETL transform enum allow-lists mirror the executor bodies reconciled from
     // feat/geoetl-baseline so the validator rejects the same values the executors
     // would refuse at runtime.
-    private static readonly HashSet<string> AttributeCastTargetTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "int", "long", "double", "bool", "string"
-    };
+    private static readonly HashSet<string> AttributeCastTargetTypes =
+        new(ProcessValueDomains.AttributeCastTargetType, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> AttributeCastOnErrorValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "drop", "null", "keep"
-    };
+    private static readonly HashSet<string> AttributeCastOnErrorValues =
+        new(ProcessValueDomains.AttributeCastOnError, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> ComputedFieldOps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "concat", "add", "subtract", "multiply", "divide", "const"
-    };
+    private static readonly HashSet<string> ComputedFieldOps =
+        new(ProcessValueDomains.ComputedFieldOp, StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> AttributeFilterOps = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"
-    };
+    private static readonly HashSet<string> AttributeFilterOps =
+        new(ProcessValueDomains.AttributeFilterOp, StringComparer.OrdinalIgnoreCase);
 
     private static void ValidateAttributeCastSemantics(
         AnalysisPlanStep step,
@@ -1225,7 +1448,7 @@ internal static partial class ProcessPlanValidator
 
         if (step.Inputs.TryGetValue("connectedness", out var conn)
             && !string.IsNullOrWhiteSpace(conn)
-            && conn.Trim() is not "4" and not "8")
+            && !PolygonizeConnectednessValues.Contains(conn.Trim()))
         {
             AddEnumViolation(step, "connectedness", conn, "4, 8", violations);
         }
@@ -1480,7 +1703,8 @@ internal static partial class ProcessPlanValidator
         // would route to the worker with no readable input and fail there, so the
         // catalog rejects it at submit-time validation instead. (The base required
         // loop no longer enforces 'source' because it is now optional.)
-        var hasSource = step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source);
+        var hasSource = (step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source))
+            || step.RasterSources?.ContainsKey("source") == true;
         var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerId) && !string.IsNullOrWhiteSpace(layerId);
         var hasRasterId = step.Inputs.TryGetValue("rasterId", out var rasterId) && !string.IsNullOrWhiteSpace(rasterId);
         if (!hasSource && !hasLayerId && !hasRasterId)

@@ -60,6 +60,14 @@ internal static partial class GeoprocessingServiceLog
         string resourceType,
         string operation);
 
+    // The layer id is deliberately NOT logged at Warning with the denial: the reason is
+    // enough to diagnose, and the client-facing denial is uniform so it cannot be used to
+    // probe which layer ids exist.
+    [LoggerMessage(8035, LogLevel.Warning, "Layer read access denied for geoprocessing submission: Reason={Reason}")]
+    public static partial void LayerReadAccessDenied(
+        ILogger logger,
+        string reason);
+
     [LoggerMessage(8008, LogLevel.Information, "Job submitted (idempotent replay): JobId={JobId}")]
     public static partial void JobSubmittedIdempotent(
         ILogger logger,
@@ -205,4 +213,31 @@ internal static partial class GeoprocessingServiceLog
         string backend,
         int requiredVersion,
         int backendMaxVersion);
+
+    [LoggerMessage(8035, LogLevel.Warning, "Submit rejected by layer read authorization: LayerId={LayerId}, StepId={StepId}, ProcessId={ProcessId}")]
+    public static partial void LayerAccessDenied(
+        ILogger logger,
+        int layerId,
+        string stepId,
+        string processId);
+
+    [LoggerMessage(8036, LogLevel.Warning, "Current role membership is unavailable for deferred submitter {PrincipalId}; using the durable role snapshot")]
+    public static partial void SubmitterMembershipSnapshotFallback(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8037, LogLevel.Information, "Revalidated changed role membership for deferred submitter {PrincipalId}")]
+    public static partial void SubmitterMembershipRevalidated(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8038, LogLevel.Warning, "Deferred submitter {PrincipalId} is inactive; refusing submission")]
+    public static partial void SubmitterMembershipInactive(
+        ILogger logger,
+        string principalId);
+
+    [LoggerMessage(8039, LogLevel.Warning, "Current role membership no longer authorizes deferred submitter {PrincipalId}")]
+    public static partial void SubmitterMembershipNoLongerAuthorizes(
+        ILogger logger,
+        string principalId);
 }

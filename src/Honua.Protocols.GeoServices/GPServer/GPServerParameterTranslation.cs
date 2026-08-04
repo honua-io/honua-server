@@ -41,7 +41,10 @@ internal static class GPServerParameterTranslation
     /// declared as <see cref="ProcessParameterValueType.WkbArray"/> are unpacked
     /// from a JSON array or comma-delimited form into the canonical JSON-array
     /// string the runtime expects, and GPChoice values are validated against
-    /// <see cref="ProcessParameterSpec.AllowedValues"/>.
+    /// <see cref="ProcessParameterSpec.AllowedValues"/> — matched
+    /// case-insensitively as Esri's GP framework does, then rewritten to the
+    /// catalog spelling so canonical validators and executors that compare
+    /// ordinally still accept them.
     /// </summary>
     public static Dictionary<string, string> TranslateInbound(
         IReadOnlyDictionary<string, string> gpParameters,
@@ -54,8 +57,7 @@ internal static class GPServerParameterTranslation
         {
             specsByName.TryGetValue(key, out var spec);
             var normalized = NormalizeGPValue(value, spec);
-            ValidateChoice(spec, normalized);
-            result[key] = normalized;
+            result[key] = NormalizeChoice(spec, normalized);
         }
 
         return result;
@@ -229,20 +231,52 @@ internal static class GPServerParameterTranslation
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private static void ValidateChoice(ProcessParameterSpec? spec, string value)
+    /// <summary>
+    /// Validates a value against a parameter's <see cref="ProcessParameterSpec.AllowedValues"/>
+    /// and returns the CATALOG spelling of the matched choice.
+    /// </summary>
+    /// <remarks>
+    /// Esri's GP framework matches value-list (choice) parameters
+    /// case-insensitively, so the adapter does too. Accepting a spelling here and
+    /// then handing it on verbatim, however, left it to be rejected downstream by
+    /// canonical validators and executors that compare ordinally — a GPServer
+    /// submission of <c>task=Detection</c> cleared the adapter and then failed
+    /// plan validation (honua-server#3053). Normalizing to the catalog spelling
+    /// fixes that for every process declaring <c>AllowedValues</c>, and keeps the
+    /// adapter and the canonical validator agreeing on comparison semantics.
+    /// A catalog that declared two choices differing only by case would make the
+    /// normalization target ambiguous, so that is refused explicitly rather than
+    /// resolved by declaration order.
+    /// </remarks>
+    private static string NormalizeChoice(ProcessParameterSpec? spec, string value)
     {
         if (spec?.AllowedValues is not { Count: > 0 } allowed || string.IsNullOrEmpty(value))
         {
-            return;
+            return value;
         }
 
-        if (allowed.Any(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase)))
+        // An exact match is already the catalog spelling, and it settles any
+        // case-insensitive ambiguity in the caller's favour.
+        if (allowed.Any(candidate => string.Equals(candidate, value, StringComparison.Ordinal)))
         {
-            return;
+            return value;
+        }
+
+        var matches = allowed
+            .Where(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (matches.Count == 1)
+        {
+            return matches[0];
         }
 
         throw new GeoprocessingValidationException(
-            $"Parameter '{spec.Name}': '{value}' is not in the allowed values [{string.Join(", ", allowed)}].");
+            matches.Count > 1
+                ? $"Parameter '{spec.Name}': '{value}' matches more than one allowed value ignoring case; " +
+                  $"supply the exact spelling from [{string.Join(", ", allowed)}]."
+                : $"Parameter '{spec.Name}': '{value}' is not in the allowed values [{string.Join(", ", allowed)}].");
     }
 
     /// <summary>

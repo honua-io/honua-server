@@ -30,22 +30,11 @@ internal static class AuthenticationOptionsRegistration
             var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
 
             // SECURITY: Validate admin password complexity in production
-            if (environment.IsProduction() && !string.IsNullOrEmpty(adminPassword))
+            if (environment.IsProduction() &&
+                !string.IsNullOrEmpty(adminPassword) &&
+                !AdminPasswordValidation.IsAwsSecretsManagerReference(adminPassword))
             {
-                if (adminPassword.Length < 16)
-                {
-                    throw new InvalidOperationException("Admin password must be at least 16 characters in production environment");
-                }
-
-                bool hasUpper = adminPassword.Any(char.IsUpper);
-                bool hasLower = adminPassword.Any(char.IsLower);
-                bool hasDigit = adminPassword.Any(char.IsDigit);
-                bool hasSpecial = adminPassword.Any(c => !char.IsLetterOrDigit(c));
-
-                if (!(hasUpper && hasLower && hasDigit && hasSpecial))
-                {
-                    throw new InvalidOperationException("Admin password must contain uppercase, lowercase, digit, and special characters in production environment");
-                }
+                AdminPasswordValidation.ValidateProductionPassword(adminPassword);
             }
 
             options.AdminPassword = adminPassword;

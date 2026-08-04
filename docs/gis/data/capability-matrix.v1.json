@@ -621,10 +621,10 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "entryCount": 7,
-      "provingTestCount": 17,
+      "entryCount": 9,
+      "provingTestCount": 60,
       "maturity": {
-        "implemented": 7
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],
@@ -658,7 +658,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 13,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 2
       },
@@ -782,7 +782,7 @@
       "category": "Editing",
       "edition": "Pro",
       "entryCount": 7,
-      "provingTestCount": 84,
+      "provingTestCount": 94,
       "maturity": {
         "implemented": 7
       },
@@ -801,7 +801,7 @@
       "category": "Enrichment",
       "edition": "Community",
       "entryCount": 7,
-      "provingTestCount": 23,
+      "provingTestCount": 24,
       "maturity": {
         "implemented": 7
       },
@@ -1225,7 +1225,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 13,
-      "provingTestCount": 75,
+      "provingTestCount": 77,
       "maturity": {
         "implemented": 13
       },
@@ -1250,7 +1250,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 110,
+      "provingTestCount": 129,
       "maturity": {
         "implemented": 10
       },
@@ -1613,7 +1613,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 317,
+      "provingTestCount": 318,
       "maturity": {
         "implemented": 45
       },
@@ -1678,7 +1678,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 14,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 2
       },
@@ -2321,7 +2321,7 @@
       "category": "Streaming",
       "edition": "Pro",
       "entryCount": 2,
-      "provingTestCount": 43,
+      "provingTestCount": 64,
       "maturity": {
         "implemented": 2
       },

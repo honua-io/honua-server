@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Infrastructure.Rendering;
 using SkiaSharp;
 
 namespace Honua.Server.Features.Studio.Export;
@@ -98,11 +99,12 @@ public static class StudioDeliverableComposer
     {
         canvas.Clear(SKColors.White);
 
-        using var titleFont = new SKFont(SKTypeface.Default, 34f);
-        using var badgeFont = new SKFont(SKTypeface.Default, 16f);
-        using var labelFont = new SKFont(SKTypeface.Default, 14f);
-        using var bodyFont = new SKFont(SKTypeface.Default, 18f);
-        using var footerFont = new SKFont(SKTypeface.Default, 12f);
+        var typeface = RenderingTypeface.Default;
+        using var titleFont = new SKFont(typeface, 34f);
+        using var badgeFont = new SKFont(typeface, 16f);
+        using var labelFont = new SKFont(typeface, 14f);
+        using var bodyFont = new SKFont(typeface, 18f);
+        using var footerFont = new SKFont(typeface, 12f);
 
         using var headerPaint = new SKPaint { Color = HeaderColor, IsAntialias = true };
         using var bodyPaint = new SKPaint { Color = BodyColor, IsAntialias = true };

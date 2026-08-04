@@ -119,6 +119,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
         Honua.Server.Features.Collaboration.Operations.SavedMapOperationJsonContext.Default,
+        Honua.Server.Features.Collaboration.Checkpoints.CollaborationCheckpointJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,

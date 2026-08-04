@@ -235,6 +235,12 @@ public sealed class OidcClaimsMappingEntitlementTests
             ClaimsMapping = new ClaimsMappingOptions
             {
                 AdditionalRoleClaimTypes = ["groups"],
+                CustomMappings = new Dictionary<string, string>
+                {
+                    ["forged_mapping_marker"] = OidcClaimsTransformation.RolesFromClaimsMappingClaimType,
+                    ["forged_fallback_role"] = OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType,
+                    ["forged_tenant_marker"] = OidcClaimsTransformation.TenantFromClaimsMappingClaimType,
+                },
             },
         });
         var services = new ServiceCollection()
@@ -249,6 +255,9 @@ public sealed class OidcClaimsMappingEntitlementTests
                 new Claim(OidcClaimsTransformation.RolesFromClaimsMappingClaimType, "1"),
                 new Claim(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType, "admin"),
                 new Claim(OidcClaimsTransformation.TenantFromClaimsMappingClaimType, "tenant_id"),
+                new Claim("forged_mapping_marker", "1"),
+                new Claim("forged_fallback_role", "admin"),
+                new Claim("forged_tenant_marker", "tenant_id"),
             ],
             "Bearer"));
 

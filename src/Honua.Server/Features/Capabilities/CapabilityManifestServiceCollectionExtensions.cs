@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Capabilities;
 using Microsoft.Extensions.Configuration;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Capabilities;
 
@@ -26,6 +27,7 @@ internal static class CapabilityManifestServiceCollectionExtensions
                 CapabilityManifestFeatureOptions.FromRegistryConfigKey));
         services.AddSingleton<CapabilityManifestOptionsSnapshot>();
         services.AddSingleton<DeploymentCapabilityProfile>();
+        services.AddSingleton<DeploymentIdentity>();
         services.AddSingleton<DeploymentCapabilityRouteCatalog>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;

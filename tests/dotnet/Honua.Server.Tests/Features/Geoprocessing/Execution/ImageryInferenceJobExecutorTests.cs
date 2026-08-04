@@ -929,6 +929,69 @@ public sealed class ImageryInferenceJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_FeaturePayloadDeclaringEquivalentWgs84Spellings_IsAccepted()
+    {
+        // The same CRS spelled five ways — the four identifier forms the process
+        // contract names, plus a lowercase authority. Tightening the declared-CRS
+        // check to exact identifier matching (#3053) must not start refusing a
+        // backend that spells WGS 84 differently from the one form the first test
+        // used.
+        string[] spellings =
+        [
+            "EPSG:4326",
+            "epsg:4326",
+            "urn:ogc:def:crs:EPSG::4326",
+            "http://www.opengis.net/def/crs/EPSG/0/4326",
+            "urn:ogc:def:crs:OGC:1.3:CRS84",
+        ];
+
+        for (var i = 0; i < spellings.Length; i++)
+        {
+            var spelling = spellings[i];
+            var executor = CreateExecutor(
+                new StubHttpHandler(_ => JsonResponse(FeaturePayloadDeclaringCrs(spelling))),
+                provider: "http");
+            var context = CreateContext($"op-crs-ok-{i}", out _);
+
+            var result = await executor.ExecuteAsync(
+                CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded,
+                "'{0}' is a legitimate spelling of WGS 84 longitude/latitude", spelling);
+        }
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_FeaturePayloadDeclaringContrivedNearMissCrs_IsRejected()
+    {
+        // Before #3053 the guard accepted any name CONTAINING "4326" or "CRS84",
+        // so these cleared it while naming a different CRS (or none at all).
+        string[] nearMisses = ["EPSG:43260", "EPSG:14326", "NOT_CRS84", "CRS84_LOCAL", "my-4326-grid"];
+
+        for (var i = 0; i < nearMisses.Length; i++)
+        {
+            var nearMiss = nearMisses[i];
+            var executor = CreateExecutor(
+                new StubHttpHandler(_ => JsonResponse(FeaturePayloadDeclaringCrs(nearMiss))),
+                provider: "http");
+            var context = CreateContext($"op-crs-near-miss-{i}");
+
+            var result = await executor.ExecuteAsync(
+                CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed,
+                "'{0}' does not name WGS 84", nearMiss);
+            result.ErrorMessage.Should().Contain("non-WGS 84 CRS");
+            await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+        }
+    }
+
+    private static string FeaturePayloadDeclaringCrs(string crsName)
+        => $$$"""
+            {"outputType":"features","features":{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"{{{crsName}}}"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{}}]}}
+            """;
+
+    [UnitTest]
     public async Task ExecuteAsync_ModelTagWithWrongFieldType_IsNotTreatedAsGeoreferenced()
     {
         // ModelPixelScale declared as SHORT rather than DOUBLE: reading 16 bytes

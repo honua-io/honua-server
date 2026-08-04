@@ -64,6 +64,13 @@ internal sealed class OidcClaimsTransformation(
     ];
 
     /// <summary>
+    /// Returns whether <paramref name="claimType"/> is framework-owned authorization
+    /// provenance that an issuer or custom mapping must not populate.
+    /// </summary>
+    internal static bool IsReservedProvenanceClaimType(string? claimType)
+        => claimType is not null && ReservedProvenanceClaimTypes.Contains(claimType);
+
+    /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
     /// </summary>
     /// <param name="principal">The claims principal from authentication.</param>
@@ -251,6 +258,16 @@ internal sealed class OidcClaimsTransformation(
         {
             foreach (var mapping in _options.ClaimsMapping.CustomMappings)
             {
+                // Validation rejects this configuration for operator feedback, but keep the
+                // application path fail-closed too. Tests and custom IOptions providers can
+                // bypass validation, and allowing a mapping to recreate these markers after
+                // RemoveReservedProvenanceClaims ran would let provider-controlled values choose
+                // the fallback roles/tenant persisted in a portal token.
+                if (IsReservedProvenanceClaimType(mapping.Value))
+                {
+                    continue;
+                }
+
                 var sourceValue = identity.FindFirst(mapping.Key)?.Value;
                 if (!string.IsNullOrEmpty(sourceValue) && !identity.HasClaim(c => c.Type == mapping.Value))
                 {

@@ -493,6 +493,42 @@ public class OidcAuthenticationOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_CustomMappingsTargetingReservedProvenanceClaims_ReturnsFail()
+    {
+        var reservedTargets = new[]
+        {
+            OidcClaimsTransformation.RolesFromClaimsMappingClaimType,
+            OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType,
+            OidcClaimsTransformation.TenantFromClaimsMappingClaimType,
+        };
+
+        foreach (var reservedTarget in reservedTargets)
+        {
+            var options = new OidcAuthenticationOptions
+            {
+                Enabled = false,
+                DefaultRole = "user",
+                AdminRoles = ["admin"],
+                ClaimsMapping = new ClaimsMappingOptions
+                {
+                    CustomMappings = new Dictionary<string, string>
+                    {
+                        ["provider_controlled_claim"] = reservedTarget,
+                    },
+                },
+            };
+
+            var result = _validator.Validate(null, options);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains(
+                result.Failures ?? Array.Empty<string>(),
+                failure => failure.Contains(reservedTarget, StringComparison.Ordinal)
+                    && failure.Contains("reserved Honua provenance claim", StringComparison.Ordinal));
+        }
+    }
+
+    [UnitTest]
     public void Validate_NullOptions_ThrowsArgumentNullException()
     {
         // Act & Assert
