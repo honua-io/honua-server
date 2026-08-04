@@ -164,11 +164,17 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var correlation = $"ws-snapshot-delta-{Guid.NewGuid():N}";
         await ApplyEditAsync(correlation, cts.Token);
 
+        // This admin socket carries both the implicit "default" subscription and the
+        // explicit "snap" one, and each delivers the edit on its own independent stream
+        // with its own subscription-local sequence. Select the delta for "snap" so the
+        // sequence-continuity assertion is scoped to the subscription whose snapshot we
+        // counted; the "default" delta is a separate stream starting at 0.
         JsonElement? delta = null;
         while (!cts.IsCancellationRequested)
         {
             var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
-            if (frame.GetProperty("type").GetString() == FeatureChange)
+            if (frame.GetProperty("type").GetString() == FeatureChange
+                && frame.GetProperty("subscriptionId").GetString() == "snap")
             {
                 delta = frame;
                 break;
@@ -496,7 +502,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion()
     {
-        const string Digest = "sha256:" + "ab12cd34" + "ef56ab78" + "90abcdef" + "1234567890abcdef1234567890abcdef1234";
+        const string Digest = "sha256:" + "ab12cd34" + "ef56ab78" + "90abcdef"
+            + "1234567890abcdef" + "1234567890abcdef" + "12345678";
         var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
         {
             ["Deployment:ImageDigest"] = Digest
@@ -1396,8 +1403,12 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                         new ArraySegment<byte>(buffer),
                         cancellationToken);
                 }
-                catch (WebSocketException)
+                catch (Exception ex) when (ex is WebSocketException or IOException or ObjectDisposedException)
                 {
+                    // A fail-closed server close surfaces through the in-memory TestHost transport
+                    // either as a clean Close frame or as an abrupt socket teardown
+                    // (IOException wrapping ObjectDisposedException). Both mean "closed without
+                    // handing off another delta", which is exactly what these gap tests assert.
                     return false;
                 }
 
