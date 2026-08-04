@@ -6,8 +6,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 namespace Honua.Protocols.GeoServices.MapServer;
 
 /// <summary>
-/// Resolves the deterministic, protocol-specific publication set shared by synchronous and
-/// durable MapServer execution paths.
+/// Resolves the deterministic, per-numeric-ID publication set shared by every synchronous and
+/// durable MapServer execution path (legend, metadata, find, identify, KML, tile export). One
+/// winner is chosen per service-local layer ID — Esri map, then Esri feature, then any other
+/// adapter — so all MapServer surfaces describe the same layers the tile/render path draws.
 /// </summary>
 internal static class MapServerPublicationResolver
 {
@@ -17,20 +19,33 @@ internal static class MapServerPublicationResolver
     {
         var publications = new List<MetadataV2Publication>();
         var seenPublicLayerIds = new HashSet<int>();
-        var mapPublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Where(static publication => publication.PublicationType is (
-                MetadataV2PublicationType.EsriMapLayer or
-                MetadataV2PublicationType.EsriFeatureLayer))
-            .OrderBy(static publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
+
+        // Rank every candidate publication for the service so that a resource exposed
+        // through several protocol adapters under the same service-local numeric ID
+        // (automatic publishing emits, for example, an Esri feature layer plus a STAC
+        // collection) resolves to a single deterministic winner: an explicit Esri map
+        // publication first, then a valid Esri feature publication, then any remaining
+        // adapter. We deliberately do NOT drop a layer whose only publication is
+        // non-Esri: the MapServer render/tile path (ResolveTileLayerDescriptors)
+        // enumerates this same publication set unfiltered, so the legend, metadata,
+        // find, identify and KML surfaces must describe every layer the service
+        // actually renders — otherwise a service whose tiles draw returns an empty
+        // legend (honua-server#3046 regression). Dedupe by numeric ID keeps the
+        // handler/worker dictionary lookups collision-free.
+        var candidatePublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .OrderBy(static publication => publication.PublicationType switch
+            {
+                MetadataV2PublicationType.EsriMapLayer => 0,
+                MetadataV2PublicationType.EsriFeatureLayer => 1,
+                _ => 2,
+            })
             .ThenBy(static publication => publication.Metadata.Id, StringComparer.Ordinal);
 
-        foreach (var publication in mapPublications)
+        foreach (var publication in candidatePublications)
         {
-            // Automatic publishing can expose one resource through several protocol adapters
-            // with the same service-local numeric ID. Prefer an explicit Esri map publication,
-            // fall back to a valid Esri feature publication, and never let dangling graph entries
-            // reserve an ID or reach handler/worker dictionary lookups.
+            // Skip entries without a numeric public ID, dangling entries whose resource
+            // is missing (they must never reserve an ID), and any adapter that would
+            // duplicate an ID already claimed by a higher-ranked publication.
             if (publication.LayerIndex is not int publicLayerId ||
                 snapshot.ResolveResource(publication) is null ||
                 !seenPublicLayerIds.Add(publicLayerId))
