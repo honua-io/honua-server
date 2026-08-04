@@ -12,6 +12,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -39,6 +41,20 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         var emptyGraph = new TestMetadataV2GraphBuilder().Build();
 
         _fixture = new WebAppFixture()
+            // A fresh instance seeds a default layerless "geoprocessing" GPServer service so
+            // the GP facade is drivable out of the box (honua-server#2349, enabled by default
+            // via GeoprocessingSeedHostedService -> GeoprocessingServiceSeeder). That seed
+            // writes a service into the (otherwise empty) graph store at startup, so this
+            // "genuinely empty server" scenario would advertise one GPServer entry and the
+            // zero-services assertion below would fail. Turn the seed off — matching the CITE
+            // conformance compose files (HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false) — so
+            // the graph stays empty and the honua-server#1619 empty-graph path (200, not 500)
+            // is exercised on a truly clean catalog.
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE"] = "false",
+                })))
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IMetadataV2GraphProvider>();
