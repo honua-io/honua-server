@@ -17,5 +17,8 @@
   },
   "optionalDependencies": {
     "@mapbox/vtvalidate": "^0.4.0"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.5"
   }
 }
