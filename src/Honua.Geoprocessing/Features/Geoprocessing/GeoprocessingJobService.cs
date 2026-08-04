@@ -59,7 +59,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
-    private readonly IPrincipalMembershipSource? _principalMembershipSource;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -78,11 +77,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
-        IOptions<RbacOptions>? rbacOptions = null,
-        IPrincipalMembershipSource? principalMembershipSource = null)
+        IOptions<RbacOptions>? rbacOptions = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
-        _principalMembershipSource = principalMembershipSource;
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
@@ -143,7 +140,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 new GeoprocessingLayerAccessGuard(
                     httpContextAccessor ?? new HttpContextAccessor(), serviceScopeFactory, logger),
                 httpContextAccessor ?? new HttpContextAccessor(),
-                logger),
+                logger,
+                principalMembershipSource),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
             new CustomCodeJobSubmissionGate(
@@ -154,8 +152,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             executorOptions,
             jobStore,
             limitsOptions,
-            rbacOptions: null,
-            principalMembershipSource: principalMembershipSource)
+            rbacOptions: null)
     {
     }
 
@@ -369,11 +366,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // it on the proposal, so a job resumed hours later still resolves the ORIGINAL
         // submitter's RLS predicate and field mask rather than the identity-only principal
         // the resume path reconstructs from Audit.RequestedBy.
-        var membershipResult = await ResolveSubmitterSecurityContextAsync(
+        var membershipResult = await _authorizer.ResolveSubmitterSecurityContextAsync(
                 principal,
                 submitterSecurityContext,
                 inheritsSubmitterSecurityContext,
                 reportSnapshotFallback: resumingApproved,
+                rbacOptions: _rbacOptions,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         var resolvedSecurityContext = membershipResult.Context;
@@ -1099,111 +1097,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 submitterSecurityContext,
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Resolves the submitter snapshot to pin on the job, distinguishing the two cases a bare
-    /// <c>??=</c> conflated (#3068 review follow-up).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// When <paramref name="inherits"/> is <see langword="false"/> the caller IS the submitter
-    /// (every ordinary adapter: GPServer, OGC Processes, MCP, AnalysisContent run/rerun), so
-    /// capturing live from <paramref name="principal"/> is exactly right.
-    /// </para>
-    /// <para>
-    /// When <paramref name="inherits"/> is <see langword="true"/> the snapshot must come from a
-    /// durable record written at the ORIGINAL submission — a workflow run's
-    /// <c>Audit.SubmitterSecurityContext</c>, or an approval proposal's persisted payload — and
-    /// <paramref name="principal"/> is a synthetic stand-in that must never be captured from.
-    /// Falling back to capture here is a privilege escalation, not a convenience: the workflow
-    /// principal is the orchestrator identity carrying <c>role=admin</c> (every step job would
-    /// read with ADMIN row/field visibility), and the approval-resume principal carries only a
-    /// name (zero role claims match zero RLS policies, and the row-level security filter source
-    /// returns no filter when no policy matches — an UNRESTRICTED read). Both produce a
-    /// non-null snapshot that sails past the missing-snapshot
-    /// guards at the read seam, so the refusal has to happen here.
-    /// </para>
-    /// <para>
-    /// This is reachable only for records persisted BEFORE the snapshot field existed. Those
-    /// workflow runs and approval proposals must be resubmitted; the PR's release-impact section
-    /// documents it.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="GeoprocessingAuthorizationException">
-    /// Thrown when an inherited snapshot is required but absent.
-    /// </exception>
-    private async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
-        ClaimsPrincipal principal,
-        JobSecurityContext? inherited,
-        bool inherits,
-        bool reportSnapshotFallback,
-        CancellationToken cancellationToken)
-    {
-        if (!inherits)
-        {
-            // Record managed provenance while the submitter is resolvable, so a deferred approval
-            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
-            var membershipManaged = await JobSecurityContextCapture
-                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
-                .ConfigureAwait(false);
-            return new JobSecurityContextMembershipResult(
-                _authorizer.CaptureSecurityContext(principal, _rbacOptions, membershipManaged),
-                JobSecurityContextMembershipStatus.Current);
-        }
-
-        var snapshot = inherited ?? throw new GeoprocessingAuthorizationException(
-                requiresAuthentication: false,
-                "This submission inherits its row/field security identity from a record that predates "
-                + "the submitter security context, so the original submitter's row-level security and "
-                + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
-                OperatorResourceType.Process,
-                OperatorOperation.Execute);
-
-        var result = await JobSecurityContextCapture
-            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, _rbacOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback && reportSnapshotFallback)
-        {
-            GeoprocessingServiceLog.SubmitterMembershipSnapshotFallback(
-                _logger,
-                snapshot.PrincipalId ?? "unknown");
-        }
-        else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
-        {
-            GeoprocessingServiceLog.SubmitterMembershipInactive(
-                _logger,
-                snapshot.PrincipalId ?? "unknown");
-            throw new GeoprocessingAuthorizationException(
-                requiresAuthentication: false,
-                "The submitter identity is no longer active, so this deferred operation cannot resume.",
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                AuthorizationDenialReason.StalePrincipalMembership);
-        }
-        else if (result.HasRemovedRoles)
-        {
-            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
-                _logger,
-                snapshot.PrincipalId ?? "unknown");
-            throw new GeoprocessingAuthorizationException(
-                requiresAuthentication: false,
-                "The submitter's current role membership no longer includes every role captured "
-                + "by this deferred operation, so its row-level security and field masking cannot "
-                + "be safely relaxed.",
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                AuthorizationDenialReason.StalePrincipalMembership);
-        }
-        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
-        {
-            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
-                _logger,
-                snapshot.PrincipalId ?? "unknown");
-        }
-
-        return result;
     }
 
     public async Task<ExecutionJobRecord> ResumeApprovedJobAsync(

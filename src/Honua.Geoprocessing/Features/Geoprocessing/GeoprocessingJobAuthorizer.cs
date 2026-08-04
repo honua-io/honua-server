@@ -6,6 +6,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 
@@ -28,13 +29,16 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
     private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IPrincipalMembershipSource? _principalMembershipSource;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
     /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
     /// (honua-server#2851), the generic per-layer access authorizer (#3046), and the enrichment
-    /// layer-binding guard (#2283/#3043).
+    /// layer-binding guard (#2283/#3043). The optional managed-membership source (honua-server#3081)
+    /// backs the deferred-submitter revalidation this gate owns; it stays behind this collaborator so
+    /// the job service does not carry it as a separate cross-cutting dependency.
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
@@ -43,7 +47,8 @@ internal sealed class GeoprocessingJobAuthorizer
         ILayerAccessAuthorizer layerAccessAuthorizer,
         GeoprocessingLayerAccessGuard layerAccessGuard,
         IHttpContextAccessor httpContextAccessor,
-        ILogger<GeoprocessingJobService> logger)
+        ILogger<GeoprocessingJobService> logger,
+        IPrincipalMembershipSource? principalMembershipSource = null)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
@@ -51,6 +56,7 @@ internal sealed class GeoprocessingJobAuthorizer
         _layerAccessAuthorizer = layerAccessAuthorizer;
         _layerAccessGuard = layerAccessGuard;
         _httpContextAccessor = httpContextAccessor;
+        _principalMembershipSource = principalMembershipSource;
         _logger = logger;
     }
 
@@ -67,6 +73,115 @@ internal sealed class GeoprocessingJobAuthorizer
         var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
             .GetService<ITenantContext>();
         return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
+    }
+
+    /// <summary>
+    /// Resolves the submitter snapshot to pin on the job, distinguishing the two cases a bare
+    /// <c>??=</c> conflated (#3068 review follow-up). Owned here, behind the authorization gate,
+    /// because it is a submitter-identity/role-membership decision — the same seam that captures the
+    /// context and revalidates deferred role membership against the managed-membership source — so
+    /// the job service does not carry that source as a separate cross-cutting dependency.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="false"/> the caller IS the submitter
+    /// (every ordinary adapter: GPServer, OGC Processes, MCP, AnalysisContent run/rerun), so
+    /// capturing live from <paramref name="principal"/> is exactly right.
+    /// </para>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="true"/> the snapshot must come from a
+    /// durable record written at the ORIGINAL submission — a workflow run's
+    /// <c>Audit.SubmitterSecurityContext</c>, or an approval proposal's persisted payload — and
+    /// <paramref name="principal"/> is a synthetic stand-in that must never be captured from.
+    /// Falling back to capture here is a privilege escalation, not a convenience: the workflow
+    /// principal is the orchestrator identity carrying <c>role=admin</c> (every step job would
+    /// read with ADMIN row/field visibility), and the approval-resume principal carries only a
+    /// name (zero role claims match zero RLS policies, and the row-level security filter source
+    /// returns no filter when no policy matches — an UNRESTRICTED read). Both produce a
+    /// non-null snapshot that sails past the missing-snapshot
+    /// guards at the read seam, so the refusal has to happen here.
+    /// </para>
+    /// <para>
+    /// This is reachable only for records persisted BEFORE the snapshot field existed. Those
+    /// workflow runs and approval proposals must be resubmitted; the PR's release-impact section
+    /// documents it.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GeoprocessingAuthorizationException">
+    /// Thrown when an inherited snapshot is required but absent.
+    /// </exception>
+    public async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
+        ClaimsPrincipal principal,
+        JobSecurityContext? inherited,
+        bool inherits,
+        bool reportSnapshotFallback,
+        RbacOptions rbacOptions,
+        CancellationToken cancellationToken)
+    {
+        if (!inherits)
+        {
+            // Record managed provenance while the submitter is resolvable, so a deferred approval
+            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
+            return new JobSecurityContextMembershipResult(
+                CaptureSecurityContext(principal, rbacOptions, membershipManaged),
+                JobSecurityContextMembershipStatus.Current);
+        }
+
+        var snapshot = inherited ?? throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "This submission inherits its row/field security identity from a record that predates "
+                + "the submitter security context, so the original submitter's row-level security and "
+                + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+        var result = await JobSecurityContextCapture
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, rbacOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback && reportSnapshotFallback)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipSnapshotFallback(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipInactive(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter identity is no longer active, so this deferred operation cannot resume.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.HasRemovedRoles)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter's current role membership no longer includes every role captured "
+                + "by this deferred operation, so its row-level security and field masking cannot "
+                + "be safely relaxed.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+
+        return result;
     }
 
     /// <summary>
