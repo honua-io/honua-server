@@ -4276,6 +4276,7 @@
       "protocol": "http-route",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AdvertisesRolledUpContractVersionsForProtocolSurfaces",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAdminWithEnvironmentAndWorkspace_ReturnsFilteredManifest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",

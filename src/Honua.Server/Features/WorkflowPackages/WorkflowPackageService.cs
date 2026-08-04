@@ -7,18 +7,14 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
-using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Orchestration;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -31,9 +27,7 @@ internal sealed class WorkflowPackageService(
     IWorkflowDefinitionStore? workflowDefinitionStore = null,
     WorkflowOrchestrationEngine? orchestrationEngine = null,
     IMetadataReleaseService? metadataReleaseService = null,
-    IOptions<RbacOptions>? rbacOptions = null,
-    ITenantContext? tenantContext = null,
-    IPrincipalMembershipSource? principalMembershipSource = null)
+    WorkflowAuthorSecurityContextCapturer? authorSecurityContextCapturer = null)
 {
     /// <summary>
     /// Default source environment recorded on the metadata release package emitted when a
@@ -310,17 +304,16 @@ internal sealed class WorkflowPackageService(
             // real principal is in hand for a scheduled workflow. Cron and event ticks create
             // runs under the synthesized orchestrator identity (role=admin), so without this the
             // run would either inherit admin visibility or, after the fail-closed change, be
-            // refused outright (honua-server#3068 review).
-            // Record managed provenance while the author is resolvable, so a later triggered run on
-            // a replica that cannot re-resolve them fails closed rather than trusting the captured
-            // roles (honua-server#3081).
-            var authorMembershipManaged = await JobSecurityContextCapture
-                .IsManagedMembershipAsync(principal, principalMembershipSource, cancellationToken)
-                .ConfigureAwait(false);
+            // refused outright (honua-server#3068 review). The capture — including the
+            // managed-membership marker that lets a later triggered run fail closed
+            // (honua-server#3081) — is delegated to the author-security-context capturer, which
+            // owns the RBAC/tenant/membership collaborators the capture needs.
+            var capturer = authorSecurityContextCapturer ?? new WorkflowAuthorSecurityContextCapturer();
             definition = definition with
             {
-                AuthorSecurityContext = JobSecurityContextCapture.Capture(
-                    principal, rbacOptions?.Value ?? new RbacOptions(), tenantContext, authorMembershipManaged)
+                AuthorSecurityContext = await capturer
+                    .CaptureAsync(principal, cancellationToken)
+                    .ConfigureAwait(false)
             };
             await workflowDefinitionStore.SetAsync(definition, cancellationToken).ConfigureAwait(false);
         }
