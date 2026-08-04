@@ -504,7 +504,12 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2Service? service)
         => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
 
-    private static MetadataV2Service? ResolveStreamService(
+    /// <summary>
+    /// Resolves a service by public name or catalog id. Internal rather than private so the
+    /// controlled-conformance workflow in this slice resolves its dedicated source through the
+    /// same catalog lookup the subscription path uses, instead of a second one that could drift.
+    /// </summary>
+    internal static MetadataV2Service? ResolveStreamService(
         MetadataV2GraphSnapshot snapshot,
         string serviceId)
     {
@@ -523,7 +528,11 @@ internal static partial class FeatureStreamEndpoints
             string.Equals(candidate.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static StreamLayerDescriptor? ResolveStreamLayer(
+    /// <summary>
+    /// Resolves one layer of a service (or of the whole catalog). Internal for the same reason
+    /// as <see cref="ResolveStreamService"/>.
+    /// </summary>
+    internal static StreamLayerDescriptor? ResolveStreamLayer(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
         int layerId)
@@ -616,7 +625,12 @@ internal static partial class FeatureStreamEndpoints
                 StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
 
-    private sealed record StreamLayerDescriptor(
+    /// <summary>
+    /// Catalog projection of one streamable layer: the canonical resource, its owning service
+    /// and publication, the storage-layer handle reads and writes address, and the public layer
+    /// index clients use.
+    /// </summary>
+    internal sealed record StreamLayerDescriptor(
         MetadataV2Resource Resource,
         MetadataV2Service? Service,
         MetadataV2Publication? Publication,

@@ -95,7 +95,7 @@ internal static partial class FeatureStreamEndpoints
         // resume cursor has fallen outside the retained window (#3038 REQ-001).
         string? snapshotReason = null;
         if (addDefaultSubscription &&
-            mode == FeatureStreamSubscriptionMode.Snapshot &&
+            IsSnapshotMode(mode) &&
             subscriptionFilter is StreamSubscriptionFilter)
         {
             try
@@ -119,7 +119,7 @@ internal static partial class FeatureStreamEndpoints
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
-                    new WebSocketSnapshotSink(webSocket, session.WriteLock),
+                    CreateWebSocketSnapshotSink(mode, webSocket, session.WriteLock),
                     session.SessionId,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
                     defaultSubscriptionGeneration,
@@ -811,7 +811,7 @@ internal static partial class FeatureStreamEndpoints
         // Snapshot-then-delta decision runs before the subscription is registered so the
         // add can be paused for the whole baseline-plus-catch-up window.
         string? snapshotReason = null;
-        if (mode == FeatureStreamSubscriptionMode.Snapshot)
+        if (IsSnapshotMode(mode))
         {
             try
             {
@@ -891,7 +891,7 @@ internal static partial class FeatureStreamEndpoints
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
-                    new WebSocketSnapshotSink(webSocket, session.WriteLock),
+                    CreateWebSocketSnapshotSink(mode, webSocket, session.WriteLock),
                     session.SessionId,
                     subscriptionId,
                     subscriptionGeneration,

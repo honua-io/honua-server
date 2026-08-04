@@ -24,6 +24,12 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/streaming/features/sessions"),
         new("DELETE", "/api/v1/admin/streaming/features/sessions/{sessionId}"),
 
+        // v1 controlled-conformance mutation endpoints (#3038)
+        new("POST", "/api/v1/streaming/conformance/runs"),
+        new("POST", "/api/v1/streaming/conformance/runs/{runId}/mutations"),
+        new("DELETE", "/api/v1/streaming/conformance/runs/{runId}"),
+        new("POST", "/api/v1/admin/streaming/conformance/reset"),
+
         new("GET", "/api/v1/admin/operations/geocoding/providers"),
         new("GET", "/api/v1/admin/operations/geocoding/configuration"),
 

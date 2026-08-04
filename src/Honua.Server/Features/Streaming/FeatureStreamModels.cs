@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Honua.Server.Features.Streaming;
 
 /// <summary>
@@ -174,11 +177,26 @@ internal enum FeatureStreamSubscriptionMode
     Delta,
 
     /// <summary>
-    /// Snapshot-then-delta delivery: a complete baseline snapshot is emitted before any
-    /// live mutation, and a replacement snapshot is emitted instead of deltas when a
-    /// supplied replay cursor has fallen outside the retained window.
+    /// Snapshot-then-delta delivery with <b>streamed</b> baseline framing: the baseline is
+    /// written as <c>snapshot-begin</c>, one <c>snapshot-feature</c> per admitted feature,
+    /// then <c>snapshot-end</c>, and a replacement snapshot is emitted instead of deltas
+    /// when a supplied replay cursor has fallen outside the retained window. Each frame
+    /// consumes one subscription-local sequence, so a large baseline never has to be
+    /// buffered whole on either side.
     /// </summary>
-    Snapshot
+    Snapshot,
+
+    /// <summary>
+    /// Snapshot-then-delta delivery with <b>batched</b> baseline framing: the whole
+    /// baseline is written as a single <c>snapshot</c> frame carrying a <c>features</c>
+    /// array, consuming exactly one subscription-local sequence. Boundary cursor,
+    /// replacement-snapshot reasons, truncation reporting, and delta resumption are
+    /// identical to <see cref="Snapshot"/> — only the framing differs. This is the
+    /// vocabulary the <c>@honua/sdk-js</c> realtime client reduces natively, so a
+    /// snapshot-plus-delta contract can be verified end to end without a client-side
+    /// re-framing shim (#3038).
+    /// </summary>
+    SnapshotThenDelta
 }
 
 /// <summary>
@@ -312,6 +330,113 @@ internal sealed record FeatureStreamSnapshotEndFrame
 }
 
 /// <summary>
+/// Batched baseline frame emitted by <see cref="FeatureStreamSubscriptionMode.SnapshotThenDelta"/>.
+/// Carries the entire baseline in one frame and therefore consumes exactly one
+/// subscription-local sequence, so the first delta continues at <c>sequence + 1</c>.
+/// </summary>
+internal sealed record FeatureStreamSnapshotFrame
+{
+    /// <summary>Frame type identifier.</summary>
+    public string Type { get; init; } = "snapshot";
+
+    /// <summary>Identifier correlating this snapshot with its server-side log records.</summary>
+    public required string SnapshotId { get; init; }
+
+    /// <summary>Subscription this snapshot belongs to.</summary>
+    public required string SubscriptionId { get; init; }
+
+    /// <summary>Subscription-local monotonic sequence.</summary>
+    public required long Sequence { get; init; }
+
+    /// <summary>
+    /// Global event-store position captured before the baseline read began. Every delta
+    /// with a cursor greater than this value is delivered after this frame.
+    /// </summary>
+    public required long Cursor { get; init; }
+
+    /// <summary>Why the snapshot was emitted. See <see cref="FeatureStreamSnapshotReasons"/>.</summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// Always true: a Honua baseline replaces the client's live set rather than merging
+    /// into it. Emitted explicitly because a merging snapshot cannot establish a resume
+    /// baseline and clients must be able to tell the two apart without inference.
+    /// </summary>
+    public bool Replace { get; init; } = true;
+
+    /// <summary>Service scope of the snapshot, when the subscription is service-scoped.</summary>
+    public string? ServiceId { get; init; }
+
+    /// <summary>Layer scope of the snapshot.</summary>
+    public required int[] LayerIds { get; init; }
+
+    /// <summary>Number of features carried by <see cref="Features"/>.</summary>
+    public required long FeatureCount { get; init; }
+
+    /// <summary>
+    /// Whether the baseline is complete. False when the configured snapshot feature or
+    /// scan bound was reached first — the client must not treat a truncated baseline as
+    /// authoritative state.
+    /// </summary>
+    public required bool Complete { get; init; }
+
+    /// <summary>The baseline itself.</summary>
+    public required FeatureStreamSnapshotFeature[] Features { get; init; }
+
+    /// <summary>Server timestamp.</summary>
+    public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// One feature of a batched baseline. The identity fields mirror the delta envelope
+/// exactly (<c>featureId</c> string form as the id, <c>serviceId</c> as the source id) so a
+/// client keys the baseline record and its later deltas identically.
+/// </summary>
+internal sealed record FeatureStreamSnapshotFeature
+{
+    /// <summary>Feature object identifier in string form, matching the delta envelope's <c>featureId</c>.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>Service the feature belongs to, matching the delta envelope's <c>serviceId</c>.</summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>Layer the feature belongs to.</summary>
+    public required int LayerId { get; init; }
+
+    /// <summary>CRS identifier for the feature geometry, when resolvable.</summary>
+    public string? GeometryCrs { get; init; }
+
+    /// <summary>The feature itself, as GeoJSON.</summary>
+    public required FeatureStreamSnapshotGeoJsonFeature Feature { get; init; }
+}
+
+/// <summary>
+/// GeoJSON projection of one baseline feature, shaped exactly like the after-image the
+/// delta envelope projects (<c>type</c>/<c>id</c>/<c>geometry</c>/<c>properties</c>) so the
+/// baseline and the deltas that follow it describe a record the same way.
+/// </summary>
+internal sealed record FeatureStreamSnapshotGeoJsonFeature
+{
+    /// <summary>GeoJSON object type.</summary>
+    public string Type { get; init; } = "Feature";
+
+    /// <summary>Feature identifier.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// GeoJSON geometry, or null when the feature has none. Written even when null:
+    /// a GeoJSON Feature is required to carry the member, and a consumer that must
+    /// distinguish "no geometry" from "geometry withheld" cannot do so if it is dropped.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public JsonElement? Geometry { get; init; }
+
+    /// <summary>Full attribute snapshot. Written even when null, for the same reason as <see cref="Geometry"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public Dictionary<string, JsonElement>? Properties { get; init; }
+}
+
+/// <summary>
 /// Server status frame sent over WebSocket and SSE.
 /// </summary>
 internal sealed record FeatureStreamStatusFrame
@@ -424,8 +549,62 @@ internal sealed record FeatureStreamCapabilitiesResponse
     /// <summary>How <see cref="DeploymentRevision"/> was resolved.</summary>
     public string? DeploymentRevisionSource { get; init; }
 
+    /// <summary>
+    /// The same immutable deployment revision as <see cref="DeploymentRevision"/>, published
+    /// under the field name realtime clients read when they bind retained evidence to the
+    /// exact deployment under review. Both names are emitted: a manifest that advertises the
+    /// revision under a name no client reads is indistinguishable, to that client, from a
+    /// deployment that has no revision at all (#3038).
+    /// </summary>
+    public string? ServerRevision { get; init; }
+
+    /// <summary>
+    /// Controlled-conformance mutation contract, when the deployment provisions one.
+    /// Always present so an anonymous caller can tell "not configured here" from "this
+    /// server does not know the contract"; carries no credential material.
+    /// </summary>
+    public required FeatureStreamConformanceCapability Conformance { get; init; }
+
     /// <summary>Per-layer capability summaries.</summary>
     public required FeatureStreamLayerCapability[] Layers { get; init; }
+}
+
+/// <summary>
+/// Anonymous-safe advertisement of the controlled-conformance mutation contract. Every
+/// field is either a static bound or a counter; nothing here identifies a run, a caller,
+/// or a credential.
+/// </summary>
+internal sealed record FeatureStreamConformanceCapability
+{
+    /// <summary>Whether this deployment provisions a controlled-conformance source.</summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>Dedicated conformance service identifier, when enabled.</summary>
+    public string? ServiceId { get; init; }
+
+    /// <summary>Dedicated conformance layer identifier, when enabled.</summary>
+    public int? LayerId { get; init; }
+
+    /// <summary>Attribute carrying the run-ownership marker on controlled records.</summary>
+    public string? RunIdField { get; init; }
+
+    /// <summary>Maximum number of conformance runs that may hold a lease at once.</summary>
+    public int? MaxConcurrentRuns { get; init; }
+
+    /// <summary>Runs currently holding a lease.</summary>
+    public int? ActiveRuns { get; init; }
+
+    /// <summary>Lease time-to-live in seconds. A run is swept once it expires.</summary>
+    public int? RunTtlSeconds { get; init; }
+
+    /// <summary>Maximum mutations one run may perform.</summary>
+    public int? MaxMutationsPerRun { get; init; }
+
+    /// <summary>Maximum controlled records one run may hold at once.</summary>
+    public int? MaxRecordsPerRun { get; init; }
+
+    /// <summary>Mutation operations the controlled workflow accepts.</summary>
+    public string[]? Operations { get; init; }
 }
 
 /// <summary>

@@ -237,7 +237,8 @@ internal sealed class CapabilityManifestService(
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
             DeploymentEnvironment = hostEnvironment.EnvironmentName,
             DeploymentRevision = identity.Revision,
-            DeploymentRevisionSource = identity.RevisionSource
+            DeploymentRevisionSource = identity.RevisionSource,
+            ServerRevision = identity.Revision
         };
     }
 

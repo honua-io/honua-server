@@ -140,6 +140,7 @@ internal static partial class FeatureStreamEndpoints
     private static async Task<IResult> HandleCapabilities(
         [FromServices] FeatureStreamDependencies deps,
         [FromServices] DeploymentIdentity deploymentIdentity,
+        [FromServices] Conformance.FeatureStreamConformanceRunRegistry conformance,
         HttpContext context)
     {
         var options = deps.Options.Value;
@@ -194,7 +195,7 @@ internal static partial class FeatureStreamEndpoints
             HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
             MaxConcurrentSessions = options.MaxConcurrentSessions,
             DeleteBeforeImages = enabled,
-            Modes = enabled ? [DeltaModeValue, SnapshotModeValue] : [],
+            Modes = enabled ? [DeltaModeValue, SnapshotModeValue, SnapshotThenDeltaModeValue] : [],
             SubscriptionSequence = enabled,
             MaxSnapshotFeatures = options.MaxSnapshotFeatures,
             MaxSnapshotScanRows = options.MaxSnapshotScanRows,
@@ -203,6 +204,9 @@ internal static partial class FeatureStreamEndpoints
             ServerVersion = deploymentIdentity.ReleaseVersion,
             DeploymentRevision = deploymentIdentity.Revision,
             DeploymentRevisionSource = deploymentIdentity.RevisionSource,
+            // Published under both names on purpose: see FeatureStreamCapabilitiesResponse.ServerRevision.
+            ServerRevision = deploymentIdentity.Revision,
+            Conformance = conformance.DescribeCapability(),
             Layers = layerCapabilities
         };
 

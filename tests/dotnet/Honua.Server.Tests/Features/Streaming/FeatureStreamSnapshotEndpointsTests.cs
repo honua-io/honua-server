@@ -99,6 +99,138 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             "deltas resume strictly after the captured baseline cursor");
     }
 
+    // ── REQ-001/002/003: batched baseline framing (mode=snapshot-then-delta) ────
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
+        var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+
+        var frame = await ReadUntilEventAsync(reader, "snapshot", cts.Token);
+        frame.Should().NotBeNull("snapshot-then-delta batches the whole baseline into one frame");
+        var snapshot = frame!.Value;
+
+        snapshot.GetProperty("type").GetString().Should().Be("snapshot");
+        snapshot.GetProperty("reason").GetString().Should().Be("initial");
+        snapshot.GetProperty("replace").GetBoolean().Should().BeTrue(
+            "a merging snapshot cannot establish a resume baseline, so the framing states which it is");
+        snapshot.GetProperty("complete").GetBoolean().Should().BeTrue();
+
+        // The whole baseline consumes exactly ONE subscription-local sequence.
+        snapshot.GetProperty("sequence").GetInt64().Should().Be(0);
+
+        var features = snapshot.GetProperty("features").EnumerateArray().ToList();
+        snapshot.GetProperty("featureCount").GetInt64().Should().Be(features.Count);
+        features.Should().NotBeEmpty();
+
+        foreach (var feature in features)
+        {
+            // Baseline identity must match the delta envelope's identity exactly, or a client
+            // would key the baseline record and its later deltas as two different records.
+            var id = feature.GetProperty("id").GetString();
+            id.Should().NotBeNullOrWhiteSpace();
+            feature.GetProperty("sourceId").GetString().Should().Be(TestServiceId);
+
+            var geoJson = feature.GetProperty("feature");
+            geoJson.GetProperty("type").GetString().Should().Be("Feature");
+            geoJson.GetProperty("id").GetString().Should().Be(id);
+            // Both members are always present, even when null: a GeoJSON Feature must carry
+            // them, and a consumer cannot otherwise distinguish absent from withheld.
+            geoJson.TryGetProperty("geometry", out _).Should().BeTrue();
+            geoJson.TryGetProperty("properties", out _).Should().BeTrue();
+        }
+
+        var baselineCursor = snapshot.GetProperty("cursor").GetInt64();
+
+        var correlation = $"batched-snapshot-{Guid.NewGuid():N}";
+        await ApplyEditAsync(correlation, cts.Token);
+
+        var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+        delta.Should().NotBeNull();
+        delta!.Value.GetProperty("sequence").GetInt64().Should().Be(1,
+            "the first delta continues the batched baseline's single sequence");
+        delta.Value.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation()
+    {
+        var wsClient = _fixture.CreateWebSocketClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        using var ws = await wsClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?clientLabel=ws-batched"),
+            cts.Token);
+
+        // Drain the connect status frame.
+        _ = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+
+        await SendWebSocketJsonAsync(
+            ws,
+            """{"type":"subscribe","subscriptionId":"batched","layerId":0,"mode":"snapshot-then-delta"}""",
+            cts.Token);
+
+        JsonElement snapshot = default;
+        while (!cts.IsCancellationRequested)
+        {
+            var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            if (frame.GetProperty("type").GetString() == "snapshot" &&
+                frame.GetProperty("subscriptionId").GetString() == "batched")
+            {
+                snapshot = frame;
+                break;
+            }
+        }
+
+        snapshot.ValueKind.Should().Be(JsonValueKind.Object);
+        snapshot.GetProperty("sequence").GetInt64().Should().Be(0);
+        snapshot.GetProperty("replace").GetBoolean().Should().BeTrue();
+        snapshot.GetProperty("complete").GetBoolean().Should().BeTrue();
+        snapshot.GetProperty("featureCount").GetInt64()
+            .Should().Be(snapshot.GetProperty("features").GetArrayLength());
+
+        var correlation = $"batched-ws-{Guid.NewGuid():N}";
+        await ApplyEditAsync(correlation, cts.Token);
+
+        JsonElement? delta = null;
+        while (!cts.IsCancellationRequested)
+        {
+            var frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
+            if (frame.GetProperty("type").GetString() == FeatureChange &&
+                frame.GetProperty("subscriptionId").GetString() == "batched")
+            {
+                delta = frame;
+                break;
+            }
+        }
+
+        delta.Should().NotBeNull();
+        delta!.Value.GetProperty("sequence").GetInt64().Should().Be(1,
+            "SSE and WebSocket must expose the same batched-baseline sequence semantics");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_UnknownMode_Returns400ListingTheSupportedModes()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-only");
+        var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "an unsupported mode must never be silently downgraded to change-only delivery");
+    }
+
     // ── REQ-003: identical semantics over WebSocket ─────────────────────────────
 
     [IntegrationTest]

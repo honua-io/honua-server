@@ -139,7 +139,7 @@ internal static partial class FeatureStreamEndpoints
         // Snapshot-then-delta: a baseline replaces the delta stream when the subscription is
         // fresh, or when the supplied resume cursor has fallen outside the retained window.
         string? snapshotReason = null;
-        if (mode == FeatureStreamSubscriptionMode.Snapshot && subscriptionFilter is StreamSubscriptionFilter)
+        if (IsSnapshotMode(mode) && subscriptionFilter is StreamSubscriptionFilter)
         {
             try
             {
@@ -162,7 +162,7 @@ internal static partial class FeatureStreamEndpoints
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
-                    new SseSnapshotSink(context.Response),
+                    CreateSseSnapshotSink(mode, context.Response),
                     session.SessionId,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
                     defaultGeneration,

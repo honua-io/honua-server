@@ -73,6 +73,7 @@ using Honua.PackageReview;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Operations.Status;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
@@ -1509,6 +1510,7 @@ app.MapGeocodingOperationsEndpoints();
 
 // Configure feature-change streaming transport (#501)
 app.MapFeatureStreamEndpoints();
+app.MapFeatureStreamConformanceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)
 app.MapCspViolationReportEndpoint();

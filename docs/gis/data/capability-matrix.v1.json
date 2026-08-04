@@ -28,10 +28,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 368,
-      "provingTestCount": 998,
+      "entryCount": 369,
+      "provingTestCount": 999,
       "maturity": {
-        "implemented": 368
+        "implemented": 369
       },
       "noSurface": null,
       "cite": [],
@@ -658,7 +658,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 16,
+      "provingTestCount": 17,
       "maturity": {
         "implemented": 2
       },
@@ -2320,10 +2320,10 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "entryCount": 2,
-      "provingTestCount": 64,
+      "entryCount": 5,
+      "provingTestCount": 82,
       "maturity": {
-        "implemented": 2
+        "implemented": 5
       },
       "noSurface": null,
       "cite": [],
