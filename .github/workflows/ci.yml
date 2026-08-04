@@ -696,11 +696,13 @@ jobs:
     # protocol-split projects' Fast tier plus the previously-orphaned
     # DuckDB/Plugins/ArcGisRest/Oracle/Postgres.Security/Worker.Gdal/MySql
     # projects (an additional ~60m of step-level budget; see the "Run .NET
-    # Tests (...)" steps below for the per-group rationale). Step-level
-    # timeouts still bound each individual run; this just keeps the
-    # orchestrator from cancelling the job before the steps get to fail
-    # naturally (#1144).
-    timeout-minutes: 100
+    # Tests (...)" steps below for the per-group rationale), then the #58
+    # follow-up wiring the SQL/warehouse provider UNIT suites
+    # (SqlServer/Snowflake/Redshift/Databricks, integration classes excluded;
+    # +15m step budget, ~a few min real). Step-level timeouts still bound each
+    # individual run; this just keeps the orchestrator from cancelling the job
+    # before the steps get to fail naturally (#1144).
+    timeout-minutes: 110
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -1014,6 +1016,52 @@ jobs:
             --logger "trx;LogFileName=mysql-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
+
+      - name: Run .NET Tests (SQL/Warehouse Provider Units)
+        # #58 (make-gates-real follow-up to #2943): the four SQL/warehouse
+        # provider test projects — Honua.SqlServer.Tests,
+        # Honua.Snowflake.Tests, Honua.Redshift.Tests, Honua.Databricks.Tests —
+        # were referenced ONLY by the creds-gated nightly warehouse-nightly.yml
+        # lane, so their large CREDENTIAL-FREE unit suites (SQL dialect / query
+        # builder / provider resolution / options-validation / statement-flow;
+        # Databricks even stubs its HTTP transport) never gated a PR. This left
+        # them in the exact "referenced but not run on PRs" bucket #2943 fixed
+        # for the DuckDB/MySql/Oracle provider units. Wire the unit subset in
+        # here, excluding each project's live-warehouse integration class
+        # (`FullyQualifiedName!~IntegrationTests` covers
+        # SqlServerFeatureStoreIntegrationTests / SnowflakeFeatureStoreIntegrationTests
+        # / RedshiftFeatureDataAccessIntegrationTests / DatabricksLiveIntegrationTests)
+        # so nothing here needs live credentials or Docker — Redshift's
+        # integration lane in particular spins up a Testcontainers image and is
+        # excluded by name, and no HONUA_TEST_* / *_CONNECTION env is set, so the
+        # RequiredEnvironmentFact / Category-gated cases stay in the nightly lane.
+        # Restore/build is self-contained per project (mirrors the "Orphaned
+        # Unit Projects" step) so correctness never depends on the PR diff
+        # touching these projects. Verified locally before wiring in
+        # (SqlServer 47/47, Snowflake 49/49, Redshift 49/49, Databricks 55/55
+        # passed; all sub-second, no services).
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          projects=(
+            Honua.SqlServer
+            Honua.Snowflake
+            Honua.Redshift
+            Honua.Databricks
+          )
+          for project in "${projects[@]}"; do
+            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
+            echo "::group::${project}.Tests (units — integration excluded)"
+            dotnet build "${csproj}" --no-restore --configuration Release
+            dotnet test "${csproj}" \
+              --no-build \
+              --configuration Release \
+              --filter "FullyQualifiedName!~IntegrationTests" \
+              --logger "trx;LogFileName=${project}-unit-tests.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults
+            echo "::endgroup::"
+          done
 
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
