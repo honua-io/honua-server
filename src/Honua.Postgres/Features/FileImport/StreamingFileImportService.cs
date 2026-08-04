@@ -155,7 +155,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     }
 
     /// <inheritdoc/>
-    public ImportLimits Limits => _limits;
+    // Return a copy: ImportLimits is a mutable record and _limits is the shared live instance, so
+    // handing it out directly would let any caller mutate the service's active safety limits. The
+    // record `with` expression copies every property, giving callers an isolated snapshot
+    // (#3055 review).
+    public ImportLimits Limits => _limits with { };
 
     /// <inheritdoc/>
     public SupportedFileFormat? DetectFormat(string fileName) => _formatDetectionService.DetectFormat(fileName);

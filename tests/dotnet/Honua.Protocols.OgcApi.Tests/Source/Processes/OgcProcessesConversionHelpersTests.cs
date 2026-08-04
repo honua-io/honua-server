@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -87,6 +89,41 @@ public sealed class OgcProcessesConversionHelpersTests
     public void ToOgcStatus_MapsCanonicalToOgcString(ExecutionJobStatus canonical, string expected)
     {
         OgcProcessesConversionHelpers.ToOgcStatus(canonical).Should().Be(expected);
+    }
+
+    [Fact]
+    [Operation(Operations.ProcessExecution)]
+    public void TryParseStep_TypedRasterSource_PreservesBinding()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "stepId": "s1",
+              "kind": "geoprocess",
+              "processId": "surface.slope",
+              "rasterSources": {
+                "source": {
+                  "sourceType": "inline",
+                  "sourceContractVersion": 1,
+                  "version": "inline-v1",
+                  "content": { "sizeBytes": 3, "mediaType": "image/tiff" },
+                  "securityContext": {
+                    "tenantId": "default",
+                    "authorizationSnapshotReference": "request-context"
+                  },
+                  "payload": "AAAA"
+                }
+              }
+            }
+            """);
+
+        var parsed = ProcessEndpoints.TryParseStep(document.RootElement, out var step, out var error);
+
+        parsed.Should().BeTrue(error);
+        step.Should().NotBeNull();
+        var source = step!.RasterSources.Should().ContainKey("source").WhoseValue;
+        var inline = source.Should().BeOfType<InlineRasterSourceDescriptor>().Subject;
+        inline.Payload.Should().Equal(0, 0, 0);
     }
 
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status)

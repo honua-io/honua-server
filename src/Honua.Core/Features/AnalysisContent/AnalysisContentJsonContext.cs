@@ -7,6 +7,7 @@ using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.NlQuery.Domain;
 
 namespace Honua.Core.Features.AnalysisContent;
@@ -17,6 +18,7 @@ namespace Honua.Core.Features.AnalysisContent;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(AnalysisContentItem))]
 [JsonSerializable(typeof(AnalysisContentItem[]))]
@@ -52,6 +54,13 @@ namespace Honua.Core.Features.AnalysisContent;
 [JsonSerializable(typeof(AnalysisPlan))]
 [JsonSerializable(typeof(AnalysisPlanStep))]
 [JsonSerializable(typeof(AnalysisPlanStep[]))]
+[JsonSerializable(typeof(RasterSourceDescriptor))]
+[JsonSerializable(typeof(PostgisRasterSourceDescriptor))]
+[JsonSerializable(typeof(ObjectStoreCogRasterSourceDescriptor))]
+[JsonSerializable(typeof(ObjectStoreZarrRasterSourceDescriptor))]
+[JsonSerializable(typeof(StagedArtifactRasterSourceDescriptor))]
+[JsonSerializable(typeof(InlineRasterSourceDescriptor))]
+[JsonSerializable(typeof(Dictionary<string, RasterSourceDescriptor>))]
 [JsonSerializable(typeof(AnalysisResultPackage))]
 [JsonSerializable(typeof(ArtifactRef))]
 [JsonSerializable(typeof(ArtifactRef[]))]

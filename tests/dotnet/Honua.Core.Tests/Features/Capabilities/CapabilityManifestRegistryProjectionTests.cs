@@ -36,6 +36,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.extent-discovery",
         "temporal.histogram",
         "temporal.time-series-tiles",
+        "temporal.animation-api",
         "sync.offline",
         "realtime.feature-streams",
         "alerts.geofence",

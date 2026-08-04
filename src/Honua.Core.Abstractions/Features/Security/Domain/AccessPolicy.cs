@@ -13,21 +13,21 @@ public sealed record AccessPolicy
     /// <summary>
     /// When true, anonymous access is allowed regardless of other constraints.
     /// </summary>
-    public bool AllowAnonymous { get; init; }
+    public bool AllowAnonymous { get; set; }
 
     /// <summary>
     /// When true, anonymous write access is allowed regardless of other constraints.
     /// </summary>
-    public bool AllowAnonymousWrite { get; init; }
+    public bool AllowAnonymousWrite { get; set; }
 
     /// <summary>
     /// Allowed role names for access (case-insensitive).
     /// </summary>
-    public string[]? AllowedRoles { get; init; }
+    public string[]? AllowedRoles { get; set; }
 
     /// <summary>
     /// Allowed role names for write access (case-insensitive).
     /// Falls back to <see cref="AllowedRoles"/> when not specified.
     /// </summary>
-    public string[]? AllowedWriteRoles { get; init; }
+    public string[]? AllowedWriteRoles { get; set; }
 }

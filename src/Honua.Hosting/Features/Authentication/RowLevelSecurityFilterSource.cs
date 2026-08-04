@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -58,12 +59,14 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var principal = _httpContextAccessor.HttpContext?.User;
+        var principal = ResolvePrincipal();
         if (principal is null)
         {
-            // No request context (e.g. background job) — RLS is a request-scoped
-            // concern, so there is nothing to enforce here. The metadata permanent
-            // filter still applies independently.
+            // No request context and no job-security scope (e.g. tile seeding, an import
+            // worker, a scheduler) — there is no caller to constrain, so RLS has nothing to
+            // enforce here. The metadata permanent filter still applies independently.
+            // Geoprocessing reads never land here: JobSecurityScope is active for the whole
+            // job dispatch, so they either resolve the submitter or fail closed below.
             return null;
         }
 
@@ -264,4 +267,37 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
+    /// <summary>
+    /// Resolves the principal RLS is evaluated against: the live request user when one exists,
+    /// otherwise the submitter snapshot pinned on the executing background job
+    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
+    /// server-internal read with no caller to constrain.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
+    /// cannot be constrained to the submitting caller, so it is refused rather than silently
+    /// returning every row.
+    /// </exception>
+    private ClaimsPrincipal? ResolvePrincipal()
+    {
+        var requestPrincipal = _httpContextAccessor.HttpContext?.User;
+        if (requestPrincipal is not null)
+        {
+            return requestPrincipal;
+        }
+
+        var scope = JobSecurityScope.Current;
+        if (scope is null)
+        {
+            return null;
+        }
+
+        if (scope.Submitter is null)
+        {
+            throw new UnauthorizedAccessException(
+                "This job carries no submitter security context, so row-level security cannot be enforced on its reads.");
+        }
+
+        return JobSecurityContextCapture.Restore(scope.Submitter);
+    }
 }

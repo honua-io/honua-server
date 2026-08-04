@@ -419,18 +419,18 @@ internal sealed class ApiKeyAuthenticationHandler(
             return null;
         }
 
-        if (_secretResolver == null)
+        var resolvedPassword = configuredPassword;
+        if (_secretResolver is not null)
         {
-            return configuredPassword;
+            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
+            if (canResolve)
+            {
+                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
+            }
         }
 
-        var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
-        if (!canResolve)
-        {
-            return configuredPassword;
-        }
-
-        return await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
+        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _authOptions.EnvironmentName);
+        return resolvedPassword;
     }
 
     /// <summary>

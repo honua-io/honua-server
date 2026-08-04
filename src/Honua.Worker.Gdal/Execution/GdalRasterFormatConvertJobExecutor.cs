@@ -12,7 +12,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// <summary>
 /// Native-profile <see cref="IJobExecutor"/> for the catalog
 /// <c>conversion.raster-format</c> process (#2138). Exports a source raster into
-/// another raster format (GTiff, PNG, JPEG, COG) via the real GDAL
+/// another raster format (GTiff — also spelled GeoTIFF/TIFF/TIF — PNG, JPEG —
+/// also spelled JPG — and COG) via the real GDAL
 /// <c>gdal_translate -of &lt;driver&gt;</c> CLI, replacing the previous
 /// validation-only catalog stub. Reads a base64 GeoTIFF source, runs the
 /// translation in an isolated scratch workspace, and publishes the converted
@@ -32,17 +33,42 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
+    private static readonly FormatTarget GeoTiffTarget =
+        new("GTiff", "tif", "image/tiff; application=geotiff", SupportsCompression: true);
+
+    private static readonly FormatTarget JpegTarget =
+        new("JPEG", "jpg", "image/jpeg", SupportsCompression: false);
+
     // Maps the catalog's targetFormat enum onto the gdal_translate -of driver name,
     // the scratch output extension, and the published artifact content type.
-    // Mirrors ProcessPlanValidator.RasterFormatValues so executor + validator agree.
+    //
+    // Mirrors ProcessPlanValidator.RasterFormatValues, which is itself built from
+    // ProcessValueDomains.RasterFormat — the same array the catalog publishes as
+    // targetFormat's AllowedValues. Every alias the plan validator accepts and the
+    // catalog advertises must therefore normalize onto a driver here: the GeoTIFF /
+    // TIFF / TIF spellings all mean the GTiff driver and JPG means JPEG. Without the
+    // aliases an OGC Processes or GPServer client that picks an advertised value
+    // passes catalog and schema validation and then has its job killed at the CLI
+    // boundary with an invalid-format failure (#3048 review). COG stays a distinct
+    // entry because it is a real, separate GDAL driver rather than a spelling of
+    // GTiff. GdalRasterConversionExecutorTests pins the correspondence by driving this
+    // executor with every value of ProcessValueDomains.RasterFormat.
     private static readonly FrozenDictionary<string, FormatTarget> Formats =
         new Dictionary<string, FormatTarget>(StringComparer.OrdinalIgnoreCase)
         {
-            ["GTiff"] = new FormatTarget("GTiff", "tif", "image/tiff; application=geotiff", SupportsCompression: true),
+            ["GTiff"] = GeoTiffTarget,
+            ["GeoTIFF"] = GeoTiffTarget,
+            ["TIFF"] = GeoTiffTarget,
+            ["TIF"] = GeoTiffTarget,
             ["COG"] = new FormatTarget("COG", "tif", "image/tiff; application=geotiff", SupportsCompression: true),
             ["PNG"] = new FormatTarget("PNG", "png", "image/png", SupportsCompression: false),
-            ["JPEG"] = new FormatTarget("JPEG", "jpg", "image/jpeg", SupportsCompression: false),
+            ["JPEG"] = JpegTarget,
+            ["JPG"] = JpegTarget,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    // Rendered from Formats so the rejection message can never advertise a set the
+    // executor does not actually accept.
+    private static readonly string AllowedFormatList = string.Join(", ", Formats.Keys.Order(StringComparer.OrdinalIgnoreCase));
 
     /// <inheritdoc />
     /// <summary>
@@ -90,7 +116,7 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
         {
             return JobExecutionResult.Failed(
                 $"Invalid raster-format inputs: 'targetFormat' value '{targetFormatRaw}' is not in the allowed set " +
-                "(GTiff, PNG, JPEG, COG).");
+                $"({AllowedFormatList}).");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))

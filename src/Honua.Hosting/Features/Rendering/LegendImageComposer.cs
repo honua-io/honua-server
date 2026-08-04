@@ -135,7 +135,7 @@ internal static class LegendImageComposer
     {
         try
         {
-            var typeface = SKTypeface.Default;
+            var typeface = RenderingTypeface.Default;
             return typeface is null ? null : new SKFont(typeface, LabelFontSize);
         }
         catch (Exception ex) when (ex is InvalidOperationException or TypeInitializationException or DllNotFoundException)

@@ -148,10 +148,10 @@ public sealed class ProcessConditionalInputProbeTests
     public void FindAdmissibilityViolations_MappedDiscriminatorBranch_IsNotReported()
     {
         // analytics.cluster-managed maps input/algorithm/k, which executes when the caller
-        // supplies algorithm=kmeans. The probe cannot enumerate 'algorithm' so it pins the
-        // catalog default (dbscan), whose branch demands eps/minPoints. That requirement is
-        // an artefact of the fabricated branch and must not condemn the mapping; the
-        // unverifiable path reports it instead.
+        // supplies algorithm=kmeans. Only violations common to EVERY enumerated branch condemn a
+        // mapping, and the dbscan branch's eps/minPoints demand is one the caller avoids by
+        // choosing kmeans, so nothing is reported here; the branch-requirement path states it
+        // exactly instead (#3048).
         var violations = Probe().FindAdmissibilityViolations(
             "analytics.cluster-managed",
             ["input", "algorithm", "k"]);
@@ -192,11 +192,11 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindAdmissibilityViolations_UnconditionalRequirement_SurvivesAFabricatedBranch()
     {
-        // surface.slope's `units` is an undeclared token domain, so the probe fabricates a
-        // branch for it. Its missing-source failure holds in EVERY branch, though, so it must
-        // still be reported — an earlier rule discounted any violation on a non-Required
-        // parameter, and a member of an exactly-one-of source group is not declared Required
-        // either, so this mapping was certified as merely partial (honua-server#2145 review).
+        // surface.slope's `units` carries a value domain, so the probe walks every branch of it.
+        // The missing-source failure holds in EVERY branch, so it must still be reported — an
+        // earlier rule discounted any violation on a non-Required parameter, and a member of an
+        // exactly-one-of source group is not declared Required either, so this mapping was
+        // certified as merely partial (honua-server#2145 review).
         var violations = Probe().FindAdmissibilityViolations("surface.slope", ["units"]);
 
         violations.Should().NotBeEmpty("no value of 'units' supplies a source raster");
@@ -207,11 +207,10 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindUnverifiableConditionalParameters_SatisfiedSourceGroup_IsNotReported()
     {
-        // Mapping surface.slope's `source` AND `units` still fabricates a branch for `units`,
-        // but `source` already satisfies the exactly-one source group — no value of `units`
-        // makes layerId/rasterId required. Returning every candidate whenever a discriminator
-        // was fabricated downgraded a mapping the submit path accepts (honua-server#2145
-        // review).
+        // `source` already satisfies surface.slope's exactly-one source group — no value of
+        // `units` makes layerId/rasterId required. Returning every candidate whenever a
+        // discriminator was in play downgraded a mapping the submit path accepts
+        // (honua-server#2145 review).
         var unverifiable = Probe().FindUnverifiableConditionalParameters(
             "surface.slope",
             ["source", "units"]);
@@ -336,6 +335,89 @@ public sealed class ProcessConditionalInputProbeTests
                 "the probe may only narrow the static fallback set for '{0}'",
                 definition.ProcessId);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Enumerated value domains give an EXACT per-branch answer (#3048)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public void FindConditionalBranchRequirements_EnumeratedDiscriminator_NamesTheFaultingBranch()
+    {
+        // analytics.cluster-managed maps input/algorithm/eps/minPoints and omits 'k'. Now that
+        // the catalog publishes 'algorithm''s domain the probe can say precisely which branch
+        // faults instead of shrugging at the whole mapping.
+        var requirements = Probe().FindConditionalBranchRequirements(
+            "analytics.cluster-managed",
+            ["input", "algorithm", "eps", "minPoints"]);
+
+        requirements.Should().NotBeEmpty();
+        requirements.Should().OnlyContain(requirement => requirement.ParameterName == "k");
+        requirements.Should().Contain(requirement => requirement.Branch == "algorithm=kmeans");
+        requirements.Should().NotContain(requirement => requirement.Branch == "algorithm=dbscan");
+    }
+
+    [UnitTest]
+    public void FindConditionalBranchRequirements_OppositeBranch_IsReportedToo()
+    {
+        // The mirror case: mapping 'k' but not eps/minPoints faults only on dbscan. Both
+        // directions must be reachable or the enumeration is only visiting the default.
+        var requirements = Probe().FindConditionalBranchRequirements(
+            "analytics.cluster-managed",
+            ["input", "algorithm", "k"]);
+
+        requirements.Select(requirement => requirement.ParameterName)
+            .Should().BeEquivalentTo(["eps", "minPoints"]);
+        requirements.Should().OnlyContain(requirement => requirement.Branch == "algorithm=dbscan");
+    }
+
+    [UnitTest]
+    public void FindConditionalBranchRequirements_MappingCoveringEveryBranch_ReportsNothing()
+    {
+        // Every branch is satisfied, so the mapping is provably executable for every admissible
+        // value of 'algorithm' — the whole point of publishing the domain.
+        var requirements = Probe().FindConditionalBranchRequirements(
+            "analytics.cluster-managed",
+            ["input", "algorithm", "eps", "minPoints", "k"]);
+
+        requirements.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void FindConditionalBranchRequirements_UnconditionalRequirement_IsNotReportedAsABranch()
+    {
+        // With 'algorithm' unmapped the caller can never leave the default branch, so
+        // eps/minPoints are unconditional. FindAdmissibilityViolations already condemns that
+        // mapping; repeating it here would present an impossible tool as a per-branch caveat.
+        var requirements = Probe().FindConditionalBranchRequirements(
+            "analytics.cluster-managed",
+            ["input", "k"]);
+
+        requirements.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void FindConditionalBranchRequirements_UnenumerableDiscriminator_ReportsNothing()
+    {
+        // transform.computed-field's 'op' is deliberately unpublished, so no branch can be
+        // named and the conservative FindUnverifiableConditionalParameters answer stands alone.
+        var requirements = Probe().FindConditionalBranchRequirements(
+            "transform.computed-field",
+            ["input", "target", "op"]);
+
+        requirements.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void FindUnverifiableConditionalParameters_EnumeratedDiscriminator_DefersToTheExactAnswer()
+    {
+        // The conservative and the exact answer must not both fire for the same gap: once the
+        // domain is enumerable the branch-qualified report owns it.
+        var unverifiable = Probe().FindUnverifiableConditionalParameters(
+            "analytics.cluster-managed",
+            ["input", "algorithm", "eps", "minPoints"]);
+
+        unverifiable.Should().BeEmpty();
     }
 
     [UnitTest]

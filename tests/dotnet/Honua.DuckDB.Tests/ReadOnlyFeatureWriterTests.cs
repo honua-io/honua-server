@@ -16,33 +16,36 @@ public class ReadOnlyFeatureWriterTests
     private readonly ReadOnlyFeatureWriter _writer = new("DuckDB");
 
     [Fact]
-    public async Task CreateAsync_ThrowsNotSupported()
+    public async Task CreateAsync_ThrowsReadOnlyFeatureWrite()
     {
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty);
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        // The writer throws the specific ReadOnlyFeatureWriteException (a NotSupportedException)
+        // so FeatureServerEditsHandler can prove a rejected write never partially committed and
+        // release its idempotency reservation. xUnit matches the exact type (#3052).
+        await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() =>
             _writer.CreateAsync(0, feature));
     }
 
     [Fact]
-    public async Task UpdateAsync_ThrowsNotSupported()
+    public async Task UpdateAsync_ThrowsReadOnlyFeatureWrite()
     {
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty);
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() =>
             _writer.UpdateAsync(0, feature));
     }
 
     [Fact]
-    public async Task DeleteAsync_ThrowsNotSupported()
+    public async Task DeleteAsync_ThrowsReadOnlyFeatureWrite()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() =>
             _writer.DeleteAsync(0, 1));
     }
 
     [Fact]
-    public async Task ApplyEditsAsync_ThrowsNotSupported()
+    public async Task ApplyEditsAsync_ThrowsReadOnlyFeatureWrite()
     {
         var batch = FeatureEditBatch.Create([], [], []);
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() =>
             _writer.ApplyEditsAsync(0, batch));
     }
 }

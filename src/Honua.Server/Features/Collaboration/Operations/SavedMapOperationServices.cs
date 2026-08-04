@@ -21,6 +21,9 @@ internal static class SavedMapOperationServices
             new InMemorySavedMapOperationLogRepository(
                 sp.GetRequiredService<ISavedMapOperationConflictPolicy>(),
                 sp.GetService<TimeProvider>()));
+        // Single serialization point for "assign cursor, then publish" so the live fan-out order
+        // always matches the op-log cursor order (honua-server#2999 review).
+        services.TryAddSingleton<SavedMapOperationAppendCoordinator>();
         return services;
     }
 }

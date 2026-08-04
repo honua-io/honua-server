@@ -1,6 +1,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Npgsql;
 
@@ -117,5 +118,42 @@ public sealed class FeatureDataAccessGeometryRequiredMappingTests
         // geometry message; it stays a safe generic error (no provider internals leak).
         FeatureDataAccess.GetSafeEditOperationError(NotNullViolation("name"), "Create")
             .Should().Be("Create failed.");
+    }
+
+    [Fact]
+    public void CreateFailedOperationResult_ServerRejectedStatement_IsKnownNotCommitted()
+    {
+        var result = FeatureDataAccess.CreateFailedOperationResult(
+            NotNullViolation("name"),
+            "Create");
+
+        result.IsSuccess.Should().BeFalse();
+        result.IsCommitOutcomeUnknown.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CreateFailedOperationResult_LocalValidationFailure_IsKnownNotCommitted()
+    {
+        var result = FeatureDataAccess.CreateFailedOperationResult(
+            new ValidationException("invalid"),
+            "Update",
+            objectId: 42);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ObjectId.Should().Be(42);
+        result.IsCommitOutcomeUnknown.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CreateFailedOperationResult_TransportFailure_RemainsUnknown()
+    {
+        var result = FeatureDataAccess.CreateFailedOperationResult(
+            new TimeoutException("acknowledgement lost"),
+            "Delete",
+            objectId: 42);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ObjectId.Should().Be(42);
+        result.IsCommitOutcomeUnknown.Should().BeTrue();
     }
 }

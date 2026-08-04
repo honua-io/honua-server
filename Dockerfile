@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage Dockerfile for Honua Server
-# JIT build for maximum compatibility (AOT via docker/Dockerfile.aot)
+# Auxiliary JIT Dockerfile for development, conformance, and compatibility debugging.
+# Production serving images use docker/Dockerfile.aot; canonical release tags never use this file.
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
@@ -172,8 +172,21 @@ LABEL security.non-root="true" \
       version="1.0" \
       description="Honua Geospatial Feature Server" \
       org.opencontainers.image.source="https://github.com/honua/honua-server" \
-      org.opencontainers.image.description="Production-ready geospatial feature server" \
-      org.opencontainers.image.licenses="Elastic-2.0"
+      org.opencontainers.image.description="Development and compatibility JIT image; use the native-AOT image for production" \
+      org.opencontainers.image.licenses="Elastic-2.0" \
+      honua.runtime.profile="web-debug" \
+      honua.runtime.compilation="jit" \
+      honua.runtime.distribution="non-production"
+
+# Immutable deployment identity (#3038). `.dockerignore` excludes `.git/`, so SourceLink
+# cannot stamp a commit into the published assemblies from inside the build context; the
+# commit SHA is therefore injected here as a runtime environment variable. Placing the ARG
+# in the runtime stage keeps a SHA change from invalidating the expensive build layers.
+# HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
+# so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
+ARG HONUA_GIT_SHA=
+LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
+ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS= \

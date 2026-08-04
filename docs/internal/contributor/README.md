@@ -32,6 +32,7 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Testing
 
 - [TestKit (C#)](testkit.md) — fixtures, builders, assertions, parallel execution, and the operator eval harness/report contract
+- [GeoTIFF Georeferencing Property Tests](geotiff-georeferencing-fuzzing.md) — bounded structured corpus, regression seeds, and opt-in local soak
 - [Public Interface Quality Model](public-interface-quality-model.md) — canonical proof ledger, release evidence rules, and ticket reconciliation for public surfaces
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests

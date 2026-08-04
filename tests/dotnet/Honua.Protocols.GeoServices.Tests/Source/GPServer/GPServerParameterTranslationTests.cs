@@ -231,8 +231,12 @@ public sealed class GPServerParameterTranslationTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public void TranslateInbound_GPChoice_AcceptsAllowedValueCaseInsensitively()
+    public void TranslateInbound_GPChoice_AcceptsAllowedValueCaseInsensitivelyAndNormalizesToCatalogSpelling()
     {
+        // Esri's GP framework matches value lists case-insensitively, so the
+        // adapter does too — but a value the adapter accepted must stay
+        // EXECUTABLE. Canonical validators and executors compare ordinally, so
+        // the accepted choice is rewritten to its catalog spelling (#3053).
         var definition = ChoiceDefinition();
         var input = new Dictionary<string, string>
         {
@@ -241,7 +245,60 @@ public sealed class GPServerParameterTranslationTests
 
         var result = GPServerParameterTranslation.TranslateInbound(input, definition);
 
-        result["target"].Should().Be("GeoJSON");
+        result["target"].Should().Be("geojson");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPChoice_ExactCatalogSpelling_IsPreserved()
+    {
+        var definition = ChoiceDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["target"] = "ewkt"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        result["target"].Should().Be("ewkt");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPChoice_CaseCollidingAllowedValues_RejectsAmbiguousSpelling()
+    {
+        // A catalog declaring two choices differing only by case makes the
+        // normalization target ambiguous. Refuse rather than silently collapse
+        // to whichever was declared first.
+        var definition = CaseCollidingChoiceDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["mode"] = "STRICT"
+        };
+
+        var act = () => GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .Where(ex => ex.Message.Contains("mode", StringComparison.Ordinal)
+                && ex.Message.Contains("more than one allowed value", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPChoice_CaseCollidingAllowedValues_ExactSpellingStillResolves()
+    {
+        var definition = CaseCollidingChoiceDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["mode"] = "Strict"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        result["mode"].Should().Be("Strict");
     }
 
     [UnitTest]
@@ -298,6 +355,27 @@ public sealed class GPServerParameterTranslationTests
                 ValueType = ProcessParameterValueType.Text,
                 Required = true,
                 AllowedValues = ["wkt", "geojson", "wkb", "ewkt"]
+            }
+        ],
+        OutputArtifactKinds = [ArtifactKind.Scalar]
+    };
+
+    private static ProcessDefinition CaseCollidingChoiceDefinition() => new()
+    {
+        ProcessId = "test.colliding-choice",
+        Title = "Test Colliding Choice",
+        Description = "Test",
+        Category = "test",
+        Parameters =
+        [
+            new ProcessParameterSpec
+            {
+                Name = "mode",
+                DisplayName = "Mode",
+                Description = "Two choices differing only by case",
+                ValueType = ProcessParameterValueType.Text,
+                Required = true,
+                AllowedValues = ["Strict", "strict"]
             }
         ],
         OutputArtifactKinds = [ArtifactKind.Scalar]

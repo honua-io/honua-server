@@ -31,6 +31,20 @@ public sealed record WorkflowStepState
     public string? JobId { get; init; }
 
     /// <summary>
+    /// The expanded step plan as the submit-time layer gate authorized it at RUN CREATION,
+    /// carrying that authorization's per-layer bindings.
+    /// </summary>
+    /// <remarks>
+    /// Reconciliation prefers this over re-deriving the plan from the stored definition. For a
+    /// ForEach step the concrete layer/dataset id exists only after expansion, so publication
+    /// saw a placeholder and stamped no binding; submitting the definition's plan therefore
+    /// arrived at the gate unpinned and was refused, breaking every dynamic iteration
+    /// (honua-server#3043 review). <see langword="null"/> on runs created before this field
+    /// existed, which fall back to the definition plan exactly as they did.
+    /// </remarks>
+    public AnalysisPlan? AuthorizedPlan { get; init; }
+
+    /// <summary>
     /// Number of completed submission attempts for this step.
     /// </summary>
     public int AttemptCount { get; init; }

@@ -22,7 +22,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 /// Regression tests for honua-server#1853 — the Esri REST Services Directory
 /// (<c>GET /rest/services</c>) must type each service from the Esri protocols it
 /// actually exposes: vector feature services as <c>FeatureServer</c>, raster/coverage
-/// services as <c>ImageServer</c> (or <c>MapServer</c> for rendered-map services), and
+/// services as <c>ImageServer</c> (or <c>MapServer</c> for rendered-map services),
+/// geoprocessing services as <c>GPServer</c>, and
 /// a service reachable under multiple Esri types once per type — instead of flattening
 /// everything to <c>FeatureServer</c>.
 /// </summary>
@@ -33,6 +34,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     private const string VectorServiceName = "typing-vector";
     private const string RasterServiceName = "typing-raster";
     private const string MultiTypeServiceName = "typing-multi";
+    private const string GpServiceName = "typing-gp";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -83,6 +85,20 @@ public sealed class GeoservicesCatalogServiceTypingTests
         // protocol only.
         services.Should().Contain(type => type == "FeatureServer");
         services.Should().Contain(type => type == "MapServer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_LayerlessGpService_TypedAsGpServer()
+    {
+        var rasterStore = BuildRasterStoreWithRasters();
+
+        await using var fixture = await CreateFixtureAsync(rasterStore);
+
+        var services = await GetServicesByNameAsync(fixture, GpServiceName);
+
+        services.Should().ContainSingle().Which.Should().Be("GPServer");
     }
 
     private static async Task<string[]> GetServicesByNameAsync(WebAppFixture fixture, string serviceName)
@@ -177,6 +193,11 @@ public sealed class GeoservicesCatalogServiceTypingTests
             .AddPublication("pub-typing-multi", "svc-typing-multi", "res-typing-multi",
                 layerIndex: 702, serviceLocalId: "702",
                 publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+
+        // GPServer is service-scoped and must remain discoverable without a layer
+        // publication, matching the default geoprocessing service seeded at startup.
+        builder.AddService("svc-typing-gp", GpServiceName,
+            protocols: [ServiceProtocols.GPServer], accessPolicy: anonymous);
 
         return builder.Build();
     }

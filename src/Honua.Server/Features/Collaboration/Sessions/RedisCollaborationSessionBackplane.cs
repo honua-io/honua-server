@@ -96,6 +96,30 @@ internal sealed partial class RedisCollaborationSessionBackplane
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Reports the ACTIVATION state, not the configuration. <c>StartAsync</c> deliberately
+    /// swallows a failed subscription and leaves the backplane disabled, so returning a
+    /// constant <see langword="true"/> advertised cursors, selections and follow while
+    /// <c>Publish</c> returned immediately and no peer received anything — the same false
+    /// promise the capability derivation exists to prevent (honua-server#2999 review).
+    /// </remarks>
+    public bool SupportsCrossReplicaDelivery => _enabled;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Redis pub/sub broadcasts events but does not serialize the operation-log append with
+    /// publication, so different replicas can publish adjacent cursors out of order.
+    /// </remarks>
+    public bool SupportsOrderedOperationDelivery => false;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Pub/sub has no retained participant registry. A replica that did not observe a prior join
+    /// cannot include that participant in a later snapshot or resolve it as a follow target.
+    /// </remarks>
+    public bool SupportsReplicaWidePresence => false;
+
+    /// <inheritdoc />
     public void Publish(CollaborationEventEnvelope ev)
     {
         var subscriber = _subscriber;

@@ -59,11 +59,11 @@ internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
         return Task.CompletedTask;
     }
 
-    public Task EnsurePlanExecutionTierAuthorizedAsync(
+    public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+        => Task.FromResult(plan);
 
     public Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,

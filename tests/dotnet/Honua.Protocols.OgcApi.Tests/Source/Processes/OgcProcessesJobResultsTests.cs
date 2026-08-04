@@ -188,11 +188,11 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
@@ -332,11 +332,11 @@ public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task EnsurePlanExecutionTierAuthorizedAsync(
+        public Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
             AnalysisPlan plan,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+            => Task.FromResult(plan);
 
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();

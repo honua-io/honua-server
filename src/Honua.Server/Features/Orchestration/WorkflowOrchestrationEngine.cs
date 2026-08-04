@@ -3,11 +3,17 @@
 
 using System.Diagnostics;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Geoprocessing;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Orchestration;
 
@@ -31,6 +37,9 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private readonly IUniversalProgressStore _progressStore;
     private readonly TimeProvider _clock;
     private readonly ILogger<WorkflowOrchestrationEngine> _logger;
+    private readonly RbacOptions _rbacOptions;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IPrincipalMembershipSource? _principalMembershipSource;
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public WorkflowOrchestrationEngine(
@@ -39,14 +48,157 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         IWorkflowJobExecutor jobService,
         IUniversalProgressStore progressStore,
         TimeProvider clock,
-        ILogger<WorkflowOrchestrationEngine> logger)
+        ILogger<WorkflowOrchestrationEngine> logger,
+        IOptions<RbacOptions>? rbacOptions = null,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IPrincipalMembershipSource? principalMembershipSource = null)
     {
+        _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _runStore = runStore;
         _definitionStore = definitionStore;
         _jobService = jobService;
         _progressStore = progressStore;
         _clock = clock;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+        _principalMembershipSource = principalMembershipSource;
+    }
+
+    /// <summary>
+    /// Resolves the row/field security snapshot to pin on a run.
+    /// </summary>
+    /// <remarks>
+    /// A manual run HAS a requesting principal, so the snapshot is captured from it. A cron or
+    /// event-triggered run does not: the scheduler and event-trigger services call in under the
+    /// synthesized orchestrator identity carrying <c>role=admin</c>, so capturing from it would
+    /// hand every step job ADMIN row and field visibility — a restricted author's scheduled
+    /// workflow would read all rows and unmasked fields on every tick. Those runs inherit the
+    /// snapshot captured from the author when the workflow was published, then replace its role
+    /// claims from the current membership source when that source manages the author (#3081).
+    /// <para>
+    /// A triggered run whose definition predates that field is REFUSED rather than falling back
+    /// to the orchestrator capture, matching the submit path's treatment of an absent inherited
+    /// snapshot: the fallback is a privilege escalation, and the resulting non-null snapshot
+    /// would sail past the fail-closed guards at the read seam. Republishing the workflow
+    /// captures the author and clears the refusal (honua-server#3068 review).
+    /// </para>
+    /// </remarks>
+    private async Task<JobSecurityContextMembershipResult> ResolveRunSecurityContextAsync(
+        WorkflowDefinition definition,
+        WorkflowTriggerKind triggerKind,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        if (triggerKind == WorkflowTriggerKind.Manual)
+        {
+            var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
+                .GetService<ITenantContext>();
+            // Record managed provenance now, while the author is resolvable, so a later triggered
+            // run on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
+            return new JobSecurityContextMembershipResult(
+                JobSecurityContextCapture.Capture(principal, _rbacOptions, tenantContext, membershipManaged),
+                JobSecurityContextMembershipStatus.Current);
+        }
+
+        // WorkflowDefinitionValidationException, not a generic one: both trigger loops classify
+        // an unrecognized exception as TRANSIENT and release the claim without advancing the
+        // cursor, so a legacy definition would reclaim the same occurrence and log a failure on
+        // every poll, forever. This is a permanent property of the stored definition — only
+        // republishing changes it — and that is the exception both loops already treat as
+        // permanent (honua-server#3068 review).
+        var snapshot = definition.AuthorSecurityContext ?? throw new WorkflowDefinitionValidationException(
+                $"Workflow '{definition.WorkflowId}' was published before its author's row/field "
+                + "security identity was recorded, so a triggered run cannot reconstruct it. "
+                + "Republish the workflow to enable scheduled and event-triggered runs.");
+        var result = await JobSecurityContextCapture
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, _rbacOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback)
+        {
+            OrchestrationLog.AuthorMembershipSnapshotFallback(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
+        {
+            OrchestrationLog.AuthorMembershipInactive(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
+            throw new WorkflowDefinitionValidationException(
+                $"Workflow '{definition.WorkflowId}' author '{snapshot.PrincipalId ?? "unknown"}' "
+                + "is no longer active; this triggered firing was refused.");
+        }
+        else if (result.HasRemovedRoles)
+        {
+            OrchestrationLog.AuthorMembershipNoLongerAuthorizes(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
+            throw new WorkflowDefinitionValidationException(
+                $"Workflow '{definition.WorkflowId}' author '{snapshot.PrincipalId ?? "unknown"}' "
+                + "lost role membership captured at publication; the triggered firing was refused "
+                + "because its row-level security and field masking cannot be safely relaxed.");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            OrchestrationLog.AuthorMembershipRevalidated(
+                _logger,
+                definition.WorkflowId,
+                snapshot.PrincipalId ?? "unknown");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Input keys whose value names a catalog object the submit-time layer gate authorizes.
+    /// Deliberately a name match rather than a catalog lookup: the check must hold for any
+    /// process, including ones added later, and over-matching only ever refuses more.
+    /// </summary>
+    private static bool IsCatalogIdentifierInput(string key)
+        => key.EndsWith("layerId", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("datasetId", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Refuses a background-triggered workflow whose catalog identifiers are supplied through a
+    /// ForEach placeholder.
+    /// </summary>
+    /// <remarks>
+    /// Permanent by construction — it is a property of the stored definition — so it throws the
+    /// exception both trigger loops treat as permanent rather than spinning the occurrence.
+    /// Manual runs are unaffected: they carry a real principal, so run-creation authorization of
+    /// the expanded plan IS the requester's decision. Lifting this needs publisher-derived
+    /// authority at expansion time, which the definition does not currently carry
+    /// (honua-server#3043 review).
+    /// </remarks>
+    private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
+    {
+        foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
+        {
+            var placeholder = step.ForEach!.ItemPlaceholder;
+            foreach (var planStep in step.Plan.Steps)
+            {
+                var dynamicInput = planStep.Inputs.FirstOrDefault(input =>
+                    IsCatalogIdentifierInput(input.Key)
+                    && input.Value.Contains(placeholder, StringComparison.Ordinal));
+
+                if (dynamicInput.Key is not null)
+                {
+                    throw new WorkflowDefinitionValidationException(
+                        $"Step '{step.StepId}' supplies the catalog identifier '{dynamicInput.Key}' from a "
+                        + "ForEach item, which a background trigger cannot authorize: publication resolves "
+                        + "the publisher's access but cannot see the item value, and authorizing it at run "
+                        + "creation would use the orchestrator's admin authority. Use a static identifier, "
+                        + "or run this workflow manually.");
+                }
+            }
+        }
     }
 
     public async Task<WorkflowRun> CreateRunAsync(
@@ -69,20 +221,57 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // the flat DAG the reconciler will rebuild from the stored definition each tick.
         var expanded = WorkflowDefinitionExpander.Expand(definition);
 
-        // #2798: gate the REQUESTING principal against the mutating-process execution tier
+        // Resolved before the gate loop below because that loop authorizes against it on the
+        // triggered paths. Ordering is otherwise unchanged: this throws only for a legacy
+        // definition, the same permanent failure both trigger loops already classify, and
+        // nothing has been persisted yet either way.
+        var membershipResult = await ResolveRunSecurityContextAsync(
+                definition, triggerKind, principal, cancellationToken)
+            .ConfigureAwait(false);
+        var runSecurityContext = membershipResult.Context;
+
+        // #2798/#3046: gate the mutating-process execution tier AND per-layer read access
         // BEFORE any step job is submitted. The reconcile loop submits step jobs under a
         // synthesized orchestrator principal that carries role=admin and so bypasses the
         // operator evaluator; without this pre-check an Execute-only operator could schedule
         // a workflow whose compiled steps import, mutate, or write durable sinks and have
-        // every step execute without anyone facing the ExecuteMutatingProcess gate. Cron- and
-        // event-driven runs pass a system principal here (admin) and are gated at authoring
-        // time, so the admin bypass on that path is intentional. The check runs before the run
+        // every step execute without anyone facing the gates. The check runs before the run
         // is persisted so a denial leaves no orphaned run state.
-        foreach (var step in expanded.Steps)
+        //
+        // A background firing has no requesting human. Reject dynamic catalog identifiers that
+        // publication could not bind, then re-authorize every expanded plan against the AUTHOR
+        // restored from the durable snapshot rather than the scheduler's admin identity. Manual
+        // runs authorize the live requester and retain any pins produced after expansion.
+        if (triggerKind != WorkflowTriggerKind.Manual)
         {
-            await _jobService
-                .EnsurePlanExecutionAuthorizedAsync(step.Plan, principal, cancellationToken)
-                .ConfigureAwait(false);
+            RejectDynamicCatalogIdentifiers(definition);
+        }
+
+        var authorizationPrincipal = triggerKind == WorkflowTriggerKind.Manual
+            ? principal
+            : JobSecurityContextCapture.Restore(runSecurityContext);
+
+        var authorizedPlans = new Dictionary<string, AnalysisPlan>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var step in expanded.Steps)
+            {
+                authorizedPlans[step.StepId] = await _jobService
+                    .EnsurePlanExecutionAuthorizedAsync(step.Plan, authorizationPrincipal, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+            when (membershipResult.HasRemovedRoles
+                  && ex is UnauthorizedAccessException or GeoprocessingAuthorizationException)
+        {
+            OrchestrationLog.AuthorMembershipNoLongerAuthorizes(
+                _logger,
+                definition.WorkflowId,
+                runSecurityContext.PrincipalId ?? "unknown");
+            throw new WorkflowDefinitionValidationException(
+                $"Workflow '{definition.WorkflowId}' author '{runSecurityContext.PrincipalId ?? "unknown"}' "
+                + "lost role membership required by this triggered firing; the firing was refused.");
         }
 
         var now = _clock.GetUtcNow();
@@ -93,7 +282,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 StepId = step.StepId,
                 PlanId = step.Plan.PlanId,
                 Status = WorkflowStepStatus.Pending,
-                AttemptCount = 0
+                AttemptCount = 0,
+                AuthorizedPlan = authorizedPlans.GetValueOrDefault(step.StepId)
             })
             .ToArray();
 
@@ -111,7 +301,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 : new Dictionary<string, string>(metadata, StringComparer.Ordinal),
             Audit = new OperationAuditInfo
             {
-                RequestedBy = principal.Identity?.Name
+                RequestedBy = principal.Identity?.Name,
+                // Pin the RUN REQUESTER's row/field security identity (#3068). Each step job is
+                // later submitted under OrchestrationSystemPrincipal, which carries role=admin so
+                // the reconcile loop can dispatch; capturing the snapshot from THAT principal
+                // would give every step job admin row/field visibility and launder away the
+                // requester's RLS predicate and field mask. Captured here, where the real
+                // principal is still in hand, and replayed on every step submission.
+                SubmitterSecurityContext = runSecurityContext
             }
         };
 
@@ -645,7 +842,16 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.InputBindingResolved(_logger, run.RunId, state.StepId, pair.Key, pair.Value);
         }
 
-        var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
+        // Prefer the plan the gate authorized at RUN CREATION: it carries the bindings produced
+        // for THIS run's expanded step, which is the only place a ForEach step's concrete layer
+        // and dataset ids are known. The stored definition is the fallback for runs created
+        // before that plan was persisted, where publication's binding on a static layer id is
+        // what travels (#3043). Either way the submit-time gate matches the binding against the
+        // layer the dataset resolves to NOW and refuses on a mismatch, so a dataset re-pointed
+        // between authorization and dispatch fails this step rather than being re-authorized
+        // under the orchestrator identity below.
+        var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
+        var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);
@@ -658,6 +864,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 idempotencyKey,
                 principal,
                 protocolMetadata,
+                run.Audit.SubmitterSecurityContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

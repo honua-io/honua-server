@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
@@ -24,7 +25,20 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         _jobService = jobService;
     }
 
-    public Task EnsurePlanExecutionAuthorizedAsync(
+    /// <summary>
+    /// Evaluates the plan's execution-tier and per-layer authorization for
+    /// <paramref name="principal"/> and returns the plan with the gate's bindings stamped on it.
+    /// </summary>
+    /// <remarks>
+    /// The bound plan used to be discarded here, on the reasoning that publication had already
+    /// persisted the binding with the workflow definition. That holds only for a STATIC layer
+    /// id: a ForEach step's concrete id exists only after expansion at run creation, so
+    /// publication saw a placeholder and stamped nothing, and reconciliation then submitted an
+    /// unpinned step that the layer gate refuses. Run creation is where the requester's
+    /// authorization of the expanded step happens, so its result has to travel to dispatch
+    /// (honua-server#3043 review).
+    /// </remarks>
+    public Task<AnalysisPlan> EnsurePlanExecutionAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
@@ -35,8 +49,10 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         string? idempotencyKey,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        JobSecurityContext? submitterSecurityContext = null,
         CancellationToken cancellationToken = default)
-        => _jobService.SubmitJobAsync(plan, idempotencyKey, principal, protocolMetadata, cancellationToken);
+        => _jobService.SubmitJobWithSecurityContextAsync(
+            plan, idempotencyKey, principal, protocolMetadata, submitterSecurityContext, cancellationToken);
 
     public Task<ExecutionJobRecord> GetJobAsync(
         string jobId,
