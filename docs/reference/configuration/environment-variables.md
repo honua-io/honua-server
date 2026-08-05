@@ -8,6 +8,7 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | --- | --- |
 | `ConnectionStrings__DefaultConnection` | Always (PostgreSQL provider, the default). |
 | `HONUA_ADMIN_PASSWORD` | Production — admin endpoints refuse to operate without it. |
+| `Security__ConnectionEncryption__MasterKey` | Non-development environments — startup fails without it. Encrypts stored data-connection credentials (minimum 32 characters); in Development, registering a data connection fails until it is set. |
 
 ## Database and providers
 
@@ -35,6 +36,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). |
+| `Security__ConnectionEncryption__MasterKey` | — (**required outside Development**) | Master key (minimum 32 characters) used to encrypt stored data-connection credentials; startup fails without it outside Development. |
+| `Security__ConnectionEncryption__Salt` | derived from master key | Optional explicit salt for master-key derivation; set it to control salt rotation (a warning is logged when derived). |
 | `Authentication__ClientCertificates__Mode` | `Disabled` | Client-certificate auth mode: `Disabled`, `Optional`, `RequiredForNative`, `RequiredForAdmin`, `RequiredForEnvironment`. **Experimental** — has no effect unless `Capabilities__Experimental__security.mtls__Enabled=true` (or the global experimental switch); see [TLS and mTLS](../../guides/secure/tls-and-mtls.md). |
 | `Authentication__ClientCertificates__EnvironmentId` | — | Environment id matched by `RequiredForEnvironment` and trust profiles. |
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
@@ -142,7 +145,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HONUA_OBSERVABILITY` | `false` | Enable metrics and health endpoints. |
+| `HONUA_OBSERVABILITY` | `false` | Enable metrics endpoints. Health probes (`/healthz/live`, `/healthz/ready`) are always registered. |
 | `HONUA_OPENTELEMETRY` | `false` | Enable OpenTelemetry distributed tracing. |
 | `Observability__Prometheus__Path` | `/metrics` | Native Prometheus scrape endpoint path. |
 
