@@ -56,7 +56,13 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs")]
     public async Task LeaseRun_BindsTheRunToTheDeploymentRevisionAndTheConfiguredSource()
     {
-        var run = await LeaseRunAsync();
+        using var content = new StringContent("""{"clientLabel":"conformance-test"}""", Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync(
+            "/api/v1/streaming/conformance/runs",
+            content,
+            CancellationToken.None);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var run = ReadLeasedRun(await ReadJsonAsync(response));
 
         run.RunId.Should().NotBeNullOrWhiteSpace();
         run.RunToken.Should().NotBeNullOrWhiteSpace();
@@ -74,7 +80,18 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     {
         var run = await LeaseRunAsync();
 
-        var inserted = await MutateAsync(run, """{"operation":"insert","label":"alpha"}""");
+        using var insertContent = new StringContent(
+            """{"operation":"insert","label":"alpha"}""",
+            Encoding.UTF8,
+            "application/json");
+        using var insertRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/streaming/conformance/runs/{run.RunId}/mutations")
+        {
+            Content = insertContent
+        };
+        insertRequest.Headers.Add(RunTokenHeader, run.RunToken);
+        using var inserted = await _client.SendAsync(insertRequest, CancellationToken.None);
         inserted.StatusCode.Should().Be(HttpStatusCode.OK);
         var insertedBody = await ReadJsonAsync(inserted);
         var objectId = insertedBody.GetProperty("data").GetProperty("objectId").GetInt64();
@@ -135,7 +152,11 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
         await MutateAsync(run, """{"operation":"insert","label":"first"}""");
         await MutateAsync(run, """{"operation":"insert","label":"second"}""");
 
-        var cleanup = await CleanupAsync(run);
+        using var cleanupRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/api/v1/streaming/conformance/runs/{run.RunId}");
+        cleanupRequest.Headers.Add(RunTokenHeader, run.RunToken);
+        using var cleanup = await _client.SendAsync(cleanupRequest, CancellationToken.None);
         cleanup.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var data = (await ReadJsonAsync(cleanup)).GetProperty("data");
@@ -258,7 +279,10 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
         var run = await LeaseRunAsync();
         await MutateAsync(run, """{"operation":"insert"}""");
 
-        using var response = await _client.PostAsync(ResetPath, content: null, CancellationToken.None);
+        using var response = await _client.PostAsync(
+            "/api/v1/admin/streaming/conformance/reset",
+            content: null,
+            CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await ReadJsonAsync(response);
@@ -445,8 +469,12 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     {
         using var response = await PostLeaseAsync(label, ttlSeconds);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return ReadLeasedRun(await ReadJsonAsync(response));
+    }
 
-        var data = (await ReadJsonAsync(response)).GetProperty("data");
+    private static LeasedRun ReadLeasedRun(JsonElement body)
+    {
+        var data = body.GetProperty("data");
         return new LeasedRun(
             data.GetProperty("runId").GetString()!,
             data.GetProperty("runToken").GetString()!,
