@@ -89,6 +89,14 @@ internal sealed record CapabilityManifestServerInfo
     /// <c>commit-sha</c>, or <c>assembly-metadata</c>). Null when no revision resolved.
     /// </summary>
     public string? DeploymentRevisionSource { get; init; }
+
+    /// <summary>
+    /// The same immutable revision as <see cref="DeploymentRevision"/>, published under the
+    /// field name realtime and evidence clients read. Both names are emitted on purpose: a
+    /// manifest that advertises the revision only under a name no client reads is
+    /// indistinguishable, to that client, from a deployment that has none (#3038).
+    /// </summary>
+    public string? ServerRevision { get; init; }
 }
 
 internal sealed record CapabilityManifestEnvironment
