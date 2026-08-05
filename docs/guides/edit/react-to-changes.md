@@ -86,24 +86,13 @@ Batched framing (`mode=snapshot-then-delta`) delivers the same baseline as one f
 
 Deployments that provision a dedicated conformance source advertise it in the `conformance` block of `/api/v1/streaming/features/capabilities`. It is **off by default**, and when off no caller can reach the mutation surface however authorized. It exists so a scheduled conformance runner can produce a correlated mutation on a live deployment without ever touching demo or user records.
 
-```bash
-# 1. Lease an isolated run, bound to this deployment's immutable revision.
-curl -sX POST "$HONUA/api/v1/streaming/conformance/runs" -H "X-API-Key: $KEY" \
-  -d '{"clientLabel":"nightly","expectedDeploymentRevision":"'"$REV"'"}'
-# -> { runId, runToken, runMarker, serviceId, layerId, runIdField, expiresAt, baselineDigest, … }
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `POST /api/v1/streaming/conformance/runs`.
 
-# 2. Mutate. `touch` rewrites a record with its current values: the state does not
-#    change but the canonical edit pipeline still publishes an event, so two
-#    subscriptions opened at different times observe the same baseline and mutation.
-curl -sX POST "$HONUA/api/v1/streaming/conformance/runs/$RUN/mutations" \
-  -H "X-API-Key: $KEY" -H "X-Honua-Conformance-Run-Token: $TOKEN" \
-  -d '{"operation":"insert","label":"nightly"}'
+The workflow is three requests, and the third belongs in a `finally` block:
 
-# 3. Always release, from a finally block.
-curl -sX DELETE "$HONUA/api/v1/streaming/conformance/runs/$RUN" \
-  -H "X-API-Key: $KEY" -H "X-Honua-Conformance-Run-Token: $TOKEN"
-# -> { deletedRecords, baselineDigest, baselineRestored }
-```
+1. **Lease a run.** `POST /api/v1/streaming/conformance/runs` with an optional `clientLabel`, `expectedDeploymentRevision`, and `expectedServiceId`. A supplied expectation that does not match this deployment answers `409` rather than running against the wrong target. The response carries `runId`, a one-time `runToken`, the `runMarker` written to your records, the `serviceId`/`layerId`/`runIdField` in play, `expiresAt`, and `baselineDigest`.
+2. **Mutate.** `POST /api/v1/streaming/conformance/runs/{runId}/mutations` with `{"operation":"insert","label":"nightly"}`, carrying the run token in `X-Honua-Conformance-Run-Token`. `touch` rewrites a record with its current values: the state does not change but the canonical edit pipeline still publishes an event, so two subscriptions opened at different times observe the same baseline and the same mutation.
+3. **Release.** `DELETE /api/v1/streaming/conformance/runs/{runId}` with the same token. The response reports `deletedRecords`, the post-cleanup `baselineDigest`, and `baselineRestored`.
 
 - Operations are `insert`, `update`, `touch`, and `delete`. All but `insert` take the `objectId` of a record **this run owns**; anything else answers `404`.
 - Ownership is re-read from the record's stored `runIdField` marker before every mutation and every delete, so two concurrent runs cannot claim or destroy each other's records even holding the same credential.

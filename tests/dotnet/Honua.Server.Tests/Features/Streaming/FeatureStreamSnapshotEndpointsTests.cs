@@ -155,9 +155,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         delta.Should().NotBeNull();
-        delta!.Value.GetProperty("sequence").GetInt64().Should().Be(1,
+        var deltaFrame = delta!.Value;
+        deltaFrame.GetProperty("sequence").GetInt64().Should().Be(1,
             "the first delta continues the batched baseline's single sequence");
-        delta.Value.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
+        deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
     }
 
     [IntegrationTest]

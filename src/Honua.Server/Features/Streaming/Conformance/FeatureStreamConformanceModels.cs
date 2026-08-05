@@ -44,15 +44,9 @@ internal static class FeatureStreamConformanceOperations
         }
 
         var trimmed = value.Trim();
-        foreach (var operation in All)
-        {
-            if (trimmed.Equals(operation, StringComparison.OrdinalIgnoreCase))
-            {
-                return operation;
-            }
-        }
-
-        return null;
+        return All
+            .Where(operation => trimmed.Equals(operation, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
     }
 }
 

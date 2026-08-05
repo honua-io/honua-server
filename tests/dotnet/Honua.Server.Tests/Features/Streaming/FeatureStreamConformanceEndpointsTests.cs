@@ -332,7 +332,8 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
         var snapshot = await ReadSseEventAsync(reader, "snapshot", cts.Token);
         snapshot.Should().NotBeNull("a snapshot-then-delta subscription starts from a batched baseline");
-        var baselineSequence = snapshot!.Value.GetProperty("sequence").GetInt64();
+        var snapshotFrame = snapshot!.Value;
+        var baselineSequence = snapshotFrame.GetProperty("sequence").GetInt64();
 
         var run = await LeaseRunAsync();
         var inserted = await ReadJsonAsync(await MutateAsync(run, """{"operation":"insert","label":"observed"}"""));
@@ -340,14 +341,15 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
         var delta = await ReadSseEventAsync(reader, "feature-change", cts.Token);
         delta.Should().NotBeNull("a controlled mutation goes through the canonical edit pipeline and is therefore streamed");
-        delta!.Value.GetProperty("objectId").GetInt64().Should().Be(objectId);
-        delta.Value.GetProperty("operation").GetString().Should().Be("insert");
-        delta.Value.GetProperty("sequence").GetInt64().Should().Be(baselineSequence + 1,
+        var deltaFrame = delta!.Value;
+        deltaFrame.GetProperty("objectId").GetInt64().Should().Be(objectId);
+        deltaFrame.GetProperty("operation").GetString().Should().Be("insert");
+        deltaFrame.GetProperty("sequence").GetInt64().Should().Be(baselineSequence + 1,
             "the first delta continues the batched baseline's subscription-local sequence");
 
         // The run's marker is on the streamed after-image, which is how a subscriber
         // recognizes its own correlated mutation.
-        delta.Value.GetProperty("attributes").GetProperty("name").GetString().Should().Be(run.RunMarker);
+        deltaFrame.GetProperty("attributes").GetProperty("name").GetString().Should().Be(run.RunMarker);
 
         await CleanupAsync(run);
     }

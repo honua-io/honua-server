@@ -221,12 +221,11 @@ internal sealed class FeatureStreamConformanceRunRegistry
         {
             // Expired leases are reclaimed on the acquisition path as well as by the sweeper
             // so a run is never refused because of a lease nobody is using any more.
-            foreach (var candidate in _runs.Values)
+            // `Values` materializes a snapshot, so removing while enumerating the filtered
+            // view is safe.
+            foreach (var candidate in _runs.Values.Where(candidate => candidate.IsExpired(now)))
             {
-                if (candidate.IsExpired(now))
-                {
-                    _runs.TryRemove(candidate.RunId, out _);
-                }
+                _runs.TryRemove(candidate.RunId, out _);
             }
 
             if (_runs.Count >= options.MaxConcurrentRuns)
