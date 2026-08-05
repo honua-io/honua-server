@@ -22,7 +22,10 @@ These are **implemented but gated off** the GA surface (`Capabilities:Experiment
 - [#2428 Real-time feature streams](https://github.com/honua-io/honua-server/issues/2428) · Next
 - [#2429 Temporal analytics](https://github.com/honua-io/honua-server/issues/2429) · Next
 - [#2430 Offline / disconnected sync](https://github.com/honua-io/honua-server/issues/2430) · Later
-- [#2431 mTLS client-certificate auth](https://github.com/honua-io/honua-server/issues/2431) · Later
+
+mTLS client-certificate auth ([#2431](https://github.com/honua-io/honua-server/issues/2431), closed) is
+**not** on the GA promotion track: it stays gated experimental by decision
+(`Capabilities__Experimental__security.mtls__Enabled`). Use OIDC/SAML for production authentication.
 
 ## Now — in progress
 - [#1240 ArcGIS Portal / Sharing facade + generateToken/OAuth2](https://github.com/honua-io/honua-server/issues/1240)
