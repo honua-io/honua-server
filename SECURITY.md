@@ -22,7 +22,7 @@ In scope:
 
 - application code in `src/`
 - published Honua container images
-- Helm chart content in `infrastructure/helm/`
+- Helm chart content maintained in [honua-io/honua-helm](https://github.com/honua-io/honua-helm)
 - deployment and security guidance in `docs/guides/deploy/`
 
 Out of scope unless Honua code is the root cause:
