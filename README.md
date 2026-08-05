@@ -199,4 +199,4 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, resp
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify, with two limitations: you may not provide Honua to third parties as a hosted or managed service, and you may not circumvent the license-key functionality.
+[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify, within the ELv2 limitations: you may not provide Honua to third parties as a hosted or managed service, may not circumvent the license-key functionality, and may not remove or obscure the licensor's notices.
