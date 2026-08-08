@@ -138,7 +138,7 @@ COPY docker/cloud/lambda/bootstrap.sh /var/runtime/bootstrap
 # The Lambda base can lag Amazon Linux security repositories. Resolve compatible
 # distro updates at build time so newly published fixes do not wait for a base refresh.
 # hadolint ignore=DL3041
-RUN dnf upgrade -y && \
+RUN dnf upgrade --refresh -y && \
     dnf install -y krb5-libs libicu fontconfig freetype && \
     dnf clean all && \
     chmod +x /var/runtime/bootstrap /var/task/Honua.Server
