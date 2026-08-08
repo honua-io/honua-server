@@ -289,7 +289,16 @@ WMS_RECOMMENDED="$WMS_RECOMMENDED" \
 WMS_GETFEATUREINFO="$WMS_GETFEATUREINFO" \
 WMS_FEESCONSTRAINTS="$WMS_FEESCONSTRAINTS" \
 WMS_BBOXCONSTRAINTS="$WMS_BBOXCONSTRAINTS" \
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner || runner_exit=$?
+
+# The TeamEngine container can return a non-zero process status after writing
+# complete result artifacts. The normalized result files below are the
+# authoritative outcome: preserve the raw status for diagnostics, then decide
+# success only after parsing those artifacts.
+runner_exit=${runner_exit:-0}
+if [[ $runner_exit -ne 0 ]]; then
+    echo -e "${YELLOW}CITE runner exited with status ${runner_exit}; validating extracted results before failing.${NC}"
+fi
 
 echo -e "${YELLOW}Waiting for CITE tests to complete...${NC}"
 start_time=$(date +%s)

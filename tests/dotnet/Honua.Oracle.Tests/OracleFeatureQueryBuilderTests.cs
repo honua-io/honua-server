@@ -108,6 +108,16 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WhereFieldCasingDiffersFromCatalog_UsesPhysicalOracleIdentifier()
+    {
+        var query = new FeatureQuery { Where = "name = 'Alpha'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, ["NAME"]);
+
+        Assert.Contains("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_StacCandidateInWhere_UsesOracleParameters()
     {
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(
