@@ -107,9 +107,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.Stac", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.GeoServices", "src\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj", "{EE049557-49DC-4C6F-BD68-A2F0A2DB2351}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.ArcGisRest", "src\Honua.ArcGisRest\Honua.ArcGisRest.csproj", "{A12C1251-1234-4ABC-8F00-1251A12CDABC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.ArcGisRest.Tests", "tests\dotnet\Honua.ArcGisRest.Tests\Honua.ArcGisRest.Tests.csproj", "{B2D11251-5678-4DEF-9012-1251B2D1FEED}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Routing", "src\Honua.Routing\Honua.Routing.csproj", "{9787B69D-72FD-48E3-9B13-E5D4685CDC23}"
 EndProject
