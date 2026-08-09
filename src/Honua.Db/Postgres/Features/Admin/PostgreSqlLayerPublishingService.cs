@@ -19,8 +19,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// PostgreSQL implementation of layer publishing operations.

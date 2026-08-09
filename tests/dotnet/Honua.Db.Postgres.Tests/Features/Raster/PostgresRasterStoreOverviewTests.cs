@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 [Collection("Unit")]
 public sealed class PostgresRasterStoreOverviewTests

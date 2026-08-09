@@ -4,11 +4,11 @@
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Authorization;
+namespace Honua.Db.Postgres.Features.Authorization;
 
 /// <summary>
 /// PostgreSQL-backed <see cref="IRlsPolicyStore"/> (#502). Persists row-level

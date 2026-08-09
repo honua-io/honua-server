@@ -10,13 +10,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Validation;
-using Honua.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Resilience;
+using Honua.Db.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Db.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Polly.CircuitBreaker;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// PostgreSQL implementation of database connection provider with Polly resilience policies

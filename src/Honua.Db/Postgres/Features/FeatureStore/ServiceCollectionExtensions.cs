@@ -10,16 +10,16 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Postgres.Features.FeatureStore.Services;
-using Honua.Postgres.Features.Infrastructure.Caching;
-using Honua.Postgres.Features.SpatialAnalytics;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.SpatialAnalytics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Postgres.Features.FeatureStore;
+namespace Honua.Db.Postgres.Features.FeatureStore;
 
 /// <summary>
 /// Dependency injection extensions for the refactored feature store services

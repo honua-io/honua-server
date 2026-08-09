@@ -3,11 +3,11 @@
 
 using System.Net;
 using System.Text;
-using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Security;
+namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
 public sealed class SecretResolverErrorSanitizationTests

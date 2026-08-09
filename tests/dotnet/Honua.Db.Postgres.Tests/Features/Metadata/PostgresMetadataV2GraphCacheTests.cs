@@ -9,7 +9,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Metadata;
+namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 /// <summary>
 /// Integration tests for the Metadata v2 hot-path snapshot cache (MCP A2). Proves, against the real

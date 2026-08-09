@@ -10,7 +10,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Infrastructure;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class GeoParquetPreviewTests
 {

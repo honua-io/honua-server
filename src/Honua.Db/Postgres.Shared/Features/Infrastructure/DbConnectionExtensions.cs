@@ -4,7 +4,7 @@
 using System.Data.Common;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static class DbConnectionExtensions
 {

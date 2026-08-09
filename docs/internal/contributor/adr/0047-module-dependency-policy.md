@@ -39,15 +39,15 @@ several assemblies that share a role.
 |---|-------|-----------|------|--------------------------------|
 | 1 | **Abstractions** | `Honua.Core.Abstractions` | Pure contracts — interfaces, DTOs, records, option types, attribute markers. No implementation logic beyond trivial defaults. | `Microsoft.Extensions.*` only. **Banned:** `NetTopologySuite`, `Npgsql`, `AWSSDK.*`, `Azure.*`, `Parquet.*`, `FlatGeobuf`. |
 | 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. | `Microsoft.Extensions.*`, `Polly` only. The heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) have been migrated out to Geometry / Geocoding / Aws; new code must not reintroduce them here. |
-| 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Routing` (pgRouting), `Honua.Aws` (S3 / etc.), `Honua.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family / engine so the rest of the graph stays light. May reference Abstractions (and Core where needed). **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. `Honua.Routing` (#1266) houses the pgRouting route / service-area solve engine behind `IRoutingProvider`; it depends on Abstractions only (the `IDatabaseConnectionProvider` surface), is consumed by the GeoServices NAServer protocol adapter, and must never reference a storage provider or back-reference Server. | The relevant SDK family + Abstractions/Core. No other satellite. |
+| 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Routing` (pgRouting), `Honua.Cloud.Aws` (S3 / etc.), `Honua.Cloud.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family / engine so the rest of the graph stays light. May reference Abstractions (and Core where needed). **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. `Honua.Routing` (#1266) houses the pgRouting route / service-area solve engine behind `IRoutingProvider`; it depends on Abstractions only (the `IDatabaseConnectionProvider` surface), is consumed by the GeoServices NAServer protocol adapter, and must never reference a storage provider or back-reference Server. | The relevant SDK family + Abstractions/Core. No other satellite. |
 | 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. Owns the `IGeometryService` abstraction surface, so it also consumes NetTopologySuite via Geometry. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / ServiceDefaults. |
-| 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Aws`, `Honua.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
+| 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Cloud.Aws`, `Honua.Cloud.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
 | 4 | **Ai** | `Honua.Ai` | Carved AiBuilder + Grounding + NlQuery + AnalysisContent surface (the four feature subtrees that previously sat in `Honua.Server/Features/`). Sits alongside Hosting / Jobs in tier 4 so Server can depend on it without re-introducing a cycle. Grounding / AnalysisContent orchestrate analysis jobs through `IGeoprocessingJobService`, so Ai also references Geoprocessing; the MCP geocode/route tools (#1597) additionally adapt the canonical `IGeocodeCoordinatorService` / `IRoutingProvider` pipelines, so Ai references the Geocoding and Routing satellites. **Must not reference Honua.Server** — `HonuaAiIsolationTests` guards the one-way edge. | `Asp.Versioning.Http`, `StackExchange.Redis` + Abstractions / Core / Geocoding / Routing / Hosting / Jobs / Geoprocessing / ServiceDefaults. |
 | 4 | **Geoprocessing** | `Honua.Geoprocessing` | Canonical process / analysis runtime (plan validation, dry-run, job submission/lifecycle) carved out of Server in the geoprocessing-split refactor so the OGC API Processes / GeoServices GPServer protocol adapters — and Ai's analysis orchestration — can reference it without pulling Server transitively. Sits alongside Hosting / Jobs / Ai in tier 4. **Must not reference Honua.Server** — `GeoprocessingIsolationTests` guards the one-way edge. | Abstractions / Core / Geometry / Hosting / Jobs / ServiceDefaults. |
 | 4 | **Io** | `Honua.Io` | File input/output surface carved out of Server in the io-split refactor: file storage (local disk + cloud stream helpers, upload-progress stores, retention cleanup) and export writers (Shapefile / GeoPackage / CSV); the generic upload primitives are a planned follow-on increment. ASP.NET-coupled like Hosting; sits alongside Hosting / Jobs / Ai / Geoprocessing in tier 4. **Must not reference Honua.Server** — `HonuaIoIsolationTests` guards the one-way edge. The NTS file-format *readers* deliberately stay in Geometry so storage providers can consume them without pulling this ASP.NET surface; the export *writers* live here as part of the HTTP export feature. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / Hosting / ServiceDefaults. |
 | 4 | **Import** | `Honua.Import` | Data-ingest / migration HTTP surface carved out of Server in the import-split refactor: Migration endpoints + job managers (ArcGIS / GeoServer / OGC API Features / WFS / coverage), file-import upload plumbing (multipart parsing, streaming upload, network-address validation), raster-import endpoints. ASP.NET-coupled; sits alongside Hosting / Jobs / Ai / Geoprocessing / Io in tier 4. **Must not reference Honua.Server** — `HonuaImportIsolationTests` guards the one-way edge. The provider-agnostic ingest *domain* (REST source clients, abstractions, evidence model) stays in Core because the storage providers consume it; the NTS readers stay in Geometry. | `Microsoft.AspNetCore.*`, `Asp.Versioning.Http` + Abstractions / Core / Geometry / Hosting / ServiceDefaults. |
 | 4 | **Scene** | `Honua.Scene` | 3D scene capability (3D Tiles generation, scene dataset registry, publishing executor, and the gRPC scene / tile / elevation service implementations) carved out of Core / Server in the scene-module refactor so the protocol adapter (`Honua.Protocols.Scene`) and the Server host can consume it without it living inside the Core or Server graphs. Sits alongside Hosting / Jobs / Ai / Geoprocessing / Io / Import in tier 4. References Hosting so the gRPC scene/tile services enforce the same shared `AccessPolicyHelpers` per-scene authorization the HTTP/I3S surfaces use. **Must not reference Honua.Server** — `SceneIsolationTests` guards the one-way edge. Scene *domain* records stay in Abstractions (MetadataV2 references them). | Abstractions / Core / Geometry / Hosting / ServiceDefaults. |
-| 5 | **Storage Providers** | `Honua.Postgres` (+ planned sub-assemblies `Honua.Postgres.{Migrations, Catalog, FeatureStore, Streaming, Outbox}`), `Honua.DuckDB`, `Honua.MySql`, `Honua.SqlServer`, `Honua.Oracle`, plus the HTTP read-through providers `Honua.ArcGisRest` and `Honua.Databricks` | One assembly per backend. Implements Core abstractions over a specific provider SDK (or, for the read-through providers, an HTTP REST API). Never references Hosting, Server, or another storage provider. | Provider SDK (`Npgsql`, `DuckDB.NET`, `MySqlConnector`, `Microsoft.Data.SqlClient`, `Oracle.ManagedDataAccess.Core`) or `System.Net.Http`/`System.Text.Json` (ArcGisRest, Databricks) + Abstractions/Core. |
+| 5 | **Storage Providers** | `Honua.Db.Postgres` (+ planned sub-assemblies `Honua.Db.Postgres.{Migrations, Catalog, FeatureStore, Streaming, Outbox}`), `Honua.Db.DuckDB`, `Honua.Db.MySql`, `Honua.Db.SqlServer`, `Honua.Db.Oracle`, plus the HTTP read-through providers `Honua.ArcGisRest` and `Honua.Db.Databricks` | One assembly per backend. Implements Core abstractions over a specific provider SDK (or, for the read-through providers, an HTTP REST API). Never references Hosting, Server, or another storage provider. | Provider SDK (`Npgsql`, `DuckDB.NET`, `MySqlConnector`, `Microsoft.Data.SqlClient`, `Oracle.ManagedDataAccess.Core`) or `System.Net.Http`/`System.Text.Json` (ArcGisRest, Databricks) + Abstractions/Core. |
 | 6 | **Protocol Modules** | `Honua.Protocols.{OData, Scene, OgcApi}`, the shared `Honua.Protocols.Ogc.Shared` foundation, and the planned siblings `Honua.Protocols.{OgcClassic, GeoServices, Stac}` (MCP lives in `Honua.Ai`, not a standalone protocol assembly) | One assembly per HTTP / RPC surface. Depend on Abstractions + Core + Geometry + Hosting + ServiceDefaults; the OGC API Processes / GeoServices GPServer adapters also reference Jobs + Geoprocessing (they adapt the canonical job/process runtime), and the GeoServices NAServer adapter references `Honua.Routing` (it adapts the canonical `IRoutingProvider` pipeline). Never reference Server. Protocol-to-protocol references are limited to a shared foundation (`Ogc.Shared`) and the specific edges allowed by `CrossProtocolIsolationTests` (e.g. OgcClassic → OgcApi, Stac → OgcApi). | Format-specific packages (`Microsoft.OData.*` for OData, etc.) + Abstractions/Core/Geometry/Hosting/ServiceDefaults. |
 | 6 | **Plugin SDK** | `Honua.Plugins.Abstractions` (PluginsAbstractions role — public contract surface), `Honua.Plugins` (Plugins role — host runtime) | Enterprise plugin/extension SDK (#347, ADR-0024), split into two roles so protocol modules can consume the contract surface without coupling to the host runtime. **PluginsAbstractions** is the lean, AOT-safe contract surface third-party plugins reference (depends on Abstractions only, for the canonical `Feature` type); protocol edit handlers consume it via `IPluginEditPipeline` to fire plugin validators/hooks. **Plugins** is the host runtime that registers and gates plugins; it depends on Core (license-entitlement gate + audit sink) and the contract surface, and is composed only by Server. Neither references Server or a storage provider. | `Microsoft.Extensions.*` + Abstractions / Core. |
 | 7 | **Composition root** | `Honua.Server` | Wires every storage provider + every protocol module into an executable host. The only assembly allowed to reference everything below it. Feature code only lives here when it cannot fit a lower tier. | Anything the runtime needs. |
@@ -160,8 +160,8 @@ Walk these questions in order; the first `yes` chooses your layer.
 2. **Does it depend on a heavy package family (NTS, AWS, Azure, Parquet,
    FlatGeobuf, …)?**
    → The dedicated satellite. NTS code → `Honua.Geometry`. AWS-Location code
-   → `Honua.Geocoding`. AWS-SDK storage → `Honua.Aws`. Azure-SDK storage →
-   `Honua.Azure`. **Never add a new heavy-package PackageReference to
+   → `Honua.Geocoding`. AWS-SDK storage → `Honua.Cloud.Aws`. Azure-SDK storage →
+   `Honua.Cloud.Azure`. **Never add a new heavy-package PackageReference to
    `Honua.Core`** — the matrix forbids it and the arch test will catch it.
    Example: a new tile renderer that needs NTS belongs in `Honua.Geometry`,
    not Core.
@@ -169,10 +169,10 @@ Walk these questions in order; the first `yes` chooses your layer.
 3. **Is it provider-specific persistence (`Npgsql`, `DuckDB.NET`,
    `MySqlConnector`, `Microsoft.Data.SqlClient`)?**
    → The matching storage-provider assembly. Postgres-specific repository →
-   `Honua.Postgres` (or one of its planned sub-assemblies — see the
+   `Honua.Db.Postgres` (or one of its planned sub-assemblies — see the
    "Postgres sub-assemblies" note below). Implement a Core abstraction; do
    not invent a new provider-specific abstraction at the Server tier.
-   Example: a new `Honua.Postgres.Outbox` implementation of
+   Example: a new `Honua.Db.Postgres.Outbox` implementation of
    `IFeatureChangeOutboxRepository`.
 
 4. **Is it ASP.NET-coupled host plumbing — middleware, an authentication
@@ -201,7 +201,7 @@ Walk these questions in order; the first `yes` chooses your layer.
 7. **Is it a cloud integration that only Server consumes (cloud control-plane
    client, secret-store client, cloud-IAM identity mapper)?**
    → Today: `Honua.Server`. As cloud satellites land, move it to
-   `Honua.Aws` / `Honua.Azure` and have Server depend on the satellite.
+   `Honua.Cloud.Aws` / `Honua.Cloud.Azure` and have Server depend on the satellite.
 
 If the answer to all seven is "no", the code is probably a Core domain
 primitive — provider-agnostic, protocol-neutral, free of heavy SDK refs.
@@ -209,11 +209,11 @@ That belongs in `Honua.Core`.
 
 #### Postgres sub-assemblies (planned)
 
-`Honua.Postgres` is large enough that it will eventually split along the
-seams identified in the structural audit: `Honua.Postgres.Migrations`,
-`Honua.Postgres.Catalog`, `Honua.Postgres.FeatureStore`,
-`Honua.Postgres.Streaming`, `Honua.Postgres.Outbox`. Until that split lands,
-new code in any of those domains goes into the monolithic `Honua.Postgres`;
+`Honua.Db.Postgres` is large enough that it will eventually split along the
+seams identified in the structural audit: `Honua.Db.Postgres.Migrations`,
+`Honua.Db.Postgres.Catalog`, `Honua.Db.Postgres.FeatureStore`,
+`Honua.Db.Postgres.Streaming`, `Honua.Db.Postgres.Outbox`. Until that split lands,
+new code in any of those domains goes into the monolithic `Honua.Db.Postgres`;
 when the split happens, the matrix gains five rows (each: `✓ Abstr | ✓ Core
 | ✓ Geometry`) and the arch test gains the corresponding csproj entries.
 The policy does not change shape — only the granularity tightens.
@@ -256,9 +256,9 @@ which:
    `benchmarks/`.
 2. Classifies each csproj into one of the matrix roles by name pattern
    (`Honua.Core.Abstractions`, `Honua.Core`, `Honua.Geometry`,
-   `Honua.Geocoding`, `Honua.Aws`, `Honua.Azure`, `Honua.Hosting`,
-   `Honua.Postgres*`, `Honua.DuckDB`, `Honua.MySql`, `Honua.SqlServer`,
-   `Honua.Oracle`,
+   `Honua.Geocoding`, `Honua.Cloud.Aws`, `Honua.Cloud.Azure`, `Honua.Hosting`,
+   `Honua.Db.Postgres*`, `Honua.Db.DuckDB`, `Honua.Db.MySql`, `Honua.Db.SqlServer`,
+   `Honua.Db.Oracle`,
    `Honua.Protocols.*`, `Honua.Server`, `Honua.ServiceDefaults`,
    `Honua.AppHost`, `Honua.Worker.*`). Unclassified csprojs (samples,
    benchmarks, tests) fall through to a default policy that permits any
@@ -289,8 +289,8 @@ linked in writing, in code, and (when reviewing) in the diff.
 - The matrix is mechanically enforced, so policy drift is caught at PR time
   rather than during a downstream refactor that uncovers an unexpected
   transitive dependency.
-- The future satellites (`Honua.Geometry`, `Honua.Geocoding`, `Honua.Aws`,
-  `Honua.Azure`, Postgres sub-assemblies) have reserved slots in the matrix.
+- The future satellites (`Honua.Geometry`, `Honua.Geocoding`, `Honua.Cloud.Aws`,
+  `Honua.Cloud.Azure`, Postgres sub-assemblies) have reserved slots in the matrix.
   When they land, the test gains entries; the policy doesn't shift.
 - The TechDebt ratchet ensures the heavy-package refs currently in
   `Honua.Core` migrate out monotonically; they cannot grow.

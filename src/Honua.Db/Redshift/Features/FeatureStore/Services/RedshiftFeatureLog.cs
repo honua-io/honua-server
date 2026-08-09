@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Source-generated structured logging for the Redshift feature store. AOT-safe; never

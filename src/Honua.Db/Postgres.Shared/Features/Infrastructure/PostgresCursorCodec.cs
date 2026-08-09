@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Shared opaque cursor encoding helpers for Postgres-backed paged readers.

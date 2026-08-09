@@ -2,12 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Crs;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Crs;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Infrastructure.Crs;
+namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Crs;
 
 [Collection("Database")]
 public sealed class PostgresCrsRegistryTests : IAsyncLifetime

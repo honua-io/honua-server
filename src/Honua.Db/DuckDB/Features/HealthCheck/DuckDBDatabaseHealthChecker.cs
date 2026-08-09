@@ -5,7 +5,7 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB.Features.HealthCheck;
+namespace Honua.Db.DuckDB.Features.HealthCheck;
 
 /// <summary>
 /// DuckDB implementation of <see cref="IDatabaseHealthChecker"/>.

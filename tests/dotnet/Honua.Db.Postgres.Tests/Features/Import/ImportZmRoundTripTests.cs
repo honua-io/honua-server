@@ -5,10 +5,10 @@ using System.Reflection;
 using System.Text.Json;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using Honua.Postgres.Features.FileImport;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Regression tests for #1981: Esri/file import must carry Z and M ordinates

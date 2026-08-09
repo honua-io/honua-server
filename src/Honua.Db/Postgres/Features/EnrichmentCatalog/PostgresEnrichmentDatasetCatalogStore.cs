@@ -6,7 +6,7 @@ using Honua.Core.Features.EnrichmentCatalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 
-namespace Honua.Postgres.Features.EnrichmentCatalog;
+namespace Honua.Db.Postgres.Features.EnrichmentCatalog;
 
 /// <summary>
 /// Postgres-backed implementation of <see cref="IEnrichmentDatasetCatalogStore"/>

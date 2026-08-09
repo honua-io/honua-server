@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Validates the startup-time configuration validator surfaces meaningful errors

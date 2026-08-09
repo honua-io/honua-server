@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 using Oracle.ManagedDataAccess.Client;
 using Oracle.ManagedDataAccess.Types;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Executes Oracle feature queries built by <see cref="OracleFeatureQueryBuilder"/>. All

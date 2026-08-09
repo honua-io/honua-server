@@ -5,7 +5,7 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.MySql.Features.HealthCheck;
+namespace Honua.Db.MySql.Features.HealthCheck;
 
 /// <summary>
 /// MySQL/MariaDB implementation of <see cref="IDatabaseHealthChecker"/>.

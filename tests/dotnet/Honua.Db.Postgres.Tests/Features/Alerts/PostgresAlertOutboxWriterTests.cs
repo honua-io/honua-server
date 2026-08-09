@@ -7,12 +7,12 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Alerts;
+using Honua.Db.Postgres.Features.Alerts;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Alerts;
+namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
 /// <summary>
 /// Integration tests for <see cref="PostgresAlertOutboxWriter"/> — the atomic append-event +

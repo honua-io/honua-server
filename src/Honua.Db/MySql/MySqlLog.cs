@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.MySql;
+namespace Honua.Db.MySql;
 
 internal static partial class MySqlLog
 {

@@ -3,13 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Crs;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Transforms;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Transforms;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Infrastructure.Transforms;
+namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 
 /// <summary>
 /// Grid-provisioning datum-fidelity tests (issue #1501). These prove that when the

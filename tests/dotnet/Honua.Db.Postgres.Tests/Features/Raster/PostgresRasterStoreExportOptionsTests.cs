@@ -3,10 +3,10 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 [Collection("Unit")]
 public sealed class PostgresRasterStoreExportOptionsTests

@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.Infrastructure;
 
-namespace Honua.Databricks.Features.FeatureStore.Services;
+namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
 /// <summary>
 /// Translates Databricks SQL Statement Execution result sets into the canonical

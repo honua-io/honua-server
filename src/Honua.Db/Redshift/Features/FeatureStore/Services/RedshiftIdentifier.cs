@@ -3,7 +3,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validates and double-quotes Amazon Redshift identifiers (schema, table, column).

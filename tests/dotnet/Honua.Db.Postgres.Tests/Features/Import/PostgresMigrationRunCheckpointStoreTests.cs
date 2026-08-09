@@ -7,12 +7,12 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Issue #2459 (Ops WS0, ADR-0060): <see cref="PostgresMigrationRunCheckpointStore"/>

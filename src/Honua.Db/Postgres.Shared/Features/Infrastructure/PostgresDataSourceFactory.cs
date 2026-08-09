@@ -6,7 +6,7 @@ using Honua.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {

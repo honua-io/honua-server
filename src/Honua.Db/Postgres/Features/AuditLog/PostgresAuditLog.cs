@@ -3,11 +3,11 @@
 
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.AuditLog;
+namespace Honua.Db.Postgres.Features.AuditLog;
 
 /// <summary>
 /// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.

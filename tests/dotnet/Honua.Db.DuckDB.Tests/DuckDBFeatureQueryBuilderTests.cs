@@ -5,10 +5,10 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Features.FeatureStore.Services;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 /// <summary>
 /// Unit tests for DuckDB SQL query generation.

@@ -7,11 +7,11 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Mobile.FieldCollection;
+namespace Honua.Db.Postgres.Features.Mobile.FieldCollection;
 
 /// <summary>
 /// Postgres-backed FieldCollection sync store. Reads from and writes to the

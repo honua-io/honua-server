@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Redshift;
+namespace Honua.Db.Redshift;
 
 /// <summary>
 /// Configuration options for the read-only Amazon Redshift spatial feature provider (#1712).

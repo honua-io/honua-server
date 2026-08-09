@@ -8,11 +8,11 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Service for importing data from ArcGIS Server services into PostGIS.

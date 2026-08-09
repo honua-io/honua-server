@@ -9,15 +9,15 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.MySql.Features.FeatureStore;
-using Honua.MySql.Features.FeatureStore.Services;
-using Honua.MySql.Features.HealthCheck;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.FeatureStore;
+using Honua.Db.MySql.Features.FeatureStore.Services;
+using Honua.Db.MySql.Features.HealthCheck;
+using Honua.Db.MySql.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Verifies that the canonical "mysql" name and the "mariadb" alias both resolve to

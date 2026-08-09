@@ -8,9 +8,9 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-namespace Honua.SqlServer.Features.FeatureStore;
+namespace Honua.Db.SqlServer.Features.FeatureStore;
 
 /// <summary>
 /// Read-only SQL Server feature provider for the spatial provider thin slice (#850).

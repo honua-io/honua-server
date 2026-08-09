@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Databricks\Honua.Databricks.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Databricks\Honua.Db.Databricks.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 

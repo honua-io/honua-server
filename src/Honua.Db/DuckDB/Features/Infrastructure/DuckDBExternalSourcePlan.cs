@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Planned per-connection temporary view for a DuckDB external file source.

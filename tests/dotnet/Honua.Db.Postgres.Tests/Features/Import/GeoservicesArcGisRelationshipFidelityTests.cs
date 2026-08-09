@@ -11,11 +11,11 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Migration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Targeted fixtures for the per-relationship fidelity extraction added by

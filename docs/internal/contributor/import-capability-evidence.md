@@ -72,15 +72,15 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 ### ArcGIS GeoServices REST
 
 - Endpoint group: `src/Honua.Server/Features/Import/GeoservicesImportEndpoints.cs`
-- Service implementation: `src/Honua.Postgres/Features/Import/GeoservicesImportService.cs`
+- Service implementation: `src/Honua.Db.Postgres/Features/Import/GeoservicesImportService.cs`
 - REST client: `src/Honua.Core/Features/Import/Services/ArcGisRestClient.cs`
 - URL validation: `src/Honua.Server/Features/Import/GeoservicesServiceUrlValidation.cs`
 - Inventory fixtures and baselines:
-  `tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/ArcGis/`
-  and `tests/dotnet/Honua.Postgres.Tests/Features/Import/Baselines/ArcGis/`
+  `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/ArcGis/`
+  and `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Baselines/ArcGis/`
 - Integration coverage:
   `tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs`,
-  `tests/dotnet/Honua.Postgres.Tests/Features/Import/GeoservicesImportServiceAuthenticatedImportTests.cs`,
+  `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportServiceAuthenticatedImportTests.cs`,
   `GeoservicesImportFidelityIntegrationTests.cs`, and
   `GeoservicesGeoportalImportIntegrationTests.cs`
 
@@ -101,12 +101,12 @@ PostGIS and verifies request/job artifacts do not persist token material.
 ### GeoServer REST
 
 - Endpoint group: `src/Honua.Server/Features/Import/GeoServerImportEndpoints.cs`
-- Service implementation: `src/Honua.Postgres/Features/Import/GeoServerImportService.cs`
+- Service implementation: `src/Honua.Db.Postgres/Features/Import/GeoServerImportService.cs`
 - REST client: `src/Honua.Core/Features/Import/Services/GeoServerRestClient.cs`
 - URL validation: `src/Honua.Server/Features/Import/GeoServerServiceUrlValidation.cs`
 - Inventory fixtures and baselines:
-  `tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/GeoServer/`
-  and `tests/dotnet/Honua.Postgres.Tests/Features/Import/Baselines/GeoServer/`
+  `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/`
+  and `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Baselines/GeoServer/`
 - Integration coverage:
   `tests/dotnet/Honua.Server.Tests/Import/GeoServerImportEndpointTests.cs`,
   `GeoServerCuratedImportIntegrationTests.cs`, and
@@ -202,13 +202,13 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
   --filter "FullyQualifiedName~OgcServiceMigrationScannerTests|FullyQualifiedName~MigrationManifestTranslatorTests|FullyQualifiedName~MigrationParityEvidenceGeneratorTests"
 
-dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Db.Postgres.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceScanTests|FullyQualifiedName~GeoServerImportServiceScanTests|FullyQualifiedName~GeoservicesArcGisInventoryBaselineTests|FullyQualifiedName~GeoServerInventoryBaselineTests"
 
 dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
   --filter "FullyQualifiedName~ArcGisRestClientSecurityTests"
 
-dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Db.Postgres.Tests.csproj \
   --filter "FullyQualifiedName~GeoservicesImportServiceAuthenticatedImportTests"
 ```
 

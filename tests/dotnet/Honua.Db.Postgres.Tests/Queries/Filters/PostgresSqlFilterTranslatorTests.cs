@@ -4,9 +4,9 @@
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
-using Honua.Postgres.Queries.Filters;
+using Honua.Db.Postgres.Queries.Filters;
 
-namespace Honua.Postgres.Tests.Queries.Filters;
+namespace Honua.Db.Postgres.Tests.Queries.Filters;
 
 public class PostgresSqlFilterTranslatorTests
 {

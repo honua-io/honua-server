@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
-namespace Honua.DuckDB.Features.FeatureStore.Services;
+namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
 /// <summary>
 /// DuckDB implementation of the feature cache manager.

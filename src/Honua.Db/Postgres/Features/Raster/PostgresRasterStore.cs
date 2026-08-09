@@ -9,11 +9,11 @@ using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>
 /// Resolved low/high pixel-value bounds for a single band's display stretch.

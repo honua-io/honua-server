@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.AnomalyDetection;
+namespace Honua.Db.Postgres.Features.AnomalyDetection;
 
 /// <summary>
 /// Structured logging for anomaly detection operations.

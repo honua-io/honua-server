@@ -19,15 +19,15 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Regression coverage for issue #1098: the GeoServer catalog-apply path must

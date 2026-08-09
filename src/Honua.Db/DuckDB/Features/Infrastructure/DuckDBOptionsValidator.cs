@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Validates DuckDB provider configuration before the provider starts serving requests.

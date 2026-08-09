@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Crs;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>
 /// Unit tests for <see cref="DatumTransformSql"/> (issue #1274). Asserts the shared

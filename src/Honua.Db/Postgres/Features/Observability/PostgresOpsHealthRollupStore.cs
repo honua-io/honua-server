@@ -6,11 +6,11 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Observability;
+namespace Honua.Db.Postgres.Features.Observability;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IOpsHealthRollupStore"/> (#2553). Persists per-replica

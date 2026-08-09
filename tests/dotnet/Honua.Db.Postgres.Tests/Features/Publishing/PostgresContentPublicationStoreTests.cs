@@ -8,12 +8,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Content;
 using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Publishing.Content.Services;
-using Honua.Postgres.Features.Publishing;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Publishing;
+namespace Honua.Db.Postgres.Tests.Features.Publishing;
 
 /// <summary>
 /// Postgres integration tests for the content publication store: round-trip,

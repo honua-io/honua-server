@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Domain;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Resolves and opens a <see cref="SqlConnection"/> for a SQL Server feature operation.

@@ -15,8 +15,8 @@ using System.Globalization;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {

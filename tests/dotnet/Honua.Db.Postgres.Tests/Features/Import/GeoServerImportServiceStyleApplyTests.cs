@@ -18,12 +18,12 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Issue #1015 slice 3: GeoServer style migration persistence and diagnostics.

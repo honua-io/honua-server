@@ -21,7 +21,7 @@
 
       The provider-agnostic ingest DOMAIN (Core.Features.{Migration,Import,
       FileImport} — REST source clients, abstractions, evidence model) stays in
-      Honua.Core because the storage providers (notably Honua.Postgres's
+      Honua.Core because the storage providers (notably Honua.Db.Postgres's
       StreamingFileImportService and migration sinks) consume it and must not
       pull this module's ASP.NET surface. The NTS file-format readers stay in
       Honua.Geometry for the same reason.

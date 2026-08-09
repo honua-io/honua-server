@@ -4,7 +4,7 @@
 using System.Data;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Postgres.Features.Infrastructure.Session;
+namespace Honua.Db.Postgres.Features.Infrastructure.Session;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IDatabaseSessionFactory"/>.

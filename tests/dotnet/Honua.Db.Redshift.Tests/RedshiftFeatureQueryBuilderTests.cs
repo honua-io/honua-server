@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
 
-namespace Honua.Redshift.Tests;
+namespace Honua.Db.Redshift.Tests;
 
 /// <summary>
 /// Ungated unit tests for Redshift SQL generation. Verifies ANSI double-quoted identifiers,

@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Npgsql;
 using Polly;
 
-namespace Honua.Postgres.Features.Infrastructure.Resilience;
+namespace Honua.Db.Postgres.Features.Infrastructure.Resilience;
 
 /// <summary>
 /// Cached resilience policies for database operations with PostgreSQL.

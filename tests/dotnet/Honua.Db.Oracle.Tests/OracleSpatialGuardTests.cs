@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Domain;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Oracle.Tests;
+namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Verifies that <see cref="OracleSpatialGuard"/> refuses to read non-SDO geometry columns or

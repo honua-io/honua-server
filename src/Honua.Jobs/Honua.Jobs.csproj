@@ -26,7 +26,7 @@
       heartbeat loop (JobExecutionService), the Redis-backed queue/stores, the
       reconciliation sweeper, and the small cancellation/metadata helpers. The
       AWS Batch / ECS / Lambda / Azure / Kubernetes provider backends stay in
-      Honua.Server (and will be carved into Honua.Aws / Honua.Azure / Honua.K8s
+      Honua.Server (and will be carved into Honua.Cloud.Aws / Honua.Cloud.Azure / Honua.K8s
       in follow-on splits). Realises ADR-0038's lean-worker boundary by letting
       Honua.Worker.Gdal reuse the substrate without taking a ProjectReference on
       Honua.Server.
@@ -51,8 +51,8 @@
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
-    <InternalsVisibleTo Include="Honua.Aws" />
-    <InternalsVisibleTo Include="Honua.Azure" />
+    <InternalsVisibleTo Include="Honua.Cloud.Aws" />
+    <InternalsVisibleTo Include="Honua.Cloud.Azure" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

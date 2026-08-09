@@ -3,12 +3,12 @@
 
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Honua.Postgres.Security.Tests;
+namespace Honua.Db.Postgres.Security.Tests;
 
 /// <summary>
 /// Tests for <see cref="SecureConnectionResolver"/> verifying that SSL/TLS

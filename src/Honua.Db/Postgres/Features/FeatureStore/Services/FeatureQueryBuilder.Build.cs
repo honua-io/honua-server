@@ -8,12 +8,12 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Builds SQL queries for PostgreSQL feature store operations

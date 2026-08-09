@@ -12,13 +12,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.MySql\Honua.MySql.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.SqlServer\Honua.SqlServer.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Oracle\Honua.Oracle.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Postgres\Honua.Db.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.MySql\Honua.Db.MySql.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.SqlServer\Honua.Db.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Oracle\Honua.Db.Oracle.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Snowflake\Honua.Snowflake.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.DuckDB\Honua.DuckDB.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Redshift\Honua.Redshift.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.DuckDB\Honua.Db.DuckDB.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Redshift\Honua.Db.Redshift.csproj" />
     <ProjectReference Include="..\Honua.Server.Tests\Honua.Server.Tests.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <!-- Per-protocol test projects are referenced so their assemblies land in

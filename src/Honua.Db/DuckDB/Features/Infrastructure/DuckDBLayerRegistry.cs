@@ -3,7 +3,7 @@
 
 using System.Collections.Frozen;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Thread-safe registry of DuckDB layer mappings, keyed by layer ID.

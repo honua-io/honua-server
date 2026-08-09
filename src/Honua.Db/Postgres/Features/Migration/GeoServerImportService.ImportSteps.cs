@@ -10,10 +10,10 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Legacy in-place "Import*" step methods used by the non-dry-run, non-apply-plan

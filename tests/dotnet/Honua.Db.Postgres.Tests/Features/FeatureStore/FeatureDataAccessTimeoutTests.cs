@@ -4,9 +4,9 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureDataAccessTimeoutTests
 {

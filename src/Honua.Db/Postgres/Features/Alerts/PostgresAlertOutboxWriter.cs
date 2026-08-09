@@ -5,10 +5,10 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 /// <summary>
 /// Atomic writer that appends an alert event and enqueues its per-channel dispatch rows in a

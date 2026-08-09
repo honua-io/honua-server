@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Postgres\Honua.Db.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
   </ItemGroup>

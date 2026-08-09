@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
 /// SQL that synthesizes a canonical Metadata v2 graph document directly from the

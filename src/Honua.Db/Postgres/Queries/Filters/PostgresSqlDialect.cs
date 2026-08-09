@@ -3,7 +3,7 @@
 
 using Honua.Core.Queries.Filters;
 
-namespace Honua.Postgres.Queries.Filters;
+namespace Honua.Db.Postgres.Queries.Filters;
 
 /// <summary>
 /// PostgreSQL / PostGIS implementation of <see cref="ISqlDialect"/>.

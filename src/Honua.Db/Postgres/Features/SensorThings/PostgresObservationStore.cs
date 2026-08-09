@@ -5,11 +5,11 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.SensorThings;
+namespace Honua.Db.Postgres.Features.SensorThings;
 
 /// <summary>
 /// Postgres implementation of <see cref="IObservationStore"/> over the

@@ -7,7 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 
-namespace Honua.DuckDB.Queries.Filters;
+namespace Honua.Db.DuckDB.Queries.Filters;
 
 /// <summary>
 /// Translates the shared filter AST into parameterized DuckDB SQL.

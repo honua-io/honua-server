@@ -11,7 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.AnomalyDetection;
+namespace Honua.Db.Postgres.Features.AnomalyDetection;
 
 /// <summary>
 /// Deterministic anomaly analyzer backed by PostGIS aggregate queries.

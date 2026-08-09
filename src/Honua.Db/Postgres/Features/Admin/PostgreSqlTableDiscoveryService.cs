@@ -6,12 +6,12 @@ using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// PostgreSQL implementation of table discovery service.

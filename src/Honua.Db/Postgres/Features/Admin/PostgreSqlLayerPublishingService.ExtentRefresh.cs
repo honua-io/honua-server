@@ -14,7 +14,7 @@
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {

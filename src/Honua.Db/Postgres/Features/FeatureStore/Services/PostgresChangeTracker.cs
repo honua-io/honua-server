@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Reads the change-tracking log from Postgres for incremental replication sync

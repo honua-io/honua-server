@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
 /// PostgreSQL-backed <see cref="IMetadataV2StyleGraphSync"/> (ADR-0048, Phase 2,

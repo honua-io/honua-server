@@ -7,7 +7,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 internal sealed class PostgresMetadataV2EnvironmentSnapshotReader : IMetadataV2EnvironmentSnapshotReader
 {

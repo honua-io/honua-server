@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.Unspecified)]
 [JsonSerializable(typeof(Dictionary<string, string?>), TypeInfoPropertyName = "MetadataDictionary")]

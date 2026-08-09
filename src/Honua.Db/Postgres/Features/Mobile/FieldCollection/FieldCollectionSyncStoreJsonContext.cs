@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
 
-namespace Honua.Postgres.Features.Mobile.FieldCollection;
+namespace Honua.Db.Postgres.Features.Mobile.FieldCollection;
 
 /// <summary>
 /// Source-generated JSON context for persisting <see cref="FieldCollectionPushResult"/>

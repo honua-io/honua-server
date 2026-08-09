@@ -9,8 +9,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Geoprocessing;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// Catalog-database implementation of <see cref="IHonuaLayerSink"/>. Loads pre-encoded

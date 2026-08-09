@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
-namespace Honua.Postgres.Features.AuditLog;
+namespace Honua.Db.Postgres.Features.AuditLog;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IAuditLogIntegrityVerifier"/> (#350).

@@ -5,13 +5,13 @@ using System.Data.Common;
 using System.Globalization;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Scene;
+namespace Honua.Db.Postgres.Features.Scene;
 
 /// <summary>
 /// PostgreSQL-backed implementation of the scene dataset registry. Serves as

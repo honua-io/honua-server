@@ -4,7 +4,7 @@
 using System.Text.RegularExpressions;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal static partial class SchemaSearchPath
 {

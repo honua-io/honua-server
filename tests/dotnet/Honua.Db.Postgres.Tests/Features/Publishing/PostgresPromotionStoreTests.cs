@@ -8,14 +8,14 @@ using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
-using Honua.Postgres.Features.Publishing;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Publishing;
+namespace Honua.Db.Postgres.Tests.Features.Publishing;
 
 /// <summary>
 /// Durable Postgres proof for the MCP promotion resource stores (#2482).

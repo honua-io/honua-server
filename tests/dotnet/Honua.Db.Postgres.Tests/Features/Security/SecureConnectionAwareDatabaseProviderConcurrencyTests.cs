@@ -3,14 +3,14 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Caching;
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Security;
+namespace Honua.Db.Postgres.Tests.Features.Security;
 
 /// <summary>
 /// Regression tests for the interaction between

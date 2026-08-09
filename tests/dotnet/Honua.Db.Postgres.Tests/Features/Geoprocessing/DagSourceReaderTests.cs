@@ -16,14 +16,14 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Postgres.Features.Geoprocessing;
+using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
 
-namespace Honua.Postgres.Tests.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 
 /// <summary>
 /// In-memory unit coverage for the first-class DAG remote source connectors. Each

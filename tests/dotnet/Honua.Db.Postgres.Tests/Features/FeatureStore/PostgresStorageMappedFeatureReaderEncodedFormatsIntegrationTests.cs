@@ -11,12 +11,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>
 /// Integration coverage for FlatGeobuf / Geobuf output on source-backed (provider-routed)

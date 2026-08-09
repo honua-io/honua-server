@@ -8,13 +8,13 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Issue #1015 slice 5: <see cref="PostgresMigrationRunCatalog"/> persists run

@@ -4,7 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Session;
 
-namespace Honua.DuckDB.Features.Infrastructure.Session;
+namespace Honua.Db.DuckDB.Features.Infrastructure.Session;
 
 /// <summary>
 /// DuckDB implementation of

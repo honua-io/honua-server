@@ -5,9 +5,9 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.SqlServer;
-using Honua.SqlServer.Features.FeatureStore;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer;
+using Honua.Db.SqlServer.Features.FeatureStore;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -16,7 +16,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.SqlServer.Tests;
+namespace Honua.Db.SqlServer.Tests;
 
 /// <summary>
 /// Gated integration tests for the SQL Server feature provider.

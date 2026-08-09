@@ -3,7 +3,7 @@
 
 using System.Text;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Minimal URL-safe base64 helpers used by Postgres cursor encoders.

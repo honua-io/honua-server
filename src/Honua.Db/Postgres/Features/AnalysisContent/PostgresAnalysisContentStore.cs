@@ -7,11 +7,11 @@ using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.AnalysisContent;
+namespace Honua.Db.Postgres.Features.AnalysisContent;
 
 internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
 {

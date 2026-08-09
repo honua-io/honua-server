@@ -20,7 +20,7 @@
       surface (Npgsql-backed solves over the pgRouting "ways"/"ways_vertices_pgr"
       topology) is isolated from non-routing consumers. Honua.Routing depends on
       Honua.Core.Abstractions only for the IDatabaseConnectionProvider abstraction;
-      it MUST NOT reference Honua.Postgres or back into Honua.Server.
+      it MUST NOT reference Honua.Db.Postgres or back into Honua.Server.
     -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />

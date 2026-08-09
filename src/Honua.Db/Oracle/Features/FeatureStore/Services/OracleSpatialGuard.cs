@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Detects whether an Oracle table backs a standard <c>SDO_GEOMETRY</c> spatial source or an

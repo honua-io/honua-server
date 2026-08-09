@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Databricks.Features.FeatureStore.Services;
+namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
 /// <summary>
 /// A SQL statement destined for the Databricks SQL Statement Execution API, together

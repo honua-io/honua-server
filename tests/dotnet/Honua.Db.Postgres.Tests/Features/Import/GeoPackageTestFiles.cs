@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Builds minimal single/dual-layer GeoPackage files on disk for import and preview tests,

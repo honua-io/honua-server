@@ -3,7 +3,7 @@
 
 using Honua.TestKit;
 
-namespace Honua.Postgres.Tests;
+namespace Honua.Db.Postgres.Tests;
 
 /// <summary>
 /// Collection definition for tests that share a PostgreSQL container.

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 
-namespace Honua.Databricks.Features.Infrastructure;
+namespace Honua.Db.Databricks.Features.Infrastructure;
 
 /// <summary>
 /// Resolved physical mapping for a single Databricks-backed layer, built from

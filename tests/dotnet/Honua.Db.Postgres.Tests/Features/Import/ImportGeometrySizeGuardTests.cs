@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.FileImport.Services;
 using NetTopologySuite.Geometries;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Unit tests for <see cref="ImportGeometrySizeGuard"/> — the bounded memory guard that rejects

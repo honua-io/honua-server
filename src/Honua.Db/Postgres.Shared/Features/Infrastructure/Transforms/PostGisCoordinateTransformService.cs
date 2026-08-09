@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Infrastructure.Transforms;
+namespace Honua.Db.Postgres.Features.Infrastructure.Transforms;
 
 /// <summary>
 /// PostGIS-backed coordinate transform service with fast in-memory path for common SRID pairs.

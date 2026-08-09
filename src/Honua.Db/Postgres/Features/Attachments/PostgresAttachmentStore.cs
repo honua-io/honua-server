@@ -10,7 +10,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Attachments;
+namespace Honua.Db.Postgres.Features.Attachments;
 
 /// <summary>
 /// PostgreSQL implementation of attachment storage and file management

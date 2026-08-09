@@ -4,7 +4,7 @@
 using Honua.Core.Features.Collaboration.Operations;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Postgres.Features.Collaboration.Operations;
+namespace Honua.Db.Postgres.Features.Collaboration.Operations;
 
 /// <summary>
 /// Singleton collaboration seam that resolves the scoped Postgres repository for each complete

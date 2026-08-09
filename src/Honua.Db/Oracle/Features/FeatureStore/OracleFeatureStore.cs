@@ -8,9 +8,9 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 
-namespace Honua.Oracle.Features.FeatureStore;
+namespace Honua.Db.Oracle.Features.FeatureStore;
 
 /// <summary>
 /// Read-only Oracle feature provider for the connect-in-place enterprise-geodatabase

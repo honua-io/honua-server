@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.DuckDB.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.DuckDB.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// DuckDB is a read-only feature provider in v1, so it cannot write outbox rows for

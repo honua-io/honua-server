@@ -8,14 +8,14 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Resilience;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Db.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 /// <summary>
 /// Database connection provider that can optionally use secure connection registry.

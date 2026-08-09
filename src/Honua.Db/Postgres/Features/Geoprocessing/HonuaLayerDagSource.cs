@@ -14,7 +14,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Postgres.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// <c>source.honua-layer</c> DAG connector. Streams features from a Honua catalog

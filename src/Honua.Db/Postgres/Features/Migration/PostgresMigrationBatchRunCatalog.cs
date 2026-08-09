@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IMigrationBatchRunCatalog"/> (issue

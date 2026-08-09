@@ -4,7 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Session;
 
-namespace Honua.MySql.Features.Infrastructure.Session;
+namespace Honua.Db.MySql.Features.Infrastructure.Session;
 
 /// <summary>
 /// MySQL/MariaDB implementation of

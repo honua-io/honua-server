@@ -3,11 +3,11 @@
 
 using System.Globalization;
 using FluentAssertions;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 /// <summary>
 /// Verifies on-the-fly overview selection (#1793) against a real PostGIS raster: at low

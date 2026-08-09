@@ -3,7 +3,7 @@
 
 using System.Data.Common;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Extension methods for <see cref="DbTransaction"/> that guard against the

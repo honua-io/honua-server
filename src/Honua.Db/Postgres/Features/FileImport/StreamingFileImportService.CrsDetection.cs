@@ -11,10 +11,10 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 
-namespace Honua.Postgres.Features.FileImport;
+namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {

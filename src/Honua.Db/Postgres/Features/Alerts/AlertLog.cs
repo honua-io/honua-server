@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 internal static partial class AlertLog
 {

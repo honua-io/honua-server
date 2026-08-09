@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Postgres.Features.Share;
+namespace Honua.Db.Postgres.Features.Share;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(Dictionary<string, string>))]

@@ -5,7 +5,7 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.HealthCheck;
+namespace Honua.Db.Postgres.Features.HealthCheck;
 
 /// <summary>
 /// PostgreSQL implementation of database health checking

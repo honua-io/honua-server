@@ -9,7 +9,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Outcome of the post-publish reconciliation gate (issues #1247, #1380). Carries the

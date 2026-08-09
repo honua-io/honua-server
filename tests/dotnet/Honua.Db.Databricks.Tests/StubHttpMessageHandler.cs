@@ -4,7 +4,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 
-namespace Honua.Databricks.Tests;
+namespace Honua.Db.Databricks.Tests;
 
 /// <summary>
 /// Test double that returns queued canned responses in order, recording each request

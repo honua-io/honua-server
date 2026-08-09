@@ -5,7 +5,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 
-namespace Honua.Postgres.Features.Infrastructure.Coordination;
+namespace Honua.Db.Postgres.Features.Infrastructure.Coordination;
 
 /// <summary>
 /// No-op implementation of distributed leader election that always assumes leadership.

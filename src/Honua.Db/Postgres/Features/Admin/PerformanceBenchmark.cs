@@ -5,7 +5,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// Performance benchmarking utilities for database operations.

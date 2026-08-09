@@ -3,12 +3,12 @@
 
 using System.Net;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Databricks.Features.FeatureStore.Services;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.FeatureStore.Services;
+using Honua.Db.Databricks.Features.Infrastructure;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Databricks.Tests;
+namespace Honua.Db.Databricks.Tests;
 
 /// <summary>
 /// Verifies the Statement Execution submit/poll loop transparently retries transient

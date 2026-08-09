@@ -8,7 +8,7 @@ using Honua.Core.Features.Temporal.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Reads the uncollapsed change log with attribution from Postgres for the temporal diff, timeline, and

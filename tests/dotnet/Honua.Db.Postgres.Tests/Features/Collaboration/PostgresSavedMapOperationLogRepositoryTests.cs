@@ -8,15 +8,15 @@ using DbUp;
 using DbUp.Helpers;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Collaboration.Operations;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Collaboration.Operations;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
 using TestOperations = Honua.TestKit.Constants.Operations;
 
-namespace Honua.Postgres.Tests.Features.Collaboration;
+namespace Honua.Db.Postgres.Tests.Features.Collaboration;
 
 [Collection("Database")]
 [Protocol(ProtocolNames.TestQuality)]

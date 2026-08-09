@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 public sealed class PostgresRasterMapRendererOptionsTests
 {

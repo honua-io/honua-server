@@ -4,7 +4,7 @@
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>
 /// Structured logging for PostgreSQL raster import operations.

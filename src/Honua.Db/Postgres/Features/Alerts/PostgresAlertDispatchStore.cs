@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Alerts;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 {

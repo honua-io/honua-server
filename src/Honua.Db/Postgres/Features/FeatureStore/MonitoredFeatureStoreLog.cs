@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.FeatureStore;
+namespace Honua.Db.Postgres.Features.FeatureStore;
 
 /// <summary>
 /// High-performance logging for monitored feature store operations using source generation for AOT compatibility.

@@ -4,7 +4,7 @@
 using System.Text;
 using Microsoft.Extensions.ObjectPool;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// PERFORMANCE OPTIMIZATION: Pooled object policy for dictionary allocations

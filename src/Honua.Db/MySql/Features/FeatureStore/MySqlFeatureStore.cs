@@ -8,9 +8,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.MySql;
+using Honua.Db.MySql;
 
-namespace Honua.MySql.Features.FeatureStore;
+namespace Honua.Db.MySql.Features.FeatureStore;
 
 /// <summary>
 /// MySQL/MariaDB read-only feature store. Provides query, count, and extent paths over

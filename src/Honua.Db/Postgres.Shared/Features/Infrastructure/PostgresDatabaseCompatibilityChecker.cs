@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Checks PostGIS and PostgreSQL compatibility by querying pg_extension and version().

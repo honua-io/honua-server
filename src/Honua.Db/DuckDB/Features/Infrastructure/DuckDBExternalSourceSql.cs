@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Builds SQL fragments and bootstrap commands for DuckDB external file sources.

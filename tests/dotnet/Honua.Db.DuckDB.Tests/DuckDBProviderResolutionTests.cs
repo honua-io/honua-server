@@ -3,14 +3,14 @@
 
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Queries.Filters;
-using Honua.DuckDB.Features.HealthCheck;
+using Honua.Db.DuckDB.Queries.Filters;
+using Honua.Db.DuckDB.Features.HealthCheck;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 /// <summary>
 /// Verifies that DI registration for the DuckDB provider activates all required

@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Raster.Domain;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>
 /// AOT-safe JSON serialization context for raster persistence types.

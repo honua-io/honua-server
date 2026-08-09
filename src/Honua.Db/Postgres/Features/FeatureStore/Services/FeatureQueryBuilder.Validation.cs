@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {

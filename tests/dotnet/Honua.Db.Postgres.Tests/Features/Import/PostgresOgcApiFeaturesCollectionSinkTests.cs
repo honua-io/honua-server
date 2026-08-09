@@ -5,13 +5,13 @@ using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Integration tests for the OGC API Features collection sink. Exercises real PostgreSQL/PostGIS

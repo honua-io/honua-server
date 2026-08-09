@@ -9,7 +9,7 @@ using System.Threading;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Migration.Services;
 
-namespace Honua.Postgres.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// Shared GeoJSON page-fetch + feature-projection helper for the HTTP DAG source

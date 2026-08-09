@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// Source-generated logger for PostGIS table discovery.

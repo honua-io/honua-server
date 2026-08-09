@@ -8,11 +8,11 @@ using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.AnalysisContent;
+using Honua.Db.Postgres.Features.AnalysisContent;
 using Npgsql;
 using NSubstitute;
 
-namespace Honua.Postgres.Tests.Features.AnalysisContent;
+namespace Honua.Db.Postgres.Tests.Features.AnalysisContent;
 
 /// <summary>
 /// Verifies that <see cref="PostgresAnalysisContentStore"/> maps provider connectivity failures

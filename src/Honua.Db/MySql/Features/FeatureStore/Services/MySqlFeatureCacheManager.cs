@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Features.FeatureStore.Services;
+namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
 /// <summary>
 /// MySQL/MariaDB cache manager. Provides per-layer SRID lookup from the registry;

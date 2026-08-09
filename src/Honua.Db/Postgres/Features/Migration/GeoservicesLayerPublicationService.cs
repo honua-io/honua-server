@@ -11,10 +11,10 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Metadata;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Owns the post-commit, published-layer lifecycle for ArcGIS GeoServices imports: AutoPublish of the

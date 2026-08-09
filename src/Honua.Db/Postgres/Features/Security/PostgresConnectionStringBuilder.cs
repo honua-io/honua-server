@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Domain;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStringBuilder
 {

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.Oracle.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.Oracle.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Oracle is a read-only feature provider in this slice (#1252), so it does not support

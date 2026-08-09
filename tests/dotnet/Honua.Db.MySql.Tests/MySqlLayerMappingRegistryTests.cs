@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="MySqlLayerMappingRegistry"/> behaviour:

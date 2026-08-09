@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 
-namespace Honua.MySql;
+namespace Honua.Db.MySql;
 
 /// <summary>
 /// Validates <see cref="MySqlOptions"/> at startup. Surfaces all configuration errors

@@ -10,8 +10,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// PostgreSQL store for operator-managed layer field configuration.

@@ -3,10 +3,10 @@
 
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
-using Honua.Postgres.Queries.Filters;
+using Honua.Db.Postgres.Queries.Filters;
 using Xunit;
 
-namespace Honua.Postgres.Tests.Queries.Filters;
+namespace Honua.Db.Postgres.Tests.Queries.Filters;
 
 /// <summary>
 /// Pins the PostgreSQL <see cref="ISqlDialect"/> identifier-quoting and parameter-prefix

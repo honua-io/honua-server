@@ -8,13 +8,13 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.SqlServer;
-using Honua.SqlServer.Features.FeatureStore;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer;
+using Honua.Db.SqlServer.Features.FeatureStore;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.SqlServer.Tests;
+namespace Honua.Db.SqlServer.Tests;
 
 /// <summary>
 /// Verifies that the SQL Server provider plugs into the shared Metadata v2 provider seam:

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Crs;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Single chokepoint for emitting PostGIS reprojection SQL. Centralizing

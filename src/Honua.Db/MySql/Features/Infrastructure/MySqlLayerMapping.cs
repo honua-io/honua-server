@@ -4,7 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.MySql.Features.Infrastructure;
+namespace Honua.Db.MySql.Features.Infrastructure;
 
 /// <summary>
 /// Maps a Honua layer ID to a MySQL/MariaDB table and its column layout.

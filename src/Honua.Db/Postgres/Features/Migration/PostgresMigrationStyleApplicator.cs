@@ -8,7 +8,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Applies converted migration styles through the canonical style catalog abstractions.

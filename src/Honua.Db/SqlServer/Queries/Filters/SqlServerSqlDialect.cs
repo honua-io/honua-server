@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-namespace Honua.SqlServer.Queries.Filters;
+namespace Honua.Db.SqlServer.Queries.Filters;
 
 /// <summary>
 /// SQL Server / Azure SQL implementation of <see cref="ISqlDialect"/>.

@@ -11,8 +11,8 @@ Coordinate transformation is primarily handled in PostGIS (ST_Transform). For co
 
 ## Findings - Medium/Low Impact
 - FeatureServer where parsing uses the ArcGIS SQL parser, but parity with full ArcGIS SQL is incomplete; document unsupported functions/edge cases. Evidence: src/Honua.Server/Features/FeatureServer/FeatureServerQueryHandler.cs:232.
-- OGC conformance declares core/CRS/queryables only; filtering translation remains limited, so keep docs/tests aligned with advertised classes. Evidence: src/Honua.Server/Features/OgcFeatures/CoreEndpoints.cs:155, src/Honua.Postgres/Queries/Filters/PostgresSqlFilterTranslator.cs:327.
-- CRS registry is backed by Postgres spatial_ref_sys; advertised CRS now resolves through the registry. Status: addressed. Evidence: src/Honua.Postgres/Features/Infrastructure/Crs/PostgresCrsRegistry.cs:24.
+- OGC conformance declares core/CRS/queryables only; filtering translation remains limited, so keep docs/tests aligned with advertised classes. Evidence: src/Honua.Server/Features/OgcFeatures/CoreEndpoints.cs:155, src/Honua.Db.Postgres/Queries/Filters/PostgresSqlFilterTranslator.cs:327.
+- CRS registry is backed by Postgres spatial_ref_sys; advertised CRS now resolves through the registry. Status: addressed. Evidence: src/Honua.Db.Postgres/Features/Infrastructure/Crs/PostgresCrsRegistry.cs:24.
 - Z/M detection is inconsistent and only checks the first coordinate despite docs claiming full sequence checks, so hasZ/hasM flags can be wrong across APIs. Evidence: src/Honua.Server/Features/Infrastructure/Services/GeometryService.cs:208, src/Honua.Server/Features/OgcFeatures/Services/OgcFeaturesGeometryServices.cs:239. Status: addressed.
 - FeatureServer service metadata ObjectIdField defaults to FieldNames.ObjectId and is set in the mapper. Status: addressed. Evidence: src/Honua.Server/Features/FeatureServer/Models/FeatureServerModels.cs:96.
 - OData $filter for Layers uses the shared OData expression parser. Status: addressed. Evidence: src/Honua.Server/Features/OData/Services/ODataQueryService.cs:47.
@@ -20,7 +20,7 @@ Coordinate transformation is primarily handled in PostGIS (ST_Transform). For co
 - OGC Tiles collection extents now use `OgcExtentTransformer.TryTransformToCrs84()` consistent with OGC Features and WFS 2.0; unsupported CRS omits spatial extent rather than emitting non-CRS84 coordinates. Status: addressed (#573). Evidence: src/Honua.Server/Features/OgcTiles/CollectionsEndpoints.cs:229-248.
 - OGC Tiles WKB rendering now reads the byte-order flag and uses endian-aware reads (`BinaryPrimitives`) for all geometry types, supporting both little-endian (NDR) and big-endian (XDR) payloads. Status: addressed (#573). Evidence: src/Honua.Server/Features/OgcTiles/TileRenderer.cs:88.
 - OGC Maps requests are now classified as OGC in `ProtocolRequestClassifier.IsOgc()`, ensuring OGC-specific error formatting (RFC 7807 Problem Details with `type: "about:blank"`). Status: addressed (#573). Evidence: src/Honua.Server/Features/Infrastructure/Models/ProtocolRequestClassifier.cs:25-28.
-- Data source abstraction currently binds all feature storage to Postgres; no runtime GeoPackage/cloud-native backends are wired in. Evidence: src/Honua.Postgres/Features/FeatureStore/ServiceCollectionExtensions.cs:23.
+- Data source abstraction currently binds all feature storage to Postgres; no runtime GeoPackage/cloud-native backends are wired in. Evidence: src/Honua.Db.Postgres/Features/FeatureStore/ServiceCollectionExtensions.cs:23.
 
 ## Open Questions / Assumptions
 - Is OData intended to be strict OData spatial compliance or a GeoJSON-based contract with compatible metadata?

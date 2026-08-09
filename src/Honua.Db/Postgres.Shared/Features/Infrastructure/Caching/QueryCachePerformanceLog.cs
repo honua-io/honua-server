@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Infrastructure.Caching;
+namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 /// <summary>
 /// High-performance logging for query cache operations using source generators

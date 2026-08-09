@@ -5,7 +5,7 @@ using Honua.Core.Features.EnrichmentCatalog.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Postgres.Features.EnrichmentCatalog;
+namespace Honua.Db.Postgres.Features.EnrichmentCatalog;
 
 /// <summary>
 /// DI registration helper for the Postgres-backed enrichment-dataset catalog store

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using Oracle.ManagedDataAccess.Client;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
 
-namespace Honua.Oracle.Features.Security;
+namespace Honua.Db.Oracle.Features.Security;
 
 /// <summary>
 /// Oracle <see cref="IConnectionDriver"/>: builds an Oracle.ManagedDataAccess Easy Connect string

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Postgres.Features.Scene;
+namespace Honua.Db.Postgres.Features.Scene;
 
 /// <summary>
 /// DI registration helper for the Postgres-backed scene dataset registry

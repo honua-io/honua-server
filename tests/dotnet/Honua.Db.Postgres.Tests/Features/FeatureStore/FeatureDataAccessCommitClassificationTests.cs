@@ -3,10 +3,10 @@
 using System.Data;
 using System.Data.Common;
 using FluentAssertions;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureDataAccessCommitClassificationTests
 {

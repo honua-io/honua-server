@@ -5,7 +5,7 @@ using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Honua.Core.Features.Import.Abstractions;
@@ -16,10 +16,10 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 
-namespace Honua.Postgres.Features.FileImport;
+namespace Honua.Db.Postgres.Features.FileImport;
 
 /// <summary>
 /// Service for detecting coordinate reference systems from various sources

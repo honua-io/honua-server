@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Executes Redshift feature queries built by <see cref="RedshiftFeatureQueryBuilder"/>.

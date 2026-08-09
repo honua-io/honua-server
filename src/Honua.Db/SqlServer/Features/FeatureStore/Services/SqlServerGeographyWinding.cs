@@ -6,7 +6,7 @@ using Honua.Core.Geometries;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Normalizes SQL Server <c>geometry</c>/<c>geography</c> filter geometries for binding into

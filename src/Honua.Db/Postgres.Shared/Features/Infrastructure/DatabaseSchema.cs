@@ -4,7 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Centralized database schema constants for PostgreSQL feature store operations.

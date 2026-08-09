@@ -5,16 +5,16 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Queries.Filters;
-using Honua.Databricks.Features.FeatureStore;
-using Honua.Databricks.Features.FeatureStore.Services;
-using Honua.Databricks.Features.Infrastructure;
-using Honua.Databricks.Queries.Filters;
+using Honua.Db.Databricks.Features.FeatureStore;
+using Honua.Db.Databricks.Features.FeatureStore.Services;
+using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Databricks;
+namespace Honua.Db.Databricks;
 
 /// <summary>
 /// Public DI entry point for the read-only Databricks feature provider (#1714).

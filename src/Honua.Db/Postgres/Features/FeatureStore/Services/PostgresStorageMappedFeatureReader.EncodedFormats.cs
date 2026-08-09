@@ -7,7 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 // FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers
 // (honua-server#1938). The canonical PostgresFeatureStoreRefactored reader implements

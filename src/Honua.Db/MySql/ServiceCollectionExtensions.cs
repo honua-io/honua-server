@@ -13,17 +13,17 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.MySql.Features.FeatureStore;
-using Honua.MySql.Features.FeatureStore.Services;
-using Honua.MySql.Features.HealthCheck;
-using Honua.MySql.Features.Infrastructure;
-using Honua.MySql.Queries.Filters;
+using Honua.Db.MySql.Features.FeatureStore;
+using Honua.Db.MySql.Features.FeatureStore.Services;
+using Honua.Db.MySql.Features.HealthCheck;
+using Honua.Db.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
 
-namespace Honua.MySql;
+namespace Honua.Db.MySql;
 
 /// <summary>
 /// Dependency-injection wiring for the MySQL/MariaDB read-only feature provider.

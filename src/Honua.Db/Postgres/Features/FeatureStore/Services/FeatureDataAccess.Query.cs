@@ -11,7 +11,7 @@ using Honua.Core.Features.Shared.Models;
 using Npgsql;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {

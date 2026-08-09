@@ -4,7 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.Postgres.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Provider-internal atomic write path for the feature-change transactional outbox.

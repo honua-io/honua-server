@@ -4,7 +4,7 @@
 using System.Data;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.DuckDB.Features.Infrastructure.Session;
+namespace Honua.Db.DuckDB.Features.Infrastructure.Session;
 
 /// <summary>
 /// DuckDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps the

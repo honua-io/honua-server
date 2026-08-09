@@ -2,13 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Testcontainers.PostgreSql;
 
-namespace Honua.Redshift.Tests;
+namespace Honua.Db.Redshift.Tests;
 
 /// <summary>
 /// Gated integration tests for the Redshift Npgsql data-access path.

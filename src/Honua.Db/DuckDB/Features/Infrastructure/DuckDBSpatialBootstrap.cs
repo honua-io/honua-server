@@ -3,10 +3,10 @@
 
 using System.Data.Common;
 using System.Collections.Immutable;
-using Honua.DuckDB;
+using Honua.Db.DuckDB;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Installs the DuckDB spatial extension once per process and loads it onto every

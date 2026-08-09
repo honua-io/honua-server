@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
 /// Source-generated JSON context for <see cref="PostgresMigrationBatchRunCatalog"/> (#1253). The

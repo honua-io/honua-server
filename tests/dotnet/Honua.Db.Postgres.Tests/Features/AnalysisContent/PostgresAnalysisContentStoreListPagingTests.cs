@@ -6,12 +6,12 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.AnalysisContent;
+using Honua.Db.Postgres.Features.AnalysisContent;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.AnalysisContent;
+namespace Honua.Db.Postgres.Tests.Features.AnalysisContent;
 
 /// <summary>
 /// Postgres integration tests for <see cref="PostgresAnalysisContentStore"/> list paging

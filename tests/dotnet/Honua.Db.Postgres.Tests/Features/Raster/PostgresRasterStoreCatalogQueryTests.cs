@@ -7,13 +7,13 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 /// <summary>
 /// Provider integration + scale tests for the raster-catalog spatial pushdown (#2666). These prove

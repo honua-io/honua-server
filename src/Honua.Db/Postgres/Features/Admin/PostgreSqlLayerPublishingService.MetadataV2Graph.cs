@@ -16,10 +16,10 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>
 /// AOT-safe source-generated context for the primitive storage-binding option values.

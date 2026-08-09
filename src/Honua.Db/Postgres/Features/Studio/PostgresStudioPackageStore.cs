@@ -9,11 +9,11 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Studio;
+namespace Honua.Db.Postgres.Features.Studio;
 
 internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 {

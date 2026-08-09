@@ -6,7 +6,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 /// <summary>
 /// Shared SQL text and parameter binding for the two alert-outbox writes — appending an

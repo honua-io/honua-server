@@ -3,7 +3,7 @@
 
 using System.Collections.Frozen;
 
-namespace Honua.MySql.Features.Infrastructure;
+namespace Honua.Db.MySql.Features.Infrastructure;
 
 /// <summary>
 /// Thread-safe registry of MySQL/MariaDB layer mappings, keyed by layer ID.

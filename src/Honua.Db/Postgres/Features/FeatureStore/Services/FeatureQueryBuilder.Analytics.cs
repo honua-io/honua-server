@@ -6,11 +6,11 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Spatial analytics SQL builders — clustering, buffer aggregate and density binning.

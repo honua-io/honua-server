@@ -5,7 +5,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.TileCachePackage.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.TileCachePackage;
+namespace Honua.Db.Postgres.Features.TileCachePackage;
 
 /// <summary>
 /// Postgres-backed serving binding for tiles imported by the tile-cache package

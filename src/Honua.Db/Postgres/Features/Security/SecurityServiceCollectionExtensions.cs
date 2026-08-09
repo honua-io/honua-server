@@ -8,14 +8,14 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 /// <summary>
 /// Service collection extensions for secure connection management.

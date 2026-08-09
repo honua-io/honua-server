@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.Redshift.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.Redshift.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Amazon Redshift is a read-only feature provider in this slice (#1712), so it does not support

@@ -7,7 +7,7 @@ using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Geometry;
+namespace Honua.Db.Postgres.Features.Geometry;
 
 internal sealed class PostgresGeometryTopologyValidator(
     IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryTopologyValidator

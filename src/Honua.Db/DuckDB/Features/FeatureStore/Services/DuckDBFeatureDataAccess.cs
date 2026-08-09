@@ -14,11 +14,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
-using Honua.DuckDB;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB;
+using Honua.Db.DuckDB.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB.Features.FeatureStore.Services;
+namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
 /// <summary>
 /// Executes parameterized queries against DuckDB and materializes Feature objects.

@@ -4,7 +4,7 @@
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 /// <summary>
 /// Composite secret resolver that delegates to specific providers based on secret reference format.

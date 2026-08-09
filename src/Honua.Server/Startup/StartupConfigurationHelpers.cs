@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
-using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;

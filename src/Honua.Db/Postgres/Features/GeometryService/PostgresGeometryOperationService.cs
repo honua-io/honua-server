@@ -7,12 +7,12 @@ using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 
-namespace Honua.Postgres.Features.GeometryService;
+namespace Honua.Db.Postgres.Features.GeometryService;
 
 /// <summary>
 /// PostGIS-backed implementation of geometry operations (buffer, simplify, project, union).

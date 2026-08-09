@@ -7,10 +7,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Postgres.Features.FeatureStore;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.Infrastructure;
 
-namespace Honua.Postgres.Queries.Filters;
+namespace Honua.Db.Postgres.Queries.Filters;
 
 /// <summary>
 /// Translates filter expressions to parameterized PostgreSQL WHERE clauses.

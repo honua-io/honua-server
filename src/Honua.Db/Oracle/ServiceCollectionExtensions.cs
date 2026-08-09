@@ -3,14 +3,14 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Oracle.Features.FeatureStore;
-using Honua.Oracle.Features.FeatureStore.Services;
-using Honua.Oracle.Queries.Filters;
+using Honua.Db.Oracle.Features.FeatureStore;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Oracle;
+namespace Honua.Db.Oracle;
 
 /// <summary>
 /// Public DI entry point for the Oracle spatial feature provider (#1252).

@@ -7,12 +7,12 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Share.Domain;
-using Honua.Postgres.Features.Share;
+using Honua.Db.Postgres.Features.Share;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Share;
+namespace Honua.Db.Postgres.Tests.Features.Share;
 
 [Collection("Database")]
 public sealed class PostgresShareExportStoreTests(PostgresFixture fixture)

@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB;
+namespace Honua.Db.DuckDB;
 
 internal static partial class DuckDbLog
 {

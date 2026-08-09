@@ -3,14 +3,14 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.SqlServer.Features.FeatureStore;
-using Honua.SqlServer.Features.FeatureStore.Services;
-using Honua.SqlServer.Queries.Filters;
+using Honua.Db.SqlServer.Features.FeatureStore;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.SqlServer;
+namespace Honua.Db.SqlServer;
 
 /// <summary>
 /// Public DI entry point for the SQL Server spatial feature provider (#850).

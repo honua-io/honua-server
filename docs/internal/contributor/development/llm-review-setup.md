@@ -47,7 +47,7 @@ And create a test PR with violations to verify the system catches them:
 
 ```csharp
 // Example: Add this to a Core project file (should trigger BLOCKING_ISSUES)
-using Honua.Postgres; // Core depending on Infrastructure - VIOLATION
+using Honua.Db.Postgres; // Core depending on Infrastructure - VIOLATION
 
 public class BadExample : ControllerBase  // Controller usage - VIOLATION
 {

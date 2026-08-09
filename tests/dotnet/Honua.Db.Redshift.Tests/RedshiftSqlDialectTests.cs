@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.Redshift.Queries.Filters;
+using Honua.Db.Redshift.Queries.Filters;
 
-namespace Honua.Redshift.Tests;
+namespace Honua.Db.Redshift.Tests;
 
 /// <summary>
 /// Ungated unit tests for the Redshift SQL dialect and provider-name normalization.

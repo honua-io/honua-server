@@ -11,7 +11,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Executes SQL Server feature queries built by <see cref="SqlServerFeatureQueryBuilder"/>.

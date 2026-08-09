@@ -6,7 +6,7 @@ using System.Text;
 using Honua.Core.Features.Security.Domain;
 using Oracle.ManagedDataAccess.Client;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Default <see cref="IOracleSpatialMetadataProbe"/> implementation. Opens an Oracle connection

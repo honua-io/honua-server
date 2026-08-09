@@ -13,18 +13,18 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Features.FeatureStore;
-using Honua.DuckDB.Features.FeatureStore.Services;
-using Honua.DuckDB.Features.HealthCheck;
+using Honua.Db.DuckDB.Features.FeatureStore;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.HealthCheck;
 using DuckDB.NET.Data;
-using Honua.DuckDB.Features.Infrastructure;
-using Honua.DuckDB.Queries.Filters;
+using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB;
+namespace Honua.Db.DuckDB;
 
 /// <summary>
 /// Dependency injection extensions for DuckDB services

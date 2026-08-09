@@ -3,12 +3,12 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.SqlServer.Tests;
+namespace Honua.Db.SqlServer.Tests;
 
 /// <summary>
 /// Verifies that SQL Server geography filter WKB is normalized to CCW-exterior ring orientation

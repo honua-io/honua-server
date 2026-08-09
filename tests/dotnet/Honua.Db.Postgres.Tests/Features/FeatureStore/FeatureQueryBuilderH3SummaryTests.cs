@@ -4,11 +4,11 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureQueryBuilderH3SummaryTests
 {

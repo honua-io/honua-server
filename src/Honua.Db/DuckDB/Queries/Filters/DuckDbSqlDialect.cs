@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
-namespace Honua.DuckDB.Queries.Filters;
+namespace Honua.Db.DuckDB.Queries.Filters;
 
 /// <summary>
 /// DuckDB implementation of <see cref="ISqlDialect"/>.

@@ -3,9 +3,9 @@
 
 using System.Data.Common;
 using System.IO;
-using Honua.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 public sealed class DuckDBFeatureDataAccessExceptionTests
 {

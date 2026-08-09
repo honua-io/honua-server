@@ -7,7 +7,7 @@ using Honua.Core.Features.Publishing.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Publishing;
+namespace Honua.Db.Postgres.Features.Publishing;
 
 /// <summary>
 /// Durable Postgres store for canonical published-service records.

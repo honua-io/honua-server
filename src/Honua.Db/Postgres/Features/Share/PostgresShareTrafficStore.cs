@@ -5,11 +5,11 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Share;
+namespace Honua.Db.Postgres.Features.Share;
 
 internal sealed class PostgresShareTrafficStore : IShareTrafficStore
 {

@@ -295,12 +295,12 @@ not override these knobs.
 ## Telemetry
 
 Each query opens a `mysql.<operation>` activity span on the
-`Honua.MySql.FeatureDataAccess` `ActivitySource`, tagged with
+`Honua.Db.MySql.FeatureDataAccess` `ActivitySource`, tagged with
 `db.system=mysql`, `db.operation`, and `layer.id`. Failures set
 `ActivityStatusCode.Error` with the underlying exception message and emit a
 structured `MySqlLog.QueryFailed` event (EventId 8902).
 
-The `Honua.MySql.FeatureDataAccess` source is registered with the central
+The `Honua.Db.MySql.FeatureDataAccess` source is registered with the central
 OpenTelemetry tracer in `Honua.ServiceDefaults`, so spans are exported to the
 configured OTLP endpoint when tracing is enabled.
 
@@ -318,12 +318,12 @@ of the MySQL services.
 
 ### Unit tests
 
-`tests/dotnet/Honua.MySql.Tests` contains unit tests for SQL generation,
+`tests/dotnet/Honua.Db.MySql.Tests` contains unit tests for SQL generation,
 filter translation, registry behaviour, and provider resolution. They run on
 every PR and require no external services.
 
 ```bash
-dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.Db.MySql.Tests.csproj \
     --filter "Category!=MySql"
 ```
 
@@ -340,7 +340,7 @@ Docker containers in CI environments without Docker.
 # Requires Docker and the MySQL 8 image. Both the category filter AND the
 # environment variable are required — the env gate keeps the suite inert
 # unless explicitly enabled.
-HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.Db.MySql.Tests.csproj \
     --filter "Category=MySql"
 ```
 

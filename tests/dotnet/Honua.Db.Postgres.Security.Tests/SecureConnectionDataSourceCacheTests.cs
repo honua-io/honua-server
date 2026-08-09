@@ -1,14 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit;
 
-namespace Honua.Postgres.Security.Tests;
+namespace Honua.Db.Postgres.Security.Tests;
 
 /// <summary>
 /// Regression tests for <see cref="SecureConnectionDataSourceCache"/> to

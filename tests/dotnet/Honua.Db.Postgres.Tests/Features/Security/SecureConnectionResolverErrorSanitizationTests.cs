@@ -3,11 +3,11 @@
 
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Security;
+namespace Honua.Db.Postgres.Tests.Features.Security;
 
 [Collection("Security")]
 public sealed class SecureConnectionResolverErrorSanitizationTests

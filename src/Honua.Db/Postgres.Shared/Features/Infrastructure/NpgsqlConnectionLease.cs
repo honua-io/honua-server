@@ -6,7 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Scoped lease over an open <see cref="NpgsqlConnection"/> returned from an

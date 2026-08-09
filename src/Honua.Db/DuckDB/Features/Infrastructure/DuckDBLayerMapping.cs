@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// Maps a Honua layer ID to a DuckDB table and its column layout.

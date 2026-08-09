@@ -7,7 +7,7 @@ using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>
 /// Service collection extensions for registering PostgreSQL raster store services.

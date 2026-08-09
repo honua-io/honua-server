@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.MySql.Features.Infrastructure;
+namespace Honua.Db.MySql.Features.Infrastructure;
 
 /// <summary>
 /// Engine-aware SQL fragments for MySQL/MariaDB spatial WKB I/O.

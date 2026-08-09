@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.Infrastructure;
 
-namespace Honua.Databricks.Queries.Filters;
+namespace Honua.Db.Databricks.Queries.Filters;
 
 /// <summary>
 /// Databricks SQL (Spark SQL) implementation of <see cref="ISqlDialect"/>.

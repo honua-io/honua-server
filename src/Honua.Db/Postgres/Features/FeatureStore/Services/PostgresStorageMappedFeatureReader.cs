@@ -17,13 +17,13 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.

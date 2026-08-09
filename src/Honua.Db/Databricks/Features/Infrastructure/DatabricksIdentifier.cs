@@ -3,7 +3,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Honua.Databricks.Features.Infrastructure;
+namespace Honua.Db.Databricks.Features.Infrastructure;
 
 /// <summary>
 /// Databricks SQL identifier helpers. Identifiers are backtick-quoted and embedded

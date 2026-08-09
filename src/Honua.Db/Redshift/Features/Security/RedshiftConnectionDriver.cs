@@ -10,7 +10,7 @@ using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
 
-namespace Honua.Redshift.Features.Security;
+namespace Honua.Db.Redshift.Features.Security;
 
 /// <summary>
 /// Amazon Redshift <see cref="IConnectionDriver"/>: builds an Npgsql connection string and probes

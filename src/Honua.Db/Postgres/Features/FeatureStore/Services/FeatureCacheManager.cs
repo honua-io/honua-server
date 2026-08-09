@@ -6,12 +6,12 @@ using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.FeatureStore.Internal;
+using Honua.Db.Postgres.Features.FeatureStore.Internal;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Manages caching of layer metadata and performance monitoring for feature store operations

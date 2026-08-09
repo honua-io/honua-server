@@ -5,10 +5,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.MySql;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Queries.Filters;
+namespace Honua.Db.MySql.Queries.Filters;
 
 /// <summary>
 /// Translates filter expressions (CQL2/OGC AST) into MySQL/MariaDB-compatible SQL fragments.

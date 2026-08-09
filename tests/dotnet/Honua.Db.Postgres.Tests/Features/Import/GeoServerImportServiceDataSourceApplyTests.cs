@@ -18,15 +18,15 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Issue #1015 slice 2: GeoServer data-source application and feature data copy.

@@ -7,13 +7,13 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.AuditLog.Export;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.AuditLog;
+using Honua.Db.Postgres.Features.AuditLog;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.AuditLog;
+namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
 /// <summary>
 /// Integration tests for the configurable audit retention pruner (#509).

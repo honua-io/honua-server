@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Translates a <see cref="FeatureQuery"/> into parameterized Oracle SQL for the Oracle

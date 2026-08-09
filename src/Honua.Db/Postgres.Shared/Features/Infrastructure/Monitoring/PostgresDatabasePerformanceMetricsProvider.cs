@@ -5,7 +5,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Postgres.Features.Infrastructure.Monitoring;
+namespace Honua.Db.Postgres.Features.Infrastructure.Monitoring;
 
 /// <summary>
 /// Provides database performance metrics backed by Postgres feature store instrumentation.

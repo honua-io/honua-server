@@ -9,13 +9,13 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Features.FeatureStore;
-using Honua.DuckDB.Features.FeatureStore.Services;
-using Honua.DuckDB.Features.Infrastructure;
-using Honua.DuckDB.Queries.Filters;
+using Honua.Db.DuckDB.Features.FeatureStore;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 /// <summary>
 /// Integration tests that exercise the full DuckDB provider stack

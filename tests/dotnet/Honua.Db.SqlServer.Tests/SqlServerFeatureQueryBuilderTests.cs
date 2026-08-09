@@ -6,9 +6,9 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Db.SqlServer.Features.FeatureStore.Services;
 
-namespace Honua.SqlServer.Tests;
+namespace Honua.Db.SqlServer.Tests;
 
 /// <summary>
 /// Unit tests for the SQL Server query builder. Verifies T-SQL dialect, identifier

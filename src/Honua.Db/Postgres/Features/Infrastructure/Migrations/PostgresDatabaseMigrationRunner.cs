@@ -13,7 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure.Migrations;
+namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
 internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {

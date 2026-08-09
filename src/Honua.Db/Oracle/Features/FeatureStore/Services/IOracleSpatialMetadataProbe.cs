@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Security.Domain;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Reads Oracle catalog metadata used by <see cref="OracleSpatialGuard"/> to detect non-SDO and

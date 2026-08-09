@@ -3,9 +3,9 @@
 
 using System.Data;
 using System.Data.Common;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 
-namespace Honua.Postgres.Tests.Features.Infrastructure;
+namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
 /// <summary>
 /// Regression tests for <see cref="DbTransactionExtensions.CommitSafelyAsync"/>.

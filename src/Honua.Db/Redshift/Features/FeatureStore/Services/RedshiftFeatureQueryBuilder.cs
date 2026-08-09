@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Translates a <see cref="FeatureQuery"/> into parameterized Redshift SQL for the read-only

@@ -7,7 +7,7 @@ using Honua.Core.Features.Deployment.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Publishing;
+namespace Honua.Db.Postgres.Features.Publishing;
 
 /// <summary>
 /// Durable Postgres store for canonical deployment lifecycle records.

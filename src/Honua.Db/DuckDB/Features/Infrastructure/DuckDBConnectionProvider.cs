@@ -7,7 +7,7 @@ using DuckDB.NET.Data;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB.Features.Infrastructure;
+namespace Honua.Db.DuckDB.Features.Infrastructure;
 
 /// <summary>
 /// DuckDB implementation of database connection provider.

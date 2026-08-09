@@ -4,7 +4,7 @@
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 /// <summary>
 /// Verifies that the shared no-op replica repository no-ops writes and returns empty reads.

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Databricks;
+namespace Honua.Db.Databricks;
 
 /// <summary>
 /// Configuration options for the read-only Databricks feature provider, bound from

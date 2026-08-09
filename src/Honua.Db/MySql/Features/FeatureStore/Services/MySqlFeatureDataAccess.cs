@@ -12,11 +12,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
-using Honua.MySql;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql;
+using Honua.Db.MySql.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.MySql.Features.FeatureStore.Services;
+namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
 /// <summary>
 /// Executes MySQL/MariaDB read queries through <see cref="IAdoNetDatabaseConnectionProvider"/>

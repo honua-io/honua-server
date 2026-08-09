@@ -5,22 +5,22 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Preserve existing namespaces (Honua.Postgres.Features.Infrastructure.*) so that
-      callers in Honua.Postgres / Honua.Server / tests don't need any using changes
-      after the substrate is carved out of the monolithic Honua.Postgres assembly.
+      Preserve existing namespaces (Honua.Db.Postgres.Features.Infrastructure.*) so that
+      callers in Honua.Db.Postgres / Honua.Server / tests don't need any using changes
+      after the substrate is carved out of the monolithic Honua.Db.Postgres assembly.
     -->
-    <RootNamespace>Honua.Postgres</RootNamespace>
+    <RootNamespace>Honua.Db.Postgres</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Honua.Postgres</_Parameter1>
+      <_Parameter1>Honua.Db.Postgres</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Honua.Postgres.Tests</_Parameter1>
+      <_Parameter1>Honua.Db.Postgres.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Honua.Postgres.Security.Tests</_Parameter1>
+      <_Parameter1>Honua.Db.Postgres.Security.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Honua.Server</_Parameter1>

@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Security;
+namespace Honua.Db.Postgres.Tests.Features.Security;
 
 /// <summary>
 /// Comprehensive tests for the connection encryption service.

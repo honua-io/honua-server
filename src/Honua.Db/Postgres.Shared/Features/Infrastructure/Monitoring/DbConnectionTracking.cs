@@ -5,7 +5,7 @@ using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Postgres.Features.Infrastructure.Monitoring;
+namespace Honua.Db.Postgres.Features.Infrastructure.Monitoring;
 
 internal static class DbConnectionTracking
 {

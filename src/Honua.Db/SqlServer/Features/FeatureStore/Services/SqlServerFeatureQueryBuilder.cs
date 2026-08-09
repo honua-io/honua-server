@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Translates a <see cref="FeatureQuery"/> into parameterized T-SQL for the SQL Server

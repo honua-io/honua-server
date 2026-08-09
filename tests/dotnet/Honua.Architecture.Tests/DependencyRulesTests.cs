@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Postgres;
+using Honua.Db.Postgres;
 using Honua.Server;
 using Microsoft.AspNetCore.Mvc;
 using NetArchTest.Rules;

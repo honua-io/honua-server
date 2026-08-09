@@ -9,8 +9,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {

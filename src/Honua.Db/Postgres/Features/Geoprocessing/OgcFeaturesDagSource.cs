@@ -9,7 +9,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// <c>source.ogc-features</c> DAG connector. Streams features from an OGC API

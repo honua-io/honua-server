@@ -10,10 +10,10 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Migration;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// <c>source.esri-featureserver</c> DAG connector. Streams features from an ArcGIS

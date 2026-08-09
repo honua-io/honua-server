@@ -8,11 +8,11 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
-using Honua.Postgres.Features.Share;
+using Honua.Db.Postgres.Features.Share;
 using Npgsql;
 using NSubstitute;
 
-namespace Honua.Postgres.Tests.Features.Share;
+namespace Honua.Db.Postgres.Tests.Features.Share;
 
 /// <summary>
 /// Verifies Share Postgres stores translate durable store outages to store-unavailable exceptions

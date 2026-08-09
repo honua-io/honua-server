@@ -8,7 +8,7 @@ using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure.Crs;
+namespace Honua.Db.Postgres.Features.Infrastructure.Crs;
 
 /// <summary>
 /// Postgres-backed CRS registry using spatial_ref_sys.

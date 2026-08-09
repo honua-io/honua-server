@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 
-namespace Honua.Oracle.Queries.Filters;
+namespace Honua.Db.Oracle.Queries.Filters;
 
 /// <summary>
 /// Oracle implementation of <see cref="ISqlDialect"/>.

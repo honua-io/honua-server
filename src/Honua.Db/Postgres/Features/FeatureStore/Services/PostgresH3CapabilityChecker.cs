@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Checks h3-pg extension availability by querying pg_extension.

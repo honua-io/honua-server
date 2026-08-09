@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Source-generated structured logging for the SQL Server feature store. AOT-safe; never

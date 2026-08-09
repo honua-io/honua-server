@@ -10,7 +10,7 @@ using MySqlConnector;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
 
-namespace Honua.MySql.Features.Security;
+namespace Honua.Db.MySql.Features.Security;
 
 /// <summary>
 /// MySQL/MariaDB <see cref="IConnectionDriver"/>: builds a MySqlConnector connection string and probes health

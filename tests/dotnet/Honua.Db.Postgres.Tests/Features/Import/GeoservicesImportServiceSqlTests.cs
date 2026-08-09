@@ -8,10 +8,10 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class GeoservicesImportServiceSqlTests
 {

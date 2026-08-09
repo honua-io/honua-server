@@ -10,15 +10,15 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Postgres.Features.Admin;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Metadata;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Integration coverage for issue #1379: the Validating phase invokes

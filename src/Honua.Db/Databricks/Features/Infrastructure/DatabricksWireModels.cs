@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Databricks.Features.Infrastructure;
+namespace Honua.Db.Databricks.Features.Infrastructure;
 
 // JSON wire-format types for the Databricks SQL Statement Execution REST API
 // (POST /api/2.0/sql/statements and GET /api/2.0/sql/statements/{id}). Kept minimal —

@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Configuration;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 internal sealed record PostgresSchemaConfiguration(
     string MetadataSchema,

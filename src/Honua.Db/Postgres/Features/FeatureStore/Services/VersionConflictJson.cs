@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Source-generated JSON contract used by the branch-version conflict-resolution layer (#371) to

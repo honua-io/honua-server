@@ -6,10 +6,10 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using DuckDB.NET.Data;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Features.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.DuckDB.Tests;
+namespace Honua.Db.DuckDB.Tests;
 
 /// <summary>
 /// Verifies the spatial extension is loaded onto every fresh DuckDB connection.

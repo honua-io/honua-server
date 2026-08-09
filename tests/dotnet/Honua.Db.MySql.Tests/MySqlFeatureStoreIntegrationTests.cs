@@ -5,16 +5,16 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.MySql.Features.FeatureStore;
-using Honua.MySql.Features.FeatureStore.Services;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.FeatureStore;
+using Honua.Db.MySql.Features.FeatureStore.Services;
+using Honua.Db.MySql.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 using Testcontainers.MySql;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Gated integration tests that exercise the full MySQL provider stack against a

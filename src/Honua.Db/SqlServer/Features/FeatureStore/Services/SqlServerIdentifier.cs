@@ -3,7 +3,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Honua.SqlServer.Features.FeatureStore.Services;
+namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validates and bracket-quotes SQL Server identifiers (schema, table, column).

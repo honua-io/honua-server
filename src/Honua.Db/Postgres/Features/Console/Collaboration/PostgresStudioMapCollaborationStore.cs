@@ -5,10 +5,10 @@ using System.Data;
 using Honua.Core.Features.Console.Collaboration.Abstractions;
 using Honua.Core.Features.Console.Collaboration.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Console.Collaboration;
+namespace Honua.Db.Postgres.Features.Console.Collaboration;
 
 /// <summary>
 /// Durable Postgres-backed Studio map collaboration store (#1278, slice 1):

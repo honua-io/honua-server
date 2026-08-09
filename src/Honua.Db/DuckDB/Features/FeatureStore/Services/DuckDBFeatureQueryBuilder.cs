@@ -11,9 +11,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
-namespace Honua.DuckDB.Features.FeatureStore.Services;
+namespace Honua.Db.DuckDB.Features.FeatureStore.Services;
 
 /// <summary>
 /// Builds SQL queries for DuckDB feature store operations.

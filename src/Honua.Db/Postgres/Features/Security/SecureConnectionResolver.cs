@@ -7,7 +7,7 @@ using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 /// <summary>
 /// Secure connection resolver that combines the registry, encryption, and secret resolution

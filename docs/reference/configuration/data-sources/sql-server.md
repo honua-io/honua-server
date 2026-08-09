@@ -184,11 +184,11 @@ callers that need the absolute total should use `CountAsync`.
 
 ## Observability
 
-- Activity source: `Honua.SqlServer.FeatureStore` — emits spans named
+- Activity source: `Honua.Db.SqlServer.FeatureStore` — emits spans named
   `sqlserver.feature.select`, `sqlserver.feature.count`, and `sqlserver.feature.extent`,
   each tagged with `layer.id`.
 - Logging: source-generated structured events (`SqlServerFeatureLog`) emitted under the
-  `Honua.SqlServer.Features.FeatureStore.Services.SqlServerFeatureDataAccess` category
+  `Honua.Db.SqlServer.Features.FeatureStore.Services.SqlServerFeatureDataAccess` category
   (event ids `7000` for prepared queries, `7001` for unsupported-operation rejections).
   The provider does not emit raw SQL exception messages or connection strings.
 
@@ -197,7 +197,7 @@ callers that need the absolute total should use `CountAsync`.
 ### Unit Tests (always run in CI)
 
 ```bash
-dotnet test tests/dotnet/Honua.SqlServer.Tests
+dotnet test tests/dotnet/Honua.Db.SqlServer.Tests
 ```
 
 Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute
@@ -211,7 +211,7 @@ against a SQL Server 2016+ instance:
 
 ```bash
 export HONUA_SQLSERVER_TEST_CONNECTION="Server=localhost,1433;Database=tempdb;User Id=sa;Password=Strong!Pass;Encrypt=False"
-dotnet test tests/dotnet/Honua.SqlServer.Tests --filter Category=SqlServerIntegration
+dotnet test tests/dotnet/Honua.Db.SqlServer.Tests --filter Category=SqlServerIntegration
 ```
 
 The test fixture creates and drops a temporary table named

@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 internal sealed class PostgresAlertCheckpointStore : IAlertCheckpointStore
 {

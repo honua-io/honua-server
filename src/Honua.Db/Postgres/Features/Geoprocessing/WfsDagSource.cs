@@ -9,7 +9,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Geoprocessing;
+namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>
 /// <c>source.wfs</c> DAG connector. Streams features from a WFS <c>GetFeature</c>

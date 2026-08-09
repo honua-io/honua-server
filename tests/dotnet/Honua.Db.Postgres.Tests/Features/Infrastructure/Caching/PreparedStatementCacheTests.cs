@@ -4,14 +4,14 @@
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Infrastructure.Caching;
+namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Caching;
 
 /// <summary>
 /// Integration tests for prepared statement caching functionality

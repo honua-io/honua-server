@@ -7,12 +7,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Postgres.Features.FeatureStore.Services;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Styling;
+namespace Honua.Db.Postgres.Features.Styling;
 
 /// <summary>
 /// PostgreSQL implementation of field profiling for style suggestions.

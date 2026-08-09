@@ -7,7 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {

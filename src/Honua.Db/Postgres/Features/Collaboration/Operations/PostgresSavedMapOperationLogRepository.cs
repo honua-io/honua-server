@@ -5,11 +5,11 @@ using System.Data;
 using System.Text.Json;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Collaboration.Operations;
+namespace Honua.Db.Postgres.Features.Collaboration.Operations;
 
 /// <summary>
 /// Restart-durable saved-map operation log whose checkpoint cursor is persisted beside the

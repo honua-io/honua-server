@@ -6,7 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using MySqlConnector;
 
-namespace Honua.MySql.Features.Infrastructure;
+namespace Honua.Db.MySql.Features.Infrastructure;
 
 /// <summary>
 /// MySQL/MariaDB implementation of <see cref="IAdoNetDatabaseConnectionProvider"/>.

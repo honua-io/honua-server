@@ -2,10 +2,10 @@
 
 using FluentAssertions;
 using Honua.Core.Exceptions;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>
 /// Unit coverage for the BH-014 fix-forward (#2423, reverted by #2433): a create with no

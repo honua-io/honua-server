@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Postgres.Features.FeatureStore;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;

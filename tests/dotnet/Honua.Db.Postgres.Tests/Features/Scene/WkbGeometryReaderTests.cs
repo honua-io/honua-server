@@ -4,9 +4,9 @@
 using System.Buffers.Binary;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Postgres.Features.Scene;
+using Honua.Db.Postgres.Features.Scene;
 
-namespace Honua.Postgres.Tests.Features.Scene;
+namespace Honua.Db.Postgres.Tests.Features.Scene;
 
 /// <summary>
 /// Verifies the minimal WKB reader used by <see cref="PostgresSceneFeatureSource"/>

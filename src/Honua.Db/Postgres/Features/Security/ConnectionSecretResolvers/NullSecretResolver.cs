@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Security.Abstractions;
 
-namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 /// <summary>
 /// Null implementation of secret resolver that doesn't support any external secret providers.

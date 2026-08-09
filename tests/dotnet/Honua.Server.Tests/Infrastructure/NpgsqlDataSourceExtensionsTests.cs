@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Postgres.Features.Infrastructure.Resilience;
+using Honua.Db.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;

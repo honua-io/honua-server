@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Databricks.Features.FeatureStore.Services;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.FeatureStore.Services;
+using Honua.Db.Databricks.Features.Infrastructure;
 
-namespace Honua.Databricks.Features.FeatureStore;
+namespace Honua.Db.Databricks.Features.FeatureStore;
 
 /// <summary>
 /// Read-only Databricks feature provider. Each query is translated to Databricks SQL

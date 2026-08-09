@@ -3,9 +3,9 @@
 
 using System.Reflection;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Admin;
 
-namespace Honua.Postgres.Tests.Features.Admin;
+namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {

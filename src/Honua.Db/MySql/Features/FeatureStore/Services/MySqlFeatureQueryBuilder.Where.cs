@@ -5,9 +5,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Features.FeatureStore.Services;
+namespace Honua.Db.MySql.Features.FeatureStore.Services;
 
 internal sealed partial class MySqlFeatureQueryBuilder
 {

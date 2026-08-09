@@ -9,10 +9,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
-using Honua.Databricks.Features.Infrastructure;
-using Honua.Databricks.Queries.Filters;
+using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Queries.Filters;
 
-namespace Honua.Databricks.Features.FeatureStore.Services;
+namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
 /// <summary>
 /// Builds Databricks SQL (Spark SQL) text for the read-only feature provider.

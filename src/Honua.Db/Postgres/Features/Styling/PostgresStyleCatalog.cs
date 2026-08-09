@@ -7,7 +7,7 @@ using Honua.Core.Features.Styling.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Styling;
+namespace Honua.Db.Postgres.Features.Styling;
 
 /// <summary>
 /// PostgreSQL implementation of the independent, styleId-keyed style catalog

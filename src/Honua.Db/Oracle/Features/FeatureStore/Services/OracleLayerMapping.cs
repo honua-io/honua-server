@@ -4,7 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validated Oracle layer storage binding produced from a <see cref="FeatureStorageMapping"/>.

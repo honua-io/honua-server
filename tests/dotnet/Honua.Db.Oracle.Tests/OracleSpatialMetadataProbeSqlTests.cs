@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 
-namespace Honua.Oracle.Tests;
+namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Verifies the catalog-probe SQL text emitted by <see cref="OracleSpatialMetadataProbe"/>.

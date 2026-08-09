@@ -4,7 +4,7 @@
 using System.Text.Json;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 internal static class SecretValueExtractor
 {

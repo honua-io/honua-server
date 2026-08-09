@@ -7,7 +7,7 @@ using Amazon.SecretsManager.Model;
 using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Aws.Features.Licensing;
+namespace Honua.Cloud.Aws.Features.Licensing;
 
 /// <summary>
 /// Resolves a signed license envelope from AWS Secrets Manager. Confined to

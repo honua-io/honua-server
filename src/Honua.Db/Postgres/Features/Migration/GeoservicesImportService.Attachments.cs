@@ -5,7 +5,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 
-namespace Honua.Postgres.Features.Migration;
+namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {

@@ -4,9 +4,9 @@
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
-using Honua.MySql.Queries.Filters;
+using Honua.Db.MySql.Queries.Filters;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Unit tests for translating CQL2/OGC filter expressions into MySQL/MariaDB SQL.

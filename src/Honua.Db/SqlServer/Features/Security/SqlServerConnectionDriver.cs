@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
 
-namespace Honua.SqlServer.Features.Security;
+namespace Honua.Db.SqlServer.Features.Security;
 
 /// <summary>
 /// SQL Server <see cref="IConnectionDriver"/>: builds a Microsoft.Data.SqlClient connection string

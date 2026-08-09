@@ -6,12 +6,12 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Abstractions;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Migration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Tests;
+namespace Honua.Db.Postgres.Tests;
 
 public sealed class ServiceCollectionExtensionsImportLimitsTests
 {

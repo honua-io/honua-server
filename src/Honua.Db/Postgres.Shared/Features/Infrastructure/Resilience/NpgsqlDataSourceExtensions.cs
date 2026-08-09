@@ -4,7 +4,7 @@
 using Npgsql;
 using Polly;
 
-namespace Honua.Postgres.Features.Infrastructure.Resilience;
+namespace Honua.Db.Postgres.Features.Infrastructure.Resilience;
 
 /// <summary>
 /// Extension methods for NpgsqlDataSource to add resilience policies

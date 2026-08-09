@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Raster.Domain;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 /// <summary>
 /// Shared SQL fragments for raster mosaic aggregation. Centralised here so

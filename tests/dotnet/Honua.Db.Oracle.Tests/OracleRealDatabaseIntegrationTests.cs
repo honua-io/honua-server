@@ -4,7 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Domain;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
@@ -13,7 +13,7 @@ using Oracle.ManagedDataAccess.Client;
 using Testcontainers.Oracle;
 using Xunit;
 
-namespace Honua.Oracle.Tests;
+namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Real-database lane for the Oracle provider (honua-server#2947). Every other test in this

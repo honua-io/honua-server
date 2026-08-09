@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.Infrastructure;
 
-namespace Honua.Databricks;
+namespace Honua.Db.Databricks;
 
 /// <summary>
 /// Validates <see cref="DatabricksOptions"/> at startup so misconfiguration fails

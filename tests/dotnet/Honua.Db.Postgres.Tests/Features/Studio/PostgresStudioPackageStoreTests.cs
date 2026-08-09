@@ -8,12 +8,12 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Domain;
-using Honua.Postgres.Features.Studio;
+using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Studio;
+namespace Honua.Db.Postgres.Tests.Features.Studio;
 
 [Collection("Database")]
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)

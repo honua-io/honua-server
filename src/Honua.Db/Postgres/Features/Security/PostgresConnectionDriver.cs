@@ -10,7 +10,7 @@ using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using ConnectionHealthStatus = Honua.Core.Features.Security.Domain.ConnectionHealthStatus;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 /// <summary>
 /// PostgreSQL/PostGIS <see cref="IConnectionDriver"/>: builds an Npgsql connection string and probes health

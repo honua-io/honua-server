@@ -11,7 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using FileGdb = Honua.Core.Features.FileImport.Services.FileGdb;
 using Honua.Core.Features.Migration.Abstractions;
@@ -20,10 +20,10 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Postgres.Features.Migration;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
 
-namespace Honua.Postgres.Features.FileImport;
+namespace Honua.Db.Postgres.Features.FileImport;
 
 /// <summary>
 /// Memory-efficient streaming file import service.

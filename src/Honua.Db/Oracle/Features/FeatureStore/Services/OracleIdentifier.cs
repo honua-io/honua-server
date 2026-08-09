@@ -3,7 +3,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validates and double-quotes Oracle identifiers (schema, table, column).

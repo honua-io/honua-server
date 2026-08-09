@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Attachments;
+namespace Honua.Db.Postgres.Features.Attachments;
 
 internal static partial class AttachmentLog
 {

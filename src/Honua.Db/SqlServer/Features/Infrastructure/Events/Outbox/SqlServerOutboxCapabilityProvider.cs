@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.SqlServer.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.SqlServer.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// SQL Server is a read-only feature provider in this thin slice (#850), so it does

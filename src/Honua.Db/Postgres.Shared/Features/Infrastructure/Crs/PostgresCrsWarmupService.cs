@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Infrastructure.Crs;
+namespace Honua.Db.Postgres.Features.Infrastructure.Crs;
 
 internal sealed partial class PostgresCrsWarmupService : BackgroundService
 {

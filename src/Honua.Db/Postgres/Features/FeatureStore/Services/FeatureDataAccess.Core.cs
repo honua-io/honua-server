@@ -7,13 +7,13 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed record FeatureDataAccessDependencies(
     IAdoNetDatabaseConnectionProvider ConnectionProvider,

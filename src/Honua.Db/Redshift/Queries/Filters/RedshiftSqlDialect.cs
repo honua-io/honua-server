@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
 
-namespace Honua.Redshift.Queries.Filters;
+namespace Honua.Db.Redshift.Queries.Filters;
 
 /// <summary>
 /// Amazon Redshift implementation of <see cref="ISqlDialect"/>.

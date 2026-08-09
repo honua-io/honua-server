@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Security.Abstractions;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Singleton that resolves (and caches) the Postgres connection string exactly once,

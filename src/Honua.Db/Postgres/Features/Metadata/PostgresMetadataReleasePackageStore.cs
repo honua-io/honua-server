@@ -8,7 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePackageStore
 {

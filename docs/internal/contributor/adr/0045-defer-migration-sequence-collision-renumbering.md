@@ -106,7 +106,7 @@ benefit with the consequence below.
 - `~/.claude/projects/-home-makani-honua-server/memory/structural-audit-2026-05.md`
   — Group D quick-hygiene items.
 - `ADR-0005: DbUp Migrations`.
-- `src/Honua.Postgres/Features/Infrastructure/Migrations/PostgresDatabaseMigrationRunner.cs`
+- `src/Honua.Db.Postgres/Features/Infrastructure/Migrations/PostgresDatabaseMigrationRunner.cs`
   — journal configuration.
 - `tests/dotnet/Honua.Architecture.Tests/DatabaseMigrationSafetyTests.cs`
   — existing migration safety checks.

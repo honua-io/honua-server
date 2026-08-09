@@ -230,13 +230,13 @@ reflects the size of the returned page only; callers that need the absolute tota
 
 ## Observability
 
-- Activity source: `Honua.Oracle.FeatureStore` — emits spans named
+- Activity source: `Honua.Db.Oracle.FeatureStore` — emits spans named
   `oracle.feature.select`, `oracle.feature.count`, `oracle.feature.extent`, and
   `oracle.feature.objectids`, each tagged with `db.system=oracle`, `db.operation=<op>`,
   and `layer.id=<id>`.
 - Logging: source-generated structured events (`OracleFeatureLog`) emitted under the
-  `Honua.Oracle.Features.FeatureStore.Services.OracleFeatureDataAccess` category and the
-  `Honua.Oracle.Features.FeatureStore.Services.OracleSpatialGuard` category. Event ids:
+  `Honua.Db.Oracle.Features.FeatureStore.Services.OracleFeatureDataAccess` category and the
+  `Honua.Db.Oracle.Features.FeatureStore.Services.OracleSpatialGuard` category. Event ids:
   `7100` (prepared queries), `7101` (unsupported-operation rejection), `7102` (non-SDO
   surface rejection), `7103` (versioned-table rejection). The provider does not emit raw
   Oracle exception messages or connection strings.
@@ -246,7 +246,7 @@ reflects the size of the returned page only; callers that need the absolute tota
 ### Unit Tests (always run in CI)
 
 ```bash
-dotnet test tests/dotnet/Honua.Oracle.Tests
+dotnet test tests/dotnet/Honua.Db.Oracle.Tests
 ```
 
 Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute
@@ -256,12 +256,12 @@ and versioning columns. No Oracle instance is required.
 
 ### Integration
 
-`OracleRealDatabaseIntegrationTests` (in `tests/dotnet/Honua.Oracle.Tests`) exercises
+`OracleRealDatabaseIntegrationTests` (in `tests/dotnet/Honua.Db.Oracle.Tests`) exercises
 connection open, query build+execute, and WKB/`SDO_GEOMETRY` decode against a real
 `gvenzl/oracle-free` instance via Testcontainers — promotion groundwork per
 honua-server#2947, not a change to Oracle's experimental status. It is **opt-in**: every
 test method is skipped unless `HONUA_TEST_ORACLE=1` is set, so the default
-`dotnet test tests/dotnet/Honua.Oracle.Tests` run (invoked unfiltered by the PR gate's
+`dotnet test tests/dotnet/Honua.Db.Oracle.Tests` run (invoked unfiltered by the PR gate's
 fast-unit-only step) stays fast and never starts Docker.
 
 ```bash
@@ -269,7 +269,7 @@ fast-unit-only step) stays fast and never starts Docker.
 # NOT the "slim" variant, which excludes the Oracle Spatial component this lane
 # needs) and takes several
 # minutes to start.
-HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj \
+HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Db.Oracle.Tests/Honua.Db.Oracle.Tests.csproj \
     --filter "Category=Oracle"
 ```
 

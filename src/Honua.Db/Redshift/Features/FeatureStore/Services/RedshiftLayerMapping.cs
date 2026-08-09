@@ -4,7 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Validated Redshift layer storage binding produced from a <see cref="LayerStorageMapping"/>.

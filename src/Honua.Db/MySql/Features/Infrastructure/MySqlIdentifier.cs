@@ -3,7 +3,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Honua.MySql.Features.Infrastructure;
+namespace Honua.Db.MySql.Features.Infrastructure;
 
 /// <summary>
 /// MySQL/MariaDB identifier helpers. Identifiers are backtick-quoted and embedded

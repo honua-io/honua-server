@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Honua.Azure is the carved-out Azure SDK surface (Identity, Storage.Blobs,
+      Honua.Cloud.Azure is the carved-out Azure SDK surface (Identity, Storage.Blobs,
       Messaging.EventGrid, Messaging.EventHubs) extracted from Honua.Server so
       that cloud-neutral consumers do not pull the heavy Azure.* surface
       transitively. Namespaces preserved (Honua.Server.Features.*) so cross-
@@ -23,7 +23,7 @@
       Azure SDK surface is not annotated for trimming/AOT.
     -->
     <NoWarn>$(NoWarn);IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
-    <RootNamespace>Honua.Azure</RootNamespace>
+    <RootNamespace>Honua.Cloud.Azure</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

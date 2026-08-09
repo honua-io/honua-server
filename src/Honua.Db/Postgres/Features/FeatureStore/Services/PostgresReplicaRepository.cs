@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.FeatureStore.Services;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Postgres-backed persistent storage for replica state

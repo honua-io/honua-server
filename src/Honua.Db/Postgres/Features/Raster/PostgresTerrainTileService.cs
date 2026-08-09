@@ -7,10 +7,10 @@ using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Raster;
+namespace Honua.Db.Postgres.Features.Raster;
 
 internal sealed class PostgresTerrainTileService : ITerrainTileService
 {

@@ -4,7 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Singleton admission-control gate that limits concurrent database operations.

@@ -9,14 +9,14 @@ using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Verifies the file-import reprojection path routes through the auditable

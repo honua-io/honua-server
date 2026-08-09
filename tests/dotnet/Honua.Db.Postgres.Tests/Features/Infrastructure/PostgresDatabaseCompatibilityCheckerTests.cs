@@ -2,11 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Infrastructure;
+namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
 [Collection("Database")]
 public class PostgresDatabaseCompatibilityCheckerTests

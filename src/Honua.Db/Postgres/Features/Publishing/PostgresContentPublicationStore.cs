@@ -9,8 +9,8 @@ using Honua.Core.Features.Publishing.Content.Domain;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Publishing;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Publishing;
 
 /// <summary>
 /// Postgres-backed <see cref="IContentPublicationStore"/>. Version and event rows are

@@ -3,14 +3,14 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Redshift.Features.FeatureStore;
-using Honua.Redshift.Features.FeatureStore.Services;
-using Honua.Redshift.Queries.Filters;
+using Honua.Db.Redshift.Features.FeatureStore;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Redshift;
+namespace Honua.Db.Redshift;
 
 /// <summary>
 /// Public DI entry point for the read-only Amazon Redshift spatial feature provider (#1712).

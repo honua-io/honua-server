@@ -3,7 +3,7 @@
 
 using Honua.Core.Queries.Filters;
 
-namespace Honua.Databricks.Queries.Filters;
+namespace Honua.Db.Databricks.Queries.Filters;
 
 /// <summary>
 /// Translates the canonical filter AST into parameterized Databricks SQL (Spark SQL).

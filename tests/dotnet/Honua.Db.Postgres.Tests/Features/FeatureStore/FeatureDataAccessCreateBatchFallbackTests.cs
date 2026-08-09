@@ -4,9 +4,9 @@ using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureDataAccessCreateBatchFallbackTests
 {

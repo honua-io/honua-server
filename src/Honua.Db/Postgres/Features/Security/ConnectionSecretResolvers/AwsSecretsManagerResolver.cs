@@ -12,7 +12,7 @@ using System.Text.Json;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
 internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDisposable
 {

@@ -9,8 +9,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
 /// PostgreSQL-backed implementation of <see cref="IMetadataV2GraphStore"/>.

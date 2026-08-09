@@ -7,7 +7,7 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,7 +15,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 [Collection("Database")]
 public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)

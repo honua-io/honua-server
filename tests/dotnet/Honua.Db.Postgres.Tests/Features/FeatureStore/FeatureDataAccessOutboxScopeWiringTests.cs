@@ -7,8 +7,8 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
-using Honua.Postgres.Features.FeatureStore.Services;
-using Honua.Postgres.Features.Infrastructure.Events.Outbox;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
@@ -16,7 +16,7 @@ using NSubstitute;
 // Honua.Core's IGeometryProcessor is internal; we sidestep Castle DynamicProxy access
 // checks by using the concrete Honua.Postgres GeometryProcessor instead of a mock.
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class FeatureDataAccessOutboxScopeWiringTests
 {

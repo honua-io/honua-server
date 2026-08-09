@@ -5,7 +5,7 @@ using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Aws.Features.Licensing;
+namespace Honua.Cloud.Aws.Features.Licensing;
 
 /// <summary>
 /// Registers the AWS Secrets Manager license-content resolver. Carved out of

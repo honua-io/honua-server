@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Oracle\Honua.Oracle.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.Oracle\Honua.Db.Oracle.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 

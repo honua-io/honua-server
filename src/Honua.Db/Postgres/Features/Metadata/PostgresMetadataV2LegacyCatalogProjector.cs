@@ -5,10 +5,10 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
 /// PostgreSQL-backed <see cref="IMetadataV2LegacyCatalogProjector"/>. Reuses the same

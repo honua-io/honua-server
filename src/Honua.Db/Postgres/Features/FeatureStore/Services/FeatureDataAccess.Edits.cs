@@ -12,8 +12,8 @@ using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
-namespace Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Internal signal that a <see cref="FeatureEditPrecondition"/> attached to an edit batch

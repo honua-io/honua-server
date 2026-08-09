@@ -16,12 +16,12 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
-namespace Honua.Postgres.Features.FeatureStore;
+namespace Honua.Db.Postgres.Features.FeatureStore;
 
 /// <summary>
 /// PostgreSQL implementation of feature storage and retrieval using service composition

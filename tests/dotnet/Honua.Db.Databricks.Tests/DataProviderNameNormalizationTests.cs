@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Databricks.Tests;
+namespace Honua.Db.Databricks.Tests;
 
 public class DataProviderNameNormalizationTests
 {

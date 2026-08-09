@@ -12,11 +12,11 @@
 // imply a false ownership.
 
 using Honua.Core.Features.Admin.Domain;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Admin;
+namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {

@@ -9,10 +9,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
-using Honua.MySql.Features.FeatureStore.Services;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.FeatureStore.Services;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Unit tests for MySQL/MariaDB SQL query generation. Verifies backtick-quoted

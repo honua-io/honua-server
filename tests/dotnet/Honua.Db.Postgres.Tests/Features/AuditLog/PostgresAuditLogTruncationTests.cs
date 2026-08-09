@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Postgres.Features.AuditLog;
+using Honua.Db.Postgres.Features.AuditLog;
 
-namespace Honua.Postgres.Tests.Features.AuditLog;
+namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
 /// <summary>
 /// Docker-free coverage of <see cref="PostgresAuditLog.Truncate"/>. Guards the

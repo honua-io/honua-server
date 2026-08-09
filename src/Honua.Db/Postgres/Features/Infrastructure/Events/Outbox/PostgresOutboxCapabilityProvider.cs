@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.Postgres.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// PostgreSQL supports a transactional outbox: rows can be written in the same

@@ -7,14 +7,14 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Regression tests for honua-server#1400 — a streamed file import created the

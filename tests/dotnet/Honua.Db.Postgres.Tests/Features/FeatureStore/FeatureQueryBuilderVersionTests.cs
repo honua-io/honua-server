@@ -3,11 +3,11 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>
 /// Branch-versioning overlay read tests (#1272 Track B, ADR-0051). The central guarantee proved here is

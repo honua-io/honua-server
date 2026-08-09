@@ -3,11 +3,11 @@
 
 using System.Collections.Concurrent;
 using Honua.Core.Configuration;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 internal sealed class SecureConnectionDataSourceCache : IDisposable
 {

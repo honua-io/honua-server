@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Postgres.Features.FeatureStore;
+namespace Honua.Db.Postgres.Features.FeatureStore;
 
 /// <summary>
 /// AOT-compatible JSON serializer context for feature attributes.

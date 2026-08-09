@@ -5,7 +5,7 @@ using System.Data;
 using System.Data.Common;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure;
+namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
 /// Wraps a database connection to invoke a release callback when disposed.

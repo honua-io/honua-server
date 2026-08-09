@@ -7,9 +7,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using Honua.Redshift.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
 
-namespace Honua.Redshift.Features.FeatureStore;
+namespace Honua.Db.Redshift.Features.FeatureStore;
 
 /// <summary>
 /// Read-only Amazon Redshift feature provider (#1712).

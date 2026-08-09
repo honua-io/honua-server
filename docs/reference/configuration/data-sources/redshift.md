@@ -181,11 +181,11 @@ returned page only; callers that need the absolute total should use `CountAsync`
 
 ## Observability
 
-- Activity source: `Honua.Redshift.FeatureStore` — emits spans named `redshift.feature.select`,
+- Activity source: `Honua.Db.Redshift.FeatureStore` — emits spans named `redshift.feature.select`,
   `redshift.feature.count`, `redshift.feature.extent`, and `redshift.feature.objectids`, each
   tagged with `layer.id`.
 - Logging: source-generated structured events (`RedshiftFeatureLog`) emitted under the
-  `Honua.Redshift.Features.FeatureStore.Services.RedshiftFeatureDataAccess` category (event ids
+  `Honua.Db.Redshift.Features.FeatureStore.Services.RedshiftFeatureDataAccess` category (event ids
   `7200` for prepared queries, `7201` for unsupported-operation rejections, `7202` for query
   failures). The provider does not emit raw SQL exception messages or connection strings.
 
@@ -194,7 +194,7 @@ returned page only; callers that need the absolute total should use `CountAsync`
 ### Unit Tests (always run in CI)
 
 ```bash
-dotnet test tests/dotnet/Honua.Redshift.Tests
+dotnet test tests/dotnet/Honua.Db.Redshift.Tests
 ```
 
 Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute filters,
@@ -212,7 +212,7 @@ wire-compatible stand-in to exercise the Npgsql connection factory and data-acce
 It does **not** prove Redshift-specific spatial semantics — that requires a real Redshift cluster.
 
 ```bash
-HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Redshift.Tests --filter Category=Redshift
+HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Db.Redshift.Tests --filter Category=Redshift
 ```
 
 ## Limitations and Known Gaps

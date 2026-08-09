@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Domain;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 internal static class AlertStoreConversions
 {

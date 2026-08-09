@@ -7,7 +7,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Postgres.Features.Security;
+namespace Honua.Db.Postgres.Features.Security;
 
 /// <summary>
 /// Provides AES-GCM encryption for database connection strings with envelope encryption and key rotation support.

@@ -9,9 +9,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.FeatureStore.Services;
 
-namespace Honua.DuckDB.Features.FeatureStore;
+namespace Honua.Db.DuckDB.Features.FeatureStore;
 
 /// <summary>
 /// DuckDB implementation of feature storage using service composition.

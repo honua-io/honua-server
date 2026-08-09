@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.MySql\Honua.MySql.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db.MySql\Honua.Db.MySql.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>

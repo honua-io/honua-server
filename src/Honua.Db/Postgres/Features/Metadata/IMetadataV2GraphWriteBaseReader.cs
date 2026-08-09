@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Postgres.Features.Metadata;
+namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
 /// Loads the genuinely-persisted ("activated") Metadata v2 snapshot for an environment

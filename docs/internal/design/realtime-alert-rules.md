@@ -34,7 +34,7 @@ surface, validation, delivery-channel evaluation, and per-rule operational healt
     (`GET /rules/{ruleId}/health`).
 - The admin store, `IAlertAdminStore`
   (`src/Honua.Core/Features/Alerts/Abstractions/IAlertAdminStore.cs`) with `PostgresAlertAdminStore`
-  (`src/Honua.Postgres/Features/Alerts/PostgresAlertAdminStore.cs`), including `GetRuleHealthAsync`.
+  (`src/Honua.Db.Postgres/Features/Alerts/PostgresAlertAdminStore.cs`), including `GetRuleHealthAsync`.
 - The domain (`src/Honua.Core/Features/Alerts/Domain/AlertModels.cs`): `AlertRuleDefinition`,
   `AlertZoneDefinition`, `AlertTriggerType` (`Enter`/`Exit`/`Dwell`/`Threshold`), `AlertSeverity`
   (`Info`/`Warning`/`Critical`), `AlertChannelType` (webhook/websocket/email/digest/aws_sns/azure_eventgrid/

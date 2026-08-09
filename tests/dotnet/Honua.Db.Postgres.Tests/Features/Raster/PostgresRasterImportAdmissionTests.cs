@@ -4,11 +4,11 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Postgres.Features.Raster;
+using Honua.Db.Postgres.Features.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
-namespace Honua.Postgres.Tests.Features.Raster;
+namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 public sealed class PostgresRasterImportAdmissionTests
 {

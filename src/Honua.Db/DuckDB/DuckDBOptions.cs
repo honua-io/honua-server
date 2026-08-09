@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.DuckDB;
+namespace Honua.Db.DuckDB;
 
 /// <summary>
 /// Configuration options for the DuckDB provider, bound from the "DuckDB" section.

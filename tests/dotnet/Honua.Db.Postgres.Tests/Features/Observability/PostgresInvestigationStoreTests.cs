@@ -6,13 +6,13 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Observability;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Observability;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Observability;
+namespace Honua.Db.Postgres.Tests.Features.Observability;
 
 /// <summary>
 /// Integration tests for <see cref="PostgresInvestigationStore"/> (#1168). Mirrors

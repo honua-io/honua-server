@@ -9,13 +9,13 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Oracle;
-using Honua.Oracle.Features.FeatureStore;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle;
+using Honua.Db.Oracle.Features.FeatureStore;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Oracle.Tests;
+namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Verifies that the Oracle provider plugs into the shared Metadata v2 provider seam:

@@ -3,11 +3,11 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Databricks.Features.FeatureStore.Services;
-using Honua.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.FeatureStore.Services;
+using Honua.Db.Databricks.Features.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Databricks.Tests;
+namespace Honua.Db.Databricks.Tests;
 
 public class DatabricksStatementFlowTests
 {

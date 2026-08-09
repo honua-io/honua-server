@@ -7,13 +7,13 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Tests.Features.Metadata;
+namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 [Collection("Database")]
 public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)

@@ -6,12 +6,12 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Postgres.Features.Metadata;
+using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Metadata;
+namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 /// <summary>
 /// Regression tests for honua-server#1341 — on a fresh-DB container where migration

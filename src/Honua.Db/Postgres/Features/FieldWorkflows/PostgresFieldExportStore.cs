@@ -5,11 +5,11 @@ using System.Text.Json;
 using Honua.Core.Features.FieldWorkflows.Export;
 using Honua.Core.Features.FieldWorkflows.Review;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.FieldWorkflows;
+namespace Honua.Db.Postgres.Features.FieldWorkflows;
 
 /// <summary>
 /// PostgreSQL-backed store for back-office field export packages (#1160). Selects

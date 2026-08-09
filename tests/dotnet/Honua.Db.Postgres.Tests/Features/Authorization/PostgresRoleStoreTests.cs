@@ -6,12 +6,12 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Authorization;
+using Honua.Db.Postgres.Features.Authorization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 
-namespace Honua.Postgres.Tests.Features.Authorization;
+namespace Honua.Db.Postgres.Tests.Features.Authorization;
 
 /// <summary>
 /// Integration tests for <see cref="PostgresRoleStore"/> (#1374) using the shared

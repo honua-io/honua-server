@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 
-namespace Honua.Postgres.Features.Alerts;
+namespace Honua.Db.Postgres.Features.Alerts;
 
 internal static class AlertMetadataSerializer
 {

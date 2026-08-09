@@ -2,13 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Security.Domain;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Security;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Postgres.Tests.Features.Security;
+namespace Honua.Db.Postgres.Tests.Features.Security;
 
 /// <summary>
 /// Comprehensive tests for the secure connection registry.

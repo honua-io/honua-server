@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Redshift.Features.FeatureStore.Services;
+namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
 /// <summary>
 /// Resolves and opens an <see cref="NpgsqlConnection"/> for a Redshift feature operation.

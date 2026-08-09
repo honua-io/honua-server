@@ -8,7 +8,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 
-namespace Honua.Postgres.Tests.Features.Import;
+namespace Honua.Db.Postgres.Tests.Features.Import;
 
 /// <summary>
 /// Integration coverage for issue #1033 slice 3: drive a small deterministic GeoServer

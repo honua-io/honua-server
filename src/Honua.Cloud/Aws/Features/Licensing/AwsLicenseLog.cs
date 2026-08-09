@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Aws.Features.Licensing;
+namespace Honua.Cloud.Aws.Features.Licensing;
 
 internal static partial class AwsLicenseLog
 {

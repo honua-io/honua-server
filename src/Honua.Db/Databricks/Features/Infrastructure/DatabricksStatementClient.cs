@@ -5,10 +5,10 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Honua.Databricks.Features.FeatureStore.Services;
+using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Databricks.Features.Infrastructure;
+namespace Honua.Db.Databricks.Features.Infrastructure;
 
 /// <summary>
 /// A fully materialized result set from the Statement Execution API: ordered column

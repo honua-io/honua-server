@@ -4,11 +4,11 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Infrastructure.Events.Outbox;
+namespace Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Postgres implementation of the feature-change outbox. Uses

@@ -8,13 +8,13 @@ using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure;
-using Honua.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Resilience;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Monitoring;
+using Honua.Db.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure.Caching;
+namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 /// <summary>
 /// Enhanced PostgreSQL connection provider with prepared statement caching support

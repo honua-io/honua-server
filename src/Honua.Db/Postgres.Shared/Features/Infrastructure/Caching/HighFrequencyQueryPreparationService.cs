@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure.Caching;
+namespace Honua.Db.Postgres.Features.Infrastructure.Caching;
 
 /// <summary>
 /// Background service that pre-prepares known high-frequency queries

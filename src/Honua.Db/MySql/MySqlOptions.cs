@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.MySql;
+namespace Honua.Db.MySql;
 
 /// <summary>
 /// Configuration options for the MySQL/MariaDB read-only provider, bound from the "MySql" section.

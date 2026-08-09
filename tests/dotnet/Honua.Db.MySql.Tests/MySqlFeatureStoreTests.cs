@@ -6,11 +6,11 @@ using System.Runtime.CompilerServices;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.MySql.Features.FeatureStore;
-using Honua.MySql.Features.FeatureStore.Services;
-using Honua.MySql.Features.Infrastructure;
+using Honua.Db.MySql.Features.FeatureStore;
+using Honua.Db.MySql.Features.FeatureStore.Services;
+using Honua.Db.MySql.Features.Infrastructure;
 
-namespace Honua.MySql.Tests;
+namespace Honua.Db.MySql.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="MySqlFeatureStore"/> behaviours that do not require a real

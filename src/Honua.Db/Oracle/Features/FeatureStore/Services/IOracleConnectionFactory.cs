@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Options;
 using Oracle.ManagedDataAccess.Client;
 
-namespace Honua.Oracle.Features.FeatureStore.Services;
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
 /// <summary>
 /// Resolves and opens an <see cref="OracleConnection"/> for an Oracle feature operation.

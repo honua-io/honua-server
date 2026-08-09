@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.Oracle.Features.FeatureStore.Services;
+using Honua.Db.Oracle.Features.FeatureStore.Services;
 
-namespace Honua.Oracle.Tests;
+namespace Honua.Db.Oracle.Tests;
 
 /// <summary>
 /// Unit tests for the Oracle query builder. Verifies Oracle SQL dialect, identifier

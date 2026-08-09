@@ -60,7 +60,7 @@ a separate metadata repository subsystem.
 - Route provider-backed query/edit calls through the provider binding resolver.
 - Add SQL Server provider implementation behind the same Core seam. The
   MySQL/MariaDB read/query-only slice (#851) is now in tree under
-  `src/Honua.MySql/`, declaring `FeatureProviderCapabilities.ReadOnlyMySql`;
+  `src/Honua.Db.MySql/`, declaring `FeatureProviderCapabilities.ReadOnlyMySql`;
   follow-on slices cover writes, statistics, native MVT, KNN,
   temporal (`datetime`) filters, `ST_Transform`-based cross-SRID handling,
   extent on geometry types beyond Point/Polygon/MultiPolygon, and a native

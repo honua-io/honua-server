@@ -8,11 +8,11 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
 
-namespace Honua.Postgres.Tests.Features.FeatureStore;
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>
 /// Connection-resolution behavior for the storage-mapped reader. Regression coverage for

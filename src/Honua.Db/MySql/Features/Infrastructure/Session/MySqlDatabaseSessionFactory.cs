@@ -4,7 +4,7 @@
 using System.Data;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.MySql.Features.Infrastructure.Session;
+namespace Honua.Db.MySql.Features.Infrastructure.Session;
 
 /// <summary>
 /// MySQL/MariaDB implementation of <see cref="IDatabaseSessionFactory"/>. Wraps

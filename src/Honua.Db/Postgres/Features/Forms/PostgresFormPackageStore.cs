@@ -8,11 +8,11 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Postgres.Features.Forms;
+namespace Honua.Db.Postgres.Features.Forms;
 
 internal sealed class PostgresFormPackageStore : IFormPackageStore
 {
