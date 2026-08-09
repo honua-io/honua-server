@@ -601,7 +601,8 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
                      "092_CreateSavedMapOperationLog.sql",
-                     "093_CreateSavedMapCheckpointVersionRecovery.sql",
+                     "093_EnsureConfiguredStudioPackageLifecycle.sql",
+                     "094_CreateSavedMapCheckpointVersionRecovery.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);

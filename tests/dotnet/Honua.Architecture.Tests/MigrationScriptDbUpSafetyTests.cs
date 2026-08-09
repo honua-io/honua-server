@@ -141,7 +141,7 @@ public sealed class MigrationScriptDbUpSafetyTests
             "src",
             "Honua.Server",
             "Migrations",
-            "093_CreateSavedMapCheckpointVersionRecovery.sql");
+            "094_CreateSavedMapCheckpointVersionRecovery.sql");
         var recoverySql = File.ReadAllText(recoveryMigrationPath);
         var studioPrerequisiteMigrations = new[]
         {
@@ -150,6 +150,7 @@ public sealed class MigrationScriptDbUpSafetyTests
             "039_CreateStudioMapCollaboration.sql",
             "089_AddStudioContentEnumerationIndexes.sql",
             "090_AddStudioContentItemOwner.sql",
+            "093_EnsureConfiguredStudioPackageLifecycle.sql",
         };
 
         sql.Should().Contain("$HonuaSchema$.saved_map_operation_log_heads");
