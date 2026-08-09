@@ -131,13 +131,18 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     {
         var run = await LeaseRunAsync(ttlSeconds: 300);
 
-        // The fixture caps a run at three mutations.
+        // The fixture allows the four-operation conformance path above. Spend that
+        // budget while retaining one record so this assertion exercises the mutation
+        // bound rather than the independent record-count bound.
+        var inserted = await ReadJsonAsync(await MutateAsync(run, """{"operation":"insert"}"""));
+        var objectId = inserted.GetProperty("data").GetProperty("objectId").GetInt64();
         for (var i = 0; i < 3; i++)
         {
-            (await MutateAsync(run, """{"operation":"insert"}""")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await MutateAsync(run, $$"""{"operation":"touch","objectId":{{objectId}}}""")).StatusCode
+                .Should().Be(HttpStatusCode.OK);
         }
 
-        var overBudget = await MutateAsync(run, """{"operation":"insert"}""");
+        var overBudget = await MutateAsync(run, $$"""{"operation":"touch","objectId":{{objectId}}}""");
 
         overBudget.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await CleanupAsync(run);
@@ -262,12 +267,21 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs")]
     public async Task LeaseRun_WithoutAConformanceCredential_Returns401()
     {
-        using var anonymous = _fixture.CreateClient();
-        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var fixture = CreateFixture(maxConcurrentRuns: 2, requireAuthentication: true);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var anonymous = fixture.CreateClient();
+            using var content = new StringContent("{}", Encoding.UTF8, "application/json");
 
-        using var response = await anonymous.PostAsync(RunsPath, content, CancellationToken.None);
+            using var response = await anonymous.PostAsync(RunsPath, content, CancellationToken.None);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     // ── NFR-001/NFR-002: reset, and the anonymous advertisement ─────────────────
@@ -445,25 +459,36 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    private static WebAppFixture CreateFixture(int maxConcurrentRuns)
+    private static WebAppFixture CreateFixture(int maxConcurrentRuns, bool requireAuthentication = false)
         => new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configBuilder) =>
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+            .ConfigureWebHost(builder =>
+            {
+                if (requireAuthentication)
                 {
-                    ["FeatureStreaming:Conformance:Enabled"] = "true",
-                    ["FeatureStreaming:Conformance:ServiceId"] = "test",
-                    ["FeatureStreaming:Conformance:LayerId"] = "0",
-                    ["FeatureStreaming:Conformance:RunIdField"] = "name",
-                    ["FeatureStreaming:Conformance:LabelField"] = "category",
-                    ["FeatureStreaming:Conformance:MaxConcurrentRuns"] = maxConcurrentRuns.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    ["FeatureStreaming:Conformance:MaxMutationsPerRun"] = "3",
-                    ["FeatureStreaming:Conformance:MaxRecordsPerRun"] = "3",
-                    // A long sweep interval keeps the background sweeper from racing these
-                    // tests; TTL reclamation itself is covered by the registry unit tests.
-                    ["FeatureStreaming:Conformance:SweepInterval"] = "00:30:00",
-                    ["Deployment:Revision"] = TestRevision
-                })));
+                    // The standard test host explicitly enables development-auth bypass,
+                    // which would make the anonymous-credential assertion meaningless.
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                }
+
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FeatureStreaming:Conformance:Enabled"] = "true",
+                        ["FeatureStreaming:Conformance:ServiceId"] = "test",
+                        ["FeatureStreaming:Conformance:LayerId"] = "0",
+                        ["FeatureStreaming:Conformance:RunIdField"] = "name",
+                        ["FeatureStreaming:Conformance:LabelField"] = "category",
+                        ["FeatureStreaming:Conformance:MaxConcurrentRuns"] = maxConcurrentRuns.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["FeatureStreaming:Conformance:MaxMutationsPerRun"] = "4",
+                        ["FeatureStreaming:Conformance:MaxRecordsPerRun"] = "3",
+                        // A long sweep interval keeps the background sweeper from racing these
+                        // tests; TTL reclamation itself is covered by the registry unit tests.
+                        ["FeatureStreaming:Conformance:SweepInterval"] = "00:30:00",
+                        ["Deployment:Revision"] = TestRevision
+                    }));
+            });
 
     private async Task<LeasedRun> LeaseRunAsync(string? label = null, int? ttlSeconds = null)
     {

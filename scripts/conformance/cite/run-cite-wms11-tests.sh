@@ -16,6 +16,7 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+EXPECTED_TOTAL_TESTS=0
 HONUA_CITE_WMS11_SERVER_PORT="${HONUA_CITE_WMS11_SERVER_PORT:-8098}"
 export HONUA_CITE_WMS11_SERVER_PORT
 PASSED_TESTS=0
@@ -37,6 +38,10 @@ WMS_BBOXCONSTRAINTS="either"
 
 set_profile_options() {
     local profile="$1"
+    # The pinned ets-wms11 1.23 image counts the two wrapper tests plus every selected
+    # conformance-class/test node: basic runs 99; queryable + recommended + GML runs 126.
+    # Keep the completion proof profile-specific so a closed partial artifact cannot mask a
+    # runner failure and a complete minimal artifact is not rejected as truncated.
     WMS_PROFILE="no"
     WMS_RECOMMENDED="false"
     WMS_GETFEATUREINFO="false"
@@ -48,17 +53,20 @@ set_profile_options() {
             WMS_PROFILE="basic"
             WMS_RECOMMENDED="false"
             WMS_GETFEATUREINFO="false"
+            EXPECTED_TOTAL_TESTS=99
             ;;
         default)
             WMS_PROFILE="queryable"
             WMS_RECOMMENDED="true"
             WMS_GETFEATUREINFO="true"
+            EXPECTED_TOTAL_TESTS=126
             ;;
         full)
             WMS_PROFILE="queryable"
             WMS_RECOMMENDED="true"
             WMS_GETFEATUREINFO="true"
             WMS_BBOXCONSTRAINTS="either"
+            EXPECTED_TOTAL_TESTS=126
             ;;
         *)
             echo -e "${RED}Unknown profile: $profile${NC}"
@@ -289,7 +297,16 @@ WMS_RECOMMENDED="$WMS_RECOMMENDED" \
 WMS_GETFEATUREINFO="$WMS_GETFEATUREINFO" \
 WMS_FEESCONSTRAINTS="$WMS_FEESCONSTRAINTS" \
 WMS_BBOXCONSTRAINTS="$WMS_BBOXCONSTRAINTS" \
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner || runner_exit=$?
+
+# The TeamEngine container can return a non-zero process status after writing
+# complete result artifacts. The normalized result files below are the
+# authoritative outcome: preserve the raw status for diagnostics, then decide
+# success only after parsing those artifacts.
+runner_exit=${runner_exit:-0}
+if [[ $runner_exit -ne 0 ]]; then
+    echo -e "${YELLOW}CITE runner exited with status ${runner_exit}; validating extracted results before failing.${NC}"
+fi
 
 echo -e "${YELLOW}Waiting for CITE tests to complete...${NC}"
 start_time=$(date +%s)
@@ -323,6 +340,7 @@ echo -e "\n${BLUE}CITE Test Results Analysis${NC}"
 echo "==============================="
 
 RESULTS_FOUND=false
+COMPLETE_RESULTS=false
 if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; then
     RESULTS_FOUND=true
     echo "Results saved to: $CITE_RESULTS_DIR/"
@@ -335,6 +353,13 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
         FAILED_TESTS=$(sed -n 's/.*failed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         SKIPPED_TESTS=$(sed -n 's/.*skipped="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         CANTTELL_TESTS=0
+        if [[ "$TOTAL_TESTS" =~ ^[0-9]+$ && "$PASSED_TESTS" =~ ^[0-9]+$ &&
+              "$FAILED_TESTS" =~ ^[0-9]+$ && "$SKIPPED_TESTS" =~ ^[0-9]+$ ]] &&
+           (( TOTAL_TESTS == EXPECTED_TOTAL_TESTS &&
+              TOTAL_TESTS == PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS )) &&
+           grep -q '</testng-results>' "$RESULTS_XML"; then
+            COMPLETE_RESULTS=true
+        fi
     else
         SESSION_DIR=$(find "$CITE_RESULTS_DIR" -maxdepth 1 -type d -name "cite-wms11-session-*" | sort | tail -n 1)
         RESULT_CODE_LINES=""
@@ -408,7 +433,10 @@ EOF_SUMMARY
 
 echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-wms11-summary.md${NC}"
 
-if [[ "$RESULTS_FOUND" != "true" ]]; then
+if [[ $runner_exit -ne 0 && "$COMPLETE_RESULTS" != "true" ]]; then
+    echo -e "${RED}CITE runner failed before a complete TestNG result artifact was produced.${NC}"
+    exit "$runner_exit"
+elif [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
 elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then

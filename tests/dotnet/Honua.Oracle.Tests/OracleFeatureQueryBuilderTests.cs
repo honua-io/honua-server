@@ -20,14 +20,17 @@ public class OracleFeatureQueryBuilderTests
 
     private static readonly IReadOnlyList<string> _attributeColumns = ["name", "area", "category"];
 
-    private static OracleLayerMapping BuildMapping(string? schema = "GIS", int? srid = 4326)
+    private static OracleLayerMapping BuildMapping(
+        string? schema = "GIS",
+        int? srid = 4326,
+        string primaryKeyColumn = "OBJECTID")
     {
         var storage = new LayerStorageMapping(
             TableName: "PARCELS",
             SchemaName: schema,
             CatalogName: null,
             DatabaseName: null,
-            PrimaryKeyColumn: "OBJECTID",
+            PrimaryKeyColumn: primaryKeyColumn,
             GeometryColumn: "SHAPE",
             StorageSrid: srid);
 
@@ -105,6 +108,76 @@ public class OracleFeatureQueryBuilderTests
         Assert.Contains("\"category\" IS NOT NULL", result.Sql, StringComparison.Ordinal);
         Assert.Single(result.WhereParameters);
         Assert.Equal("Alpha", result.WhereParameters[0]);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereFieldCasingDiffersFromCatalog_UsesPhysicalOracleIdentifier()
+    {
+        var query = new FeatureQuery { Where = "name = 'Alpha'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, ["NAME"]);
+
+        Assert.Contains("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereFieldExactlyMatchesCaseDistinctColumn_PreservesExactIdentifier()
+    {
+        var query = new FeatureQuery { Where = "name = 'Alpha'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, ["NAME", "name"]);
+
+        Assert.Contains("\"name\" = :p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_AttributeDifferingFromPrimaryKeyOnlyByCase_PreservesExactIdentifier()
+    {
+        var query = new FeatureQuery { Where = "id = 'attribute'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(primaryKeyColumn: "ID"), query, ["id"]);
+
+        Assert.Contains("\"ID\" AS \"__objectid\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"id\" = :p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"ID\" = :p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_OutFieldsWithCaseDistinctNames_ProjectsOnlyExactAttributes()
+    {
+        var query = new FeatureQuery { OutFields = ["ID", "NAME"] };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(primaryKeyColumn: "ID"), query, ["id", "NAME", "name"]);
+
+        Assert.Contains("\"ID\" AS \"__objectid\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(", \"NAME\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(", \"id\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(", \"name\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_AmbiguousCaseDistinctOutField_Throws()
+    {
+        var query = new FeatureQuery { OutFields = ["Name"] };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            OracleFeatureQueryBuilder.BuildSelectQuery(
+                BuildMapping(), query, ["NAME", "name"]));
+
+        Assert.Contains("ambiguously matches", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereFieldAmbiguouslyMatchesCaseDistinctColumns_FailsClosed()
+    {
+        var query = new FeatureQuery { Where = "Name = 'Alpha'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, ["NAME", "name"]);
+
+        Assert.Contains("\"Name\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
