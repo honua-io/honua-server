@@ -36,6 +36,7 @@ internal static partial class OracleFeatureQueryBuilder
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
 
@@ -46,10 +47,10 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
+        AppendOrderByClause(sb, query, resolveColumnName);
         AppendPagination(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -58,18 +59,22 @@ internal static partial class OracleFeatureQueryBuilder
     /// <summary>
     /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
     /// </summary>
-    public static ParameterizedQuery BuildCountQuery(OracleLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildCountQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
 
         sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
 
@@ -80,22 +85,26 @@ internal static partial class OracleFeatureQueryBuilder
     /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
     /// listings when only identifiers are needed.
     /// </summary>
-    public static ParameterizedQuery BuildObjectIdsQuery(OracleLayerMapping mapping, FeatureQuery query)
+    public static ParameterizedQuery BuildObjectIdsQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         GuardUnsupportedTemporalFilter(query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
 
         sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
-        AppendWhereClause(sb, query, parameters);
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
+        AppendOrderByClause(sb, query, resolveColumnName);
         AppendPagination(sb, mapping, query, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -106,7 +115,10 @@ internal static partial class OracleFeatureQueryBuilder
     /// SDO_GEOMETRY whose <c>SDO_ORDINATES</c> varray contains <c>(minX, minY, maxX, maxY)</c>
     /// in the source CRS.
     /// </summary>
-    public static ParameterizedQuery BuildExtentQuery(OracleLayerMapping mapping, FeatureQuery? query)
+    public static ParameterizedQuery BuildExtentQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery? query,
+        IReadOnlyList<string>? attributeColumns = null)
     {
         ArgumentNullException.ThrowIfNull(mapping);
 
@@ -118,6 +130,7 @@ internal static partial class OracleFeatureQueryBuilder
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
         var geometryColumn = mapping.QuotedGeometryColumn!;
 
         sb.Append("SELECT ");
@@ -131,7 +144,7 @@ internal static partial class OracleFeatureQueryBuilder
 
         var effective = query ?? new FeatureQuery();
         GuardUnsupportedTemporalFilter(effective);
-        AppendWhereClause(sb, effective, parameters);
+        AppendWhereClause(sb, effective, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
 
@@ -192,7 +205,70 @@ internal static partial class OracleFeatureQueryBuilder
         }
     }
 
-    private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    private static Func<string, string> CreateColumnNameResolver(
+        OracleLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns)
+    {
+        // Oracle folds unquoted DDL identifiers to upper-case, whereas protocol requests
+        // commonly use lower-case field names. We always quote identifiers to keep the
+        // configured physical name exact (including legitimately quoted mixed-case names),
+        // so resolve request fields against the catalog's physical names before quoting.
+        // Without this step `where=name` becomes `"name"`, which cannot address an
+        // unquoted Oracle NAME column and fails with ORA-00904.
+        var physicalNames = new List<string>
+        {
+            mapping.PrimaryKeyColumn
+        };
+
+        if (!string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            physicalNames.Add(mapping.GeometryColumn);
+        }
+
+        if (attributeColumns is not null)
+        {
+            physicalNames.AddRange(attributeColumns);
+        }
+
+        return requested =>
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(requested);
+            var exactMatch = physicalNames.FirstOrDefault(name =>
+                string.Equals(name, requested, StringComparison.Ordinal));
+            if (exactMatch is not null)
+            {
+                return exactMatch;
+            }
+
+            string? foldedMatch = null;
+            foreach (var physicalName in physicalNames)
+            {
+                if (!string.Equals(physicalName, requested, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (foldedMatch is not null &&
+                    !string.Equals(foldedMatch, physicalName, StringComparison.Ordinal))
+                {
+                    // Quoted Oracle identifiers may legitimately differ only by case. An
+                    // inexact request cannot choose between them without targeting the wrong
+                    // physical column, so leave it unchanged and let Oracle fail closed.
+                    return requested;
+                }
+
+                foldedMatch = physicalName;
+            }
+
+            return foldedMatch ?? requested;
+        };
+    }
+
+    private static void AppendWhereClause(
+        StringBuilder sb,
+        FeatureQuery query,
+        List<object> parameters,
+        Func<string, string> resolveColumnName)
     {
         // Only the canonical Where text is consumed here. The shared ISqlFilterTranslator
         // pipeline registers a PostgreSQL translator (FeatureQuery.SqlFilter is therefore
@@ -201,7 +277,7 @@ internal static partial class OracleFeatureQueryBuilder
         // Where is rejected up front rather than masked as an opaque ORA-* failure.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
+            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters, resolveColumnName);
             sb.Append(" AND (").Append(parameterized).Append(')');
             return;
         }
@@ -294,7 +370,7 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(" AND ").Append(clause);
     }
 
-    private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query)
+    private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query, Func<string, string> resolveColumnName)
     {
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
@@ -304,9 +380,10 @@ internal static partial class OracleFeatureQueryBuilder
         var clauses = new List<string>(query.OrderBy.Value.Length);
         foreach (var orderBy in query.OrderBy.Value)
         {
-            OracleIdentifier.EnsureValid(orderBy.Field, "order-by column");
+            var column = resolveColumnName(orderBy.Field);
+            OracleIdentifier.EnsureValid(column, "order-by column");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{OracleIdentifier.Quote(orderBy.Field)} {direction}");
+            clauses.Add($"{OracleIdentifier.Quote(column)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
@@ -337,7 +414,10 @@ internal static partial class OracleFeatureQueryBuilder
         }
     }
 
-    private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
+    private static string ParseAndParameterizeWhereClause(
+        string whereClause,
+        List<object> parameters,
+        Func<string, string> resolveColumnName)
     {
         var expressions = SplitOnAnd(whereClause);
         if (expressions.Count == 0)
@@ -366,7 +446,7 @@ internal static partial class OracleFeatureQueryBuilder
             var nullMatch = NullCheckRegex().Match(trimmed);
             if (nullMatch.Success)
             {
-                var field = nullMatch.Groups["field"].Value;
+                var field = resolveColumnName(nullMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
@@ -377,7 +457,7 @@ internal static partial class OracleFeatureQueryBuilder
             var inMatch = InExpressionRegex().Match(trimmed);
             if (inMatch.Success)
             {
-                var field = inMatch.Groups["field"].Value;
+                var field = resolveColumnName(inMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
                 var placeholders = new List<string>();
                 foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
@@ -392,7 +472,7 @@ internal static partial class OracleFeatureQueryBuilder
             var compMatch = ComparisonRegex().Match(trimmed);
             if (compMatch.Success)
             {
-                var field = compMatch.Groups["field"].Value;
+                var field = resolveColumnName(compMatch.Groups["field"].Value);
                 OracleIdentifier.EnsureValid(field, "WHERE column");
                 var op = NormalizeOperator(compMatch.Groups["op"].Value);
                 var value = ParseValueToken(compMatch.Groups["value"].Value);

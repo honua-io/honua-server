@@ -30,9 +30,6 @@ namespace Honua.CloudIntegration.Tests;
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstratePostgresFixture>
 {
-    private static readonly string[] Script002Only = ["002_drop_legacy_annotated.sql"];
-    private static readonly string[] Script004Only = ["004_drop_note_annotated.sql"];
-
     private const string ExpandScript =
         """
         CREATE TABLE honua_ci_demo (
@@ -222,10 +219,11 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             ("001_expand.sql", ExpandScript),
             ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
 
-        // The approval nonce is bound to the exact pending contract script name (DbUp journals by name,
-        // which SyntheticMigrationsCompiler emits verbatim), so the operator supplies the digest printed
-        // in the block message.
-        var nonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(Script002Only);
+        // DbUp keys embedded migrations by their manifest-resource name. The synthetic compiler prefixes
+        // that name with the generated assembly name, so mint the approval nonce from the same name the
+        // runner discovers and journals.
+        var nonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
+            [GetEmbeddedScriptName(assemblyName, "002_drop_legacy_annotated.sql")]);
         var runner = CreateRunner(
             new MigrationSafetyOptions
             {
@@ -257,7 +255,8 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
         // First upgrade: drop legacy_name (contract 002) and add a note column (expand 003). The pending
         // annotated-contract set is just {002}, so the approval nonce is bound to that single script.
-        var staleNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(Script002Only);
+        var staleNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
+            [GetEmbeddedScriptName(assemblyName, "002_drop_legacy_annotated.sql")]);
         var firstUpgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
             ("001_expand.sql", ExpandScript),
@@ -290,7 +289,8 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             .Should().BeTrue("the stale nonce must not have applied the later contract migration");
 
         // The freshly-minted nonce for 004 approves it — the gate is not permanently stuck.
-        var freshNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(Script004Only);
+        var freshNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
+            [GetEmbeddedScriptName(assemblyName, "004_drop_note_annotated.sql")]);
         var approved = await CreateRunner(
                 new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Gate },
                 approvalToken: freshNonce)
@@ -425,6 +425,9 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
         => new(Options.Create(new MigrationSafetyOptions { Enforce = true }));
+
+    private static string GetEmbeddedScriptName(string assemblyName, string scriptName)
+        => $"{assemblyName}.{scriptName}";
 
     private static PostgresDatabaseMigrationRunner CreateRunner(
         MigrationSafetyOptions options,

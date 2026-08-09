@@ -421,6 +421,17 @@ request_json_4xx() {
   [[ "$status" == "pass" ]]
 }
 
+# GeoServices REST serializes operation errors in an Esri JSON `error` envelope
+# with an HTTP 200 response. This is a protocol-level wire-format convention,
+# unlike OGC API and OData, which use HTTP 4xx problem responses.
+request_esri_json_error() {
+  local check_id="$1"
+  local url="$2"
+  local jq_expr="$3"
+
+  request_json "$check_id" "$url" "200" "$jq_expr"
+}
+
 append_cert_result() {
   local protocol="$1" cert_id="$2" status="$3" duration_ms="$4" measured_count="$5" measured_delta="$6" notes="${7:-}" evidence_ref="${8:-}"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -724,14 +735,14 @@ run_full_featureserver() {
   append_cert_result "$proto" "CERT-GEOM-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-ERRH-01: Invalid endpoint returns structured error
-  request_json_4xx \
+  request_esri_json_error \
     "fs-error-invalid" \
     "${fs_base}/99999?f=json" \
     '.error != null' || failed=1
   append_cert_result "$proto" "CERT-ERRH-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-ERRH-02: Malformed where returns structured error
-  request_json_4xx \
+  request_esri_json_error \
     "fs-error-malformed" \
     "${fs_base}/${LAYER_ID}/query?where=INVALID%21%21%21&f=json" \
     '.error != null' || failed=1
@@ -947,7 +958,7 @@ run_full_mapserver() {
   record_na_with_lane "ms-geom-02" "$proto" "CERT-GEOM-02" "Rendering-only lane; query not exercised"
 
   # CERT-ERRH-01: Invalid layer
-  request_json_4xx \
+  request_esri_json_error \
     "ms-error-invalid" \
     "${ms_base}/99999?f=json" \
     '.error != null' || failed=1

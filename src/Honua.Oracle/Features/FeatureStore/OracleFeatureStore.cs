@@ -157,8 +157,8 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -166,8 +166,8 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = OracleFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -175,8 +175,8 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var sql = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

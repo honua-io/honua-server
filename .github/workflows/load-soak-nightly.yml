@@ -156,7 +156,18 @@ jobs:
           Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
           ConnectionStrings__redis: "localhost:6379"
-          ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=50
+          # PostgresDataSourceFactory applies Limits:Connections to the data source after
+          # parsing the connection string. Keep both settings aligned: setting only
+          # Maximum Pool Size here is otherwise overridden by the production default
+          # (200), which exceeds the GitHub service container's PostgreSQL client
+          # budget and produces "too many clients already" under the nightly load.
+          # Reserve ample capacity for the health check, migrations, and maintenance
+          # connections while keeping the application below the container limit.
+          Limits__Connections__MaxConcurrentQueries: "40"
+          Limits__Connections__MaxConnectionPoolSize: "40"
+          Limits__Connections__MinConnectionPoolSize: "0"
+          Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
+          ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=40
         run: |
           dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
           echo $! > server.pid
