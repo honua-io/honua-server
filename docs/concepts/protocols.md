@@ -11,16 +11,25 @@ Honua serves every published layer through multiple protocols at once — the sa
 | GeoServices ImageServer | `/rest/services/{serviceId}/ImageServer` | ArcGIS raster workflows | Esri clients need raster export, identify, tiles, statistics |
 | GeoServices Geometry Service | `/rest/services/Utilities/Geometry/GeometryServer` | Esri SDKs | Clients need server-side buffer, project, intersect, etc. |
 | GeoServices GPServer | `/rest/services/{serviceId}/GPServer` | ArcGIS Pro, Esri SDKs | Esri clients run async geoprocessing jobs |
+| GeoServices GeocodeServer | `/rest/services/{locatorName}/GeocodeServer` | Esri geocoding clients | Esri clients call `findAddressCandidates`-style geocoding against registered locators |
+| GeoServices VectorTileServer | `/rest/services/{serviceId}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs | Esri clients render vector tiles (`/tile/{z}/{y}/{x}.pbf`) |
+| GeoServices NAServer **(Pro)** | `/rest/services/{serviceId}/NAServer` | Esri routing clients | Esri clients solve routes, service areas, closest facility, OD cost matrices |
+| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{serviceId}/VersionManagementServer` | Esri branch-versioning workflows | Named gdb versions with isolated edits and reconcile/post |
 | Portal token issuance | `/sharing/rest/generateToken` | ArcGIS Pro, Esri SDKs | Esri clients authenticate with username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, any OGC client | Standards-based feature access and CRUD with CQL2 filtering |
 | OGC API Maps | `/ogc/maps` | OGC map clients | Standards-based server-rendered map images |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre | Standards-based vector/raster tile access with tile matrix sets |
 | OGC API Coverages | `/ogc/coverages` | Science/raster tooling | REST/JSON raster coverage discovery and GeoTIFF export |
 | OGC API Processes | `/ogc/processes` | OGC processing clients | Standards-based async geoprocessing |
+| OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
+| OGC API Environmental Data Retrieval (EDR) | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube |
+| OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
+| OGC SensorThings v1.1 | `/sta/v1.1` | IoT/observation clients | REST access to Things, Datastreams, Sensors, and Observations |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks | Clients expect classic GetFeature with GML output |
 | WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Science/elevation tooling | Clients need raw subsetted coverage values |
 | WMTS 1.0 | `/rest/services/{serviceId}/MapServer/WMTS` or `/ogc/services/{serviceId}/wmts` | QGIS, legacy tile clients | Clients expect classic GetTile |
+| WPS 2.0 | `/wps` | Classic OGC processing clients | Clients expect classic WPS Execute/GetStatus/GetResult over the same job runtime |
 | OData v4 | `/odata` | Excel, Power BI, Tableau | BI tools consume spatial tables as entity sets |
 | STAC | `/stac` | STAC browsers, catalog tooling | Catalog discovery and item search with extension metadata |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet | Web maps render features client-side |
@@ -32,6 +41,8 @@ Honua serves every published layer through multiple protocols at once — the sa
 | Cloud rasters (COG) | registered via admin API, served via ImageServer / WCS / OGC Coverages | Raster pipelines | Cloud-optimized GeoTIFFs in S3/Azure served without copying |
 
 Protocols are enabled per service; a layer is reachable through every protocol its service lists. Read-only providers expose the same surfaces minus write operations. See [Data model](data-model.md).
+
+Surfaces marked **(Pro)** / **(Enterprise)** require a signed license; everything unmarked is Community. The machine-readable capability vocabulary behind this matrix is [`docs/gis/data/capability-keys.v1.json`](../gis/data/capability-keys.v1.json) (generated from `CapabilityKeyCatalog.cs`) — keep the matrix in sync with it, and query `/api/v1/capabilities/manifest` for what a running deployment supports.
 
 ## Cloud-native formats
 

@@ -7,6 +7,7 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Events.Outbox;
 using Honua.Infrastructure.Extensions;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Features.Streaming.Conformance;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -159,6 +160,21 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddHostedService<FeatureChangeRetryBackgroundService>();
         services.AddScoped<FeatureStreamDependencies>();
         services.AddHostedService<FeatureStreamHeartbeatService>();
+
+        // Controlled-conformance mutation workflow (#3038). Options are bound and validated
+        // unconditionally so a misconfigured source fails at startup, but the lease registry,
+        // workflow, and TTL sweeper only participate when an operator has deliberately
+        // provisioned a dedicated conformance source: the surface fails closed otherwise.
+        services.AddOptions<FeatureStreamConformanceOptions>()
+            .Bind(configuration.GetSection(FeatureStreamConformanceOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<FeatureStreamConformanceOptions>,
+            FeatureStreamConformanceOptionsValidator>();
+        services.AddSingleton<FeatureStreamConformanceRunRegistry>();
+        services.AddScoped<FeatureStreamConformanceStore>();
+        services.AddScoped<FeatureStreamConformanceService>();
+        services.AddHostedService<FeatureStreamConformanceSweepService>();
         services.AddResilientHttpClient(
             "feature-change-webhook",
             "feature-change-webhook",

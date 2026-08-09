@@ -20171,6 +20171,44 @@
           }
         }
       }
+    },
+    "/streaming/conformance/reset": {
+      "post": {
+        "tags": [
+          "Streaming"
+        ],
+        "summary": "Reset the controlled-conformance source",
+        "description": "Drops every controlled-conformance run lease and deletes every record those runs own, returning the dedicated conformance source to its immutable baseline. Records that carry no conformance ownership marker are never touched. Returns 403 when the deployment provisions no conformance source and 503 when the configured source cannot be resolved as a writable layer.",
+        "operationId": "resetFeatureStreamConformanceSource",
+        "responses": {
+          "200": {
+            "description": "The conformance source was reset to its immutable baseline.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFeatureStreamConformanceResetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The configured controlled-conformance source could not be resolved as a writable layer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -46564,6 +46602,49 @@
           "message": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "ApiResponseFeatureStreamConformanceResetResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FeatureStreamConformanceResetResponse"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FeatureStreamConformanceResetResponse": {
+        "type": "object",
+        "properties": {
+          "releasedRuns": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Conformance run leases dropped."
+          },
+          "deletedRecords": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Controlled records deleted."
+          },
+          "baselineDigest": {
+            "type": "string",
+            "description": "sha256 content digest of the source's immutable baseline after the reset."
+          },
+          "baselineRecordCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of records the baseline digest covers."
           }
         }
       }

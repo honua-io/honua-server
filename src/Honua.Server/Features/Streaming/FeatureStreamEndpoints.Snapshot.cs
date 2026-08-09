@@ -39,7 +39,16 @@ namespace Honua.Server.Features.Streaming;
 internal static partial class FeatureStreamEndpoints
 {
     private const string SnapshotModeValue = "snapshot";
+    private const string SnapshotThenDeltaModeValue = "snapshot-then-delta";
     private const string DeltaModeValue = "delta";
+
+    /// <summary>
+    /// True for both snapshot framings. Every baseline decision — scope validation,
+    /// replacement-snapshot detection, delta resumption from the boundary cursor — is
+    /// identical between them; only the frame layout differs.
+    /// </summary>
+    private static bool IsSnapshotMode(FeatureStreamSubscriptionMode mode)
+        => mode is FeatureStreamSubscriptionMode.Snapshot or FeatureStreamSubscriptionMode.SnapshotThenDelta;
 
     /// <summary>
     /// Result of emitting one baseline snapshot.
@@ -52,12 +61,144 @@ internal static partial class FeatureStreamEndpoints
     /// </summary>
     private abstract class FeatureStreamSnapshotSink
     {
+        /// <summary>
+        /// True when the sink emits the whole baseline as one frame. Sequence allocation is
+        /// framing-aware because of this: a batched baseline must consume exactly ONE
+        /// subscription-local sequence, or the numbers allocated to buffered frames that are
+        /// never written would be burned and the first delta would land at a gap.
+        /// </summary>
+        public virtual bool BatchesFrames => false;
+
         public abstract Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken);
 
         public abstract Task WriteFeatureAsync(FeatureStreamSnapshotFeatureFrame frame, CancellationToken cancellationToken);
 
         public abstract Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken);
     }
+
+    /// <summary>
+    /// Buffers the streamed frames a baseline produces and writes them as a single
+    /// <c>snapshot</c> frame once the baseline is whole. Buffering is bounded by the same
+    /// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/> cap that bounds the streamed
+    /// framing, so a batched baseline can never buffer more than a streamed one reads.
+    /// </summary>
+    private abstract class BatchedSnapshotSink : FeatureStreamSnapshotSink
+    {
+        private readonly List<FeatureStreamSnapshotFeature> _features = [];
+        private FeatureStreamSnapshotBeginFrame? _begin;
+
+        public sealed override bool BatchesFrames => true;
+
+        public sealed override Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken)
+        {
+            _begin = frame;
+            return Task.CompletedTask;
+        }
+
+        public sealed override Task WriteFeatureAsync(FeatureStreamSnapshotFeatureFrame frame, CancellationToken cancellationToken)
+        {
+            _features.Add(new FeatureStreamSnapshotFeature
+            {
+                Id = frame.FeatureId,
+                SourceId = frame.ServiceId,
+                LayerId = frame.LayerId,
+                GeometryCrs = frame.GeometryCrs,
+                Feature = new FeatureStreamSnapshotGeoJsonFeature
+                {
+                    Id = frame.FeatureId,
+                    Geometry = frame.Geometry,
+                    Properties = frame.Attributes
+                }
+            });
+            return Task.CompletedTask;
+        }
+
+        public sealed override Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken)
+        {
+            // The begin frame is written by the emitter before any feature read, so it is
+            // always present by the time the end frame arrives. Fail closed rather than
+            // emitting a baseline whose boundary metadata was never captured.
+            var begin = _begin
+                ?? throw new InvalidOperationException("A batched snapshot cannot be completed before it was begun.");
+
+            return WriteSnapshotAsync(
+                new FeatureStreamSnapshotFrame
+                {
+                    SnapshotId = frame.SnapshotId,
+                    SubscriptionId = frame.SubscriptionId,
+                    Sequence = frame.Sequence,
+                    Cursor = frame.Cursor,
+                    Reason = begin.Reason,
+                    ServiceId = begin.ServiceId,
+                    LayerIds = begin.LayerIds,
+                    FeatureCount = frame.FeatureCount,
+                    Complete = frame.Complete,
+                    Features = [.. _features]
+                },
+                cancellationToken);
+        }
+
+        protected abstract Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes a batched baseline as one SSE <c>snapshot</c> event.
+    /// </summary>
+    /// <remarks>
+    /// A batched baseline is atomic on the wire — the client either parses the whole frame
+    /// or none of it — so, unlike the streamed framing, there is no partial-baseline state a
+    /// reconnect could resume from. The complete baseline still checkpoints only when it is
+    /// whole: a truncated baseline omits features no later delta will mention, so resuming
+    /// from its cursor would leave the client permanently missing them.
+    /// </remarks>
+    private sealed class BatchedSseSnapshotSink(HttpResponse response) : BatchedSnapshotSink
+    {
+        protected override async Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
+        {
+            await WriteSseEventAsync(
+                response,
+                "snapshot",
+                frame,
+                FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame,
+                frame.Complete ? frame.Cursor : null,
+                cancellationToken).ConfigureAwait(false);
+            await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Writes a batched baseline as one WebSocket <c>snapshot</c> frame.
+    /// </summary>
+    private sealed class BatchedWebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : BatchedSnapshotSink
+    {
+        protected override Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken)
+            => SendWebSocketJsonAsync(
+                webSocket,
+                writeLock,
+                JsonSerializer.SerializeToUtf8Bytes(frame, FeatureStreamJsonContext.Default.FeatureStreamSnapshotFrame),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Selects the SSE baseline sink for the requested framing.
+    /// </summary>
+    private static FeatureStreamSnapshotSink CreateSseSnapshotSink(
+        FeatureStreamSubscriptionMode mode,
+        HttpResponse response)
+        => mode == FeatureStreamSubscriptionMode.SnapshotThenDelta
+            ? new BatchedSseSnapshotSink(response)
+            : new SseSnapshotSink(response);
+
+    /// <summary>
+    /// Selects the WebSocket baseline sink for the requested framing.
+    /// </summary>
+    private static FeatureStreamSnapshotSink CreateWebSocketSnapshotSink(
+        FeatureStreamSubscriptionMode mode,
+        WebSocket webSocket,
+        SemaphoreSlim writeLock)
+        => mode == FeatureStreamSubscriptionMode.SnapshotThenDelta
+            ? new BatchedWebSocketSnapshotSink(webSocket, writeLock)
+            : new WebSocketSnapshotSink(webSocket, writeLock);
 
     /// <summary>
     /// Writes snapshot frames as SSE events.
@@ -158,14 +299,19 @@ internal static partial class FeatureStreamEndpoints
             return true;
         }
 
-        if (value.Equals(SnapshotModeValue, StringComparison.OrdinalIgnoreCase) ||
-            value.Equals("snapshot-then-delta", StringComparison.OrdinalIgnoreCase))
+        if (value.Equals(SnapshotModeValue, StringComparison.OrdinalIgnoreCase))
         {
             mode = FeatureStreamSubscriptionMode.Snapshot;
             return true;
         }
 
-        error = $"Unsupported subscription mode '{value}'. Supported modes: delta, snapshot.";
+        if (value.Equals(SnapshotThenDeltaModeValue, StringComparison.OrdinalIgnoreCase))
+        {
+            mode = FeatureStreamSubscriptionMode.SnapshotThenDelta;
+            return true;
+        }
+
+        error = $"Unsupported subscription mode '{value}'. Supported modes: delta, snapshot, snapshot-then-delta.";
         return false;
     }
 
@@ -177,7 +323,7 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamSubscriptionMode mode,
         IStreamSubscriptionFilter? filter)
     {
-        if (mode != FeatureStreamSubscriptionMode.Snapshot)
+        if (!IsSnapshotMode(mode))
         {
             return null;
         }
@@ -263,12 +409,28 @@ internal static partial class FeatureStreamEndpoints
         var snapshotId = Guid.NewGuid().ToString("N");
         var layerIds = filter.LayerIds ?? [];
 
+        // A streamed baseline allocates one subscription-local sequence per emitted frame; a
+        // batched baseline is a single frame and must therefore consume exactly one, or the
+        // numbers allocated to buffered-but-never-written frames would be burned and the
+        // first delta would arrive at what the client reads as a gap.
+        long? batchedSequence = null;
+        long AllocateSequence()
+        {
+            if (!sink.BatchesFrames)
+            {
+                return NextSequence(deps.SessionManager, sessionId, subscriptionId, subscriptionGeneration);
+            }
+
+            batchedSequence ??= NextSequence(deps.SessionManager, sessionId, subscriptionId, subscriptionGeneration);
+            return batchedSequence.Value;
+        }
+
         await sink.WriteBeginAsync(
             new FeatureStreamSnapshotBeginFrame
             {
                 SnapshotId = snapshotId,
                 SubscriptionId = subscriptionId,
-                Sequence = NextSequence(deps.SessionManager, sessionId, subscriptionId, subscriptionGeneration),
+                Sequence = AllocateSequence(),
                 Cursor = baselineCursor,
                 Reason = reason,
                 ServiceId = filter.ServiceId,
@@ -366,9 +528,7 @@ internal static partial class FeatureStreamEndpoints
                         snapshotId,
                         subscriptionId,
                         baselineCursor,
-                        deps.SessionManager,
-                        sessionId,
-                        subscriptionGeneration);
+                        AllocateSequence);
                     if (frame is null)
                     {
                         continue;
@@ -432,7 +592,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 SnapshotId = snapshotId,
                 SubscriptionId = subscriptionId,
-                Sequence = NextSequence(deps.SessionManager, sessionId, subscriptionId, subscriptionGeneration),
+                Sequence = AllocateSequence(),
                 Cursor = baselineCursor,
                 FeatureCount = emitted,
                 Complete = complete
@@ -457,9 +617,7 @@ internal static partial class FeatureStreamEndpoints
         string snapshotId,
         string subscriptionId,
         long baselineCursor,
-        FeatureStreamSessionManager sessionManager,
-        Guid sessionId,
-        long subscriptionGeneration)
+        Func<long> allocateSequence)
     {
         var objectId = feature.ObjectId ?? feature.Id;
         var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(feature, layerSrid);
@@ -495,7 +653,7 @@ internal static partial class FeatureStreamEndpoints
         {
             SnapshotId = snapshotId,
             SubscriptionId = subscriptionId,
-            Sequence = NextSequence(sessionManager, sessionId, subscriptionId, subscriptionGeneration),
+            Sequence = allocateSequence(),
             Cursor = baselineCursor,
             ServiceId = serviceId,
             LayerId = layerId,

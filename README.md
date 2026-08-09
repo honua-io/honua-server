@@ -5,14 +5,14 @@
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
 [![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
-[![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
+[![PostGIS](https://img.shields.io/badge/PostGIS-3.4--3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-honuaio%2Fhonua--server-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
 **Cloud-native geospatial server.** One container exposes the same PostGIS-backed data through every major GIS protocol — GeoServices REST (FeatureServer, MapServer, ImageServer, Geometry, GPServer), OGC API (Features, Maps, Tiles, Coverages, Processes), classic OGC WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles (MVT/TileJSON), Terrain-RGB and elevation APIs, 3D Tiles, MCP for AI agents, and gRPC. ArcGIS Pro and Esri SDK clients connect unmodified; QGIS, MapLibre, Excel, and Power BI hit the same layers — no ETL, no duplication, no GDAL toolchain to install.
 
 ## Status
 
-Honua Server is open core under the [Elastic License 2.0](LICENSE), heading to a v1.0 GA. The GA-tier core (protocol surfaces, editing, imports, auth, operations) is tracked on the [public roadmap](ROADMAP.md) — upvote what you want next. The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
+Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked on the [public roadmap](ROADMAP.md) under the v1.0 (GA) milestone — upvote what you want next. Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
 
 ## Quick start
 
@@ -26,7 +26,7 @@ docker compose ps
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a published [honua-console](https://github.com/honua-io/honua-console) image; Operate serves at `http://localhost:5174/operate`).
+The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
 
 **Pre-built image** (bring your own PostGIS):
 
@@ -34,8 +34,11 @@ PostGIS, Redis, and Honua Server start automatically; migrations run on first bo
 docker run -p 8080:8080 -p 8081:8081 \
   -e ConnectionStrings__DefaultConnection="Host=host.docker.internal;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
-  honuaio/honua-server:latest
+  -e Security__ConnectionEncryption__MasterKey="change-me-random-string-32-plus-characters" \
+  honuaio/honua-server:nightly
 ```
+
+`:nightly` (also tagged `:trunk`) is rebuilt from `trunk` every night; pin a specific build with `:nightly-YYYYMMDD`. The `:latest` tag is only promoted on tagged `v*` releases and will resume meaning "latest release" once the first release is cut.
 
 **Kubernetes** — deploy with the Helm chart in [honua-helm](https://github.com/honua-io/honua-helm); see the [Kubernetes guide](docs/guides/deploy/kubernetes.md).
 
@@ -58,16 +61,25 @@ Every published layer is reachable through every protocol its service enables. T
 | GeoServices ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster workflows |
 | GeoServices Geometry Service | `/rest/services/Utilities/Geometry/GeometryServer` | Esri SDKs (buffer, project, intersect, …) |
 | GeoServices GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, async geoprocessing clients |
+| GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | Esri geocoding clients (`findAddressCandidates`) |
+| GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs |
+| GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
+| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
 | Portal token issuance | `/sharing/rest/generateToken` | Esri clients using username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, OpenLayers, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
 | OGC API Coverages | `/ogc/coverages` | Science and raster tooling |
 | OGC API Processes | `/ogc/processes` | OGC processing clients |
+| OGC API Records | `/ogc/records` | Catalog / metadata search clients |
+| OGC API Environmental Data Retrieval (EDR) | `/edr` | Environmental and scientific data clients |
+| OGC API Styles | `/ogc/styles` | Style-aware map clients |
+| OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
 | WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
 | WMTS 1.0 | `/ogc/services/{id}/wmts`, `/rest/services/{id}/MapServer/WMTS` | QGIS, legacy tile clients |
+| WPS 2.0 | `/wps` | Classic OGC processing clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
 | STAC API | `/stac` | STAC browsers, catalog/search tooling |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet |
@@ -77,24 +89,26 @@ Every published layer is reachable through every protocol its service enables. T
 | MCP (JSON-RPC) | `/mcp` | AI agents, operator automation, MCP clients |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services |
 
+Surfaces marked **(Pro)** / **(Enterprise)** require a signed license; everything unmarked is Community. The machine-readable capability vocabulary behind this table is [`docs/gis/data/capability-keys.v1.json`](docs/gis/data/capability-keys.v1.json) (generated from `CapabilityKeyCatalog.cs`) — keep the table in sync with it.
+
 Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), OpenAPI documents per OGC API, an interactive API explorer at `/docs` (dev mode or `HONUA_SERVE_API_DOCS=true`), the admin API (`/api/v1/admin`), and a capability manifest (`/api/v1/capabilities/manifest`) for clients to discover what a deployment supports.
 
 ## Compliance
 
-- **OGC CITE:** 1117 / 1117 passing across 13 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0 plus WFS 2.0 Transactional, WCS 2.0, WMS 1.1.1/1.3, WMTS 1.0) on `trunk` — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md) for suite-by-suite evidence.
-- **Client compatibility:** the supported client x protocol matrix is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
+- **OGC CITE:** 1117 / 1117 passing across 13 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0 plus WFS 2.0 Transactional, WCS 2.0, WMS 1.1.1/1.3, WMTS 1.0) as of the 2026-07-27 evidence run — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md) for suite-by-suite evidence.
+- **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
 - **gRPC stability:** versioning, deprecation, and stability guarantees for the `geospatial.v1` surface are defined in the [gRPC reference](docs/reference/protocols/grpc.md).
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
 
 ## Key capabilities
 
-- **Query and edit** — FeatureServer query/applyEdits/attachments/related records, OGC API Features CRUD with CQL2, WFS 2.0 transactions, OData CRUD with spatial functions (`geo.distance`, `geo.intersects`, `$batch`). Output as JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow.
-- **Esri migration and coexistence** — ArcGIS Pro and Esri SDK clients connect unmodified. Import public ArcGIS REST services into PostGIS; scan ArcGIS Server and GeoServer for deterministic migration inventories. See [Migrate from ArcGIS Server](docs/guides/migrate/from-arcgis-server.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
-- **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase (`.gdb.zip`), and GeoParquet directly, with CRS auto-detection and PostGIS reprojection.
+- **Query and edit** — FeatureServer query/applyEdits/attachments/related records, OGC API Features CRUD with CQL2, WFS 2.0 transactions, OData CRUD with spatial functions (`geo.distance`, `geo.intersects`, `$batch`). FeatureServer applyEdits is **(Pro)**; edits through the open protocols (OGC API Features, WFS-T, OData, gRPC) stay Community. Output as JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow.
+- **Esri migration and coexistence** — ArcGIS Pro and Esri SDK clients connect unmodified. Import public ArcGIS REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan ArcGIS Server and GeoServer for deterministic migration inventories. See [Migrate from ArcGIS Server](docs/guides/migrate/from-arcgis-server.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
+- **No GDAL required on the server** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase (`.gdb.zip`), and GeoParquet directly, with CRS auto-detection and PostGIS reprojection; the serving container ships no GDAL, while optional geoprocessing worker images bundle it separately.
 - **Rendering and rasters** — MapServer export/identify/legend, OGC API Maps, ImageServer, WCS, OGC API Coverages, cloud-optimized GeoTIFFs registered in place from S3/Azure, and server-generated Terrain-RGB elevation tiles.
 - **Geoprocessing and workflows** — one canonical async job runtime behind GPServer, OGC API Processes, gRPC, and MCP; declarative multi-step DAG workflows with retries and cron scheduling (Redis required for durable jobs).
-- **AI-operable** — the `/mcp` surface implements the open [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) standard so agents can validate plans, dry-run, execute, and read results with the same authorization as any other client. See [Connect AI agents](docs/guides/connect/ai-agents-mcp.md).
-- **Cloud-native operations** — container-first and stateless; multi-layer caching (output cache, Redis, in-memory fallback); OpenTelemetry traces and metrics; API-key, OIDC, and optional mTLS auth; a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
+- **AI-operable** — the `/mcp` surface implements the open [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) standard so agents can validate plans, dry-run, execute, and read results with the same authorization as any other client. MCP discovery/query and spec artifacts are Community; agent operations and spec-apply execution are **(Pro)**; approval workflows are **(Enterprise)**. See [Connect AI agents](docs/guides/connect/ai-agents-mcp.md).
+- **Cloud-native operations** — container-first and stateless; multi-layer caching with in-memory fallback (output cache and Redis caching are **(Pro)**); OpenTelemetry traces and metrics; API-key auth, OIDC SSO **(Pro)** — multi-provider OIDC, SAML 2.0, and SCIM 2.0 are **(Enterprise)** — and experimental mTLS client-certificate auth (off by default, not on the GA path); a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
 
 The admin API (`/api/v1/admin`) manages connections, services, layers, styles, and import jobs; the web admin UI lives in [honua-console](https://github.com/honua-io/honua-console). The admin API is also the substrate for Honua's managed control-plane direction — change management and instance lifecycle workflows build on it rather than on a third-party GitOps controller.
 
@@ -124,18 +138,22 @@ All settings are environment variables. Copy [`.env.example`](.env.example) for 
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
 HONUA_ADMIN_PASSWORD="change-me"
+# Encrypts stored data-connection credentials (>=32 chars). Required outside
+# Development — startup fails without it; in dev, registering a data
+# connection fails until it is set.
+Security__ConnectionEncryption__MasterKey="change-me-random-string-32-plus-characters"
 ```
 
 **Common options:**
 
 ```bash
 ConnectionStrings__Redis="localhost:6379"   # shared caches; required for durable jobs/workflows
-HONUA_OBSERVABILITY=true                    # metrics and health endpoints
+HONUA_OBSERVABILITY=true                    # metrics endpoints (health probes are always on)
 HONUA_OPENTELEMETRY=true                    # distributed tracing
 Cors__AllowedOrigins__0="https://app.example.com"
 ```
 
-**Production tuning** — bounded database admission is the default production posture: keep `Limits__Connections__MaxConcurrentQueries` aligned with the pool size and size from the shared database budget across replicas (small 4-vCPU nodes profile best in the 4–6 active-query range; larger pools can overfeed PostGIS and worsen tail latency). Adaptive admission (`AdaptiveConcurrencyEnabled`) is an explicit tuning profile, not the default — monitor `/monitoring/metrics/connection-pool` and keep fixed-cap results as the baseline. Full guidance: [Scale and tune performance](docs/guides/deploy/scaling-and-performance.md) and [admission and pooling variables](docs/reference/configuration/environment-variables.md#admission-and-pooling).
+**Production tuning** — bounded database admission is the default production posture: keep `Limits__Connections__MaxConcurrentQueries` aligned with the pool size and size from the shared database budget across replicas (small 4-vCPU nodes profile best in the 4–6 active-query range; larger pools can overfeed PostGIS and worsen tail latency). Adaptive admission (`Limits__Connections__AdaptiveConcurrencyEnabled`) is an explicit tuning profile, not the default — monitor `/monitoring/metrics/connection-pool` and keep fixed-cap results as the baseline. Full guidance: [Scale and tune performance](docs/guides/deploy/scaling-and-performance.md) and [admission and pooling variables](docs/reference/configuration/environment-variables.md#admission-and-pooling).
 
 Invalid configuration fails startup with a detailed error message.
 
@@ -169,15 +187,16 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 
 ## Feedback
 
-GitHub Issues are the primary feedback loop for the open-core MVP. Please use the forms so reports include enough detail for triage:
+GitHub Issues are the primary feedback loop. Please use the forms so reports include enough detail for triage:
 
 - [Report a bug](https://github.com/honua-io/honua-server/issues/new?template=bug.yml) (include screenshots and repro steps)
 - [Request a feature](https://github.com/honua-io/honua-server/issues/new?template=feature.yml) — or upvote existing [roadmap items](ROADMAP.md)
+- New ideas start in [Discussions → Ideas](https://github.com/honua-io/honua-server/discussions/categories/ideas); popular ideas graduate to roadmap issues
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for supported versions and how to report vulnerabilities (security@honua.io).
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, response targets, and the coordinated-disclosure policy. Do not open public issues for suspected vulnerabilities.
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify.
+[Elastic License 2.0 (ELv2)](LICENSE) — free to use, deploy, and modify, within the ELv2 limitations: you may not provide Honua to third parties as a hosted or managed service, may not circumvent the license-key functionality, and may not remove or obscure the licensor's notices.
