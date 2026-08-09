@@ -6,23 +6,23 @@ It is separate from the `arcgis-stub` REST lane: the stub proves Honua serves
 the ArcGIS REST request pattern, while this lane is reserved for licensed
 ArcGIS Pro / ArcPy automation.
 
-This slice does not make ordinary PR gates depend on ArcGIS Pro. It adds the
-runner contract, the manual/scheduled workflow entry point, artifact guardrails,
-an ArcPy script that emits standard `.cert.json` envelopes, a headless
-layout/map-frame screenshot fallback for ProPy runs, and a strict artifact
-validator for licensed runs.
+Ordinary PR gates do not depend on ArcGIS Pro. This repository retains the
+runner contract, artifact guardrails, an ArcPy script that emits standard
+`.cert.json` envelopes, a headless layout/map-frame screenshot fallback for
+ProPy runs, and a strict artifact validator for licensed runs. Scheduled
+licensed execution is maintained in
+[`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat), avoiding a
+nightly workflow here that cannot run without dedicated self-hosted capacity.
 A successful licensed run still needs to be executed and linked before #1019
 can be closed.
 
-## Workflow
+## Execution
 
-Workflow file:
-[`arcgis-pro-desktop-evidence.yml`](../../../.github/workflows/arcgis-pro-desktop-evidence.yml)
-
-Triggers:
-- `workflow_dispatch` with `run_licensed_lane=true`
-- weekly `schedule`, but only when repository variable
-  `ARCGIS_PRO_EVIDENCE_ENABLED=true`
+The maintained licensed workflow lives in
+[`honua-esri-compat`](https://github.com/honua-io/honua-esri-compat). This
+repository intentionally has no scheduled ArcGIS Pro workflow; the local
+scripts remain the evidence-production contract used by that harness and by
+manual operator runs.
 
 The licensed job runs only on a self-hosted Windows runner with labels:
 
