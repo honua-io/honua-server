@@ -1717,6 +1717,9 @@
           "description": {
             "type": "string"
           },
+          "attribution": {
+            "type": "string"
+          },
           "extent": {
             "$ref": "#/components/schemas/Extent"
           },

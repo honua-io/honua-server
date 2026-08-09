@@ -301,9 +301,69 @@ public sealed record LayerSourceGovernance
         }
 
         var token = expression[start..position];
-        return !string.Equals(token, "AND", StringComparison.Ordinal) &&
+        return IsValidSpdxIdentifier(token) &&
+            !string.Equals(token, "AND", StringComparison.Ordinal) &&
             !string.Equals(token, "OR", StringComparison.Ordinal) &&
             !string.Equals(token, "WITH", StringComparison.Ordinal);
+    }
+
+    private static bool IsValidSpdxIdentifier(ReadOnlySpan<char> token)
+    {
+        var hasOrLaterSuffix = token.EndsWith("+", StringComparison.Ordinal);
+        if (hasOrLaterSuffix)
+        {
+            token = token[..^1];
+        }
+
+        if (token.IsEmpty || token.Contains('+'))
+        {
+            return false;
+        }
+
+        var colon = token.IndexOf(':');
+        if (colon < 0)
+        {
+            return IsValidSpdxIdString(token);
+        }
+
+        if (hasOrLaterSuffix || colon != token.LastIndexOf(':'))
+        {
+            return false;
+        }
+
+        const string documentReferencePrefix = "DocumentRef-";
+        var documentReference = token[..colon];
+        var referencedIdentifier = token[(colon + 1)..];
+        if (!documentReference.StartsWith(documentReferencePrefix, StringComparison.Ordinal) ||
+            !IsValidSpdxIdString(documentReference[documentReferencePrefix.Length..]))
+        {
+            return false;
+        }
+
+        const string licenseReferencePrefix = "LicenseRef-";
+        const string additionReferencePrefix = "AdditionRef-";
+        return referencedIdentifier.StartsWith(licenseReferencePrefix, StringComparison.Ordinal)
+            ? IsValidSpdxIdString(referencedIdentifier[licenseReferencePrefix.Length..])
+            : referencedIdentifier.StartsWith(additionReferencePrefix, StringComparison.Ordinal) &&
+                IsValidSpdxIdString(referencedIdentifier[additionReferencePrefix.Length..]);
+    }
+
+    private static bool IsValidSpdxIdString(ReadOnlySpan<char> value)
+    {
+        var hasAlphaNumericCharacter = false;
+        foreach (var character in value)
+        {
+            if (char.IsAsciiLetterOrDigit(character))
+            {
+                hasAlphaNumericCharacter = true;
+            }
+            else if (character is not '-' and not '.')
+            {
+                return false;
+            }
+        }
+
+        return hasAlphaNumericCharacter;
     }
 
     private static bool TryReadOperator(string expression, ref int position, string value)

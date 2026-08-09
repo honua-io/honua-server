@@ -5,11 +5,14 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -262,6 +265,94 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_GovernancePatch_PreservesUnrelatedLinksAndRefreshesLicenseTitle()
+    {
+        const string oldLicenseUrl = "https://example.test/licenses/cc-by-4.0";
+        const string newLicenseUrl = "https://example.test/licenses/mit";
+        const string unrelatedLicenseUrl = "https://example.test/legal/alternate-terms";
+        const string oldSourceUrl = "https://example.test/data/source";
+        const string unrelatedSourceUrl = "https://example.test/schema/collection.json";
+        await SetLayerGovernanceMetadataAsync(
+            layerId: 0,
+            license: "CC-BY-4.0",
+            links:
+            [
+                new MetadataV2Link
+                {
+                    Href = unrelatedLicenseUrl,
+                    Rel = "license",
+                    Title = "Alternate terms"
+                },
+                new MetadataV2Link
+                {
+                    Href = oldLicenseUrl,
+                    Rel = "license",
+                    Type = "text/html",
+                    Title = "CC-BY-4.0",
+                    Hreflang = "en"
+                },
+                new MetadataV2Link
+                {
+                    Href = unrelatedSourceUrl,
+                    Rel = "describedby",
+                    Title = "Collection schema"
+                },
+                new MetadataV2Link
+                {
+                    Href = oldSourceUrl,
+                    Rel = "describedby",
+                    Title = "Source documentation"
+                }
+            ]);
+
+        using (var licenseContent = new StringContent("""{"license":"MIT"}""", Encoding.UTF8, "application/json"))
+        {
+            var licenseResponse = await _client.PutAsync(
+                "/api/v1/admin/services/test/layers/0/metadata",
+                licenseContent);
+            licenseResponse.Be200Ok();
+            using var document = JsonDocument.Parse(await licenseResponse.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("license").GetString().Should().Be("MIT");
+            data.GetProperty("licenseUrl").GetString().Should().Be(oldLicenseUrl);
+        }
+
+        var licenseOnlyMetadata = GetLayerMetadata(0);
+        var refreshedLicenseLink = licenseOnlyMetadata.Links.Single(link => link.Href == oldLicenseUrl);
+        refreshedLicenseLink.Title.Should().Be("MIT");
+        refreshedLicenseLink.Type.Should().Be("text/html");
+        refreshedLicenseLink.Hreflang.Should().Be("en");
+        licenseOnlyMetadata.Links.Should().ContainSingle(link => link.Href == unrelatedLicenseUrl);
+
+        using (var urlContent = new StringContent(
+                   $$"""{"licenseUrl":"{{newLicenseUrl}}","sourceUrl":""}""",
+                   Encoding.UTF8,
+                   "application/json"))
+        {
+            var urlResponse = await _client.PutAsync(
+                "/api/v1/admin/services/test/layers/0/metadata",
+                urlContent);
+            urlResponse.Be200Ok();
+            using var document = JsonDocument.Parse(await urlResponse.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("licenseUrl").GetString().Should().Be(newLicenseUrl);
+            AssertAbsentOrNull(data, "sourceUrl");
+        }
+
+        var updatedMetadata = GetLayerMetadata(0);
+        updatedMetadata.Links.Should().ContainSingle(link =>
+            link.Rel == "license" && link.Href == newLicenseUrl && link.Title == "MIT" &&
+            link.Type == "text/html" && link.Hreflang == "en");
+        updatedMetadata.Links.Should().ContainSingle(link =>
+            link.Rel == "license" && link.Href == unrelatedLicenseUrl && link.Title == "Alternate terms");
+        updatedMetadata.Links.Should().NotContain(link => link.Href == oldLicenseUrl);
+        updatedMetadata.Links.Should().ContainSingle(link =>
+            link.Rel == "describedby" && link.Href == unrelatedSourceUrl && link.Title == "Collection schema");
+        updatedMetadata.Links.Should().NotContain(link => link.Href == oldSourceUrl);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest()
     {
         var body = """
@@ -329,6 +420,49 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         {
             value.ValueKind.Should().Be(JsonValueKind.Null);
         }
+    }
+
+    private async Task SetLayerGovernanceMetadataAsync(
+        int layerId,
+        string license,
+        IReadOnlyList<MetadataV2Link> links)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var resources = snapshot.Graph.Resources
+            .Select(resource => resourceIds.Contains(resource.Metadata.Id)
+                ? resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        License = license,
+                        Links = links
+                    }
+                }
+                : resource)
+            .ToArray();
+
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        await store.SaveAsync(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = resources
+        }, expectedEtag: null);
+    }
+
+    private MetadataV2ObjectMetadata GetLayerMetadata(int layerId)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Graph.Publications
+            .First(publication => publication.LayerIndex == layerId)
+            .ResourceId;
+        return snapshot.Graph.Resources
+            .First(resource => resource.Metadata.Id == resourceId)
+            .Metadata;
     }
 
     [IntegrationTest]
