@@ -275,7 +275,7 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
 
         var attributeColumns = binding.Resource.SchemaFields
             .Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && !f.Name.Equals(mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))
+                && !f.Name.Equals(mapping.PrimaryKeyColumn, StringComparison.Ordinal))
             .Select(f => f.Name)
             .ToArray();
 

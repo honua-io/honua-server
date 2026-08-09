@@ -20,14 +20,17 @@ public class OracleFeatureQueryBuilderTests
 
     private static readonly IReadOnlyList<string> _attributeColumns = ["name", "area", "category"];
 
-    private static OracleLayerMapping BuildMapping(string? schema = "GIS", int? srid = 4326)
+    private static OracleLayerMapping BuildMapping(
+        string? schema = "GIS",
+        int? srid = 4326,
+        string primaryKeyColumn = "OBJECTID")
     {
         var storage = new LayerStorageMapping(
             TableName: "PARCELS",
             SchemaName: schema,
             CatalogName: null,
             DatabaseName: null,
-            PrimaryKeyColumn: "OBJECTID",
+            PrimaryKeyColumn: primaryKeyColumn,
             GeometryColumn: "SHAPE",
             StorageSrid: srid);
 
@@ -126,6 +129,19 @@ public class OracleFeatureQueryBuilderTests
 
         Assert.Contains("\"name\" = :p0", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("\"NAME\" = :p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_AttributeDifferingFromPrimaryKeyOnlyByCase_PreservesExactIdentifier()
+    {
+        var query = new FeatureQuery { Where = "id = 'attribute'" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(primaryKeyColumn: "ID"), query, ["id"]);
+
+        Assert.Contains("\"ID\" AS \"__objectid\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"id\" = :p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"ID\" = :p0", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
