@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
@@ -280,8 +281,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
                 new MetadataV2Link
                 {
                     Href = unrelatedLicenseUrl,
-                    Rel = "license",
-                    Title = "Alternate terms"
+                    Rel = "license"
                 },
                 new MetadataV2Link
                 {
@@ -289,7 +289,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
                     Rel = "license",
                     Type = "text/html",
                     Title = "CC-BY-4.0",
-                    Hreflang = "en"
+                    Hreflang = "en",
+                    ManagedBy = LayerSourceGovernance.LinkManager
                 },
                 new MetadataV2Link
                 {
@@ -301,7 +302,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
                 {
                     Href = oldSourceUrl,
                     Rel = "describedby",
-                    Title = "Source documentation"
+                    Title = "Source documentation",
+                    ManagedBy = LayerSourceGovernance.LinkManager
                 }
             ]);
 
@@ -322,6 +324,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         refreshedLicenseLink.Title.Should().Be("MIT");
         refreshedLicenseLink.Type.Should().Be("text/html");
         refreshedLicenseLink.Hreflang.Should().Be("en");
+        refreshedLicenseLink.ManagedBy.Should().Be(LayerSourceGovernance.LinkManager);
         licenseOnlyMetadata.Links.Should().ContainSingle(link => link.Href == unrelatedLicenseUrl);
 
         using (var urlContent = new StringContent(
@@ -342,13 +345,39 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var updatedMetadata = GetLayerMetadata(0);
         updatedMetadata.Links.Should().ContainSingle(link =>
             link.Rel == "license" && link.Href == newLicenseUrl && link.Title == "MIT" &&
-            link.Type == "text/html" && link.Hreflang == "en");
+            link.Type == "text/html" && link.Hreflang == "en" &&
+            link.ManagedBy == LayerSourceGovernance.LinkManager);
         updatedMetadata.Links.Should().ContainSingle(link =>
-            link.Rel == "license" && link.Href == unrelatedLicenseUrl && link.Title == "Alternate terms");
+            link.Rel == "license" && link.Href == unrelatedLicenseUrl && link.Title == null &&
+            link.ManagedBy == null);
         updatedMetadata.Links.Should().NotContain(link => link.Href == oldLicenseUrl);
         updatedMetadata.Links.Should().ContainSingle(link =>
             link.Rel == "describedby" && link.Href == unrelatedSourceUrl && link.Title == "Collection schema");
         updatedMetadata.Links.Should().NotContain(link => link.Href == oldSourceUrl);
+
+        using (var licenseContent = new StringContent("""{"license":""}""", Encoding.UTF8, "application/json"))
+        {
+            var licenseResponse = await _client.PutAsync(
+                "/api/v1/admin/services/test/layers/0/metadata",
+                licenseContent);
+            licenseResponse.Be200Ok();
+        }
+
+        using (var licenseUrlContent = new StringContent("""{"licenseUrl":""}""", Encoding.UTF8, "application/json"))
+        {
+            var licenseUrlResponse = await _client.PutAsync(
+                "/api/v1/admin/services/test/layers/0/metadata",
+                licenseUrlContent);
+            licenseUrlResponse.Be200Ok();
+        }
+
+        var clearedMetadata = GetLayerMetadata(0);
+        clearedMetadata.License.Should().BeNull();
+        clearedMetadata.Links.Should().ContainSingle(link =>
+            link.Rel == "license" && link.Href == unrelatedLicenseUrl && link.Title == null &&
+            link.ManagedBy == null);
+        clearedMetadata.Links.Should().NotContain(link =>
+            link.Rel == "license" && link.ManagedBy == LayerSourceGovernance.LinkManager);
     }
 
     [IntegrationTest]

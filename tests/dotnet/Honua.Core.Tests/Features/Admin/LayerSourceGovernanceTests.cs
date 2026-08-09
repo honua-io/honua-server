@@ -19,6 +19,12 @@ public sealed class LayerSourceGovernanceTests
     [InlineData("DocumentRef-:LicenseRef-Custom")]
     [InlineData("DocumentRef-Document:LicenseRef-")]
     [InlineData("DocumentRef-Document::LicenseRef-Custom")]
+    [InlineData("LicenseRef-Custom+")]
+    [InlineData("AdditionRef-Custom")]
+    [InlineData("DocumentRef-Document:AdditionRef-Custom")]
+    [InlineData("MIT WITH LicenseRef-Custom")]
+    [InlineData("MIT WITH GPL-2.0+")]
+    [InlineData("MIT WITH DocumentRef-Document:LicenseRef-Custom")]
     [InlineData("MIT OR")]
     [InlineData("(MIT OR Apache-2.0")]
     public void TryCreate_WithMalformedSpdxExpression_RejectsLicense(string license)
@@ -44,6 +50,8 @@ public sealed class LayerSourceGovernanceTests
     [InlineData("DocumentRef-Document:LicenseRef-Custom")]
     [InlineData("(MIT OR Apache-2.0) AND BSD-3-Clause")]
     [InlineData("GPL-2.0-only WITH Classpath-exception-2.0")]
+    [InlineData("MIT WITH AdditionRef-Custom")]
+    [InlineData("MIT WITH DocumentRef-Document:AdditionRef-Custom")]
     public void TryCreate_WithSupportedSpdxExpression_AcceptsLicense(string license)
     {
         var accepted = LayerSourceGovernance.TryCreate(

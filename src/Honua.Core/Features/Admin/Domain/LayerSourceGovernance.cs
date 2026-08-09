@@ -10,6 +10,9 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed record LayerSourceGovernance
 {
+    /// <summary>Canonical owner marker for links managed by the layer source-governance surface.</summary>
+    public const string LinkManager = "layer-source-governance";
+
     /// <summary>Maximum SPDX expression length.</summary>
     public const int MaxLicenseLength = 256;
 
@@ -125,7 +128,8 @@ public sealed record LayerSourceGovernance
             {
                 Href = LicenseUrl,
                 Rel = "license",
-                Title = License
+                Title = License,
+                ManagedBy = LinkManager
             });
         }
 
@@ -135,7 +139,8 @@ public sealed record LayerSourceGovernance
             {
                 Href = SourceUrl,
                 Rel = "describedby",
-                Title = "Source documentation"
+                Title = "Source documentation",
+                ManagedBy = LinkManager
             });
         }
 
@@ -256,7 +261,7 @@ public sealed record LayerSourceGovernance
 
         if (TryReadOperator(expression, ref position, "WITH"))
         {
-            return TryReadIdentifier(expression, ref position);
+            return TryReadIdentifier(expression, ref position, SpdxIdentifierRole.Addition);
         }
 
         return true;
@@ -283,10 +288,13 @@ public sealed record LayerSourceGovernance
             return true;
         }
 
-        return TryReadIdentifier(expression, ref position);
+        return TryReadIdentifier(expression, ref position, SpdxIdentifierRole.License);
     }
 
-    private static bool TryReadIdentifier(string expression, ref int position)
+    private static bool TryReadIdentifier(
+        string expression,
+        ref int position,
+        SpdxIdentifierRole role)
     {
         SkipWhitespace(expression, ref position);
         var start = position;
@@ -301,13 +309,15 @@ public sealed record LayerSourceGovernance
         }
 
         var token = expression[start..position];
-        return IsValidSpdxIdentifier(token) &&
+        return IsValidSpdxIdentifier(token, role) &&
             !string.Equals(token, "AND", StringComparison.Ordinal) &&
             !string.Equals(token, "OR", StringComparison.Ordinal) &&
             !string.Equals(token, "WITH", StringComparison.Ordinal);
     }
 
-    private static bool IsValidSpdxIdentifier(ReadOnlySpan<char> token)
+    private static bool IsValidSpdxIdentifier(
+        ReadOnlySpan<char> token,
+        SpdxIdentifierRole role)
     {
         var hasOrLaterSuffix = token.EndsWith("+", StringComparison.Ordinal);
         if (hasOrLaterSuffix)
@@ -323,7 +333,24 @@ public sealed record LayerSourceGovernance
         var colon = token.IndexOf(':');
         if (colon < 0)
         {
-            return IsValidSpdxIdString(token);
+            const string licenseReferencePrefix = "LicenseRef-";
+            const string additionReferencePrefix = "AdditionRef-";
+            if (token.StartsWith(licenseReferencePrefix, StringComparison.Ordinal))
+            {
+                return role == SpdxIdentifierRole.License &&
+                    !hasOrLaterSuffix &&
+                    IsValidSpdxIdString(token[licenseReferencePrefix.Length..]);
+            }
+
+            if (token.StartsWith(additionReferencePrefix, StringComparison.Ordinal))
+            {
+                return role == SpdxIdentifierRole.Addition &&
+                    !hasOrLaterSuffix &&
+                    IsValidSpdxIdString(token[additionReferencePrefix.Length..]);
+            }
+
+            return (role == SpdxIdentifierRole.License || !hasOrLaterSuffix) &&
+                IsValidSpdxIdString(token);
         }
 
         if (hasOrLaterSuffix || colon != token.LastIndexOf(':'))
@@ -340,12 +367,11 @@ public sealed record LayerSourceGovernance
             return false;
         }
 
-        const string licenseReferencePrefix = "LicenseRef-";
-        const string additionReferencePrefix = "AdditionRef-";
-        return referencedIdentifier.StartsWith(licenseReferencePrefix, StringComparison.Ordinal)
-            ? IsValidSpdxIdString(referencedIdentifier[licenseReferencePrefix.Length..])
-            : referencedIdentifier.StartsWith(additionReferencePrefix, StringComparison.Ordinal) &&
-                IsValidSpdxIdString(referencedIdentifier[additionReferencePrefix.Length..]);
+        var referencePrefix = role == SpdxIdentifierRole.License
+            ? "LicenseRef-"
+            : "AdditionRef-";
+        return referencedIdentifier.StartsWith(referencePrefix, StringComparison.Ordinal) &&
+            IsValidSpdxIdString(referencedIdentifier[referencePrefix.Length..]);
     }
 
     private static bool IsValidSpdxIdString(ReadOnlySpan<char> value)
@@ -400,4 +426,10 @@ public sealed record LayerSourceGovernance
 
     private static bool IsIdentifierCharacter(char value)
         => char.IsAsciiLetterOrDigit(value) || value is '-' or '.' or '+' or ':';
+
+    private enum SpdxIdentifierRole
+    {
+        License,
+        Addition
+    }
 }

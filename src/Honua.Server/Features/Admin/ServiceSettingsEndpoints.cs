@@ -671,7 +671,8 @@ internal static class ServiceSettingsEndpoints
                 {
                     Href = normalizedValue,
                     Rel = relation,
-                    Title = title
+                    Title = title,
+                    ManagedBy = LayerSourceGovernance.LinkManager
                 }
                 : previous with
                 {
@@ -693,9 +694,7 @@ internal static class ServiceSettingsEndpoints
     private static string? FindGovernanceLink(MetadataV2ObjectMetadata metadata, string relation)
         => metadata.Links.FirstOrDefault(link =>
             string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
-            (string.Equals(relation, "license", StringComparison.OrdinalIgnoreCase)
-                ? string.Equals(link.Title, metadata.License, StringComparison.Ordinal)
-                : string.Equals(link.Title, "Source documentation", StringComparison.Ordinal)))?.Href;
+            string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal))?.Href;
 
     /// <summary>
     /// Validates a raster mosaic merge strategy against the canonical set and normalizes to

@@ -156,6 +156,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
@@ -218,6 +221,44 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
+
+        var listResponse = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
+        listResponse.Be200Ok();
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await listResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(
+            listApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+
+        var toggleResponse = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/{published.LayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
+        toggleResponse.Be200Ok();
+        var toggleApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
+            await toggleResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(toggleApi!.Data!, license, attribution, publisher, licenseUrl, sourceUrl);
+
+        var bulkResponse = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
+        bulkResponse.Be200Ok();
+        var bulkApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await bulkResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(
+            bulkApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
     }
 
     [IntegrationTest]
@@ -1656,6 +1697,21 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             string.Equals(item.GetProperty("rel").GetString(), relation, StringComparison.Ordinal));
         link.GetProperty("href").GetString().Should().Be(href);
         link.GetProperty("title").GetString().Should().Be(title);
+    }
+
+    private static void AssertSummaryGovernance(
+        PublishedLayerSummary summary,
+        string license,
+        string attribution,
+        string publisher,
+        string licenseUrl,
+        string sourceUrl)
+    {
+        summary.License.Should().Be(license);
+        summary.Attribution.Should().Be(attribution);
+        summary.Publisher.Should().Be(publisher);
+        summary.LicenseUrl.Should().Be(licenseUrl);
+        summary.SourceUrl.Should().Be(sourceUrl);
     }
 
     private async Task AssertPersistedExtentAsync(

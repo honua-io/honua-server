@@ -351,6 +351,10 @@ public sealed record MetadataV2Link
     /// <summary>BCP-47 language tag of the linked resource.</summary>
     [JsonPropertyName("hreflang")]
     public string? Hreflang { get; init; }
+
+    /// <summary>Optional internal owner used to distinguish links managed by a specific authoring surface.</summary>
+    [JsonPropertyName("managedBy")]
+    public string? ManagedBy { get; init; }
 }
 
 /// <summary>
