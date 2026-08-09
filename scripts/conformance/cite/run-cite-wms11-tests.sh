@@ -16,6 +16,7 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
+EXPECTED_TOTAL_TESTS=126
 HONUA_CITE_WMS11_SERVER_PORT="${HONUA_CITE_WMS11_SERVER_PORT:-8098}"
 export HONUA_CITE_WMS11_SERVER_PORT
 PASSED_TESTS=0
@@ -347,6 +348,8 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
         CANTTELL_TESTS=0
         if [[ "$TOTAL_TESTS" =~ ^[0-9]+$ && "$PASSED_TESTS" =~ ^[0-9]+$ &&
               "$FAILED_TESTS" =~ ^[0-9]+$ && "$SKIPPED_TESTS" =~ ^[0-9]+$ ]] &&
+           (( TOTAL_TESTS == EXPECTED_TOTAL_TESTS &&
+              TOTAL_TESTS == PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS )) &&
            grep -q '</testng-results>' "$RESULTS_XML"; then
             COMPLETE_RESULTS=true
         fi
