@@ -32,8 +32,16 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             await using (var connection = await fixture.GetConnectionAsync(schema))
             await using (var command = connection.CreateCommand())
             {
-                command.CommandText = $"INSERT INTO \"{schema}\".saved_map_operation_log_heads " +
-                    "(map_id, head_cursor, checkpoint_cursor) VALUES (@map_id, 4, 0)";
+                command.CommandText = $"""
+                    INSERT INTO "{schema}".saved_map_operation_log_heads
+                        (map_id, head_cursor, checkpoint_cursor)
+                    VALUES (@map_id, 4, 0);
+                    INSERT INTO "{schema}".saved_map_operations
+                        (map_id, server_cursor, operation_id, actor_id, base_cursor,
+                         operation_kind, payload, accepted_at)
+                    VALUES (@map_id, 1, 'op-delete-cascade', 'tester', 0,
+                            'SetViewport', jsonb_build_object(), now());
+                    """;
                 command.Parameters.AddWithValue("@map_id", mapId);
                 await command.ExecuteNonQueryAsync();
             }
@@ -84,6 +92,11 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))
                 .Should().BeNull();
             sameCursorAfterAdvance.VersionId.Should().NotBe(repeated.VersionId);
+
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(5);
+            (await store.DeleteDraftAsync(draft.DraftId)).Should().BeTrue();
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0,
+                "deleting the Studio draft must atomically cascade its durable collaboration state");
         }
         finally
         {
@@ -621,6 +634,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "092_CreateSavedMapOperationLog.sql",
                      "093_EnsureConfiguredStudioPackageLifecycle.sql",
                      "094_CreateSavedMapCheckpointVersionRecovery.sql",
+                     "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -675,6 +689,19 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         command.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
         command.Parameters.AddWithValue("@map_id", mapId);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<int> CountSavedMapCollaborationRowsAsync(string schema, string mapId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT (SELECT COUNT(*) FROM "{schema}".saved_map_operation_log_heads WHERE map_id = @map_id)
+                 + (SELECT COUNT(*) FROM "{schema}".saved_map_operations WHERE map_id = @map_id)
+                 + (SELECT COUNT(*) FROM "{schema}".saved_map_checkpoint_versions WHERE map_id = @map_id)
+            """;
+        command.Parameters.AddWithValue("@map_id", mapId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private static StudioPackageDraft BuildDraft(string where, string packageKey = "parcels-query", Guid? itemId = null, string owner = "tester")
