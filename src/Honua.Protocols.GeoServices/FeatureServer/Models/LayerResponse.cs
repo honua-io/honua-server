@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -33,6 +34,18 @@ public sealed class LayerResponse
     /// Human-readable description
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>Layer attribution in the standard GeoServices copyright field.</summary>
+    public string? CopyrightText { get; init; }
+
+    /// <summary>SPDX license expression from canonical metadata.</summary>
+    public string? License { get; init; }
+
+    /// <summary>Data producer or source organization from canonical metadata.</summary>
+    public string? Publisher { get; init; }
+
+    /// <summary>Additive license/source documentation links.</summary>
+    public GeoServicesGovernanceLink[]? Links { get; init; }
 
     /// <summary>
     /// Geometry type of features in this layer

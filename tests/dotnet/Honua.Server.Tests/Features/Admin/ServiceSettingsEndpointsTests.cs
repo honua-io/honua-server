@@ -228,6 +228,111 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    public async Task UpdateLayerMetadata_WithSourceGovernance_UpdatesPublicMetadata()
+    {
+        var body = """
+            {
+              "license": "CC-BY-4.0",
+              "attribution": "Example contributors",
+              "publisher": "Example Data Office",
+              "licenseUrl": "https://example.test/licenses/cc-by-4.0",
+              "sourceUrl": "https://example.test/data/source"
+            }
+            """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var adminDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = adminDocument.RootElement.GetProperty("data");
+        data.GetProperty("license").GetString().Should().Be("CC-BY-4.0");
+        data.GetProperty("attribution").GetString().Should().Be("Example contributors");
+        data.GetProperty("publisher").GetString().Should().Be("Example Data Office");
+        data.GetProperty("licenseUrl").GetString().Should().Be("https://example.test/licenses/cc-by-4.0");
+        data.GetProperty("sourceUrl").GetString().Should().Be("https://example.test/data/source");
+
+        var publicResponse = await _client.GetAsync("/rest/services/test/FeatureServer/0?f=json");
+        publicResponse.Be200Ok();
+        using var publicDocument = JsonDocument.Parse(await publicResponse.Content.ReadAsStringAsync());
+        publicDocument.RootElement.GetProperty("copyrightText").GetString().Should().Be("Example contributors");
+        publicDocument.RootElement.GetProperty("license").GetString().Should().Be("CC-BY-4.0");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest()
+    {
+        var body = """
+            {
+              "license": "CC-BY-4.0 OR",
+              "sourceUrl": "file:///private/source.txt"
+            }
+            """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures)]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields()
+    {
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var adminResponse = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+        adminResponse.Be200Ok();
+        using (var adminDocument = JsonDocument.Parse(await adminResponse.Content.ReadAsStringAsync()))
+        {
+            var data = adminDocument.RootElement.GetProperty("data");
+            AssertAbsentOrNull(data, "license");
+            AssertAbsentOrNull(data, "attribution");
+            AssertAbsentOrNull(data, "publisher");
+            AssertAbsentOrNull(data, "licenseUrl");
+            AssertAbsentOrNull(data, "sourceUrl");
+        }
+
+        foreach (var path in new[]
+                 {
+                     "/rest/services/test/FeatureServer/0?f=json",
+                     "/rest/services/test/MapServer/0?f=json"
+                 })
+        {
+            var response = await _client.GetAsync(path);
+            response.Be200Ok();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.TryGetProperty("copyrightText", out _).Should().BeFalse();
+            document.RootElement.TryGetProperty("license", out _).Should().BeFalse();
+            document.RootElement.TryGetProperty("publisher", out _).Should().BeFalse();
+            document.RootElement.TryGetProperty("links", out _).Should().BeFalse();
+        }
+
+        var ogcResponse = await _client.GetAsync("/ogc/features/collections/0?f=json");
+        ogcResponse.Be200Ok();
+        using var ogcDocument = JsonDocument.Parse(await ogcResponse.Content.ReadAsStringAsync());
+        ogcDocument.RootElement.TryGetProperty("attribution", out _).Should().BeFalse();
+        var relations = ogcDocument.RootElement.GetProperty("links").EnumerateArray()
+            .Where(link => link.TryGetProperty("rel", out _))
+            .Select(link => link.GetProperty("rel").GetString())
+            .ToArray();
+        relations.Should().NotContain("license").And.NotContain("describedby");
+    }
+
+    private static void AssertAbsentOrNull(JsonElement parent, string propertyName)
+    {
+        if (parent.TryGetProperty(propertyName, out var value))
+        {
+            value.ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips()
     {
         // Regression for honua-io/honua-server#1910 symptom 3: PUTting a timeInfo block

@@ -334,6 +334,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 Name = request.LayerName.Trim(),
                 Title = request.LayerName.Trim(),
                 Description = request.Description,
+                License = request.SourceGovernance?.License,
+                Attribution = request.SourceGovernance?.Attribution,
+                Publisher = request.SourceGovernance?.Publisher,
+                Links = request.SourceGovernance?.ToMetadataLinks() ?? [],
                 CreatedAt = now,
                 UpdatedAt = now
             },

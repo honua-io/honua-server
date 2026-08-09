@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -372,6 +373,28 @@ internal static class ServiceSettingsEndpoints
                     $"Invalid mergeStrategy '{mergeStrategyValue}'. Allowed values: newest, oldest, average, max, min."));
             }
 
+            var governanceRequested = request.License is not null ||
+                request.Attribution is not null ||
+                request.Publisher is not null ||
+                request.LicenseUrl is not null ||
+                request.SourceUrl is not null;
+            if (!LayerSourceGovernance.TryCreate(
+                    request.License,
+                    request.Attribution,
+                    request.Publisher,
+                    request.LicenseUrl,
+                    request.SourceUrl,
+                    out var sourceGovernance,
+                    out var governanceError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
+            }
+
+            var metadataUpdatedAt = DateTimeOffset.UtcNow;
+            var updatedMetadata = governanceRequested
+                ? ApplySourceGovernancePatch(resource.Metadata, request, sourceGovernance, metadataUpdatedAt)
+                : resource.Metadata;
+
             // Patch access policy off the V2 resource's current AccessPolicy.
             AccessPolicy? updatedAccessPolicy = resource.AccessPolicy;
             if (request.AccessPolicy is not null)
@@ -439,6 +462,9 @@ internal static class ServiceSettingsEndpoints
                     }
                     next = next with
                     {
+                        Metadata = governanceRequested
+                            ? ApplySourceGovernancePatch(next.Metadata, request, sourceGovernance, metadataUpdatedAt)
+                            : next.Metadata,
                         Temporal = updatedTemporal,
                     };
                     // RasterMosaic has no typed V2 home yet — silently drop until the V2
@@ -452,6 +478,7 @@ internal static class ServiceSettingsEndpoints
             var response = BuildLayerMetadataResponse(
                 layerId,
                 resource.Metadata.Name,
+                updatedMetadata,
                 updatedAccessPolicy,
                 updatedTemporal,
                 updatedRasterMosaic);
@@ -538,6 +565,7 @@ internal static class ServiceSettingsEndpoints
     private static LayerMetadataResponse BuildLayerMetadataResponse(
         int layerId,
         string layerName,
+        MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
         RasterMosaicResponse? rasterMosaic)
@@ -546,6 +574,11 @@ internal static class ServiceSettingsEndpoints
         {
             LayerId = layerId,
             LayerName = layerName,
+            License = metadata.License,
+            Attribution = metadata.Attribution,
+            Publisher = metadata.Publisher,
+            LicenseUrl = FindGovernanceLink(metadata, "license"),
+            SourceUrl = FindGovernanceLink(metadata, "describedby"),
             AccessPolicy = accessPolicy is not null ? new AccessPolicyResponse
             {
                 AllowAnonymous = accessPolicy.AllowAnonymous,
@@ -562,6 +595,55 @@ internal static class ServiceSettingsEndpoints
             RasterMosaic = rasterMosaic
         };
     }
+
+    private static MetadataV2ObjectMetadata ApplySourceGovernancePatch(
+        MetadataV2ObjectMetadata current,
+        UpdateLayerMetadataRequest request,
+        LayerSourceGovernance? normalized,
+        DateTimeOffset updatedAt)
+    {
+        var effectiveLicense = request.License is null ? current.License : normalized?.License;
+        var links = current.Links.ToList();
+        PatchGovernanceLink(links, request.LicenseUrl, normalized?.LicenseUrl, "license", effectiveLicense);
+        PatchGovernanceLink(links, request.SourceUrl, normalized?.SourceUrl, "describedby", "Source documentation");
+
+        return current with
+        {
+            License = effectiveLicense,
+            Attribution = request.Attribution is null ? current.Attribution : normalized?.Attribution,
+            Publisher = request.Publisher is null ? current.Publisher : normalized?.Publisher,
+            Links = links,
+            UpdatedAt = updatedAt
+        };
+    }
+
+    private static void PatchGovernanceLink(
+        List<MetadataV2Link> links,
+        string? requestedValue,
+        string? normalizedValue,
+        string relation,
+        string? title)
+    {
+        if (requestedValue is null)
+        {
+            return;
+        }
+
+        links.RemoveAll(link => string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase));
+        if (normalizedValue is not null)
+        {
+            links.Add(new MetadataV2Link
+            {
+                Href = normalizedValue,
+                Rel = relation,
+                Title = title
+            });
+        }
+    }
+
+    private static string? FindGovernanceLink(MetadataV2ObjectMetadata metadata, string relation)
+        => metadata.Links.FirstOrDefault(link =>
+            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase))?.Href;
 
     /// <summary>
     /// Validates a raster mosaic merge strategy against the canonical set and normalizes to

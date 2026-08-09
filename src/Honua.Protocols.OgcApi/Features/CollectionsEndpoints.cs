@@ -541,6 +541,20 @@ internal static class CollectionsEndpoints
             type: MediaTypes.Json,
             title: displayName));
 
+        foreach (var governanceLink in resource.Metadata.Links.Where(link =>
+                     string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
+        {
+            collectionLinks.Add(new Link
+            {
+                Href = governanceLink.Href,
+                Rel = governanceLink.Rel,
+                Type = governanceLink.Type,
+                Title = governanceLink.Title,
+                HrefLang = governanceLink.Hreflang
+            });
+        }
+
         // Items links for all supported encodings
         foreach (var format in OgcFeaturesUtilities.FeatureFormats)
         {
@@ -710,6 +724,7 @@ internal static class CollectionsEndpoints
             Id = collectionId,
             Title = displayName,
             Description = description,
+            Attribution = resource.Metadata.Attribution,
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,

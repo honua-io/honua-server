@@ -56,6 +56,18 @@ Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer.
 
 Run `POST /api/v1/admin/connections/primary-db/layers` with `{"schema":"public","table":"parcels","layerName":"city-parcels","geometryColumn":"geom","srid":4326}`.
 
+The publish request accepts these optional source-governance fields:
+
+| Field | Limit and validation | Canonical/protocol projection |
+|---|---|---|
+| `license` | 256 characters; SPDX expression syntax or literal `proprietary` | Metadata v2 license; GeoServices license metadata |
+| `attribution` | 512 characters; no control characters | GeoServices `copyrightText`; OGC collection `attribution` |
+| `publisher` | 256 characters; no control characters | Metadata v2 publisher; additive GeoServices publisher metadata |
+| `licenseUrl` | 2,048 characters; absolute HTTP(S), no embedded credentials | Metadata v2 and protocol link with `rel=license` |
+| `sourceUrl` | 2,048 characters; absolute HTTP(S), no embedded credentials | Metadata v2 and protocol link with `rel=describedby` |
+
+All fields are optional and absent by default. Honua does not derive license rights, attribution, publisher identity, or documentation URLs from other values.
+
 ## Service and layer settings
 
 | Method | Path | Purpose |
@@ -66,9 +78,11 @@ Run `POST /api/v1/admin/connections/primary-db/layers` with `{"schema":"public",
 | PUT | `/api/v1/admin/services/{serviceName}/mapserver` | Update MapServer defaults and limits |
 | PUT | `/api/v1/admin/services/{serviceName}/access-policy` | Update service access policy (read/write roles, anonymous access) |
 | PUT | `/api/v1/admin/services/{serviceName}/timeinfo` | Update service-level temporal metadata |
-| PUT | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | Patch layer-level access policy, time info, and raster mosaic defaults |
+| PUT | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | Patch layer-level governance, access policy, time info, and raster mosaic defaults |
 
 Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
+
+The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
 
 Run `PUT /api/v1/admin/services/city/access-policy` with `{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}`.
 

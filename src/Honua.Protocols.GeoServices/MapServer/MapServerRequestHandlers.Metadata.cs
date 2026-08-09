@@ -15,6 +15,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.MapServer.Models;
+using Honua.Protocols.GeoServices.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -254,7 +255,10 @@ internal static partial class MapServerEndpoints
                 Id = layer.PublicLayerId,
                 Name = layer.Name
             })],
-            CopyrightText = string.Empty,
+            CopyrightText = service.Metadata.Attribution ?? string.Empty,
+            License = service.Metadata.License,
+            Publisher = service.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             // GIF is intentionally omitted: the SkiaSharp-backed export renderer ships no
             // GIF encoder and the export handler rejects format=gif, so advertising it here
             // would let capabilities claim an output the service cannot produce. (#1772)
@@ -276,6 +280,7 @@ internal static partial class MapServerEndpoints
             DocumentInfo = new MapServerDocumentInfo
             {
                 Title = service.Metadata.Name ?? "",
+                Author = service.Metadata.Publisher ?? "",
                 Comments = service.Metadata.Description ?? "",
                 Subject = service.Metadata.Description ?? ""
             },
@@ -370,6 +375,10 @@ internal static partial class MapServerEndpoints
                 : layerName,
             Type = hasGeometry ? "Feature Layer" : "Table",
             Description = resource.Metadata.Description,
+            CopyrightText = resource.Metadata.Attribution,
+            License = resource.Metadata.License,
+            Publisher = resource.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),
             GeometryType = hasGeometry ? MapGeometryTypeToEsri(resource.ReadGeometryType()) : null,
             SpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
             Extent = ResolveLayerExtent(resource, serviceExtent),
