@@ -9,9 +9,9 @@
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.saved_map_checkpoint_versions (
     map_id              text NOT NULL,
     checkpoint_cursor   bigint NOT NULL CHECK (checkpoint_cursor >= 0),
-    version_id          uuid NOT NULL UNIQUE,
+    version_id          uuid PRIMARY KEY,
     created_at          timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (map_id, checkpoint_cursor),
+    acknowledged_at     timestamptz NULL,
     CONSTRAINT fk_saved_map_checkpoint_versions_head
         FOREIGN KEY (map_id)
         REFERENCES $HonuaSchema$.saved_map_operation_log_heads (map_id)
@@ -23,4 +23,5 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.saved_map_checkpoint_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_saved_map_checkpoint_versions_recovery
-    ON $HonuaSchema$.saved_map_checkpoint_versions (map_id, checkpoint_cursor DESC);
+    ON $HonuaSchema$.saved_map_checkpoint_versions (map_id, checkpoint_cursor DESC, created_at DESC)
+    WHERE acknowledged_at IS NULL;

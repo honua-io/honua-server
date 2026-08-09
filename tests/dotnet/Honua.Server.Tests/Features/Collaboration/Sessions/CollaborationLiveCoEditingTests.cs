@@ -588,6 +588,15 @@ public sealed class CollaborationLiveCoEditingTests
                 generationAfterCommit,
                 "recovery must advance the cursor before replaying the already-versioned prefix");
         }
+
+        var repeated = await CheckpointAsync(client, mapId, "intentional same-cursor checkpoint");
+        repeated.GetProperty("versionId").GetGuid().Should().NotBe(committedVersionId);
+        repeated.GetProperty("headCursor").GetInt64().Should().Be(1);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().HaveCount(2);
+        }
     }
 
     [IntegrationTest]

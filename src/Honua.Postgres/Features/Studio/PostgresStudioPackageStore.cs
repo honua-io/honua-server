@@ -514,9 +514,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             FROM {_checkpointVersionsTable} AS c
             INNER JOIN {_versionsTable} AS v ON v.version_id = c.version_id
             WHERE c.map_id = @map_id
-              AND c.checkpoint_cursor > @after_cursor
+              AND c.acknowledged_at IS NULL
+              AND c.checkpoint_cursor >= @after_cursor
               AND c.checkpoint_cursor <= @through_cursor
-            ORDER BY c.checkpoint_cursor DESC
+            ORDER BY c.checkpoint_cursor DESC, c.created_at DESC, v.version_number DESC
             LIMIT 1
             """;
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
@@ -540,6 +541,24 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 OperationCursor = reader.GetInt64(17),
             },
         };
+    }
+
+    /// <inheritdoc />
+    public async Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_checkpointVersionsTable}
+            SET acknowledged_at = COALESCE(acknowledged_at, @acknowledged_at)
+            WHERE version_id = @version_id
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@acknowledged_at", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("@version_id", versionId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<StudioContentItemPointers?> GetPointersAsync(

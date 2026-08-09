@@ -271,6 +271,12 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         CancellationToken cancellationToken = default) =>
         _store.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
+    /// <inheritdoc />
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default) =>
+        _store.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
+
     private async Task<StudioContentVersion?> SaveDraftAsVersionCoreAsync(
         Guid draftId,
         string? changeNote,

@@ -209,6 +209,10 @@ internal static class CollaborationCheckpointEndpoints
                     recovered.Checkpoint.OperationCursor,
                     context.RequestAborted)
                 .ConfigureAwait(false);
+            await lifecycle.AcknowledgeCheckpointVersionAsync(
+                    recovered.Version.VersionId,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
 
             if (recovered.Checkpoint.OperationCursor == replay.HeadCursor.Value)
             {
@@ -314,6 +318,10 @@ internal static class CollaborationCheckpointEndpoints
             await operationLog.MarkCheckpointedAsync(
                     canonicalMapId,
                     replay.HeadCursor.Value,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+            await lifecycle.AcknowledgeCheckpointVersionAsync(
+                    version.VersionId,
                     context.RequestAborted)
                 .ConfigureAwait(false);
 

@@ -53,6 +53,19 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             recovered.Should().NotBeNull();
             recovered!.Version.VersionId.Should().Be(version.VersionId);
             recovered.Checkpoint.OperationCursor.Should().Be(4);
+
+            await store.AcknowledgeCheckpointVersionAsync(version.VersionId);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 0, throughCursor: 4))
+                .Should().BeNull();
+
+            var repeated = await store.CreateCheckpointVersionAsync(
+                draft,
+                "same cursor",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+            repeated.VersionId.Should().NotBe(version.VersionId);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))!
+                .Version.VersionId.Should().Be(repeated.VersionId);
         }
         finally
         {

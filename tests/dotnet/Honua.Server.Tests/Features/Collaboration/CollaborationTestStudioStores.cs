@@ -90,6 +90,11 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
         => _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+        => _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
+
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,
         CancellationToken cancellationToken = default) => _inner.ListVersionsAsync(itemId, cancellationToken);
@@ -203,6 +208,11 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
         long throughCursor,
         CancellationToken cancellationToken = default)
         => _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
+
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+        => _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
 
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,

@@ -40,13 +40,18 @@ public interface IStudioPackageStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the newest checkpoint version for a map whose cursor is within the supplied exclusive
-    /// lower and inclusive upper bounds.
+    /// Gets the newest unacknowledged checkpoint version for a map whose cursor is within the
+    /// supplied inclusive bounds.
     /// </summary>
     Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
         long throughCursor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Marks a checkpoint version as reflected in the operation-log cursor.</summary>
+    Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
         CancellationToken cancellationToken = default);
 
     /// <summary>Lists immutable versions for a content item.</summary>
@@ -174,6 +179,11 @@ public interface IStudioPackageLifecycleService
         string mapId,
         long afterCursor,
         long throughCursor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Marks a checkpoint completion record as reflected in the operation log.</summary>
+    Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
         CancellationToken cancellationToken = default);
 
     /// <summary>Lists immutable content versions for an item.</summary>

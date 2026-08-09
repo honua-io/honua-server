@@ -19,7 +19,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     private readonly Dictionary<Guid, StudioPackageDraft> _drafts = new();
     private readonly Dictionary<Guid, StudioContentItemRecord> _items = new();
     private readonly Dictionary<Guid, List<StudioContentVersion>> _versionsByItem = new();
-    private readonly Dictionary<(string MapId, long Cursor), StudioContentVersion> _checkpointVersions = new();
+    private readonly Dictionary<Guid, (StudioVersionCheckpoint Checkpoint, StudioContentVersion Version)> _checkpointVersions = new();
+    private readonly HashSet<Guid> _acknowledgedCheckpointVersions = new();
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
 
@@ -155,22 +156,37 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         {
             var match = _checkpointVersions
                 .Where(pair =>
-                    string.Equals(pair.Key.MapId, mapId, StringComparison.Ordinal) &&
-                    pair.Key.Cursor > afterCursor &&
-                    pair.Key.Cursor <= throughCursor)
-                .OrderByDescending(static pair => pair.Key.Cursor)
+                    !_acknowledgedCheckpointVersions.Contains(pair.Key) &&
+                    string.Equals(pair.Value.Checkpoint.MapId, mapId, StringComparison.Ordinal) &&
+                    pair.Value.Checkpoint.OperationCursor >= afterCursor &&
+                    pair.Value.Checkpoint.OperationCursor <= throughCursor)
+                .OrderByDescending(static pair => pair.Value.Checkpoint.OperationCursor)
+                .ThenByDescending(static pair => pair.Value.Version.VersionNumber)
                 .FirstOrDefault();
-            return Task.FromResult(match.Value is null
+            return Task.FromResult(match.Value.Version is null
                 ? null
                 : new StudioCheckpointedVersion
                 {
-                    Version = match.Value,
-                    Checkpoint = new StudioVersionCheckpoint
-                    {
-                        MapId = match.Key.MapId,
-                        OperationCursor = match.Key.Cursor,
-                    },
+                    Version = match.Value.Version,
+                    Checkpoint = match.Value.Checkpoint,
                 });
+        }
+    }
+
+    /// <inheritdoc />
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (_checkpointVersions.ContainsKey(versionId))
+            {
+                _acknowledgedCheckpointVersions.Add(versionId);
+            }
+
+            return Task.CompletedTask;
         }
     }
 
@@ -186,12 +202,6 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
         lock (_gate)
         {
-            if (checkpoint is not null &&
-                _checkpointVersions.TryGetValue((checkpoint.MapId, checkpoint.OperationCursor), out var existingVersion))
-            {
-                return Task.FromResult(existingVersion);
-            }
-
             if (!_drafts.ContainsKey(draft.DraftId))
             {
                 throw new KeyNotFoundException("Studio package draft was not found.");
@@ -222,7 +232,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             versions.Add(version);
             if (checkpoint is not null)
             {
-                _checkpointVersions.Add((checkpoint.MapId, checkpoint.OperationCursor), version);
+                _checkpointVersions.Add(version.VersionId, (checkpoint, version));
             }
             _items[draft.ItemId] = item with
             {

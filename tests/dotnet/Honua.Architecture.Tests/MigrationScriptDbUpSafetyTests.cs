@@ -136,9 +136,18 @@ public sealed class MigrationScriptDbUpSafetyTests
             "Migrations",
             "092_CreateSavedMapOperationLog.sql");
         var sql = File.ReadAllText(migrationPath);
+        var recoveryMigrationPath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            "src",
+            "Honua.Server",
+            "Migrations",
+            "093_CreateSavedMapCheckpointVersionRecovery.sql");
+        var recoverySql = File.ReadAllText(recoveryMigrationPath);
 
         sql.Should().Contain("$HonuaSchema$.saved_map_operation_log_heads");
         sql.Should().Contain("$HonuaSchema$.saved_map_operations");
         sql.Should().NotContain("honua.saved_map_operation");
+        recoverySql.Should().Contain("$HonuaSchema$.saved_map_checkpoint_versions");
+        recoverySql.Should().NotContain("honua.saved_map_checkpoint");
     }
 }

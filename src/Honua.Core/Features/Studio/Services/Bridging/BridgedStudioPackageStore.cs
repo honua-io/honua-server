@@ -96,6 +96,12 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
     /// <inheritdoc />
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default) =>
+        _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         foreach (var bridge in _bridges.Values)

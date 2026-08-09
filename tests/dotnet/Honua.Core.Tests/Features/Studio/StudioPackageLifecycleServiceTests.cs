@@ -890,6 +890,11 @@ public sealed class StudioPackageLifecycleServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromException<StudioCheckpointedVersion?>(new NotSupportedException());
 
+        public Task AcknowledgeCheckpointVersionAsync(
+            Guid versionId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException(new NotSupportedException());
+
         public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
             Guid itemId,
             CancellationToken cancellationToken = default)
