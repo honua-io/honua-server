@@ -42,7 +42,7 @@ internal static partial class OracleFeatureQueryBuilder
 
         sb.Append(", ").Append(BuildGeometryWkbExpression(mapping)).Append(" AS \"__geometry\"");
 
-        AppendAttributeColumns(sb, query, attributeColumns);
+        AppendAttributeColumns(sb, mapping, query, attributeColumns);
 
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
@@ -184,7 +184,11 @@ internal static partial class OracleFeatureQueryBuilder
         return $"SDO_UTIL.TO_WKBGEOMETRY({mapping.QuotedGeometryColumn})";
     }
 
-    private static void AppendAttributeColumns(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> attributeColumns)
+    private static void AppendAttributeColumns(
+        StringBuilder sb,
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string> attributeColumns)
     {
         if (query.ExcludeAttributes || attributeColumns.Count == 0)
         {
@@ -194,7 +198,10 @@ internal static partial class OracleFeatureQueryBuilder
         IEnumerable<string> columns = attributeColumns;
         if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
         {
-            var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
+            var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+            var requested = new HashSet<string>(
+                query.OutFields.Value.Select(resolveColumnName),
+                StringComparer.Ordinal);
             columns = attributeColumns.Where(c => requested.Contains(c));
         }
 

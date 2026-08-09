@@ -145,6 +145,20 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_OutFieldsWithCaseDistinctNames_ProjectsOnlyExactAttributes()
+    {
+        var query = new FeatureQuery { OutFields = ["ID", "NAME"] };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(primaryKeyColumn: "ID"), query, ["id", "NAME", "name"]);
+
+        Assert.Contains("\"ID\" AS \"__objectid\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(", \"NAME\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(", \"id\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(", \"name\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WhereFieldAmbiguouslyMatchesCaseDistinctColumns_FailsClosed()
     {
         var query = new FeatureQuery { Where = "Name = 'Alpha'" };
