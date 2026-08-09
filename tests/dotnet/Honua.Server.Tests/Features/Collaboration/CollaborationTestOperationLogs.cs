@@ -26,6 +26,8 @@ internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLog
 
     public bool SupportsRestartDurableReplay => true;
 
+    public bool SupportsRestartDurableCheckpointCursors => true;
+
     public Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default) => _inner.AppendAsync(request, cancellationToken);
@@ -34,6 +36,17 @@ internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLog
         SavedMapId mapId,
         SavedMapOperationCursor sinceCursor,
         CancellationToken cancellationToken = default) => _inner.ReplayAsync(mapId, sinceCursor, cancellationToken);
+
+    public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
+        SavedMapId mapId,
+        CancellationToken cancellationToken = default) =>
+        _inner.ReplayPendingCheckpointAsync(mapId, cancellationToken);
+
+    public Task RecordCheckpointAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor checkpointCursor,
+        CancellationToken cancellationToken = default) =>
+        _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
 }
 
 /// <summary>
@@ -63,6 +76,9 @@ internal sealed class WindowAdvancesAfterFirstReplayOperationLog : ISavedMapOper
 
     public bool SupportsRestartDurableReplay => _inner.SupportsRestartDurableReplay;
 
+    public bool SupportsRestartDurableCheckpointCursors =>
+        _inner.SupportsRestartDurableCheckpointCursors;
+
     public Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default) => _inner.AppendAsync(request, cancellationToken);
@@ -90,6 +106,17 @@ internal sealed class WindowAdvancesAfterFirstReplayOperationLog : ISavedMapOper
             Message = "The requested cursor is outside the retained replay window.",
         };
     }
+
+    public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
+        SavedMapId mapId,
+        CancellationToken cancellationToken = default) =>
+        _inner.ReplayPendingCheckpointAsync(mapId, cancellationToken);
+
+    public Task RecordCheckpointAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor checkpointCursor,
+        CancellationToken cancellationToken = default) =>
+        _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
 }
 
 /// <summary>
@@ -121,6 +148,9 @@ internal sealed class DelayedFirstAppendOperationLog : ISavedMapOperationLogRepo
 
     public bool SupportsRestartDurableReplay => _inner.SupportsRestartDurableReplay;
 
+    public bool SupportsRestartDurableCheckpointCursors =>
+        _inner.SupportsRestartDurableCheckpointCursors;
+
     public async Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default)
@@ -141,4 +171,15 @@ internal sealed class DelayedFirstAppendOperationLog : ISavedMapOperationLogRepo
         SavedMapId mapId,
         SavedMapOperationCursor sinceCursor,
         CancellationToken cancellationToken = default) => _inner.ReplayAsync(mapId, sinceCursor, cancellationToken);
+
+    public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
+        SavedMapId mapId,
+        CancellationToken cancellationToken = default) =>
+        _inner.ReplayPendingCheckpointAsync(mapId, cancellationToken);
+
+    public Task RecordCheckpointAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor checkpointCursor,
+        CancellationToken cancellationToken = default) =>
+        _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
 }

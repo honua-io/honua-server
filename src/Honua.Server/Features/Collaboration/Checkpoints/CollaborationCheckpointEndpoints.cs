@@ -258,7 +258,11 @@ internal static class CollaborationCheckpointEndpoints
             // Only after the immutable version is durably saved: later checkpoints replay just
             // the suffix after this head, so a long session stays checkpointable after the
             // already-persisted prefix ages out of the retained window.
-            operationLog.MarkCheckpointed(canonicalMapId, replay.HeadCursor.Value);
+            await operationLog.MarkCheckpointedAsync(
+                    canonicalMapId,
+                    replay.HeadCursor.Value,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
 
             var response = new CollaborationCheckpointResponse
             {
