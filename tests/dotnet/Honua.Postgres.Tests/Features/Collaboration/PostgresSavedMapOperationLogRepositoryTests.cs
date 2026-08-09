@@ -129,7 +129,7 @@ public sealed class PostgresSavedMapOperationLogRepositoryTests(PostgresFixture 
             "092_CreateSavedMapOperationLog.sql");
         var migration = await File.ReadAllTextAsync(migrationPath);
         var upgrader = DeployChanges.To
-            .PostgresqlDatabase(fixture.DataSource.ConnectionString)
+            .PostgresqlDatabase(fixture.ConnectionString)
             .JournalTo(new NullJournal())
             .WithScript("092_CreateSavedMapOperationLog.sql", migration)
             .WithVariable("HonuaSchema", SchemaSearchPath.ValidateAndQuote(schema))
