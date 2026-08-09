@@ -28,10 +28,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 368,
-      "provingTestCount": 998,
+      "entryCount": 369,
+      "provingTestCount": 999,
       "maturity": {
-        "implemented": 368
+        "implemented": 369
       },
       "noSurface": null,
       "cite": [],
@@ -225,7 +225,7 @@
       "category": "Alerts",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 39,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 18
       },
@@ -621,10 +621,10 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "entryCount": 7,
-      "provingTestCount": 17,
+      "entryCount": 9,
+      "provingTestCount": 63,
       "maturity": {
-        "implemented": 7
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],
@@ -658,7 +658,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 13,
+      "provingTestCount": 17,
       "maturity": {
         "implemented": 2
       },
@@ -782,7 +782,7 @@
       "category": "Editing",
       "edition": "Pro",
       "entryCount": 7,
-      "provingTestCount": 84,
+      "provingTestCount": 94,
       "maturity": {
         "implemented": 7
       },
@@ -967,7 +967,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 13,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 6
       },
@@ -1250,7 +1250,7 @@
       "category": "Process",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 119,
+      "provingTestCount": 129,
       "maturity": {
         "implemented": 10
       },
@@ -1468,7 +1468,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 49,
-      "provingTestCount": 415,
+      "provingTestCount": 417,
       "maturity": {
         "implemented": 49
       },
@@ -1613,7 +1613,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 317,
+      "provingTestCount": 322,
       "maturity": {
         "implemented": 45
       },
@@ -2320,10 +2320,10 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "entryCount": 2,
-      "provingTestCount": 43,
+      "entryCount": 5,
+      "provingTestCount": 82,
       "maturity": {
-        "implemented": 2
+        "implemented": 5
       },
       "noSurface": null,
       "cite": [],

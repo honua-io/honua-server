@@ -75,6 +75,28 @@ internal sealed record CapabilityManifestServerInfo
     public required string MetadataSchemaVersion { get; init; }
 
     public required string DeploymentEnvironment { get; init; }
+
+    /// <summary>
+    /// Immutable identity of the deployed code/image: a 40-character commit SHA or a
+    /// <c>sha256:&lt;64 hex&gt;</c> image digest. Null when the deployment carries no
+    /// verifiable revision; consumers that bind evidence to a deployment must fail closed
+    /// rather than substituting <c>serverVersion</c>, which is mutable across builds.
+    /// </summary>
+    public string? DeploymentRevision { get; init; }
+
+    /// <summary>
+    /// How <see cref="DeploymentRevision"/> was resolved (<c>image-digest</c>,
+    /// <c>commit-sha</c>, or <c>assembly-metadata</c>). Null when no revision resolved.
+    /// </summary>
+    public string? DeploymentRevisionSource { get; init; }
+
+    /// <summary>
+    /// The same immutable revision as <see cref="DeploymentRevision"/>, published under the
+    /// field name realtime and evidence clients read. Both names are emitted on purpose: a
+    /// manifest that advertises the revision only under a name no client reads is
+    /// indistinguishable, to that client, from a deployment that has none (#3038).
+    /// </summary>
+    public string? ServerRevision { get; init; }
 }
 
 internal sealed record CapabilityManifestEnvironment
@@ -155,6 +177,16 @@ internal sealed record CapabilityManifestTransportState
     public string? ReasonCode { get; init; }
 
     public string? MessageKey { get; init; }
+
+    /// <summary>
+    /// The rolled-up wire-contract version advertised for this surface (for example the
+    /// GeoServices REST, OGC API, or STAC API contract version), or <c>null</c> for
+    /// transports that carry no versioned wire contract of their own. ADR-0058: the
+    /// protocol surface owns the constant (<c>GeoServicesContract</c>/<c>OgcContract</c>/
+    /// <c>StacContract</c>) and the manifest projects it so the surface advertises a real
+    /// contract version instead of nothing.
+    /// </summary>
+    public string? ContractVersion { get; init; }
 }
 
 internal sealed record CapabilityManifestLimits

@@ -181,7 +181,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // satisfies their exactly-one group and no value of `units` makes them required
         // (honua-server#2145 review). Report only the candidates whose requiredness some
         // substitution demonstrably turns on.
-        if (HasUnenumerableDiscriminator(definition, supplied, baseInputs))
+        if (!IsBranchSpaceEnumerable(definition, supplied, baseInputs))
         {
             // The pessimistic answer still stands for anything whose requiredness the
             // discriminator could turn on — probing sentinels cannot reach the real branches, so
@@ -194,12 +194,52 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 !IsCoveredByASuppliedParameter(definition, supplied, baseInputs, candidate))];
         }
 
-        // The branch space IS enumerable here, so a candidate is unverifiable exactly when
-        // some admissible assignment makes the canonical validator require it. A candidate no
-        // assignment ever requires is unconditionally optional — the submit path accepts its
-        // omission, and reporting it would misclassify an executable mapping.
-        var branchDependent = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var assignment in Assignments(VariableDomains(definition, supplied)))
+        // The branch space IS enumerable here, so every conditional requirement can be stated
+        // exactly, branch by branch, by FindConditionalBranchRequirements. Nothing is left
+        // unverifiable, and repeating those parameters here would report the same gap twice
+        // under a weaker, conservative code (#3048).
+        return [];
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<ProcessBranchRequirement> FindConditionalBranchRequirements(
+        string processId,
+        IReadOnlyCollection<string> suppliedParameterNames)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processId);
+        ArgumentNullException.ThrowIfNull(suppliedParameterNames);
+
+        var definition = _catalog.GetProcess(processId);
+        if (definition is null)
+        {
+            return [];
+        }
+
+        var supplied = new HashSet<string>(
+            suppliedParameterNames.Where(name => !string.IsNullOrWhiteSpace(name)),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Only a parameter that is neither supplied nor defaulted can go silently missing at
+        // submit time, so those are the only candidates for a branch requirement.
+        var candidates = new HashSet<string>(
+            definition.Parameters
+                .Where(parameter => parameter.DefaultValue is null && !supplied.Contains(parameter.Name))
+                .Select(parameter => parameter.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var baseInputs = BuildProbeInputs(definition, suppliedParameterNames);
+
+        // An unenumerable (or budget-truncated) branch space cannot be answered exactly; that
+        // case is the conservative one FindUnverifiableConditionalParameters owns.
+        if (candidates.Count == 0 || !IsBranchSpaceEnumerable(definition, supplied, baseInputs))
+        {
+            return [];
+        }
+
+        // Walk the bounded cross-product of the supplied parameters' declared domains and
+        // record, per assignment, which candidates the canonical validator reports missing.
+        var perBranch = new List<(string Branch, Dictionary<string, string> Missing)>();
+        foreach (var assignment in Assignments(VariableDomains(definition, supplied).Variable))
         {
             var inputs = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
             foreach (var (name, value) in assignment)
@@ -207,19 +247,59 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
                 inputs[name] = value;
             }
 
-            var required = Validate(definition.ProcessId, inputs)
-                .Where(failure => string.Equals(failure.Code, MissingRequiredParameterCode, StringComparison.Ordinal))
-                .Select(failure => ParameterNameOf(failure.FieldPath))
-                .Where(name => name is not null);
-
-            foreach (var name in required)
+            var missing = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var failure in Validate(definition.ProcessId, inputs)
+                .Where(failure => string.Equals(failure.Code, MissingRequiredParameterCode, StringComparison.Ordinal)))
             {
-                branchDependent.Add(name!);
+                var name = ParameterNameOf(failure.FieldPath);
+                if (name is not null && candidates.Contains(name))
+                {
+                    missing[name] = failure.Message;
+                }
             }
+
+            perBranch.Add((DescribeBranch(assignment), missing));
         }
 
-        return [.. candidates.Where(branchDependent.Contains)];
+        // A requirement EVERY branch raises is unconditional, not branch-dependent:
+        // FindAdmissibilityViolations already reports it, and repeating it here would present
+        // an impossible mapping as a per-branch caveat.
+        var universal = perBranch
+            .Select(entry => (IEnumerable<string>)entry.Missing.Keys)
+            .Aggregate((left, right) => left.Intersect(right, StringComparer.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return
+        [
+            .. perBranch.SelectMany(entry => entry.Missing
+                .Where(requirement => !universal.Contains(requirement.Key))
+                .Select(requirement => new ProcessBranchRequirement(
+                    entry.Branch, requirement.Key, requirement.Value)))
+        ];
     }
+
+    /// <summary>
+    /// Renders a probed assignment as the branch label carried on a
+    /// <see cref="ProcessBranchRequirement"/>.
+    /// </summary>
+    private static string DescribeBranch(IReadOnlyList<(string Name, string Value)> assignment)
+        => assignment.Count == 0
+            ? "(no discriminator)"
+            : string.Join(", ", assignment.Select(pair => $"{pair.Name}={pair.Value}"));
+
+    /// <summary>
+    /// True when every branch a caller could select is reachable by enumerating declared value
+    /// domains, so per-branch answers are exact rather than pessimistic. False when a supplied
+    /// parameter carries an undeclared token domain, or when its declared domain had to be
+    /// dropped to stay inside <see cref="MaxProbeCombinations"/> — a dropped domain is pinned
+    /// to one value, which fabricates a single branch out of a set the probe did not visit.
+    /// </summary>
+    private bool IsBranchSpaceEnumerable(
+        ProcessDefinition definition,
+        HashSet<string> supplied,
+        Dictionary<string, string> baseInputs)
+        => !HasUnenumerableDiscriminator(definition, supplied, baseInputs)
+            && !VariableDomains(definition, supplied).Truncated;
 
     /// <summary>
     /// Returns true when some supplied parameter's value domain is a finite token set the
@@ -465,13 +545,16 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
 
     /// <summary>
     /// Returns the supplied parameters whose value domain the catalog enumerates, keeping the
-    /// cross-product bounded; parameters beyond the cap keep their base value.
+    /// cross-product bounded; parameters beyond the cap keep their base value and set
+    /// <c>Truncated</c>, because a pinned domain fabricates one branch out of a set that was
+    /// never visited and can no longer support an exact per-branch answer.
     /// </summary>
-    private static List<(string Name, IReadOnlyList<string> Values)> VariableDomains(
+    private static (List<(string Name, IReadOnlyList<string> Values)> Variable, bool Truncated) VariableDomains(
         ProcessDefinition definition,
         HashSet<string> supplied)
     {
         var variable = new List<(string Name, IReadOnlyList<string> Values)>();
+        var truncated = false;
         var combinationCount = 1;
         foreach (var parameter in definition.Parameters)
         {
@@ -481,8 +564,14 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             }
 
             var domain = DomainOf(parameter);
-            if (domain is null || combinationCount * domain.Count > MaxProbeCombinations)
+            if (domain is null)
             {
+                continue;
+            }
+
+            if (combinationCount * domain.Count > MaxProbeCombinations)
+            {
+                truncated = true;
                 continue;
             }
 
@@ -490,7 +579,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             combinationCount *= domain.Count;
         }
 
-        return variable;
+        return (variable, truncated);
     }
 
     /// <summary>
@@ -505,7 +594,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         var supplied = new HashSet<string>(suppliedParameterNames, StringComparer.OrdinalIgnoreCase);
 
         List<GeoprocessingValidationFailure>? universal = null;
-        foreach (var assignment in Assignments(VariableDomains(definition, supplied)))
+        foreach (var assignment in Assignments(VariableDomains(definition, supplied).Variable))
         {
             var candidate = new Dictionary<string, string>(baseInputs, StringComparer.Ordinal);
             foreach (var (name, value) in assignment)

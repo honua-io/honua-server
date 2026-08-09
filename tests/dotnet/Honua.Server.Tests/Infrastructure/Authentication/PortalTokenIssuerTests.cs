@@ -4,11 +4,15 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -142,6 +146,77 @@ public sealed class PortalTokenIssuerTests
         validation.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task ValidateAndIntrospect_MixedMappedRoles_FallBackToDirectRolesAfterEntitlementExpires()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Enterprise);
+        var issuer = CreateIssuer(entitlements);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["viewer", "editor"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.10",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                RolesRequireClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: ["viewer"]),
+            CancellationToken.None);
+
+        var entitled = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.10"),
+            CancellationToken.None);
+        var entitledIntrospection = await issuer.IntrospectAsync(issuance.Token, CancellationToken.None);
+
+        entitled.Should().NotBeNull();
+        entitled!.Principal.IsInRole("viewer").Should().BeTrue();
+        entitled.Principal.IsInRole("editor").Should().BeTrue();
+        entitledIntrospection!.Roles.Should().BeEquivalentTo("viewer", "editor");
+
+        entitlements.Expire();
+
+        var expired = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.10"),
+            CancellationToken.None);
+        var expiredIntrospection = await issuer.IntrospectAsync(issuance.Token, CancellationToken.None);
+
+        expired.Should().NotBeNull();
+        expired!.Principal.IsInRole("viewer").Should().BeTrue();
+        expired.Principal.IsInRole("editor").Should().BeFalse();
+        expiredIntrospection!.Roles.Should().Equal("viewer");
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_MappingRolesWithUnknownFallback_FailsClosedAfterEntitlementExpires()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Enterprise);
+        var issuer = CreateIssuer(entitlements);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "legacy-user",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["admin"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.11",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                RolesRequireClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: null),
+            CancellationToken.None);
+        entitlements.Expire();
+
+        var validation = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.11"),
+            CancellationToken.None);
+
+        validation.Should().NotBeNull();
+        validation!.Principal.FindAll(ClaimTypes.Role).Should().BeEmpty();
+    }
+
     // ─── BH-028 regression ──────────────────────────────────────────────────────
 
     [UnitTest]
@@ -229,6 +304,46 @@ public sealed class PortalTokenIssuerTests
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         return new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+    }
+
+    private static PortalTokenIssuer CreateIssuer(ILicenseEntitlementService entitlements)
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var services = new ServiceCollection()
+            .AddSingleton(entitlements)
+            .BuildServiceProvider();
+        return new PortalTokenIssuer(
+            memoryCache,
+            NullLogger<PortalTokenIssuer>.Instance,
+            serviceProvider: services);
+    }
+
+    private sealed class MutableLicenseEntitlementService : ILicenseEntitlementService
+    {
+        private LicenseSnapshot _snapshot;
+
+        public MutableLicenseEntitlementService(HonuaEdition edition)
+            => _snapshot = LicenseTestSupport.CreateSnapshot(edition);
+
+        public void Expire()
+            => _snapshot = LicenseTestSupport.CreateSnapshot(
+                HonuaEdition.Community,
+                LicenseValidationState.Expired,
+                entitlements: []);
+
+        public LicenseSnapshot GetSnapshot() => _snapshot;
+
+        public LicenseEntitlementDecision CheckEntitlement(string entitlementKey)
+        {
+            var active = _snapshot.HasEntitlement(entitlementKey);
+            return new LicenseEntitlementDecision(
+                entitlementKey,
+                active,
+                _snapshot.Edition,
+                _snapshot.ValidationState,
+                RequiredEdition: null,
+                UpgradeMessage: active ? string.Empty : $"'{entitlementKey}' is not active.");
+        }
     }
 
     private const string TenantClaimType = PortalTokenIssuer.TenantClaimType;

@@ -44,6 +44,10 @@ public sealed class EndpointAuthorizationGuardTests
         // Read-only ops-reader policy (A12): a method-aware Require*Authorization helper that admits
         // ops:read/admin for safe reads while still requiring full admin write for mutating routes.
         "RequireOpsReadAuthorization",
+        // Controlled-conformance mutation policy (honua-server#3038): a narrowly scoped write
+        // credential for the scheduled SDK conformance runner, additionally gated per run by an
+        // ownership token checked inside each handler.
+        "RequireConformanceMutateAuthorization",
     };
 
     private static readonly Regex MapMutationRegex = new(

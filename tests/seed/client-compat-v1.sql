@@ -220,6 +220,40 @@ CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
     )
 );
 
+-- Secure connection registry (server migration 006). The Metadata-v2 provider
+-- router (FeatureProviderQueryRouter.ResolveBindingAsync) resolves a storage
+-- binding's declared connection through PostgresSecureConnectionRegistry, which
+-- reads this table. The row set can be empty: GetConnectionAsync returns null on
+-- no matching row and the router falls back to the v2 snapshot connection's
+-- declared provider ('postgres'). If the table is ABSENT the lookup throws
+-- 42P01 "relation honua.data_connections does not exist" and every storage-bound
+-- STAC item/search read 500s. STAC item/search began routing through this path
+-- in honua-server "fix(stac): enforce bound storage routing" (commit 3d39d1c4),
+-- so this self-contained seed must provide the (empty) table the same way the
+-- shared PostGIS fixture (tests/python/shared/postgis.py) already does.
+CREATE TABLE IF NOT EXISTS honua.data_connections (
+    connection_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(64) NOT NULL UNIQUE,
+    description TEXT,
+    host VARCHAR(255) NOT NULL,
+    port INT NOT NULL DEFAULT 5432,
+    database_name VARCHAR(64) NOT NULL,
+    username VARCHAR(64) NOT NULL,
+    provider_name TEXT NOT NULL DEFAULT 'postgis',
+    ssl_required BOOLEAN NOT NULL DEFAULT TRUE,
+    ssl_mode VARCHAR(16) NOT NULL DEFAULT 'require',
+    connection_string_encrypted BYTEA,
+    encryption_key_version INT NOT NULL DEFAULT 1,
+    secret_ref VARCHAR(255),
+    secret_type VARCHAR(32),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(64) NOT NULL DEFAULT 'system',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_health_check TIMESTAMPTZ,
+    health_status VARCHAR(16) DEFAULT 'unknown'
+);
+
 CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,

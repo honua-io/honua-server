@@ -25,6 +25,9 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
@@ -216,17 +219,26 @@ internal sealed class CapabilityManifestService(
 
     private CapabilityManifestServerInfo BuildServerInfo()
     {
-        var assembly = typeof(CapabilityManifestService).Assembly;
-        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var identity = options.DeploymentIdentity;
         return new CapabilityManifestServerInfo
         {
-            ServerVersion = string.IsNullOrWhiteSpace(version)
-                ? assembly.GetName().Version?.ToString() ?? "0.0.0"
-                : version,
+            // serverVersion stays the mutable release version. The immutable deployment
+            // identity is a separate field so evidence consumers can bind a retained
+            // artifact to exact code/image content (#3038, REQ-004).
+            //
+            // Read through the SAME normalizer the streaming capability surface uses, rather
+            // than the raw InformationalVersion: with SourceLink or SemVer build metadata
+            // (`1.0.0+<sha>`) the two documents advertised different serverVersion values for
+            // one running server, and this one mixed immutable build identity back into the
+            // field the change documents as mutable (honua-server#3038 review).
+            ServerVersion = identity.ReleaseVersion,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName
+            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentRevision = identity.Revision,
+            DeploymentRevisionSource = identity.RevisionSource,
+            ServerRevision = identity.Revision
         };
     }
 
@@ -653,10 +665,17 @@ internal sealed class CapabilityManifestService(
             Items =
             [
                 Transport("rest-http", supported: true, available: true),
-                Transport("geoservices-rest", supported: true, available: true),
-                Transport("ogc-http", supported: true, available: true),
+                // The three protocol surfaces advertise their rolled-up wire-contract
+                // version (ADR-0058 / honua-release#32). The version constant is owned by
+                // the protocol assembly that owns the surface, so the manifest cannot drift
+                // from the surface it describes.
+                Transport("geoservices-rest", supported: true, available: true,
+                    contractVersion: GeoServicesContract.Version),
+                Transport("ogc-http", supported: true, available: true,
+                    contractVersion: OgcContract.Version),
                 Transport("odata", supported: true, available: true),
-                Transport("stac", supported: true, available: true),
+                Transport("stac", supported: true, available: true,
+                    contractVersion: StacContract.Version),
                 Transport("tiles", supported: true, available: true),
                 Transport("grpc", supported: true, available: true),
                 Transport("grpc-web", supported: true, available: true),
@@ -673,7 +692,8 @@ internal sealed class CapabilityManifestService(
         string id,
         bool supported,
         bool available,
-        string? reasonCode = null)
+        string? reasonCode = null,
+        string? contractVersion = null)
         => new()
         {
             Id = id,
@@ -682,7 +702,8 @@ internal sealed class CapabilityManifestService(
             ReasonCode = available ? null : reasonCode,
             MessageKey = available
                 ? $"transports.{id}.available"
-                : $"transports.{id}.{reasonCode}"
+                : $"transports.{id}.{reasonCode}",
+            ContractVersion = contractVersion
         };
 
     private CapabilityManifestLimits BuildLimits(BatchCapabilitySummary batchCapabilities)
@@ -900,22 +921,10 @@ internal sealed class CapabilityManifestService(
     }
 
     private bool HasAdminRole(ClaimsPrincipal principal)
-    {
-        var roleClaimType = options.Rbac.EffectiveRoleClaimType;
-        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
-
-        foreach (var claim in principal.Claims)
-        {
-            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
-                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
-            if (isRoleClaim && string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => RbacRoleClaims.IsAdmin(
+            principal,
+            options.Rbac,
+            entitlementService.GetSnapshot().HasEntitlement(FeatureCatalog.OidcClaimsMappingKey));
 
     private static bool HasPolicyCapability(CapabilityPolicyContext context, string capability)
     {

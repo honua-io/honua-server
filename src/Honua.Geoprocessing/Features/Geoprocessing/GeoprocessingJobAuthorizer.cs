@@ -4,7 +4,11 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing;
 
@@ -22,26 +26,162 @@ internal sealed class GeoprocessingJobAuthorizer
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
+    private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
     private readonly GeoprocessingLayerAccessGuard _layerAccessGuard;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IPrincipalMembershipSource? _principalMembershipSource;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
     /// Creates the authorization gate over the operator authorization and approval evaluators,
     /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
-    /// (honua-server#2851) and the per-layer read gate (honua-server#2283).
+    /// (honua-server#2851), the generic per-layer access authorizer (#3046), and the enrichment
+    /// layer-binding guard (#2283/#3043). The optional managed-membership source (honua-server#3081)
+    /// backs the deferred-submitter revalidation this gate owns; it stays behind this collaborator so
+    /// the job service does not carry it as a separate cross-cutting dependency.
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
+        ILayerAccessAuthorizer layerAccessAuthorizer,
         GeoprocessingLayerAccessGuard layerAccessGuard,
-        ILogger<GeoprocessingJobService> logger)
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<GeoprocessingJobService> logger,
+        IPrincipalMembershipSource? principalMembershipSource = null)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _scopeAuthorizer = scopeAuthorizer;
+        _layerAccessAuthorizer = layerAccessAuthorizer;
         _layerAccessGuard = layerAccessGuard;
+        _httpContextAccessor = httpContextAccessor;
+        _principalMembershipSource = principalMembershipSource;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Captures the submitter identity together with the effective tenant selected by request
+    /// middleware. Keeping this behind the authorization collaborator avoids adding another
+    /// cross-cutting dependency to the job lifecycle service.
+    /// </summary>
+    public JobSecurityContext CaptureSecurityContext(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        bool membershipManaged = false)
+    {
+        var tenantContext = _httpContextAccessor.HttpContext?.RequestServices
+            .GetService<ITenantContext>();
+        return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
+    }
+
+    /// <summary>
+    /// Resolves the submitter snapshot to pin on the job, distinguishing the two cases a bare
+    /// <c>??=</c> conflated (#3068 review follow-up). Owned here, behind the authorization gate,
+    /// because it is a submitter-identity/role-membership decision — the same seam that captures the
+    /// context and revalidates deferred role membership against the managed-membership source — so
+    /// the job service does not carry that source as a separate cross-cutting dependency.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="false"/> the caller IS the submitter
+    /// (every ordinary adapter: GPServer, OGC Processes, MCP, AnalysisContent run/rerun), so
+    /// capturing live from <paramref name="principal"/> is exactly right.
+    /// </para>
+    /// <para>
+    /// When <paramref name="inherits"/> is <see langword="true"/> the snapshot must come from a
+    /// durable record written at the ORIGINAL submission — a workflow run's
+    /// <c>Audit.SubmitterSecurityContext</c>, or an approval proposal's persisted payload — and
+    /// <paramref name="principal"/> is a synthetic stand-in that must never be captured from.
+    /// Falling back to capture here is a privilege escalation, not a convenience: the workflow
+    /// principal is the orchestrator identity carrying <c>role=admin</c> (every step job would
+    /// read with ADMIN row/field visibility), and the approval-resume principal carries only a
+    /// name (zero role claims match zero RLS policies, and the row-level security filter source
+    /// returns no filter when no policy matches — an UNRESTRICTED read). Both produce a
+    /// non-null snapshot that sails past the missing-snapshot
+    /// guards at the read seam, so the refusal has to happen here.
+    /// </para>
+    /// <para>
+    /// This is reachable only for records persisted BEFORE the snapshot field existed. Those
+    /// workflow runs and approval proposals must be resubmitted; the PR's release-impact section
+    /// documents it.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GeoprocessingAuthorizationException">
+    /// Thrown when an inherited snapshot is required but absent.
+    /// </exception>
+    public async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
+        ClaimsPrincipal principal,
+        JobSecurityContext? inherited,
+        bool inherits,
+        bool reportSnapshotFallback,
+        RbacOptions rbacOptions,
+        CancellationToken cancellationToken)
+    {
+        if (!inherits)
+        {
+            // Record managed provenance while the submitter is resolvable, so a deferred approval
+            // resume on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            var membershipManaged = await JobSecurityContextCapture
+                .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
+                .ConfigureAwait(false);
+            return new JobSecurityContextMembershipResult(
+                CaptureSecurityContext(principal, rbacOptions, membershipManaged),
+                JobSecurityContextMembershipStatus.Current);
+        }
+
+        var snapshot = inherited ?? throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "This submission inherits its row/field security identity from a record that predates "
+                + "the submitter security context, so the original submitter's row-level security and "
+                + "field masking cannot be reconstructed. Resubmit the workflow run or approval request.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+        var result = await JobSecurityContextCapture
+            .RevalidateRoleMembershipAsync(snapshot, _principalMembershipSource, rbacOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.Status == JobSecurityContextMembershipStatus.SnapshotFallback && reportSnapshotFallback)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipSnapshotFallback(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Inactive)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipInactive(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter identity is no longer active, so this deferred operation cannot resume.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.HasRemovedRoles)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipNoLongerAuthorizes(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                "The submitter's current role membership no longer includes every role captured "
+                + "by this deferred operation, so its row-level security and field masking cannot "
+                + "be safely relaxed.",
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                AuthorizationDenialReason.StalePrincipalMembership);
+        }
+        else if (result.Status == JobSecurityContextMembershipStatus.Changed)
+        {
+            GeoprocessingServiceLog.SubmitterMembershipRevalidated(
+                _logger,
+                snapshot.PrincipalId ?? "unknown");
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -115,6 +255,136 @@ internal sealed class GeoprocessingJobAuthorizer
                 AuthorizationDenialReason.InsufficientScope);
         }
     }
+
+    /// <summary>
+    /// Enforces per-layer READ authorization for every catalog layer the submitted plan will
+    /// touch, evaluated against the SUBMITTING principal before any job record is created
+    /// (honua-server#3046).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The layer set is derived generically from the process catalog
+    /// (<see cref="PlanLayerReferences.Derive"/>), so this covers the layer-sourced executor
+    /// family (<c>analytics.*</c>, <c>generalization.*</c>, <c>conversion.feature-project</c>,
+    /// the <c>source.honua-layer</c> DAG connector), the submit-time raster-source resolution
+    /// that materializes a catalog raster's bytes onto the job spec, and any future process
+    /// that declares a <see cref="ProcessParameterValueType.LayerId"/> parameter.
+    /// </para>
+    /// <para>
+    /// A denial produces one generic <see cref="GeoprocessingAuthorizationException"/> whether
+    /// the layer is forbidden, retired, hidden from the caller's tenant, or does not exist, so
+    /// the submit path is not an oracle for which layer ids exist. Adapters map it onto their
+    /// protocol's 401/403 exactly as they already do for the process-execute gates.
+    /// </para>
+    /// </remarks>
+    /// <param name="principal">The submitting principal.</param>
+    /// <param name="plan">The plan being submitted.</param>
+    /// <param name="catalog">The process catalog declaring each process's parameters.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task EnsurePlanLayerAccessAsync(
+        ClaimsPrincipal principal,
+        AnalysisPlan plan,
+        IProcessCatalog catalog,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var reference in PlanLayerReferences.Derive(plan, catalog))
+        {
+            // The parameter declares WHAT the process does to the layer, so each target is gated
+            // on the grant that operation actually needs. A destination-only layer is not held
+            // to a read the process never performs, and a destructive process is not gated on
+            // `insert` — delete-features needs `delete`, calculate-field needs `update`
+            // (honua-server#3046 review).
+            var operation = ToAuthorizationOperation(reference.Access);
+            var isRead = operation == AuthorizationOperation.Query;
+
+            // OAuth scope narrowing applies to the DERIVED operation too, not just the baseline
+            // process gate. Without it, an execute-only delegated token (honua.mcp.execute with
+            // no honua.mcp.read) could run a layer-sourced plan purely on the strength of the
+            // underlying principal's roles — the token's deliberate lack of read authority was
+            // never consulted, and a mutating workflow could then sink that data
+            // (honua-server#3046 review). Checked before the grant evaluation because a scope
+            // denial is a property of the token and needs no catalog lookup.
+            // A layer MUTATION here is performed by the process, not by the caller directly, so
+            // the scope that delegates it is the mutating-process scope the tier gate already
+            // required — not OperatorOperation.Update, which OperatorScopeCatalog maps to no
+            // scope except honua.mcp.full. Mapping it to Update made every normally delegated
+            // mutating token fail this gate after passing the tier gate, so
+            // data-management.calculate-field could not run with the advertised
+            // honua.mcp.execute.mutating scope (honua-server#3046 review). Reads stay on Read,
+            // which honua.mcp.read grants, so an execute-only token still cannot read a layer.
+            var operatorOperation = isRead
+                ? OperatorOperation.Read
+                : OperatorOperation.ExecuteMutatingProcess;
+            var scopeDecision = _scopeAuthorizer.Evaluate(
+                principal, OperatorResourceType.Catalog, operatorOperation);
+            if (!scopeDecision.IsAllowed)
+            {
+                GeoprocessingServiceLog.AuthorizationScopeDenied(
+                    _logger, OperatorResourceType.Catalog.ToString(), operatorOperation.ToString());
+                throw new GeoprocessingAuthorizationException(
+                    requiresAuthentication: false,
+                    scopeDecision.Reason
+                        ?? $"The access token's scopes do not permit '{operatorOperation}' on "
+                        + $"{OperatorResourceType.Catalog}.",
+                    OperatorResourceType.Catalog,
+                    operatorOperation,
+                    AuthorizationDenialReason.InsufficientScope);
+            }
+
+            var decision = await _layerAccessAuthorizer.AuthorizeLayerAsync(
+                principal,
+                reference.LayerId,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+
+            if (decision.IsAllowed)
+            {
+                continue;
+            }
+
+            GeoprocessingServiceLog.LayerAccessDenied(
+                _logger,
+                reference.LayerId,
+                reference.StepId,
+                reference.ProcessId);
+
+            throw new GeoprocessingAuthorizationException(
+                decision.RequiresAuthentication,
+                decision.RequiresAuthentication
+                    ? "Authentication is required for this operation."
+                    : $"You do not have permission to {DescribeAccess(reference.Access)} layer "
+                      + $"{reference.LayerId} referenced by step '{reference.StepId}'.",
+                OperatorResourceType.Catalog,
+                operatorOperation,
+                AuthorizationDenialReason.InsufficientGrant);
+        }
+    }
+
+    /// <summary>
+    /// Maps a declared layer access onto the canonical authorization operation it requires.
+    /// One-to-one by construction, so a member added to either enum forces a decision here.
+    /// </summary>
+    private static AuthorizationOperation ToAuthorizationOperation(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => AuthorizationOperation.Insert,
+            ProcessLayerAccess.Update => AuthorizationOperation.Update,
+            ProcessLayerAccess.Delete => AuthorizationOperation.Delete,
+            // None is filtered out by PlanLayerReferences.Derive and never arrives here; if it
+            // ever did, the conservative reading is the strictest, not the loosest.
+            ProcessLayerAccess.None => AuthorizationOperation.Delete,
+            _ => AuthorizationOperation.Query,
+        };
+
+    /// <summary>Caller-facing verb for a denial, matching the operation that was refused.</summary>
+    private static string DescribeAccess(ProcessLayerAccess access)
+        => access switch
+        {
+            ProcessLayerAccess.Insert => "add features to",
+            ProcessLayerAccess.Update => "modify features in",
+            ProcessLayerAccess.Delete => "delete features from",
+            _ => "read",
+        };
 
     /// <summary>
     /// Evaluates the approval requirement for the supplied request. Callers own the

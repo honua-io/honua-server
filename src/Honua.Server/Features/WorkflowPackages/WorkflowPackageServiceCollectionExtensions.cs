@@ -4,10 +4,13 @@
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -24,6 +27,14 @@ internal static class WorkflowPackageServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, ProcessCatalogWorkflowNodeProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IWorkflowNodeProvider, AuthoringWorkflowNodeProvider>());
         services.TryAddSingleton<IWorkflowNodeRegistry, WorkflowNodeRegistry>();
+
+        // The author-security-context capture (RBAC options + tenant context + managed-membership
+        // source) is composed behind one collaborator so the publish service stays within its
+        // dependency-fan-out budget. Wired here to mirror the previous inline capture exactly: the
+        // membership source stays unbound in this path (as it was before), so behavior is unchanged.
+        services.TryAddScoped(sp => new WorkflowAuthorSecurityContextCapturer(
+            sp.GetService<IOptions<RbacOptions>>(),
+            sp.GetService<ITenantContext>()));
         services.TryAddScoped(sp => new WorkflowPackageService(
             sp.GetRequiredService<IWorkflowPackageStore>(),
             sp.GetRequiredService<IWorkflowNodeRegistry>(),
@@ -32,7 +43,8 @@ internal static class WorkflowPackageServiceCollectionExtensions
             sp.GetRequiredService<ILogger<WorkflowPackageService>>(),
             sp.GetService<IWorkflowDefinitionStore>(),
             sp.GetService<WorkflowOrchestrationEngine>(),
-            sp.GetService<IMetadataReleaseService>()));
+            sp.GetService<IMetadataReleaseService>(),
+            sp.GetService<WorkflowAuthorSecurityContextCapturer>()));
 
         return services;
     }

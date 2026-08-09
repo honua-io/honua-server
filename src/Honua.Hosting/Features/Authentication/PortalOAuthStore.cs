@@ -532,6 +532,36 @@ internal sealed class PortalOAuthPrincipal
     /// <summary>Roles granted for the lifetime of issued tokens.</summary>
     public required string[] Roles { get; init; }
 
+    /// <summary>
+    /// Whether <see cref="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+    /// entitlement, so tokens minted from this principal revalidate them on every restore
+    /// (honua-server#2997 review).
+    /// </summary>
+    /// <remarks>
+    /// NULLABLE for the same reason as <c>PortalTokenRecord</c>'s copy: a cached authorization
+    /// code or refresh token persisted before this field existed deserializes the member as
+    /// absent, and a non-nullable bool would read that as an explicit "not mapping-derived".
+    /// Exchanging or refreshing it would then stamp an explicit <see langword="false"/> onto the
+    /// new token record and skip the live entitlement check entirely — laundering legacy
+    /// custom-mapped roles through a refresh. Absent means unknown, and unknown fails closed.
+    /// </remarks>
+    public bool? RolesRequireClaimsMappingEntitlement { get; init; }
+
+    /// <summary>
+    /// Exact entitlement-independent fallback roles. Null on legacy cached principals means
+    /// unknown and remains fail-closed; an empty array is a known empty fallback.
+    /// </summary>
+    public string[]? RolesWithoutClaimsMapping { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
+    /// also depends on <c>identity.claims-mapping</c>. Nullable on exactly the same terms as
+    /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means unknown, and unknown
+    /// fails closed, so a legacy cached code cannot launder a mapping-derived tenant through a
+    /// refresh (honua-server#2997 review).
+    /// </summary>
+    public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
+
     /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)
         => new()
@@ -540,6 +570,10 @@ internal sealed class PortalOAuthPrincipal
             DisplayName = principal.DisplayName,
             TenantId = principal.TenantId,
             Roles = principal.Roles.ToArray(),
+            RolesRequireClaimsMappingEntitlement = principal.RolesRequireClaimsMappingEntitlement,
+            RolesWithoutClaimsMapping = principal.RolesWithoutClaimsMapping?.ToArray(),
+            TenantRequiresClaimsMappingEntitlement =
+                principal.TenantId is not null && principal.TenantRequiresClaimsMappingEntitlement,
         };
 }
 

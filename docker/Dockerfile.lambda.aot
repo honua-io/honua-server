@@ -16,7 +16,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 # eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
 # Directory.Build.props imports it with an Exists() guard, so omitting it
 # makes restore and publish evaluate DIFFERENT project graphs: restore sees
@@ -87,7 +87,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      -p:RuntimeIdentifier="$RUNTIME_ID" && \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaUseSkiaNoDependencies=true && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       sh scripts/docker/restore-dotnet-with-github-packages.sh samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj; \
     fi
@@ -125,7 +126,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     until \
         sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
           --runtime "$RUNTIME_ID" \
-          -p:RuntimeIdentifier="$RUNTIME_ID" && \
+          -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:HonuaUseSkiaNoDependencies=true && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
@@ -133,6 +135,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           --self-contained true \
           --output /app \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
+          -p:HonuaUseSkiaNoDependencies=true \
           -p:PublishAot=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
@@ -164,6 +167,12 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
+# Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
+# changes do not invalidate publish layers; the pushed image digest is injected by deployment.
+ARG HONUA_GIT_SHA=
+LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
+ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
+
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /var/task
@@ -173,23 +182,35 @@ COPY --from=build /app /var/task
 # because Honua.Server runs with InvariantGlobalization=false (Microsoft.Data.SqlClient
 # and Oracle.ManagedDataAccess fail to connect without ICU). See honua-server#1369.
 #
-# libfontconfig1 + libfreetype6 are required by SkiaSharp.NativeAssets.Linux:
-# libSkiaSharp.so is dynamically linked against libfontconfig.so.1 / libfreetype.so.6,
-# so the first P/Invoke into Skia (any map render: MapServer export, OGC API Maps,
-# WMS GetMap) fails to dlopen the native lib and surfaces as a generic 500. The
-# runtime-deps base does not ship them. The non-Lambda images (Dockerfile,
-# Dockerfile.aot) already install fontconfig for the same reason.
+# Lambda uses SkiaSharp.NativeAssets.Linux.NoDependencies so a distro-specific
+# fontconfig/FreeType ABI cannot terminate the process on first render. The package's
+# directory font manager still needs real fonts for labels and legends, so ship a
+# deterministic DejaVu baseline. `ldd -r` forces every lazy native relocation now;
+# this catches missing libraries and symbols while the image is built, rather than
+# after a customer requests the first map.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 libfontconfig1 libfreetype6 && \
+    apt-get install -y --no-install-recommends libgssapi-krb5-2 fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/* && \
-    chmod +x /var/task/Honua.Server
+    test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
+    chmod +x /var/task/Honua.Server && \
+    skia_linkage="$(ldd -r /var/task/libSkiaSharp.so 2>&1)" && \
+    printf '%s\n' "$skia_linkage" && \
+    if printf '%s\n' "$skia_linkage" | grep -Eq 'not found|undefined symbol'; then \
+      echo "SkiaSharp native dependency validation failed" >&2; \
+      exit 1; \
+    fi
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
+    HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
+
+LABEL honua.runtime.profile="web" \
+      honua.runtime.compilation="native-aot" \
+      honua.runtime.entrypoint="/var/task/Honua.Server"
 
 EXPOSE 8080
 

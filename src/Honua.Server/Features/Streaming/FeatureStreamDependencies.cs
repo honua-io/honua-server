@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -22,7 +23,8 @@ internal sealed class FeatureStreamDependencies
         IOptions<FeatureChangeEventOptions> eventOptions,
         IFilterExpressionService filterExpressionService,
         IMetadataV2GraphProvider metadataV2GraphProvider,
-        IGeometryOperationService geometryOperationService)
+        IGeometryOperationService geometryOperationService,
+        IFeatureReader featureReader)
     {
         SessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         EventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
@@ -31,6 +33,7 @@ internal sealed class FeatureStreamDependencies
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         MetadataV2GraphProvider = metadataV2GraphProvider ?? throw new ArgumentNullException(nameof(metadataV2GraphProvider));
         GeometryOperationService = geometryOperationService ?? throw new ArgumentNullException(nameof(geometryOperationService));
+        FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
     }
 
     public FeatureStreamSessionManager SessionManager { get; }
@@ -40,4 +43,10 @@ internal sealed class FeatureStreamDependencies
     public IFilterExpressionService FilterExpressionService { get; }
     public IMetadataV2GraphProvider MetadataV2GraphProvider { get; }
     public IGeometryOperationService GeometryOperationService { get; }
+
+    /// <summary>
+    /// Shared feature reader used to build snapshot-then-delta baselines through the
+    /// canonical query pipeline rather than a stream-local data access path.
+    /// </summary>
+    public IFeatureReader FeatureReader { get; }
 }

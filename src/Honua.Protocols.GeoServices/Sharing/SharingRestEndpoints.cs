@@ -268,7 +268,17 @@ public static class SharingRestEndpoints
                 Roles: verified.Roles,
                 ClientType: clientType,
                 BindingValue: binding,
-                ExpiresAt: expiresAt),
+                ExpiresAt: expiresAt,
+                // Carry the verifier's provenance so the issued token's roles are revalidated
+                // against the live claims-mapping entitlement on every restore, rather than
+                // outliving it for the token's whole lifetime (honua-server#2997 review).
+                RolesRequireClaimsMappingEntitlement: verified.RolesRequireClaimsMappingEntitlement,
+                // Same for the tenant: only the verifier's OWN tenant can carry mapping
+                // provenance. When it supplied none and the ambient tenant rail is used
+                // instead, that value never touched claims mapping.
+                TenantRequiresClaimsMappingEntitlement:
+                    verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
+                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping),
             context.RequestAborted).ConfigureAwait(false);
 
         if (logger.IsEnabled(LogLevel.Information))

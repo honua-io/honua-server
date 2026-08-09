@@ -91,4 +91,33 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5021, Level = LogLevel.Debug,
         Message = "Feature stream Redis unsubscribe failed during session manager disposal")]
     public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5022, Level = LogLevel.Information,
+        Message = "Feature stream baseline snapshot emitted for session {SessionId} subscription {SubscriptionId}: reason={Reason}, features={FeatureCount}, baselineCursor={BaselineCursor}, complete={Complete}")]
+    public static partial void SnapshotEmitted(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        string reason,
+        long featureCount,
+        long baselineCursor,
+        bool complete);
+
+    [LoggerMessage(EventId = 5023, Level = LogLevel.Warning,
+        Message = "Feature stream baseline snapshot for session {SessionId} subscription {SubscriptionId} was overtaken by retention: baselineCursor={BaselineCursor} is no longer followed by a retained event (oldestRetained={OldestRetained}). Reporting the baseline as incomplete so the client resnapshots.")]
+    public static partial void SnapshotReplayWindowTrimmed(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        long baselineCursor,
+        long oldestRetained);
+
+    [LoggerMessage(EventId = 5024, Level = LogLevel.Warning,
+        Message = "Feature stream replay window was lost for session {SessionId} subscription {SubscriptionId}: requestedCursor={RequestedCursor}, firstAvailableCursor={FirstAvailableCursor}. Ending the stream so the client can resnapshot.")]
+    public static partial void ReplayWindowGapDetected(
+        ILogger logger,
+        Guid sessionId,
+        string subscriptionId,
+        long requestedCursor,
+        long firstAvailableCursor);
 }

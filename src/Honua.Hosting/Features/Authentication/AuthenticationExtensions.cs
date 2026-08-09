@@ -60,6 +60,16 @@ public static class AuthenticationExtensions
     public const string TemporalRollbackExecutePolicy = "TemporalRollbackExecute";
 
     /// <summary>
+    /// Authorization policy name for the controlled-conformance mutation surface
+    /// (honua-server#3038). Distinct from the admin family so the credential a scheduled
+    /// conformance runner holds is named, auditable, and can be tightened to a dedicated
+    /// grant without touching endpoint code (NFR-002). In this slice it requires the admin
+    /// role, matching the admin baseline; the per-run ownership token enforced inside the
+    /// endpoints is what additionally isolates one authorized run from another.
+    /// </summary>
+    public const string ConformanceMutatePolicy = "ConformanceMutate";
+
+    /// <summary>
     /// Authorization policy name for the Studio package lifecycle surface (honua-server#3001).
     /// Admits the admin family, matching the pre-#3001 posture, or any authenticated principal
     /// once <c>Studio:EndUserAuthorization:Enabled</c> is turned on; per-resource ownership and
@@ -122,6 +132,7 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(ConformanceMutatePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
         });
 
@@ -261,6 +272,13 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireTemporalRollbackExecute<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalRollbackExecutePolicy);
+
+    /// <summary>
+    /// Requires the distinct controlled-conformance mutation authorization for an endpoint or
+    /// group (honua-server#3038).
+    /// </summary>
+    public static TBuilder RequireConformanceMutateAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(ConformanceMutatePolicy);
 
     /// <summary>
     /// Requires Studio package lifecycle authorization for an endpoint or group

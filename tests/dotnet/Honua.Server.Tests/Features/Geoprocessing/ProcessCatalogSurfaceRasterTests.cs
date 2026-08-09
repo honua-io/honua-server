@@ -163,7 +163,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
         // 'source' input. As of #2264 the submit path can also materialize
         // 'source' from a registered catalog raster referenced by 'layerId' or
         // 'rasterId', so all three selectors are declared OPTIONAL and the
-        // "supply exactly one" rule is enforced by the validator
+        // "supply at least one" rule is enforced by the validator
         // (ValidateSharedRasterSourceSemantics) rather than the per-parameter
         // Required flag. A plan that omits all three is rejected at submit-time
         // (see Validator_SurfaceSlope_WithoutSource_... below) rather than
@@ -637,6 +637,25 @@ public sealed class ProcessCatalogSurfaceRasterTests
             .Should().ContainSingle().Which.Should().Be(ArtifactKind.FeatureLayer);
         _catalog.GetProcess("surface.contour")!.OutputArtifactKinds
             .Should().ContainSingle().Which.Should().Be(ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_NativeStandaloneRasterSources_AcceptTypedDescriptors()
+    {
+        foreach (var (processId, definition) in new[]
+                 {
+                     "proximity.euclidean-distance",
+                     "proximity.euclidean-allocation",
+                     "gdal.gdalwarp",
+                 }.Select(processId => (processId, _catalog.GetProcess(processId))))
+        {
+            definition.Should().NotBeNull($"'{processId}' is a catalogued raster process");
+            definition!.Parameters.Should().ContainSingle(
+                parameter => parameter.Name == "source" && parameter.AcceptsRasterSource,
+                $"'{processId}' accepts a typed raster source on its standalone source parameter");
+        }
     }
 
     [UnitTest]

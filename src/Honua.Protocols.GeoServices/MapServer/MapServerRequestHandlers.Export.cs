@@ -165,7 +165,7 @@ internal static partial class MapServerEndpoints
             // where |lon|<=90 (Europe, Africa, India, etc.).
             if (!TryParseBbox(bboxValue, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
+                return CreateExportBadRequest(context, responseFormat,
                     "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
             }
 
@@ -747,6 +747,31 @@ internal static partial class MapServerEndpoints
                string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Determines whether an export response format requests raw image bytes
+    /// (<c>f=image</c>) rather than a JSON descriptor (<c>f=json</c>/<c>f=pjson</c>).
+    /// </summary>
+    private static bool IsBinaryImageExportResponse(string format)
+        => string.Equals(format, "image", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Produces a client-error response for a rejected export request.
+    /// </summary>
+    /// <remarks>
+    /// For a binary image response (<c>f=image</c>) the rejection is emitted as a genuine
+    /// HTTP 400 (still carrying the GeoServices <c>{"error":{...}}</c> body) so that an image
+    /// client — which expects raster bytes, not JSON — observes a real failure instead of a
+    /// 200 "success" whose payload it cannot render. This is what the compat certification
+    /// exercises (CERT-ERRH-01): a malformed <c>bbox</c> on an <c>f=image</c> export must be
+    /// rejected with a 4xx. For JSON responses (<c>f=json</c>/<c>f=pjson</c>) the established
+    /// GeoServices convention is preserved: HTTP 200 with the error signalled through the body
+    /// (PA-070/PA-117), which every JSON-format caller already parses.
+    /// </remarks>
+    private static IResult CreateExportBadRequest(HttpContext context, string responseFormat, string message)
+        => IsBinaryImageExportResponse(responseFormat)
+            ? ValidationErrorHelpers.CreateGeoServicesValidationError(message)
+            : StandardErrorHelpers.CreateBadRequest(context, message);
 
     private static bool TryNormalizeImageFormat(string? format, out string normalized, out string? error)
     {

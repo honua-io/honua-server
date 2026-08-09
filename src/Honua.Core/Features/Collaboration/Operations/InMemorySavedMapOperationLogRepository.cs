@@ -41,9 +41,20 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Always <see langword="false"/>: this log lives in one process, so replays only observe
+    /// operations accepted by this node since it started. Checkpoint-style consumers guard on
+    /// this in multi-node deployments (honua-server#2999).
+    /// </remarks>
     public bool SupportsReplicaSharedReplay => false;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Always <see langword="false"/>: the log lives in process memory, so every accepted
+    /// operation that has not yet been persisted elsewhere is lost when the process restarts.
+    /// Consumers that mint durable state from a replay must refuse to proceed rather than treat
+    /// an empty post-restart replay as "no edits" (honua-server#2999).
+    /// </remarks>
     public bool SupportsRestartDurableReplay => false;
 
     /// <inheritdoc />

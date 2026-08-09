@@ -911,7 +911,12 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     {
         if (!TryGetInt(arguments, "StretchType", out var stretchType))
         {
-            return RenderingRuleMapping.Invalid("Stretch raster function requires an integer StretchType argument.");
+            // ArcGIS applies a default (min-max / DRA-style) display stretch when a Stretch
+            // function carries no explicit StretchType. Map a bare {"rasterFunction":"Stretch"}
+            // to a MinMax stretch so it renders through the supported stretch path instead of
+            // 400-ing; the store auto-derives the min/max bounds from the raster's persisted
+            // statistics and cleanly skips the stretch when no statistics are available.
+            stretchType = StretchTypeMinMax;
         }
 
         switch (stretchType)

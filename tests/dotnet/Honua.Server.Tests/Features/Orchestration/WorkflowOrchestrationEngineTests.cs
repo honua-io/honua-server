@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -60,6 +62,148 @@ public sealed class WorkflowOrchestrationEngineTests
 
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
         Assert.Single(harness.JobService.Submitted);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_ReplaysRunRequestersSecurityContextOnStepSubmission()
+    {
+        // #3068: each step job is submitted under OrchestrationSystemPrincipal, which carries
+        // role=admin so the reconcile loop can dispatch. If the step's row/field security
+        // snapshot were captured from THAT principal, every workflow step would read with admin
+        // row/field visibility — laundering away the requester's RLS predicate and field mask.
+        // The engine must therefore replay the snapshot captured from the RUN REQUESTER.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var requester = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "requesting-operator"),
+                new Claim(ClaimTypes.Role, "restricted-analyst"),
+                new Claim("category", "test"),
+            ],
+            "TestAuth"));
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, requester);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var context = Assert.Single(harness.JobService.SubmittedSecurityContexts);
+        Assert.NotNull(context);
+        Assert.Contains(context!.Claims, claim => claim.Value == "restricted-analyst");
+        Assert.Contains(context.Claims, claim => claim.Type == "category" && claim.Value == "test");
+        Assert.DoesNotContain(context.Claims, claim => claim.Value == "admin");
+    }
+
+    [Fact]
+    public async Task CreateRun_TriggeredFiring_AuthorizesTheAuthorRatherThanTheOrchestrator()
+    {
+        // #3046: the scheduler and event-trigger services have no requesting principal, so they
+        // call in as OrchestrationSystemPrincipal — role=admin, which passes every gate. Left
+        // that way, the layer/mutating check at run creation would be a no-op on every tick and
+        // the publication-time check would be the only one that ever ran, going stale the moment
+        // the author's grant was revoked or the referenced id rebound. Each firing must instead
+        // re-authorize the AUTHOR, restored from the snapshot captured at publish.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
+        {
+            AuthorSecurityContext = new JobSecurityContext(
+                "workflow-author",
+                TenantId: "tenant-a",
+                [
+                    new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst"),
+                    new JobSecurityClaim("region", "west"),
+                ]),
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        await harness.Engine.CreateRunAsync(
+            definition, WorkflowTriggerKind.Cron, OrchestrationSystemPrincipal.Create(null));
+
+        var gated = Assert.Single(harness.JobService.ExecutionAuthorizationPrincipals);
+        Assert.Equal("workflow-author", gated.Identity?.Name);
+        Assert.True(gated.IsInRole("restricted-analyst"));
+        Assert.Equal("west", gated.FindFirst("region")?.Value);
+        Assert.Equal("tenant-a", gated.FindFirst("tenant_id")?.Value);
+
+        // The whole point: the orchestrator's admin role is NOT what got evaluated.
+        Assert.False(gated.IsInRole("admin"));
+        Assert.False(gated.IsInRole("orchestrator"));
+    }
+
+    [Fact]
+    public async Task CreateRun_TriggeredFiringAfterAuthorRoleRevoked_FailsClosedWithDistinctReason()
+    {
+        var membershipSource = new FixedMembershipSource(
+            new PrincipalMembership(IsActive: true, Roles: []));
+        var harness = new OrchestrationTestHarness(membershipSource);
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
+        {
+            AuthorSecurityContext = new JobSecurityContext(
+                "workflow-author",
+                TenantId: "tenant-a",
+                [new JobSecurityClaim(ClaimTypes.Role, "restricted-analyst")]),
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var act = () => harness.Engine.CreateRunAsync(
+            definition,
+            WorkflowTriggerKind.Cron,
+            OrchestrationSystemPrincipal.Create(null));
+
+        var thrown = await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(act);
+        Assert.Contains("lost role membership", thrown.Message, StringComparison.Ordinal);
+        Assert.Empty(harness.JobService.ExecutionAuthorizationPrincipals);
+        Assert.Empty(harness.RunStore.Snapshot);
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
+    [Fact]
+    public async Task CreateRun_ManualRun_StillAuthorizesTheRequestingPrincipal()
+    {
+        // The author redirection is scoped to triggered firings. A manual run HAS a real
+        // requester, and that requester — not the definition's author — is who must be gated.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
+        {
+            AuthorSecurityContext = new JobSecurityContext(
+                "workflow-author", TenantId: null, [new JobSecurityClaim(ClaimTypes.Role, "author-role")]),
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var requester = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "requesting-operator"), new Claim(ClaimTypes.Role, "requester-role")],
+            "TestAuth"));
+
+        await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, requester);
+
+        var gated = Assert.Single(harness.JobService.ExecutionAuthorizationPrincipals);
+        Assert.Same(requester, gated);
+    }
+
+    [Fact]
+    public async Task CreateRun_TriggeredFiringOnLegacyDefinition_IsRefusedBeforeAnyGateRuns()
+    {
+        // A definition published before the author snapshot existed cannot reconstruct an
+        // identity to authorize. Falling back to the orchestrator is the escalation this fix
+        // exists to remove, so the firing is refused — and refused BEFORE the gate loop, so no
+        // partial authorization is attributed to a principal that was never resolved.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
+        {
+            AuthorSecurityContext = null,
+        };
+        await harness.Definitions.TryCreateAsync(definition);
+
+        await Assert.ThrowsAsync<WorkflowDefinitionValidationException>(
+            () => harness.Engine.CreateRunAsync(
+                definition, WorkflowTriggerKind.Cron, OrchestrationSystemPrincipal.Create(null)));
+
+        Assert.Empty(harness.JobService.ExecutionAuthorizationPrincipals);
     }
 
     [Fact]
@@ -1288,7 +1432,7 @@ public sealed class WorkflowOrchestrationEngineTests
 
     private sealed class OrchestrationTestHarness
     {
-        public OrchestrationTestHarness()
+        public OrchestrationTestHarness(IPrincipalMembershipSource? principalMembershipSource = null)
         {
             RunStore = new FakeWorkflowRunStore();
             Definitions = new FakeWorkflowDefinitionStore();
@@ -1301,7 +1445,8 @@ public sealed class WorkflowOrchestrationEngineTests
                 JobService,
                 Progress,
                 Clock,
-                NullLogger<WorkflowOrchestrationEngine>.Instance);
+                NullLogger<WorkflowOrchestrationEngine>.Instance,
+                principalMembershipSource: principalMembershipSource);
         }
 
         public FakeWorkflowRunStore RunStore { get; }
@@ -1310,6 +1455,15 @@ public sealed class WorkflowOrchestrationEngineTests
         public FakeWorkflowJobExecutor JobService { get; }
         public TestClock Clock { get; }
         public WorkflowOrchestrationEngine Engine { get; }
+    }
+
+    private sealed class FixedMembershipSource(PrincipalMembership? membership)
+        : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(
+            string principalId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(membership);
     }
 }
 

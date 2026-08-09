@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net.WebSockets;
 using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
@@ -1121,6 +1122,101 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", first.Generation, "evt-a"));
     }
 
+    // Regression: a writer can win the delivery claim, then wait behind an unsubscribe
+    // acknowledgement for the WebSocket write lock. Sequence allocation is the final
+    // generation fence; its failed old-generation claim must neither reach the wire nor
+    // poison delivery after the same subscription id is reused.
+    [UnitTest]
+    public Task SendStampedWebSocketJsonAsync_UnsubscribeAfterClaim_SkipsStaleAndLetsResubscribeDeliver()
+        => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: false);
+
+    // Regression: same-id replacement has the same claim-to-sequence race as unsubscribe.
+    // The replacement generation must be able to claim and deliver the event even though the
+    // retired generation claimed that event id before losing the final generation fence.
+    [UnitTest]
+    public Task SendStampedWebSocketJsonAsync_ReplacementAfterClaim_SkipsStaleAndLetsReplacementDeliver()
+        => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: true);
+
+    private async Task AssertClaimRaceDoesNotBlockReplacementAsync(bool replaceBeforeStaleSendCompletes)
+    {
+        using var session = _manager.CreateSession("WebSocket", "stamp-race");
+        var original = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        Assert.Equal(AddSubscriptionResult.Added, original.Result);
+
+        var envelope = CreateEnvelope(cursor: 500) with
+        {
+            EventId = replaceBeforeStaleSendCompletes ? "evt-replace" : "evt-unsubscribe",
+            SubscriptionId = "subB"
+        };
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(
+                session.SessionId,
+                "subB",
+                original.Generation,
+                envelope.EventId));
+
+        using var writeLock = new SemaphoreSlim(0, 1);
+        using var webSocket = new RecordingWebSocket();
+        var staleSend = FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
+            webSocket,
+            writeLock,
+            envelope,
+            _manager,
+            session.SessionId,
+            "subB",
+            original.Generation,
+            CancellationToken.None);
+        Assert.False(staleSend.IsCompleted);
+
+        AddSubscriptionOutcome replacement;
+        if (replaceBeforeStaleSendCompletes)
+        {
+            replacement = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        }
+        else
+        {
+            Assert.True(_manager.TryRemoveSubscription(session.SessionId, "subB"));
+            replacement = default;
+        }
+
+        writeLock.Release();
+
+        Assert.False(await staleSend);
+        Assert.Equal(0, webSocket.SendCount);
+
+        if (!replaceBeforeStaleSendCompletes)
+        {
+            replacement = _manager.TryAddSubscription(session.SessionId, "subB", filter: null);
+        }
+
+        Assert.Equal(AddSubscriptionResult.Added, replacement.Result);
+        Assert.NotEqual(original.Generation, replacement.Generation);
+        Assert.Equal(
+            SubscriptionDeliveryClaim.Claimed,
+            _manager.TryClaimSubscriptionDelivery(
+                session.SessionId,
+                "subB",
+                replacement.Generation,
+                envelope.EventId));
+
+        Assert.True(await FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
+            webSocket,
+            writeLock,
+            envelope,
+            _manager,
+            session.SessionId,
+            "subB",
+            replacement.Generation,
+            CancellationToken.None));
+        Assert.Equal(1, webSocket.SendCount);
+
+        // The replacement's delivered frame used sequence zero; the next admitted frame is one.
+        Assert.Equal(
+            1L,
+            _manager.NextSubscriptionSequence(session.SessionId, "subB", replacement.Generation));
+    }
+
     // Regression: Broadcast must stamp each queued copy with the matching
     // subscription's generation so the writer drain can fence stale frames.
     [UnitTest]
@@ -1182,4 +1278,57 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     };
 
     private static FeatureStreamEnvelope CreateEnvelopeForService(long cursor, string serviceId) => CreateEnvelope(cursor, layerId: 0, serviceId: serviceId);
+
+    private sealed class RecordingWebSocket : WebSocket
+    {
+        private int _sendCount;
+        private WebSocketState _state = WebSocketState.Open;
+
+        public int SendCount => Volatile.Read(ref _sendCount);
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+
+        public override string? CloseStatusDescription => null;
+
+        public override WebSocketState State => _state;
+
+        public override string? SubProtocol => null;
+
+        public override void Abort() => _state = WebSocketState.Aborted;
+
+        public override Task CloseAsync(
+            WebSocketCloseStatus closeStatus,
+            string? statusDescription,
+            CancellationToken cancellationToken)
+        {
+            _state = WebSocketState.Closed;
+            return Task.CompletedTask;
+        }
+
+        public override Task CloseOutputAsync(
+            WebSocketCloseStatus closeStatus,
+            string? statusDescription,
+            CancellationToken cancellationToken)
+        {
+            _state = WebSocketState.CloseSent;
+            return Task.CompletedTask;
+        }
+
+        public override void Dispose() => _state = WebSocketState.Closed;
+
+        public override Task<WebSocketReceiveResult> ReceiveAsync(
+            ArraySegment<byte> buffer,
+            CancellationToken cancellationToken)
+            => Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, endOfMessage: true));
+
+        public override Task SendAsync(
+            ArraySegment<byte> buffer,
+            WebSocketMessageType messageType,
+            bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _sendCount);
+            return Task.CompletedTask;
+        }
+    }
 }

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Simplified AWS Lambda-compatible Dockerfile using AL2 runtime deps
+# Simplified AWS Lambda-compatible Dockerfile for local diagnostics only.
+# Release and deployment workflows use docker/Dockerfile.lambda.aot.
 
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:f061e5a7532b36fa1d1b684857fe1f504ba92115b9934f154643266613c44c62
