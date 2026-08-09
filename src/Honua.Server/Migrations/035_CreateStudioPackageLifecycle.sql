@@ -6,7 +6,9 @@
 -- after insertion. Pointer transitions are stored on studio_content_items and
 -- audited through publication/rollback request tables.
 
-CREATE TABLE IF NOT EXISTS honua.studio_content_items (
+CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
+
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_items (
     item_id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     package_key          TEXT        NOT NULL,
     workspace_id         TEXT        NULL,
@@ -22,18 +24,18 @@ CREATE TABLE IF NOT EXISTS honua.studio_content_items (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_content_items_workspace_key
-    ON honua.studio_content_items (
+    ON $HonuaSchema$.studio_content_items (
         (COALESCE(NULLIF(BTRIM(workspace_id), ''), '')),
         family,
         package_key
     );
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_items_updated
-    ON honua.studio_content_items (updated_at DESC);
+    ON $HonuaSchema$.studio_content_items (updated_at DESC);
 
-CREATE TABLE IF NOT EXISTS honua.studio_package_drafts (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_package_drafts (
     draft_id        UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    item_id         UUID        NOT NULL REFERENCES honua.studio_content_items(item_id) ON DELETE CASCADE,
+    item_id         UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
     package_key     TEXT        NOT NULL,
     workspace_id    TEXT        NULL,
     owner_id        TEXT        NULL,
@@ -51,14 +53,14 @@ CREATE TABLE IF NOT EXISTS honua.studio_package_drafts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_studio_package_drafts_item
-    ON honua.studio_package_drafts (item_id, updated_at DESC);
+    ON $HonuaSchema$.studio_package_drafts (item_id, updated_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_studio_package_drafts_owner
-    ON honua.studio_package_drafts (owner_id, updated_at DESC);
+    ON $HonuaSchema$.studio_package_drafts (owner_id, updated_at DESC);
 
-CREATE TABLE IF NOT EXISTS honua.studio_content_versions (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_versions (
     version_id      UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    item_id         UUID        NOT NULL REFERENCES honua.studio_content_items(item_id) ON DELETE CASCADE,
+    item_id         UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
     package_key     TEXT        NOT NULL,
     workspace_id    TEXT        NULL,
     owner_id        TEXT        NULL,
@@ -77,17 +79,17 @@ CREATE TABLE IF NOT EXISTS honua.studio_content_versions (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_content_versions_item_number
-    ON honua.studio_content_versions (item_id, version_number);
+    ON $HonuaSchema$.studio_content_versions (item_id, version_number);
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_versions_item_hash
-    ON honua.studio_content_versions (item_id, content_hash);
+    ON $HonuaSchema$.studio_content_versions (item_id, content_hash);
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_versions_item_created
-    ON honua.studio_content_versions (item_id, created_at DESC);
+    ON $HonuaSchema$.studio_content_versions (item_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS honua.studio_content_version_dependencies (
-    version_id            UUID    NOT NULL REFERENCES honua.studio_content_versions(version_id) ON DELETE CASCADE,
-    item_id               UUID    NOT NULL REFERENCES honua.studio_content_items(item_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_version_dependencies (
+    version_id            UUID    NOT NULL REFERENCES $HonuaSchema$.studio_content_versions(version_id) ON DELETE CASCADE,
+    item_id               UUID    NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
     dependency_kind       TEXT    NOT NULL,
     dependency_ref        TEXT    NOT NULL,
     dependency_version_id TEXT    NULL,
@@ -95,7 +97,7 @@ CREATE TABLE IF NOT EXISTS honua.studio_content_version_dependencies (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_content_version_dependencies_unique
-    ON honua.studio_content_version_dependencies (
+    ON $HonuaSchema$.studio_content_version_dependencies (
         version_id,
         dependency_kind,
         dependency_ref,
@@ -103,12 +105,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_content_version_dependencies_unique
     );
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_version_dependencies_ref
-    ON honua.studio_content_version_dependencies (dependency_kind, dependency_ref);
+    ON $HonuaSchema$.studio_content_version_dependencies (dependency_kind, dependency_ref);
 
-CREATE TABLE IF NOT EXISTS honua.studio_publication_requests (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_publication_requests (
     request_id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    item_id                 UUID        NOT NULL REFERENCES honua.studio_content_items(item_id) ON DELETE CASCADE,
-    version_id              UUID        NOT NULL REFERENCES honua.studio_content_versions(version_id) ON DELETE CASCADE,
+    item_id                 UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
+    version_id              UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_versions(version_id) ON DELETE CASCADE,
     intent                  JSONB       NULL,
     status                  TEXT        NOT NULL,
     validation              JSONB       NOT NULL,
@@ -120,12 +122,12 @@ CREATE TABLE IF NOT EXISTS honua.studio_publication_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_studio_publication_requests_item_created
-    ON honua.studio_publication_requests (item_id, created_at DESC);
+    ON $HonuaSchema$.studio_publication_requests (item_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS honua.studio_rollback_requests (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_rollback_requests (
     request_id        UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    item_id           UUID        NOT NULL REFERENCES honua.studio_content_items(item_id) ON DELETE CASCADE,
-    target_version_id UUID        NOT NULL REFERENCES honua.studio_content_versions(version_id) ON DELETE CASCADE,
+    item_id           UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
+    target_version_id UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_versions(version_id) ON DELETE CASCADE,
     pointer           TEXT        NOT NULL,
     current_version_id UUID       NULL,
     published_version_id UUID     NULL,
@@ -137,7 +139,7 @@ CREATE TABLE IF NOT EXISTS honua.studio_rollback_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_studio_rollback_requests_item_created
-    ON honua.studio_rollback_requests (item_id, created_at DESC);
+    ON $HonuaSchema$.studio_rollback_requests (item_id, created_at DESC);
 
-COMMENT ON TABLE honua.studio_content_versions IS
+COMMENT ON TABLE $HonuaSchema$.studio_content_versions IS
     'Append-only immutable Studio package content versions (#1180).';

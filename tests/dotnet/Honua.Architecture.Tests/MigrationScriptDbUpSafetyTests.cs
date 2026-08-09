@@ -143,11 +143,31 @@ public sealed class MigrationScriptDbUpSafetyTests
             "Migrations",
             "093_CreateSavedMapCheckpointVersionRecovery.sql");
         var recoverySql = File.ReadAllText(recoveryMigrationPath);
+        var studioPrerequisiteMigrations = new[]
+        {
+            "035_CreateStudioPackageLifecycle.sql",
+            "036_CreateContentPublications.sql",
+            "039_CreateStudioMapCollaboration.sql",
+            "089_AddStudioContentEnumerationIndexes.sql",
+            "090_AddStudioContentItemOwner.sql",
+        };
 
         sql.Should().Contain("$HonuaSchema$.saved_map_operation_log_heads");
         sql.Should().Contain("$HonuaSchema$.saved_map_operations");
         sql.Should().NotContain("honua.saved_map_operation");
         recoverySql.Should().Contain("$HonuaSchema$.saved_map_checkpoint_versions");
         recoverySql.Should().NotContain("honua.saved_map_checkpoint");
+
+        foreach (var migrationName in studioPrerequisiteMigrations)
+        {
+            var migrationSql = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+                repositoryRoot,
+                "src",
+                "Honua.Server",
+                "Migrations",
+                migrationName));
+            migrationSql.Should().Contain("$HonuaSchema$.", $"because {migrationName} is a configured-schema prerequisite");
+            migrationSql.Should().NotContain("honua.", $"because {migrationName} must not pin the default schema");
+        }
     }
 }

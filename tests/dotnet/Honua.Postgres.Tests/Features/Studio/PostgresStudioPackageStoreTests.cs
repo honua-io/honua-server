@@ -612,7 +612,6 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     {
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
-        sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
         sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
         await fixture.ExecuteAsync(sql, schema);
     }
