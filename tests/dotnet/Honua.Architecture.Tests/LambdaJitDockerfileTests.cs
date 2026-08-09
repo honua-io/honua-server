@@ -11,6 +11,19 @@ namespace Honua.Architecture.Tests;
 public sealed class LambdaJitDockerfileTests
 {
     [ArchitectureTest]
+    public void RuntimeLayer_TracksLatestAmazonLinuxSecurityRelease()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var dockerfilePath = ArchitectureTestHelpers.CombinePath(
+            repositoryRoot,
+            "docker",
+            "Dockerfile.lambda");
+        var dockerfile = File.ReadAllText(dockerfilePath);
+
+        dockerfile.Should().Contain("dnf upgrade --refresh --releasever=latest -y");
+    }
+
+    [ArchitectureTest]
     public void SourceLayer_ForcesExactRidRestoreImmediatelyBeforeNoRestorePublish()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
