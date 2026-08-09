@@ -229,10 +229,16 @@ internal static partial class RasterImportEndpoints
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var importService = context.RequestServices.GetRequiredService<IRasterImportService>();
-        // Raster imports run synchronously (no background job path yet), so enforce the
-        // sync size limit.  When background raster jobs are added, switch to MaxImportSize
-        // with queue-if-over-threshold logic matching the vector import path.
-        var maxFileSizeBytes = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Imports.MaxSyncImportSize;
+        // ST_FromGDALRaster accepts one binary parameter and therefore creates both a managed
+        // byte[] and an Npgsql parameter copy. Keep this legacy direct path under a hard safety
+        // ceiling even when the general synchronous-import limit is configured higher. Larger
+        // rasters belong on the durable staged-import pipeline (#3098).
+        var configuredSyncLimit = context.RequestServices
+            .GetRequiredService<IOptions<LimitsOptions>>()
+            .Value.Imports.MaxSyncImportSize;
+        var maxFileSizeBytes = Math.Min(
+            configuredSyncLimit,
+            FileSizeConstants.MaxDirectRasterImportSize);
 
         // Raster files are validated via TIFF header magic-byte checks and size limits
         // rather than the generic FileUploadSecurity content scanner (which targets vector/text formats).

@@ -26,7 +26,7 @@ Run `POST /api/v1/admin/import/raster` with these form values:
 | `layerId` | `1` |
 | `name` | `City DEM 2026` |
 
-Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The import runs synchronously and is bounded by `Limits:Imports:MaxSyncImportSize`.
+Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The direct PostGIS import runs synchronously and accepts at most the lower of `Limits:Imports:MaxSyncImportSize` and the fixed 50 MiB serving-process safety ceiling. Larger rasters require the durable staged-import pipeline.
 
 Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
