@@ -145,13 +145,14 @@ internal static class ServiceCollectionExtensions
         // and retains its in-memory repository only for non-Postgres providers.
         var retainedSavedMapOperationCount = configuration.GetValue<int?>(
             "Collaboration:OperationLog:RetainedOperationCount") ?? 512;
-        services.TryAddScoped<ISavedMapOperationLogRepository>(serviceProvider =>
+        services.TryAddScoped<PostgresSavedMapOperationLogRepository>(serviceProvider =>
             new PostgresSavedMapOperationLogRepository(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ISavedMapOperationConflictPolicy>(),
                 serviceProvider.GetService<TimeProvider>(),
                 retainedSavedMapOperationCount,
                 defaultSchema));
+        services.TryAddSingleton<ISavedMapOperationLogRepository, ScopedPostgresSavedMapOperationLogRepository>();
 
         // Catalog honua-layer DAG sink capability (#2210). Registered only here, with the
         // Postgres provider, so the sink.honua-layer executor can load into a named catalog
