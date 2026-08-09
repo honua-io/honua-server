@@ -215,16 +215,11 @@ internal static class CollaborationCheckpointEndpoints
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
-            if (recovered.Checkpoint.OperationCursor == replay.HeadCursor.Value)
-            {
-                return CreateCheckpointResult(
-                    canonicalMapId,
-                    recovered.Version,
-                    appliedOperationCount: 0,
-                    recovered.Checkpoint.OperationCursor,
-                    supersededOperation: null);
-            }
-
+            // Recovery proves only that the older request's immutable version committed. The
+            // current request has no durable idempotency identity, and direct Studio edits may
+            // have landed after that commit, so it must still checkpoint the current draft even
+            // when the recovered cursor equals the head. Refreshing replay after the cursor repair
+            // avoids applying the recovered operation prefix twice.
             replay = await operationLog.ReplayPendingAsync(canonicalMapId, context.RequestAborted)
                 .ConfigureAwait(false);
         }

@@ -538,7 +538,7 @@ public sealed class CollaborationLiveCoEditingTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
-    public async Task Checkpoint_CursorWriteFailsAfterVersionCommit_RetryRecoversWithoutDuplicateOrReapply()
+    public async Task Checkpoint_CursorWriteFailsAfterVersionCommit_RetryRepairsCursorAndVersionsCurrentDraft()
     {
         using var factory = CreateFactory(
             restartDurableOperationLog: true,
@@ -566,36 +566,65 @@ public sealed class CollaborationLiveCoEditingTests
         }
 
         Guid committedVersionId;
-        long generationAfterCommit;
         using (var scope = factory.Services.CreateScope())
         {
             var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
             var versions = await lifecycle.ListVersionsAsync(draft.ItemId);
             committedVersionId = versions.Should().ContainSingle().Which.VersionId;
-            generationAfterCommit = (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation;
         }
 
-        var recovered = await CheckpointAsync(client, mapId, "recover me");
-        recovered.GetProperty("versionId").GetGuid().Should().Be(committedVersionId);
+        long generationAfterDirectEdit;
+        using (var directEditBody = JsonDocument.Parse(
+                   """{"layers":[{"id":"parcels","title":"Direct edit after crash","visible":false}]}"""))
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            var current = (await lifecycle.GetDraftAsync(draft.DraftId))!;
+            var updated = await lifecycle.UpdateDraftAsync(
+                draft.DraftId,
+                new UpdateStudioPackageDraftCommand
+                {
+                    PackageKey = current.PackageKey,
+                    WorkspaceId = current.WorkspaceId,
+                    OwnerId = current.OwnerId,
+                    Envelope = current.Envelope with { Body = directEditBody.RootElement.Clone() },
+                    Generation = current.Generation,
+                    ActorId = "direct-editor",
+                });
+            generationAfterDirectEdit = updated!.Generation;
+        }
+
+        var recovered = await CheckpointAsync(client, mapId, "retry after direct edit");
+        var recoveredVersionId = recovered.GetProperty("versionId").GetGuid();
+        recoveredVersionId.Should().NotBe(committedVersionId);
         recovered.GetProperty("headCursor").GetInt64().Should().Be(1);
         recovered.GetProperty("appliedOperationCount").GetInt32().Should().Be(0);
 
         using (var scope = factory.Services.CreateScope())
         {
             var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
-            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().ContainSingle();
-            (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(
-                generationAfterCommit,
-                "recovery must advance the cursor before replaying the already-versioned prefix");
+            var versions = await lifecycle.ListVersionsAsync(draft.ItemId);
+            versions.Should().HaveCount(2);
+            var recoveredVersion = versions.Should().ContainSingle(version =>
+                version.VersionId == recoveredVersionId).Which;
+            recoveredVersion.ChangeNote.Should().Be("retry after direct edit");
+            recoveredVersion.Envelope.Body!.Value.GetProperty("layers")[0]
+                .GetProperty("title").GetString().Should().Be("Direct edit after crash");
+            var current = (await lifecycle.GetDraftAsync(draft.DraftId))!;
+            current.Generation.Should().Be(
+                generationAfterDirectEdit + 1,
+                "only the new version commit should advance the draft after cursor recovery");
+            current.Envelope.Body!.Value.GetProperty("layers")[0]
+                .GetProperty("title").GetString().Should().Be("Direct edit after crash");
         }
 
         var repeated = await CheckpointAsync(client, mapId, "intentional same-cursor checkpoint");
-        repeated.GetProperty("versionId").GetGuid().Should().NotBe(committedVersionId);
+        repeated.GetProperty("versionId").GetGuid().Should().NotBe(recoveredVersionId);
         repeated.GetProperty("headCursor").GetInt64().Should().Be(1);
         using (var scope = factory.Services.CreateScope())
         {
             var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
-            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().HaveCount(2);
+            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().HaveCount(3);
         }
     }
 
