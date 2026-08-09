@@ -16,7 +16,7 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
 HONUA_HEALTHCHECK_TIMEOUT=300
 POSTGRES_HEALTHCHECK_TIMEOUT=120
-EXPECTED_TOTAL_TESTS=126
+EXPECTED_TOTAL_TESTS=0
 HONUA_CITE_WMS11_SERVER_PORT="${HONUA_CITE_WMS11_SERVER_PORT:-8098}"
 export HONUA_CITE_WMS11_SERVER_PORT
 PASSED_TESTS=0
@@ -38,6 +38,10 @@ WMS_BBOXCONSTRAINTS="either"
 
 set_profile_options() {
     local profile="$1"
+    # The pinned ets-wms11 1.23 image counts the two wrapper tests plus every selected
+    # conformance-class/test node: basic runs 99; queryable + recommended + GML runs 126.
+    # Keep the completion proof profile-specific so a closed partial artifact cannot mask a
+    # runner failure and a complete minimal artifact is not rejected as truncated.
     WMS_PROFILE="no"
     WMS_RECOMMENDED="false"
     WMS_GETFEATUREINFO="false"
@@ -49,17 +53,20 @@ set_profile_options() {
             WMS_PROFILE="basic"
             WMS_RECOMMENDED="false"
             WMS_GETFEATUREINFO="false"
+            EXPECTED_TOTAL_TESTS=99
             ;;
         default)
             WMS_PROFILE="queryable"
             WMS_RECOMMENDED="true"
             WMS_GETFEATUREINFO="true"
+            EXPECTED_TOTAL_TESTS=126
             ;;
         full)
             WMS_PROFILE="queryable"
             WMS_RECOMMENDED="true"
             WMS_GETFEATUREINFO="true"
             WMS_BBOXCONSTRAINTS="either"
+            EXPECTED_TOTAL_TESTS=126
             ;;
         *)
             echo -e "${RED}Unknown profile: $profile${NC}"
