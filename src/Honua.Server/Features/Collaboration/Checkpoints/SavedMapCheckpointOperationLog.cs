@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Collaboration.Operations;
 
 namespace Honua.Server.Features.Collaboration.Checkpoints;
@@ -9,36 +8,21 @@ namespace Honua.Server.Features.Collaboration.Checkpoints;
 /// <summary>
 /// Checkpoint-facing facade over the saved-map operation log (honua-server#2999). Pairs the
 /// replay the checkpoint needs with the replica-continuity proof that must gate it, and records
-/// the last successfully checkpointed cursor per canonical map id so later checkpoints replay
-/// only the not-yet-applied suffix. Without that record a checkpoint would always replay from
-/// cursor 0 and a long-lived session would become permanently uncheckpointable once its early
-/// operations (already persisted by earlier checkpoints) age out of the retained window.
+/// the last successfully checkpointed cursor in the same repository so later checkpoints replay
+/// only the not-yet-applied suffix.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The cursor record is NOT durable.</b> It is a process-local dictionary that shares the
-/// lifetime and scope of the in-memory op log it indexes into, so today the pair stays consistent:
-/// both are lost together on restart, and checkpointing is gated off entirely because the shipped
-/// <see cref="ISavedMapOperationLogRepository"/> reports
-/// <c>SupportsRestartDurableReplay = false</c> (see <see cref="CanProveRestartContinuity"/>, plus
-/// <see cref="CanProveReplayContinuity"/> in a declared multi-replica deployment).
-/// </para>
-/// <para>
-/// <b>Requirement for a durable op-log implementation (honua-server#3067).</b> Reporting
-/// <c>SupportsRestartDurableReplay = true</c> without also persisting these cursors is a defect,
-/// not a partial improvement: the log would survive a restart while the cursor record did not, so
-/// the first checkpoint after a restart would replay from cursor 0 — re-applying old absolute-state
-/// operations over newer direct draft edits, or returning 409 forever once that prefix has been
-/// pruned. A durable-log implementation MUST persist the checkpointed cursor in the same store (and
-/// ideally the same transaction) that assigns operation cursors, and must replace this dictionary
-/// rather than layer on top of it.
+/// The in-memory implementation keeps its cursor beside its process-local log and reports that
+/// restart-durable checkpointing is unavailable. The Postgres implementation persists both in the
+/// same store and unlocks the checkpoint endpoint only when the aggregate durability signal proves
+/// that neither side is lost across a restart (honua-server#3067).
 /// </para>
 /// </remarks>
 internal sealed class SavedMapCheckpointOperationLog
 {
     private readonly ISavedMapOperationLogRepository _repository;
     private readonly SavedMapCollaborationTopology _topology;
-    private readonly ConcurrentDictionary<string, long> _checkpointedCursors = new(StringComparer.Ordinal);
 
     public SavedMapCheckpointOperationLog(
         ISavedMapOperationLogRepository repository,
@@ -60,17 +44,16 @@ internal sealed class SavedMapCheckpointOperationLog
 
     /// <summary>
     /// Whether a replay from this node provably observes every accepted edit ACROSS a process
-    /// restart. False whenever the op log is not restart-durable: an operation acknowledged
-    /// before a restart is then gone, and a post-restart replay is indistinguishable from a
-    /// session that never appended anything — so a checkpoint would mint an immutable version
-    /// that silently omits an accepted edit (honua-server#2999 review).
+    /// restart. False whenever either the operation replay or its checkpoint cursor is not
+    /// restart-durable: losing either side can omit accepted edits or replay an already-versioned
+    /// prefix after restart (honua-server#2999 review, honua-server#3067).
     /// </summary>
     /// <remarks>
     /// Deliberately NOT satisfiable by configuration: no operator declaration can make a
     /// process-local log survive a restart. It is unlocked by registering a restart-durable
     /// <see cref="ISavedMapOperationLogRepository"/> implementation.
     /// </remarks>
-    public bool CanProveRestartContinuity => _repository.SupportsRestartDurableReplay;
+    public bool CanProveRestartContinuity => _repository.SupportsRestartDurableCheckpointing;
 
     /// <summary>
     /// Replays every operation accepted after the last successfully checkpointed cursor for
@@ -83,25 +66,23 @@ internal sealed class SavedMapCheckpointOperationLog
     public Task<SavedMapOperationReplayResult> ReplayPendingAsync(
         string canonicalMapId,
         CancellationToken cancellationToken)
-    {
-        var sinceCursor = _checkpointedCursors.TryGetValue(canonicalMapId, out var recorded) ? recorded : 0L;
-        return _repository.ReplayAsync(
+        => _repository.ReplayPendingCheckpointAsync(
             new SavedMapId(canonicalMapId),
-            new SavedMapOperationCursor(sinceCursor),
             cancellationToken);
-    }
 
     /// <summary>
     /// Records that a checkpoint successfully persisted every operation up to and including
     /// <paramref name="headCursor"/>. Monotonic: concurrent checkpoints keep the highest cursor.
     /// </summary>
     /// <remarks>
-    /// Process-local and therefore lost on restart — see the type remarks: a durable op-log
-    /// implementation must persist this cursor alongside the log (honua-server#3067).
+    /// The repository owns monotonicity and cursor durability alongside the operation log.
     /// </remarks>
-    public void MarkCheckpointed(string canonicalMapId, long headCursor) =>
-        _checkpointedCursors.AddOrUpdate(
-            canonicalMapId,
-            headCursor,
-            (_, existing) => Math.Max(existing, headCursor));
+    public Task MarkCheckpointedAsync(
+        string canonicalMapId,
+        long headCursor,
+        CancellationToken cancellationToken) =>
+        _repository.RecordCheckpointAsync(
+            new SavedMapId(canonicalMapId),
+            new SavedMapOperationCursor(headCursor),
+            cancellationToken);
 }

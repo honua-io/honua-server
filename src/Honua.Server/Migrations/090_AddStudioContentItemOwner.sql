@@ -22,14 +22,14 @@
 -- set-once-at-item-creation ownership rule when multiple drafts exist.
 --
 -- Sequence numbering per ADR-0045: `089` is the current highest prefix as of this migration.
-ALTER TABLE honua.studio_content_items
+ALTER TABLE $HonuaSchema$.studio_content_items
     ADD COLUMN IF NOT EXISTS owner_id TEXT;
 
-UPDATE honua.studio_content_items AS item
+UPDATE $HonuaSchema$.studio_content_items AS item
 SET owner_id = COALESCE(
     (
         SELECT NULLIF(BTRIM(draft.owner_id), '')
-        FROM honua.studio_package_drafts AS draft
+        FROM $HonuaSchema$.studio_package_drafts AS draft
         WHERE draft.item_id = item.item_id
           AND NULLIF(BTRIM(draft.owner_id), '') IS NOT NULL
         ORDER BY draft.created_at ASC, draft.draft_id ASC
@@ -40,5 +40,5 @@ SET owner_id = COALESCE(
 WHERE item.owner_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_items_owner_list
-    ON honua.studio_content_items (owner_id, updated_at DESC, item_id DESC)
+    ON $HonuaSchema$.studio_content_items (owner_id, updated_at DESC, item_id DESC)
     WHERE owner_id IS NOT NULL;
