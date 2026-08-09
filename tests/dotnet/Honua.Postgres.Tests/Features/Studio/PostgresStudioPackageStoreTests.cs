@@ -105,6 +105,76 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task OperationLogHead_CreateSerializesWithDraftDeletionAndRejectsDeletedDraft()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1"));
+            var mapId = draft.DraftId.ToString("D");
+
+            await using (var appendConnection = await fixture.GetConnectionAsync(schema))
+            await using (var appendTransaction = await appendConnection.BeginTransactionAsync())
+            {
+                await using (var appendCommand = appendConnection.CreateCommand())
+                {
+                    appendCommand.Transaction = appendTransaction;
+                    appendCommand.CommandText = $"""
+                        INSERT INTO "{schema}".saved_map_operation_log_heads
+                            (map_id, head_cursor, checkpoint_cursor)
+                        VALUES (@map_id, 0, 0);
+                        """;
+                    appendCommand.Parameters.AddWithValue("@map_id", mapId);
+                    await appendCommand.ExecuteNonQueryAsync();
+                }
+
+                await using var deleteConnection = await fixture.GetConnectionAsync(schema);
+                await using var deleteTransaction = await deleteConnection.BeginTransactionAsync();
+                await using var deleteCommand = deleteConnection.CreateCommand();
+                deleteCommand.Transaction = deleteTransaction;
+                deleteCommand.CommandText = $"""
+                    SET LOCAL lock_timeout = '100ms';
+                    DELETE FROM "{schema}".studio_package_drafts
+                    WHERE draft_id = @draft_id;
+                    """;
+                deleteCommand.Parameters.AddWithValue("@draft_id", draft.DraftId);
+
+                var blockedDelete = await Assert.ThrowsAsync<PostgresException>(
+                    () => deleteCommand.ExecuteNonQueryAsync());
+                blockedDelete.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable,
+                    "operation-log head creation must hold the Studio draft against concurrent deletion");
+                await deleteTransaction.RollbackAsync();
+                await appendTransaction.CommitAsync();
+            }
+
+            (await store.DeleteDraftAsync(draft.DraftId)).Should().BeTrue();
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0);
+
+            await using var recreateConnection = await fixture.GetConnectionAsync(schema);
+            await using var recreateCommand = recreateConnection.CreateCommand();
+            recreateCommand.CommandText = $"""
+                INSERT INTO "{schema}".saved_map_operation_log_heads
+                    (map_id, head_cursor, checkpoint_cursor)
+                VALUES (@map_id, 0, 0);
+                """;
+            recreateCommand.Parameters.AddWithValue("@map_id", mapId);
+
+            var rejectedCreate = await Assert.ThrowsAsync<PostgresException>(
+                () => recreateCommand.ExecuteNonQueryAsync());
+            rejectedCreate.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation,
+                "a deleted Studio draft must not be able to regain a durable operation log");
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
