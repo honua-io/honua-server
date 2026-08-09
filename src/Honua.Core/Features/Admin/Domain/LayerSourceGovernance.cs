@@ -254,12 +254,14 @@ public sealed record LayerSourceGovernance
 
     private static bool ParseWithExpression(string expression, ref int position)
     {
+        SkipWhitespace(expression, ref position);
+        var isParenthesized = position < expression.Length && expression[position] == '(';
         if (!ParsePrimary(expression, ref position))
         {
             return false;
         }
 
-        if (TryReadOperator(expression, ref position, "WITH"))
+        if (!isParenthesized && TryReadOperator(expression, ref position, "WITH"))
         {
             return TryReadIdentifier(expression, ref position, SpdxIdentifierRole.Addition);
         }

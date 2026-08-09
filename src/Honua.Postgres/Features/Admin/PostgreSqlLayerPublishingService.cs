@@ -137,7 +137,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             });
         }
 
-        return await HydrateSourceGovernanceAsync(layers, cancellationToken).ConfigureAwait(false);
+        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PublishedLayerSummary> PublishLayerAsync(
@@ -415,7 +415,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .ConfigureAwait(false);
 
         await transaction.CommitSafelyAsync(cancellationToken);
-        return await HydrateSourceGovernanceAsync(linkedLayer, cancellationToken).ConfigureAwait(false);
+        return await HydrateSourceGovernanceAsync(linkedLayer, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(
@@ -538,7 +538,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         await transaction.CommitSafelyAsync(cancellationToken);
-        return await HydrateSourceGovernanceAsync(layer, cancellationToken).ConfigureAwait(false);
+        return await HydrateSourceGovernanceAsync(layer, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(

@@ -10,6 +10,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 {
     private async Task<IReadOnlyList<PublishedLayerSummary>> HydrateSourceGovernanceAsync(
         List<PublishedLayerSummary> layers,
+        string serviceName,
         CancellationToken cancellationToken)
     {
         if (layers.Count == 0)
@@ -18,18 +19,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
-        var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
-        foreach (var publication in graph.Publications)
-        {
-            if (publication.LayerIndex is { } layerId &&
-                !metadataByLayerId.ContainsKey(layerId) &&
-                resourcesById.TryGetValue(publication.ResourceId, out var resource))
-            {
-                metadataByLayerId.Add(layerId, resource.Metadata);
-            }
-        }
-
+        var metadataByLayerId = IndexSourceGovernanceByLayer(graph, serviceName);
         return layers
             .Select(layer => metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
                 ? HydrateSourceGovernance(layer, metadata)
@@ -37,8 +27,36 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToArray();
     }
 
+    internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByLayer(
+        MetadataV2Graph graph,
+        string serviceName)
+    {
+        var serviceIds = graph.Services
+            .Where(service =>
+                string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal))
+            .Select(service => service.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
+        var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
+        foreach (var publication in graph.Publications.Where(publication =>
+                     publication.LayerIndex.HasValue &&
+                     serviceIds.Contains(publication.ServiceId)))
+        {
+            var layerId = publication.LayerIndex!.Value;
+            if (!metadataByLayerId.ContainsKey(layerId) &&
+                resourcesById.TryGetValue(publication.ResourceId, out var resource))
+            {
+                metadataByLayerId.Add(layerId, resource.Metadata);
+            }
+        }
+
+        return metadataByLayerId;
+    }
+
     private async Task<PublishedLayerSummary?> HydrateSourceGovernanceAsync(
         PublishedLayerSummary? layer,
+        string serviceName,
         CancellationToken cancellationToken)
     {
         if (layer is null)
@@ -46,7 +64,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var hydrated = await HydrateSourceGovernanceAsync([layer], cancellationToken).ConfigureAwait(false);
+        var hydrated = await HydrateSourceGovernanceAsync([layer], serviceName, cancellationToken).ConfigureAwait(false);
         return hydrated[0];
     }
 

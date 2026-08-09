@@ -3,12 +3,64 @@
 
 using System.Reflection;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.Admin;
 
 namespace Honua.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
+    [Fact]
+    public void IndexSourceGovernanceByLayer_WithSameIndexAcrossServices_SelectsRequestedService()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" }
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha", License = "MIT" }
+                },
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-beta", License = "CC0-1.0" }
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    ResourceId = "resource-alpha",
+                    ServiceId = "service-alpha",
+                    LayerIndex = 0
+                },
+                new MetadataV2Publication
+                {
+                    ResourceId = "resource-beta",
+                    ServiceId = "service-beta",
+                    LayerIndex = 0
+                }
+            ]
+        };
+
+        var alpha = PostgreSqlLayerPublishingService.IndexSourceGovernanceByLayer(graph, "alpha");
+        var beta = PostgreSqlLayerPublishingService.IndexSourceGovernanceByLayer(graph, "beta");
+
+        alpha.Should().ContainSingle().Which.Value.License.Should().Be("MIT");
+        beta.Should().ContainSingle().Which.Value.License.Should().Be("CC0-1.0");
+    }
+
     [Fact]
     public void BuildAttributesExpression_WithWideTables_ChunksJsonbBuildObjectCalls()
     {

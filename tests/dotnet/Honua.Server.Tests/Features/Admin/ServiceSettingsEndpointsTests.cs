@@ -287,6 +287,12 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
                 {
                     Href = oldLicenseUrl,
                     Rel = "license",
+                    Title = "Independent mirror"
+                },
+                new MetadataV2Link
+                {
+                    Href = oldLicenseUrl,
+                    Rel = "license",
                     Type = "text/html",
                     Title = "CC-BY-4.0",
                     Hreflang = "en",
@@ -320,12 +326,16 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         }
 
         var licenseOnlyMetadata = GetLayerMetadata(0);
-        var refreshedLicenseLink = licenseOnlyMetadata.Links.Single(link => link.Href == oldLicenseUrl);
+        var refreshedLicenseLink = licenseOnlyMetadata.Links.Single(link =>
+            link.Href == oldLicenseUrl &&
+            link.ManagedBy == LayerSourceGovernance.LinkManager);
         refreshedLicenseLink.Title.Should().Be("MIT");
         refreshedLicenseLink.Type.Should().Be("text/html");
         refreshedLicenseLink.Hreflang.Should().Be("en");
         refreshedLicenseLink.ManagedBy.Should().Be(LayerSourceGovernance.LinkManager);
         licenseOnlyMetadata.Links.Should().ContainSingle(link => link.Href == unrelatedLicenseUrl);
+        licenseOnlyMetadata.Links.Should().ContainSingle(link =>
+            link.Href == oldLicenseUrl && link.Title == "Independent mirror" && link.ManagedBy == null);
 
         using (var urlContent = new StringContent(
                    $$"""{"licenseUrl":"{{newLicenseUrl}}","sourceUrl":""}""",
@@ -350,7 +360,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         updatedMetadata.Links.Should().ContainSingle(link =>
             link.Rel == "license" && link.Href == unrelatedLicenseUrl && link.Title == null &&
             link.ManagedBy == null);
-        updatedMetadata.Links.Should().NotContain(link => link.Href == oldLicenseUrl);
+        updatedMetadata.Links.Should().ContainSingle(link =>
+            link.Href == oldLicenseUrl && link.Title == "Independent mirror" && link.ManagedBy == null);
         updatedMetadata.Links.Should().ContainSingle(link =>
             link.Rel == "describedby" && link.Href == unrelatedSourceUrl && link.Title == "Collection schema");
         updatedMetadata.Links.Should().NotContain(link => link.Href == oldSourceUrl);

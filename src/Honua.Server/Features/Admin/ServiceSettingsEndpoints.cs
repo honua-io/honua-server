@@ -645,7 +645,8 @@ internal static class ServiceSettingsEndpoints
             ? -1
             : links.FindIndex(link =>
                 string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(link.Href, currentValue, StringComparison.Ordinal));
+                string.Equals(link.Href, currentValue, StringComparison.Ordinal) &&
+                string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal));
 
         if (requestedValue is null)
         {

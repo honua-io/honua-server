@@ -159,6 +159,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    [Endpoint("GET /openapi.json")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
@@ -221,6 +222,20 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
+
+        var openApiResponse = await _client.GetAsync("/openapi.json");
+        openApiResponse.Be200Ok();
+        using (var openApiDocument = JsonDocument.Parse(await openApiResponse.Content.ReadAsStringAsync()))
+        {
+            openApiDocument.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty("Link")
+                .GetProperty("properties")
+                .TryGetProperty("hreflang", out _)
+                .Should()
+                .BeTrue();
+        }
 
         var listResponse = await _client.GetAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");

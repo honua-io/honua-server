@@ -25,6 +25,8 @@ public sealed class LayerSourceGovernanceTests
     [InlineData("MIT WITH LicenseRef-Custom")]
     [InlineData("MIT WITH GPL-2.0+")]
     [InlineData("MIT WITH DocumentRef-Document:LicenseRef-Custom")]
+    [InlineData("(MIT OR Apache-2.0) WITH LLVM-exception")]
+    [InlineData("(MIT) WITH LLVM-exception")]
     [InlineData("MIT OR")]
     [InlineData("(MIT OR Apache-2.0")]
     public void TryCreate_WithMalformedSpdxExpression_RejectsLicense(string license)
