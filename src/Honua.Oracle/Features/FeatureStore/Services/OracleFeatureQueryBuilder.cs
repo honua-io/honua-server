@@ -233,9 +233,34 @@ internal static partial class OracleFeatureQueryBuilder
         return requested =>
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(requested);
-            var match = physicalNames.FirstOrDefault(name =>
-                string.Equals(name, requested, StringComparison.OrdinalIgnoreCase));
-            return match ?? requested;
+            var exactMatch = physicalNames.FirstOrDefault(name =>
+                string.Equals(name, requested, StringComparison.Ordinal));
+            if (exactMatch is not null)
+            {
+                return exactMatch;
+            }
+
+            string? foldedMatch = null;
+            foreach (var physicalName in physicalNames)
+            {
+                if (!string.Equals(physicalName, requested, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (foldedMatch is not null &&
+                    !string.Equals(foldedMatch, physicalName, StringComparison.Ordinal))
+                {
+                    // Quoted Oracle identifiers may legitimately differ only by case. An
+                    // inexact request cannot choose between them without targeting the wrong
+                    // physical column, so leave it unchanged and let Oracle fail closed.
+                    return requested;
+                }
+
+                foldedMatch = physicalName;
+            }
+
+            return foldedMatch ?? requested;
         };
     }
 
