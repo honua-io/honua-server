@@ -135,10 +135,11 @@ COPY docker/cloud/lambda/bootstrap.sh /var/runtime/bootstrap
 # is dynamically linked against libfontconfig.so.1 / libfreetype.so.6, so the first
 # Skia P/Invoke (any map render: MapServer export, OGC API Maps, WMS GetMap) fails to
 # dlopen the native lib and surfaces as a generic 500 without them.
-# The Lambda base can lag Amazon Linux security repositories. Resolve compatible
-# distro updates at build time so newly published fixes do not wait for a base refresh.
+# The Lambda base pins its versioned repository snapshot, which can lag the
+# rolling Amazon Linux repository after security fixes ship. Resolve compatible
+# updates from the latest release at build time so fixes do not wait for a base refresh.
 # hadolint ignore=DL3041
-RUN dnf upgrade --refresh -y && \
+RUN dnf upgrade --refresh --releasever=latest -y && \
     dnf install -y krb5-libs libicu fontconfig freetype && \
     dnf clean all && \
     chmod +x /var/runtime/bootstrap /var/task/Honua.Server

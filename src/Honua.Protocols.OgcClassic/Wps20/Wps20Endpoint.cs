@@ -433,11 +433,13 @@ internal static partial class Wps20Endpoint
             MaxCharactersInDocument = RequestBodySizeGuard.ResolveMaxBodyBytes(context),
             MaxCharactersFromEntities = 0,
             IgnoreComments = true,
-            IgnoreProcessingInstructions = true,
-            ValidationType = ValidationType.Schema,
-            Schemas = Wps20RequestSchema.SchemaSet,
-            ValidationFlags = XmlSchemaValidationFlags.None
+            IgnoreProcessingInstructions = true
         };
+        // Keep these assignments explicit: the CodeQL XmlReaderSettings model traces
+        // property setters from the settings creation to the XmlReader.Create call.
+        settings.ValidationType = ValidationType.Schema;
+        settings.Schemas = Wps20RequestSchema.SchemaSet;
+        settings.ValidationFlags = XmlSchemaValidationFlags.None;
         using var reader = XmlReader.Create(context.Request.Body, settings);
         var document = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
         var root = document.Root ?? throw new WpsRequestException("MissingParameterValue", "The request document is empty.", "request");
