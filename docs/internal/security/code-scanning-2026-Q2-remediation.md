@@ -93,7 +93,7 @@ other link generator.
 | DL3008 | `Dockerfile` apt-get install | suppressed | SDK base image is digest-pinned; pinning apt versions here forces a parallel update on every digest bump. |
 | DL3008 | `docker/Dockerfile.functions{,.aot}` apt-get install | suppressed | The Functions base is digest-pinned, while the final runtime layer deliberately resolves the newest Debian security revisions available at build time. |
 | DL3005 | `docker/Dockerfile.functions{,.aot}` apt-get upgrade | suppressed | The Microsoft base digest lags its Debian security repositories; applying those compatible updates removes repository-fixable runtime CVEs. |
-| DL3041 | `docker/Dockerfile.lambda` dnf upgrade/install | suppressed | The Lambda base is digest-pinned, while the final runtime layer deliberately resolves the newest compatible Amazon Linux security revisions and required runtime libraries available at build time. |
+| DL3041 | `docker/Dockerfile.lambda` dnf upgrade/install | suppressed | The Lambda base is digest-pinned, while the final runtime layer deliberately resolves the newest compatible Amazon Linux security revisions from `--releasever=latest` and installs required runtime libraries at build time. |
 | SC2086 | `Dockerfile` dotnet restore | suppressed | `EXTRA_MSBUILD_ARGS` must word-split into separate `-p:` args; quoting it produces an invalid single argument. |
 | SC2086 | `Dockerfile` dotnet publish | suppressed | Same as above. |
 | DL3018 | `Dockerfile` apk add | suppressed | Runtime base image is digest-pinned to a specific Alpine snapshot; apk versions are deterministic for that snapshot. |
@@ -147,7 +147,9 @@ Supporting details:
 - `XmlSchemaValidationFlags.None` keeps `ProcessSchemaLocation` and
   `ProcessInlineSchema` off, so a request cannot steer the validator at any
   remote or inline schema; the `XmlSchemaSet` and its reader both set
-  `XmlResolver = null` and `DtdProcessing.Prohibit`.
+  `XmlResolver = null` and `DtdProcessing.Prohibit`. The schema properties use
+  explicit setter statements so CodeQL's `XmlReaderSettings` data-flow model
+  observes the same runtime configuration at the `XmlReader.Create` call.
 - Schema failures surface as `XmlSchemaException` (which derives from
   `SystemException`, not `XmlException`, hence the separate catch clause) and are
   mapped through the same `Exception(...)` helper as every other malformed
@@ -242,11 +244,14 @@ replacing files owned and loaded by the Functions host; they are neither
 refresh retires them on its own.
 
 The exact pinned Lambda base reported nine HIGH records on the same date: seven
-for `glib2` and two for `libacl`. Trivy names fixed versions, but `dnf upgrade`
-reported no newer packages in Amazon Linux's repository at build time. The
-runtime layer now invokes `dnf upgrade` so those advisories retire as soon as
-Amazon publishes the packages; until then they remain visible rather than being
-ignored.
+for `glib2` and two for `libacl`. Trivy named fixed versions, but the base pinned
+Amazon Linux's versioned repository snapshot and a plain `dnf upgrade` therefore
+reported no newer packages even after fixes reached the rolling repository. The
+runtime layer now invokes `dnf upgrade --refresh --releasever=latest`, so builds
+consume the newest compatible security revisions. A controlled 2026-08-09 run
+upgraded `rpm`/`rpm-libs` to `4.16.1.3-29.amzn2023.0.7`, `glib2` to
+`2.82.2-771.amzn2023`, `gawk` to `5.1.0-3.amzn2023.0.4`, and `libacl` to
+`2.4.0-1.amzn2023.0.1`, matching the fixed versions in the open Trivy alerts.
 
 ### Moving the Functions base off EOL Debian 11 (corrects an earlier conclusion)
 
