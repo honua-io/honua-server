@@ -406,7 +406,7 @@ public sealed record LayerSourceGovernance
         }
 
         var end = position + value.Length;
-        if (end < expression.Length && !char.IsWhiteSpace(expression[end]) && expression[end] != '(')
+        if (end < expression.Length && !char.IsWhiteSpace(expression[end]))
         {
             position = original;
             return false;

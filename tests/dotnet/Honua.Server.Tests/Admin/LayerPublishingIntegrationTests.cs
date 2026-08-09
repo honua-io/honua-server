@@ -154,7 +154,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
-    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures)]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
@@ -163,6 +163,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task PublishLayer_WithSourceGovernance_ProjectsConsistentlyAcrossProtocols()
     {
         const string license = "CC0-1.0";
@@ -199,9 +200,11 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
         var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
         var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
+        var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
         featureServer.Be200Ok();
         mapServer.Be200Ok();
         ogcCollection.Be200Ok();
+        stacCollection.Be200Ok();
 
         AssertGeoServicesGovernance(
             await featureServer.Content.ReadAsStringAsync(),
@@ -222,6 +225,11 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
         AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
+
+        using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
+        stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
 
         var openApiResponse = await _client.GetAsync("/openapi.json");
         openApiResponse.Be200Ok();

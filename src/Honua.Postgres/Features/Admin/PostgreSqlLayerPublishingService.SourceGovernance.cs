@@ -19,7 +19,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        var metadataByLayerId = IndexSourceGovernanceByLayer(graph, serviceName);
+        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName);
         return layers
             .Select(layer => metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
                 ? HydrateSourceGovernance(layer, metadata)
@@ -27,7 +27,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToArray();
     }
 
-    internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByLayer(
+    internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByStorageLayer(
         MetadataV2Graph graph,
         string serviceName)
     {
@@ -38,14 +38,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Select(service => service.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
         var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
+        var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
-                     publication.LayerIndex.HasValue &&
                      serviceIds.Contains(publication.ServiceId)))
         {
-            var layerId = publication.LayerIndex!.Value;
-            if (!metadataByLayerId.ContainsKey(layerId) &&
-                resourcesById.TryGetValue(publication.ResourceId, out var resource))
+            if (!resourcesById.TryGetValue(publication.ResourceId, out var resource))
+            {
+                continue;
+            }
+
+            var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
+            if (bindingId is not null &&
+                bindingsById.TryGetValue(bindingId, out var binding) &&
+                binding.StorageLayerId is { } layerId &&
+                !metadataByLayerId.ContainsKey(layerId))
             {
                 metadataByLayerId.Add(layerId, resource.Metadata);
             }

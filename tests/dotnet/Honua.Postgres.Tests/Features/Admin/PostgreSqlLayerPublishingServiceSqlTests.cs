@@ -11,7 +11,7 @@ namespace Honua.Postgres.Tests.Features.Admin;
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
     [Fact]
-    public void IndexSourceGovernanceByLayer_WithSameIndexAcrossServices_SelectsRequestedService()
+    public void IndexSourceGovernanceByStorageLayer_WithSameServiceIndex_UsesGlobalStorageIdentity()
     {
         var graph = new MetadataV2Graph
         {
@@ -30,11 +30,28 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             [
                 new MetadataV2Resource
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha", License = "MIT" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha", License = "MIT" },
+                    PrimaryStorageBindingId = "binding-alpha"
                 },
                 new MetadataV2Resource
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-beta", License = "CC0-1.0" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-beta", License = "CC0-1.0" },
+                    PrimaryStorageBindingId = "binding-beta"
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-alpha" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-beta" },
+                    ResourceId = "resource-beta",
+                    StorageLayerId = 202
                 }
             ],
             Publications =
@@ -43,22 +60,28 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 {
                     ResourceId = "resource-alpha",
                     ServiceId = "service-alpha",
+                    StorageBindingId = "binding-alpha",
                     LayerIndex = 0
                 },
                 new MetadataV2Publication
                 {
                     ResourceId = "resource-beta",
                     ServiceId = "service-beta",
+                    StorageBindingId = "binding-beta",
                     LayerIndex = 0
                 }
             ]
         };
 
-        var alpha = PostgreSqlLayerPublishingService.IndexSourceGovernanceByLayer(graph, "alpha");
-        var beta = PostgreSqlLayerPublishingService.IndexSourceGovernanceByLayer(graph, "beta");
+        var alpha = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "alpha");
+        var beta = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "beta");
 
-        alpha.Should().ContainSingle().Which.Value.License.Should().Be("MIT");
-        beta.Should().ContainSingle().Which.Value.License.Should().Be("CC0-1.0");
+        alpha.Should().ContainSingle().Which.Should().Be(new KeyValuePair<int, MetadataV2ObjectMetadata>(
+            101,
+            graph.Resources[0].Metadata));
+        beta.Should().ContainSingle().Which.Should().Be(new KeyValuePair<int, MetadataV2ObjectMetadata>(
+            202,
+            graph.Resources[1].Metadata));
     }
 
     [Fact]
