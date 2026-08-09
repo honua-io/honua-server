@@ -151,6 +151,94 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task UpsertLinkedLayerMetadataV2Async(
+        string serviceName,
+        PublishedLayerSummary layer,
+        CancellationToken cancellationToken)
+    {
+        var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        var updatedGraph = BuildLinkedLayerMetadataV2Graph(
+            graph,
+            serviceName,
+            layer.LayerId,
+            layer.LayerName,
+            layer.Srid,
+            DateTimeOffset.UtcNow);
+        if (updatedGraph is null)
+        {
+            return;
+        }
+
+        var validation = MetadataV2GraphValidator.Validate(updatedGraph);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Linked layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
+        }
+
+        await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static MetadataV2Graph? BuildLinkedLayerMetadataV2Graph(
+        MetadataV2Graph graph,
+        string serviceName,
+        int layerId,
+        string layerName,
+        int srid,
+        DateTimeOffset now)
+    {
+        var binding = graph.StorageBindings.FirstOrDefault(candidate => candidate.StorageLayerId == layerId);
+        var resource = binding is null
+            ? null
+            : graph.Resources.FirstOrDefault(candidate =>
+                string.Equals(candidate.Metadata.Id, binding.ResourceId, StringComparison.Ordinal));
+        if (binding is null || resource is null)
+        {
+            return null;
+        }
+
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var service = BuildPublishedService(graph, serviceName, srid, now);
+        var featurePublication = BuildPublishedPublication(
+            service,
+            resource,
+            binding,
+            layerIdText,
+            layerName,
+            MetadataV2PublicationType.EsriFeatureLayer,
+            isPrimary: true,
+            idPrefix: "pub",
+            now);
+        var stacPublication = BuildPublishedPublication(
+            service,
+            resource,
+            binding,
+            layerIdText,
+            layerName,
+            MetadataV2PublicationType.StacCollection,
+            isPrimary: false,
+            idPrefix: "pub-stac",
+            now);
+        service = service with
+        {
+            PublicationIds = service.PublicationIds
+                .Append(featurePublication.Metadata.Id)
+                .Append(stacPublication.Metadata.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        };
+
+        return graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = now,
+            Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
+            Publications = UpsertPublication(
+                UpsertPublication(graph.Publications, featurePublication),
+                stacPublication)
+        };
+    }
+
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran
     // but the compat/bootstrap compile has not). In that case we start from an

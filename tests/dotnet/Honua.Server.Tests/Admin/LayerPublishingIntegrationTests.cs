@@ -228,6 +228,15 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
         stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
+        var stacProviders = stacDocument.RootElement.GetProperty("providers");
+        stacProviders.GetArrayLength().Should().Be(1);
+        var stacProvider = stacProviders[0];
+        stacProvider.GetProperty("name").GetString().Should().Be(publisher);
+        stacProvider.GetProperty("roles")
+            .EnumerateArray()
+            .Select(role => role.GetString())
+            .Should()
+            .Equal("producer");
         AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
         AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
 

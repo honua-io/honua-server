@@ -414,6 +414,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
             .ConfigureAwait(false);
 
+        if (linkedLayer is not null)
+        {
+            await UpsertLinkedLayerMetadataV2Async(normalizedService, linkedLayer, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await transaction.CommitSafelyAsync(cancellationToken);
         return await HydrateSourceGovernanceAsync(linkedLayer, normalizedService, cancellationToken).ConfigureAwait(false);
     }

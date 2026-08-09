@@ -133,6 +133,13 @@ internal sealed class StacMappingService
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
             License = resource.ResolveLicense(),
+            Providers = string.IsNullOrWhiteSpace(resource.Metadata.Publisher)
+                ? null
+                : ImmutableArray.Create(new StacProvider
+                {
+                    Name = resource.Metadata.Publisher.Trim(),
+                    Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Producer)
+                }),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
             Links = links.ToImmutable(),

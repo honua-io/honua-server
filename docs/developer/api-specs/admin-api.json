@@ -22477,6 +22477,26 @@
             "type": "string",
             "description": "Layer description"
           },
+          "license": {
+            "type": "string",
+            "description": "SPDX license expression or proprietary, when authored"
+          },
+          "attribution": {
+            "type": "string",
+            "description": "Public attribution, when authored"
+          },
+          "publisher": {
+            "type": "string",
+            "description": "Data producer or source organization, when authored"
+          },
+          "licenseUrl": {
+            "type": "string",
+            "description": "Absolute license documentation URL, when authored"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "description": "Absolute source documentation URL, when authored"
+          },
           "geometryType": {
             "type": "string",
             "description": "Geometry type"
@@ -22535,6 +22555,31 @@
             "type": "string",
             "maxLength": 1000,
             "description": "Optional description"
+          },
+          "license": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Optional SPDX license expression or the literal proprietary"
+          },
+          "attribution": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Optional public attribution"
+          },
+          "publisher": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Optional data producer or source organization"
+          },
+          "licenseUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional absolute HTTP(S) URL for license documentation"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional absolute HTTP(S) URL for source documentation"
           },
           "geometryColumn": {
             "type": "string",
@@ -24411,6 +24456,26 @@
           "layerName": {
             "type": "string"
           },
+          "license": {
+            "type": "string",
+            "description": "SPDX license expression or proprietary, when authored"
+          },
+          "attribution": {
+            "type": "string",
+            "description": "Public attribution, when authored"
+          },
+          "publisher": {
+            "type": "string",
+            "description": "Data producer or source organization, when authored"
+          },
+          "licenseUrl": {
+            "type": "string",
+            "description": "Absolute license documentation URL, when authored"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "description": "Absolute source documentation URL, when authored"
+          },
           "accessPolicy": {
             "$ref": "#/components/schemas/AccessPolicyResponse"
           },
@@ -24540,6 +24605,31 @@
       "UpdateLayerMetadataRequest": {
         "type": "object",
         "properties": {
+          "license": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "SPDX license expression or proprietary; null preserves and an empty string clears"
+          },
+          "attribution": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Attribution text; null preserves and an empty string clears"
+          },
+          "publisher": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Publisher text; null preserves and an empty string clears"
+          },
+          "licenseUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "License documentation HTTP(S) URL; null preserves and an empty string clears"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Source documentation HTTP(S) URL; null preserves and an empty string clears"
+          },
           "accessPolicy": {
             "$ref": "#/components/schemas/UpdateAccessPolicyRequest"
           },
