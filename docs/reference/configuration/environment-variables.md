@@ -107,7 +107,7 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |
-| `Limits__Imports__MaxSyncImportSize` | `52428800` (50 MiB) | Max file size for synchronous imports; larger files run as jobs. |
+| `Limits__Imports__MaxSyncImportSize` | `52428800` (50 MiB) | Max file size for general synchronous imports; direct PostGIS raster uploads use the lower of this value and the fixed 50 MiB serving-process ceiling. |
 | `Limits__Imports__MaxImportSize` | `524288000` (500 MiB) | Max file size for any import. |
 | `Limits__Imports__MaxPreviewFeatures` | `100` | Max features returned by a preview. |
 | `Limits__Imports__BatchSize` | `1000` | Insert batch size for import writes. |
