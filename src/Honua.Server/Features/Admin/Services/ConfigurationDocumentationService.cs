@@ -428,7 +428,7 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewSize", "Limits__Imports__MaxPreviewSize", "integer",
                     "Maximum file size for preview in bytes", FileSizeConstants.TenMB, opts.MaxPreviewSize, "Range: 1MB-50MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxSyncImportSize", "Limits__Imports__MaxSyncImportSize", "integer",
-                    "Maximum file size for sync import in bytes", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
+                    "Maximum file size for general synchronous imports in bytes; direct PostGIS raster imports use the lower of this value and the fixed 50 MiB serving-process ceiling", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxImportSize", "Limits__Imports__MaxImportSize", "integer",
                     "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
