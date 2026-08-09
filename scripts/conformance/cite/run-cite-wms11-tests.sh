@@ -332,6 +332,7 @@ echo -e "\n${BLUE}CITE Test Results Analysis${NC}"
 echo "==============================="
 
 RESULTS_FOUND=false
+COMPLETE_RESULTS=false
 if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; then
     RESULTS_FOUND=true
     echo "Results saved to: $CITE_RESULTS_DIR/"
@@ -344,6 +345,11 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
         FAILED_TESTS=$(sed -n 's/.*failed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         SKIPPED_TESTS=$(sed -n 's/.*skipped="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         CANTTELL_TESTS=0
+        if [[ "$TOTAL_TESTS" =~ ^[0-9]+$ && "$PASSED_TESTS" =~ ^[0-9]+$ &&
+              "$FAILED_TESTS" =~ ^[0-9]+$ && "$SKIPPED_TESTS" =~ ^[0-9]+$ ]] &&
+           grep -q '</testng-results>' "$RESULTS_XML"; then
+            COMPLETE_RESULTS=true
+        fi
     else
         SESSION_DIR=$(find "$CITE_RESULTS_DIR" -maxdepth 1 -type d -name "cite-wms11-session-*" | sort | tail -n 1)
         RESULT_CODE_LINES=""
@@ -417,7 +423,10 @@ EOF_SUMMARY
 
 echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-wms11-summary.md${NC}"
 
-if [[ "$RESULTS_FOUND" != "true" ]]; then
+if [[ $runner_exit -ne 0 && "$COMPLETE_RESULTS" != "true" ]]; then
+    echo -e "${RED}CITE runner failed before a complete TestNG result artifact was produced.${NC}"
+    exit "$runner_exit"
+elif [[ "$RESULTS_FOUND" != "true" ]]; then
     echo -e "${RED}CITE testing failed to execute properly.${NC}"
     exit 2
 elif [[ $FAILED_TESTS -gt 0 || $SKIPPED_TESTS -gt 0 || $CANTTELL_TESTS -gt 0 ]]; then
