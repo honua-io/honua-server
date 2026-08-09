@@ -18,6 +18,8 @@ public sealed class CollaborationCapabilitySourceTests
         var repository = Substitute.For<ISavedMapOperationLogRepository>();
         repository.SupportsReplicaSharedReplay.Returns(true);
         repository.SupportsRestartDurableReplay.Returns(true);
+        repository.SupportsRestartDurableCheckpointCursors.Returns(true);
+        repository.SupportsRestartDurableCheckpointing.Returns(true);
         var backplane = Substitute.For<ICollaborationSessionBackplane>();
         backplane.SupportsCrossReplicaDelivery.Returns(true);
 
@@ -30,6 +32,24 @@ public sealed class CollaborationCapabilitySourceTests
         capabilities.Cursors.Should().BeFalse("pub/sub does not retain replica-wide presence");
         capabilities.Selections.Should().BeFalse();
         capabilities.Follow.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Current_RestartDurableReplayWithoutDurableCheckpointCursor_DoesNotAdvertiseCheckpoints()
+    {
+        var repository = Substitute.For<ISavedMapOperationLogRepository>();
+        repository.SupportsReplicaSharedReplay.Returns(true);
+        repository.SupportsRestartDurableReplay.Returns(true);
+        repository.SupportsRestartDurableCheckpointCursors.Returns(false);
+        repository.SupportsRestartDurableCheckpointing.Returns(false);
+
+        var capabilities = new CollaborationCapabilitySource(
+            SavedMapCollaborationTopology.ForMultiReplica(false),
+            repository,
+            Substitute.For<ICollaborationSessionBackplane>()).Current;
+
+        capabilities.Replay.Should().BeTrue();
+        capabilities.Checkpoints.Should().BeFalse();
     }
 
     [UnitTest]
