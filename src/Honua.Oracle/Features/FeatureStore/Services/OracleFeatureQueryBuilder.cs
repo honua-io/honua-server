@@ -198,7 +198,10 @@ internal static partial class OracleFeatureQueryBuilder
         IEnumerable<string> columns = attributeColumns;
         if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
         {
-            var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+            var resolveColumnName = CreateColumnNameResolver(
+                mapping,
+                attributeColumns,
+                rejectAmbiguousMatch: true);
             var requested = new HashSet<string>(
                 query.OutFields.Value.Select(resolveColumnName),
                 StringComparer.Ordinal);
@@ -214,7 +217,8 @@ internal static partial class OracleFeatureQueryBuilder
 
     private static Func<string, string> CreateColumnNameResolver(
         OracleLayerMapping mapping,
-        IReadOnlyList<string>? attributeColumns)
+        IReadOnlyList<string>? attributeColumns,
+        bool rejectAmbiguousMatch = false)
     {
         // Oracle folds unquoted DDL identifiers to upper-case, whereas protocol requests
         // commonly use lower-case field names. We always quote identifiers to keep the
@@ -260,7 +264,16 @@ internal static partial class OracleFeatureQueryBuilder
                 {
                     // Quoted Oracle identifiers may legitimately differ only by case. An
                     // inexact request cannot choose between them without targeting the wrong
-                    // physical column, so leave it unchanged and let Oracle fail closed.
+                    // physical column. Projection must reject the ambiguity before it can
+                    // silently omit both attributes; WHERE leaves the name unresolved so Oracle
+                    // still fails closed instead of targeting either physical column.
+                    if (rejectAmbiguousMatch)
+                    {
+                        throw new ArgumentException(
+                            $"Oracle field name '{requested}' ambiguously matches case-distinct columns.",
+                            nameof(requested));
+                    }
+
                     return requested;
                 }
 

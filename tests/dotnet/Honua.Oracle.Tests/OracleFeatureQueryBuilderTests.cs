@@ -159,6 +159,18 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_AmbiguousCaseDistinctOutField_Throws()
+    {
+        var query = new FeatureQuery { OutFields = ["Name"] };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            OracleFeatureQueryBuilder.BuildSelectQuery(
+                BuildMapping(), query, ["NAME", "name"]));
+
+        Assert.Contains("ambiguously matches", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WhereFieldAmbiguouslyMatchesCaseDistinctColumns_FailsClosed()
     {
         var query = new FeatureQuery { Where = "Name = 'Alpha'" };
