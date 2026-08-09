@@ -26,7 +26,7 @@ public sealed class PostgresRasterImportAdmissionTests
                 bufferSize: 1,
                 FileOptions.Asynchronous))
             {
-                await file.WriteAsync([0x49, 0x49, 0x2A, 0x00]);
+                await file.WriteAsync(new byte[] { 0x49, 0x49, 0x2A, 0x00 });
                 file.SetLength(FileSizeConstants.MaxDirectRasterImportSize + 1);
             }
 
