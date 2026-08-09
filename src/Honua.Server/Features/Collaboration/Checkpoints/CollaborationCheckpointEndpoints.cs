@@ -181,10 +181,11 @@ internal static class CollaborationCheckpointEndpoints
         // The immutable version and its saved-map cursor association commit atomically in the
         // Studio store. Advancing the operation-log cursor is a second durable write, so recover a
         // version that committed before a cancellation/process failure prevented that advancement.
-        // This must happen BEFORE applying replayed operations to the mutable draft: otherwise a
-        // retry could overwrite newer direct draft edits with an already-versioned absolute-state
-        // operation or mint a duplicate immutable version.
-        while (replay.Status == SavedMapOperationReplayStatus.Ok)
+        // This must happen before both applying replayed operations and rejecting an expired replay
+        // cursor: a committed version can cover the pruned prefix and advance the cursor back into
+        // the retained window. Otherwise a retry could overwrite newer direct draft edits, mint a
+        // duplicate immutable version, or fail closed despite having a durable continuity proof.
+        while (replay.SinceCursor.Value <= replay.HeadCursor.Value)
         {
             var recovered = await lifecycle.GetLatestCheckpointVersionAsync(
                     canonicalMapId,

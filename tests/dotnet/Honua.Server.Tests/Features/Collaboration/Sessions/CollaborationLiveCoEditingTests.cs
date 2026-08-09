@@ -601,6 +601,64 @@ public sealed class CollaborationLiveCoEditingTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_CommittedCursorFallsBehindReplayWindow_RecoversBeforeReplayingSuffix()
+    {
+        using var factory = CreateFactory(
+            retainedOperationCount: 1,
+            restartDurableOperationLog: true,
+            decorateOperationLog: static inner => new FailFirstCheckpointRecordOperationLog(inner));
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "op-recovered-prefix",
+            "SetViewport",
+            baseCursor: 0,
+            payload: """{"zoom":5}""");
+
+        using (var firstContent = new StringContent(
+                   """{"changeNote":"committed prefix"}""", Encoding.UTF8, "application/json"))
+        using (var firstResponse = await client.PostAsync(
+                   $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", firstContent))
+        {
+            firstResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        Guid committedVersionId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            committedVersionId = (await lifecycle.ListVersionsAsync(draft.ItemId))
+                .Should().ContainSingle().Which.VersionId;
+        }
+
+        // Cursor 2 displaces cursor 1 from the one-operation window. The persisted checkpoint
+        // cursor is still 0, but the committed version proves that cursor 1 was already captured.
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "op-retained-suffix",
+            "SetLayerVisibility",
+            baseCursor: 1,
+            payload: """{"layerId":"parcels","visible":false}""");
+
+        var checkpoint = await CheckpointAsync(client, mapId, "after recovery");
+        checkpoint.GetProperty("versionId").GetGuid().Should().NotBe(committedVersionId);
+        checkpoint.GetProperty("headCursor").GetInt64().Should().Be(2);
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().HaveCount(2);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
         using var factory = CreateFactory(restartDurableOperationLog: true);
