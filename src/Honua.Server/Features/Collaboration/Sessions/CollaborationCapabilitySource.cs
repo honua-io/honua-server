@@ -75,14 +75,15 @@ internal sealed class CollaborationCapabilitySource
             // override alone — and the no-op backplane would otherwise promise live presence
             // that participants on other replicas never receive (honua-server#2999 review).
             //
-            // Checkpointing additionally needs a restart-durable log: it mints an immutable
-            // version and must not claim completeness it cannot prove. It proves that from the
-            // LOG, so it keys on the shared-log condition rather than on live delivery.
+            // Checkpointing additionally needs restart-durable operation replay AND a durable
+            // checkpoint cursor: it mints an immutable version and must not claim completeness
+            // it cannot prove. It proves that from the LOG, so it keys on the shared-log
+            // condition rather than on live delivery.
             return CollaborationCapabilities.Default with
             {
                 Operations = sharedLog && orderedOperations,
                 Replay = sharedLog,
-                Checkpoints = sharedLog && _log.SupportsRestartDurableReplay,
+                Checkpoints = sharedLog && _log.SupportsRestartDurableCheckpointing,
                 Cursors = replicaWidePresence,
                 Selections = replicaWidePresence,
                 Follow = replicaWidePresence,

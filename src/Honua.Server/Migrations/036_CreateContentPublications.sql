@@ -17,7 +17,7 @@
 -- ---------------------------------------------------------------------------
 -- Append-only immutable versions.
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS honua.content_publication_versions (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.content_publication_versions (
     version_id               UUID         NOT NULL PRIMARY KEY,
     publication_id           UUID         NOT NULL,
     revision                 BIGINT       NOT NULL,
@@ -50,28 +50,28 @@ CREATE TABLE IF NOT EXISTS honua.content_publication_versions (
 -- Append-only enforcement: block UPDATE / DELETE so historical content versions
 -- (and their provenance) cannot be rewritten. Rollback and republish move the route
 -- pointer only; they never mutate a version row.
-DROP RULE IF EXISTS content_publication_versions_no_update ON honua.content_publication_versions;
-CREATE RULE content_publication_versions_no_update AS ON UPDATE TO honua.content_publication_versions DO INSTEAD NOTHING;
-DROP RULE IF EXISTS content_publication_versions_no_delete ON honua.content_publication_versions;
-CREATE RULE content_publication_versions_no_delete AS ON DELETE TO honua.content_publication_versions DO INSTEAD NOTHING;
+DROP RULE IF EXISTS content_publication_versions_no_update ON $HonuaSchema$.content_publication_versions;
+CREATE RULE content_publication_versions_no_update AS ON UPDATE TO $HonuaSchema$.content_publication_versions DO INSTEAD NOTHING;
+DROP RULE IF EXISTS content_publication_versions_no_delete ON $HonuaSchema$.content_publication_versions;
+CREATE RULE content_publication_versions_no_delete AS ON DELETE TO $HonuaSchema$.content_publication_versions DO INSTEAD NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_content_publication_versions_pub
-    ON honua.content_publication_versions (publication_id, revision DESC);
+    ON $HonuaSchema$.content_publication_versions (publication_id, revision DESC);
 CREATE INDEX IF NOT EXISTS idx_content_publication_versions_slug
-    ON honua.content_publication_versions (route_slug);
+    ON $HonuaSchema$.content_publication_versions (route_slug);
 CREATE INDEX IF NOT EXISTS idx_content_publication_versions_kind
-    ON honua.content_publication_versions (kind);
+    ON $HonuaSchema$.content_publication_versions (kind);
 CREATE INDEX IF NOT EXISTS idx_content_publication_versions_source_package
-    ON honua.content_publication_versions (source_package_id)
+    ON $HonuaSchema$.content_publication_versions (source_package_id)
     WHERE source_package_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_content_publication_versions_job
-    ON honua.content_publication_versions (job_id)
+    ON $HonuaSchema$.content_publication_versions (job_id)
     WHERE job_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- Mutable route pointer (exactly one per publication).
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS honua.content_publication_routes (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.content_publication_routes (
     publication_id             UUID         NOT NULL PRIMARY KEY,
     route_slug                 TEXT         NOT NULL,
     route_path                 TEXT         NOT NULL,
@@ -93,19 +93,19 @@ CREATE TABLE IF NOT EXISTS honua.content_publication_routes (
 
 -- A route slug resolves to exactly one publication.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_content_publication_routes_slug
-    ON honua.content_publication_routes (route_slug);
+    ON $HonuaSchema$.content_publication_routes (route_slug);
 CREATE INDEX IF NOT EXISTS idx_content_publication_routes_kind
-    ON honua.content_publication_routes (kind);
+    ON $HonuaSchema$.content_publication_routes (kind);
 CREATE INDEX IF NOT EXISTS idx_content_publication_routes_active_version
-    ON honua.content_publication_routes (active_version_id);
+    ON $HonuaSchema$.content_publication_routes (active_version_id);
 -- Containment index supports public-link id/hash lookups within the policy sidecar.
 CREATE INDEX IF NOT EXISTS idx_content_publication_routes_policy
-    ON honua.content_publication_routes USING GIN (policy jsonb_path_ops);
+    ON $HonuaSchema$.content_publication_routes USING GIN (policy jsonb_path_ops);
 
 -- ---------------------------------------------------------------------------
 -- Append-only event / audit log.
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS honua.content_publication_events (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.content_publication_events (
     event_seq       BIGSERIAL    NOT NULL PRIMARY KEY,
     event_id        UUID         NOT NULL UNIQUE,
     publication_id  UUID         NOT NULL,
@@ -122,17 +122,17 @@ CREATE TABLE IF NOT EXISTS honua.content_publication_events (
         'public-link-create','public-link-revoke','public-link-denied','embed-denied'))
 );
 
-DROP RULE IF EXISTS content_publication_events_no_update ON honua.content_publication_events;
-CREATE RULE content_publication_events_no_update AS ON UPDATE TO honua.content_publication_events DO INSTEAD NOTHING;
-DROP RULE IF EXISTS content_publication_events_no_delete ON honua.content_publication_events;
-CREATE RULE content_publication_events_no_delete AS ON DELETE TO honua.content_publication_events DO INSTEAD NOTHING;
+DROP RULE IF EXISTS content_publication_events_no_update ON $HonuaSchema$.content_publication_events;
+CREATE RULE content_publication_events_no_update AS ON UPDATE TO $HonuaSchema$.content_publication_events DO INSTEAD NOTHING;
+DROP RULE IF EXISTS content_publication_events_no_delete ON $HonuaSchema$.content_publication_events;
+CREATE RULE content_publication_events_no_delete AS ON DELETE TO $HonuaSchema$.content_publication_events DO INSTEAD NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_content_publication_events_pub
-    ON honua.content_publication_events (publication_id, event_seq DESC);
+    ON $HonuaSchema$.content_publication_events (publication_id, event_seq DESC);
 
-COMMENT ON TABLE honua.content_publication_versions IS
+COMMENT ON TABLE $HonuaSchema$.content_publication_versions IS
     'Append-only immutable content publication versions for Studio-generated artifacts (#1183).';
-COMMENT ON TABLE honua.content_publication_routes IS
+COMMENT ON TABLE $HonuaSchema$.content_publication_routes IS
     'Mutable server-owned route pointer (active version, rollback pointer, policy) per publication (#1183).';
-COMMENT ON TABLE honua.content_publication_events IS
+COMMENT ON TABLE $HonuaSchema$.content_publication_events IS
     'Append-only content publication operation/audit event log (#1183).';

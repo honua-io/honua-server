@@ -19,6 +19,162 @@ namespace Honua.Postgres.Tests.Features.Studio;
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task CheckpointVersion_AssociationCommitsWithVersionAndSupportsRecoveryLookup()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1"));
+            var mapId = draft.DraftId.ToString("D");
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    INSERT INTO "{schema}".saved_map_operation_log_heads
+                        (map_id, head_cursor, checkpoint_cursor)
+                    VALUES (@map_id, 4, 0);
+                    INSERT INTO "{schema}".saved_map_operations
+                        (map_id, server_cursor, operation_id, actor_id, base_cursor,
+                         operation_kind, payload, accepted_at)
+                    VALUES (@map_id, 1, 'op-delete-cascade', 'tester', 0,
+                            'SetViewport', jsonb_build_object(), now());
+                    """;
+                command.Parameters.AddWithValue("@map_id", mapId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var version = await store.CreateCheckpointVersionAsync(
+                draft,
+                "checkpoint",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 0, throughCursor: 3))
+                .Should().BeNull();
+            var recovered = await store.GetLatestCheckpointVersionAsync(
+                mapId,
+                afterCursor: 0,
+                throughCursor: 4);
+            recovered.Should().NotBeNull();
+            recovered!.Version.VersionId.Should().Be(version.VersionId);
+            recovered.Checkpoint.OperationCursor.Should().Be(4);
+
+            await store.AcknowledgeCheckpointVersionAsync(version.VersionId);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 0, throughCursor: 4))
+                .Should().BeNull();
+
+            var repeated = await store.CreateCheckpointVersionAsync(
+                draft,
+                "same cursor",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+            repeated.VersionId.Should().NotBe(version.VersionId);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))!
+                .Version.VersionId.Should().Be(repeated.VersionId);
+
+            // The endpoint records the operation-log cursor before its best-effort explicit
+            // acknowledgement. Those writes must commit atomically so a process failure between
+            // the calls cannot leave this already-reflected completion recoverable. Exercise an
+            // unchanged cursor as well: PostgreSQL still fires the UPDATE trigger at cursor 4.
+            await RecordCheckpointCursorAsync(schema, mapId, checkpointCursor: 4);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))
+                .Should().BeNull();
+
+            var sameCursorAfterAdvance = await store.CreateCheckpointVersionAsync(
+                draft,
+                "new same-cursor checkpoint",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+            await RecordCheckpointCursorAsync(schema, mapId, checkpointCursor: 4);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))
+                .Should().BeNull();
+            sameCursorAfterAdvance.VersionId.Should().NotBe(repeated.VersionId);
+
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(5);
+            (await store.DeleteDraftAsync(draft.DraftId)).Should().BeTrue();
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0,
+                "deleting the Studio draft must atomically cascade its durable collaboration state");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task OperationLogHead_CreateSerializesWithDraftDeletionAndRejectsDeletedDraft()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1"));
+            var mapId = draft.DraftId.ToString("D");
+
+            await using (var appendConnection = await fixture.GetConnectionAsync(schema))
+            await using (var appendTransaction = await appendConnection.BeginTransactionAsync())
+            {
+                await using (var appendCommand = appendConnection.CreateCommand())
+                {
+                    appendCommand.Transaction = appendTransaction;
+                    appendCommand.CommandText = $"""
+                        INSERT INTO "{schema}".saved_map_operation_log_heads
+                            (map_id, head_cursor, checkpoint_cursor)
+                        VALUES (@map_id, 0, 0);
+                        """;
+                    appendCommand.Parameters.AddWithValue("@map_id", mapId);
+                    await appendCommand.ExecuteNonQueryAsync();
+                }
+
+                await using var deleteConnection = await fixture.GetConnectionAsync(schema);
+                await using var deleteTransaction = await deleteConnection.BeginTransactionAsync();
+                await using var deleteCommand = deleteConnection.CreateCommand();
+                deleteCommand.Transaction = deleteTransaction;
+                deleteCommand.CommandText = $"""
+                    SET LOCAL lock_timeout = '100ms';
+                    DELETE FROM "{schema}".studio_package_drafts
+                    WHERE draft_id = @draft_id;
+                    """;
+                deleteCommand.Parameters.AddWithValue("@draft_id", draft.DraftId);
+
+                var blockedDelete = await Assert.ThrowsAsync<PostgresException>(
+                    () => deleteCommand.ExecuteNonQueryAsync());
+                blockedDelete.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable,
+                    "operation-log head creation must hold the Studio draft against concurrent deletion");
+                await deleteTransaction.RollbackAsync();
+                await appendTransaction.CommitAsync();
+            }
+
+            (await store.DeleteDraftAsync(draft.DraftId)).Should().BeTrue();
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0);
+
+            await using var recreateConnection = await fixture.GetConnectionAsync(schema);
+            await using var recreateCommand = recreateConnection.CreateCommand();
+            recreateCommand.CommandText = $"""
+                INSERT INTO "{schema}".saved_map_operation_log_heads
+                    (map_id, head_cursor, checkpoint_cursor)
+                VALUES (@map_id, 0, 0);
+                """;
+            recreateCommand.Parameters.AddWithValue("@map_id", mapId);
+
+            var rejectedCreate = await Assert.ThrowsAsync<PostgresException>(
+                () => recreateCommand.ExecuteNonQueryAsync());
+            rejectedCreate.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation,
+                "a deleted Studio draft must not be able to regain a durable operation log");
+            (await CountSavedMapCollaborationRowsAsync(schema, mapId)).Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -545,6 +701,10 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "036_CreateContentPublications.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
+                     "092_CreateSavedMapOperationLog.sql",
+                     "093_EnsureConfiguredStudioPackageLifecycle.sql",
+                     "094_CreateSavedMapCheckpointVersionRecovery.sql",
+                     "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -555,7 +715,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     {
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
-        sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
         await fixture.ExecuteAsync(sql, schema);
     }
 
@@ -582,6 +742,35 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             WHERE version_id = @version_id
             """;
         command.Parameters.AddWithValue("@version_id", versionId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private async Task RecordCheckpointCursorAsync(string schema, string mapId, long checkpointCursor)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE "{schema}".saved_map_operation_log_heads
+            SET checkpoint_cursor = GREATEST(checkpoint_cursor, @checkpoint_cursor),
+                updated_at = @updated_at
+            WHERE map_id = @map_id
+            """;
+        command.Parameters.AddWithValue("@checkpoint_cursor", checkpointCursor);
+        command.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("@map_id", mapId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<int> CountSavedMapCollaborationRowsAsync(string schema, string mapId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT (SELECT COUNT(*) FROM "{schema}".saved_map_operation_log_heads WHERE map_id = @map_id)
+                 + (SELECT COUNT(*) FROM "{schema}".saved_map_operations WHERE map_id = @map_id)
+                 + (SELECT COUNT(*) FROM "{schema}".saved_map_checkpoint_versions WHERE map_id = @map_id)
+            """;
+        command.Parameters.AddWithValue("@map_id", mapId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 

@@ -64,6 +64,44 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        if (_bridges.ContainsKey(draft.Family))
+        {
+            throw new NotSupportedException(
+                $"Checkpoint version persistence is unavailable for bridged family '{draft.Family}'.");
+        }
+
+        return _inner.CreateCheckpointVersionAsync(
+            draft,
+            changeNote,
+            actorId,
+            checkpoint,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default) =>
+        _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
+
+    /// <inheritdoc />
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default) =>
+        _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         foreach (var bridge in _bridges.Values)
