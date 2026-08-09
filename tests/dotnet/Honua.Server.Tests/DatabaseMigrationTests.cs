@@ -75,6 +75,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
             .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
             .Build();
 
@@ -179,6 +180,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
             .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
             .Build();
 
@@ -406,6 +408,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
             .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
             .Build();
 
@@ -495,6 +498,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             .PostgresqlDatabase(connectionStringBuilder.ToString(), _schemaName)
             .JournalToPostgresqlTable(_schemaName, "schema_versions")
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
             .Build();
 
@@ -617,6 +621,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(invalidConnectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetAssembly(typeof(Program))!)
+            .WithVariable("HonuaSchema", "\"honua\"")
             .WithTransaction()
             .Build();
 

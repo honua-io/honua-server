@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -176,6 +177,53 @@ internal static class CollaborationCheckpointEndpoints
         // to another field would be silently dropped).
         var replay = await operationLog.ReplayPendingAsync(canonicalMapId, context.RequestAborted)
             .ConfigureAwait(false);
+
+        // The immutable version and its saved-map cursor association commit atomically in the
+        // Studio store. Advancing the operation-log cursor is a second durable write, so recover a
+        // version that committed before a cancellation/process failure prevented that advancement.
+        // This must happen before both applying replayed operations and rejecting an expired replay
+        // cursor: a committed version can cover the pruned prefix and advance the cursor back into
+        // the retained window. Otherwise a retry could overwrite newer direct draft edits, mint a
+        // duplicate immutable version, or fail closed despite having a durable continuity proof.
+        while (replay.SinceCursor.Value <= replay.HeadCursor.Value)
+        {
+            var recovered = await lifecycle.GetLatestCheckpointVersionAsync(
+                    canonicalMapId,
+                    replay.SinceCursor.Value,
+                    replay.HeadCursor.Value,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+            if (recovered is null)
+            {
+                break;
+            }
+
+            if (recovered.Version.ItemId != draft.ItemId ||
+                recovered.Version.SourceDraftId != draft.DraftId)
+            {
+                throw new InvalidDataException(
+                    "Saved-map checkpoint version association does not match the authorized Studio draft.");
+            }
+
+            await operationLog.MarkCheckpointedAsync(
+                    canonicalMapId,
+                    recovered.Checkpoint.OperationCursor,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+            await lifecycle.AcknowledgeCheckpointVersionAsync(
+                    recovered.Version.VersionId,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+
+            // Recovery proves only that the older request's immutable version committed. The
+            // current request has no durable idempotency identity, and direct Studio edits may
+            // have landed after that commit, so it must still checkpoint the current draft even
+            // when the recovered cursor equals the head. Refreshing replay after the cursor repair
+            // avoids applying the recovered operation prefix twice.
+            replay = await operationLog.ReplayPendingAsync(canonicalMapId, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+
         if (replay.Status == SavedMapOperationReplayStatus.ResyncRequired)
         {
             return StandardErrorHelpers.CreateConflict(
@@ -243,11 +291,16 @@ internal static class CollaborationCheckpointEndpoints
             // cursor below, the replayed operations would be permanently skipped by every later
             // checkpoint. Failing closed here leaves the cursor unadvanced, so a retry replays the
             // same operations onto the current draft (honua-server#2999 review).
-            var version = await lifecycle.SaveDraftAsVersionAsync(
+            var version = await lifecycle.SaveDraftAsCheckpointVersionAsync(
                     draftId,
                     BuildChangeNote(request.ChangeNote, supersededOperation),
                     actorId,
                     appliedGeneration,
+                    new StudioVersionCheckpoint
+                    {
+                        MapId = canonicalMapId,
+                        OperationCursor = replay.HeadCursor.Value,
+                    },
                     context.RequestAborted)
                 .ConfigureAwait(false);
             if (version is null)
@@ -258,35 +311,22 @@ internal static class CollaborationCheckpointEndpoints
             // Only after the immutable version is durably saved: later checkpoints replay just
             // the suffix after this head, so a long session stays checkpointable after the
             // already-persisted prefix ages out of the retained window.
-            operationLog.MarkCheckpointed(canonicalMapId, replay.HeadCursor.Value);
+            await operationLog.MarkCheckpointedAsync(
+                    canonicalMapId,
+                    replay.HeadCursor.Value,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+            await lifecycle.AcknowledgeCheckpointVersionAsync(
+                    version.VersionId,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
 
-            var response = new CollaborationCheckpointResponse
-            {
-                MapId = canonicalMapId,
-                ItemId = version.ItemId,
-                VersionId = version.VersionId,
-                VersionNumber = version.VersionNumber,
-                ContentHash = version.ContentHash,
-                CreatedAt = version.CreatedAt,
-                AppliedOperationCount = appliedOperationCount,
-                HeadCursor = replay.HeadCursor.Value,
-                SupersededOperations = supersededOperation is null
-                    ? []
-                    :
-                    [
-                        new CollaborationCheckpointSupersededOperationResponse
-                        {
-                            OperationId = supersededOperation.Operation.OperationId.Value,
-                            Kind = supersededOperation.Operation.Kind,
-                            ServerCursor = supersededOperation.Operation.ServerCursor.Value,
-                            Reason = supersededOperation.Reason,
-                        },
-                    ],
-            };
-            return Results.Json(
-                ApiResponse<CollaborationCheckpointResponse>.CreateSuccess(response),
-                CollaborationCheckpointJsonContext.Default.ApiResponseCollaborationCheckpointResponse,
-                statusCode: StatusCodes.Status201Created);
+            return CreateCheckpointResult(
+                canonicalMapId,
+                version,
+                appliedOperationCount,
+                replay.HeadCursor.Value,
+                supersededOperation);
         }
         catch (SavedMapCheckpointUnsupportedOperationException ex)
         {
@@ -348,6 +388,42 @@ internal static class CollaborationCheckpointEndpoints
                 "The draft changed concurrently or the Studio lifecycle rejected the checkpoint. " +
                 "Retry the checkpoint against the current draft state.");
         }
+    }
+
+    private static IResult CreateCheckpointResult(
+        string canonicalMapId,
+        StudioContentVersion version,
+        int appliedOperationCount,
+        long headCursor,
+        SavedMapCheckpointSupersededOperation? supersededOperation)
+    {
+        var response = new CollaborationCheckpointResponse
+        {
+            MapId = canonicalMapId,
+            ItemId = version.ItemId,
+            VersionId = version.VersionId,
+            VersionNumber = version.VersionNumber,
+            ContentHash = version.ContentHash,
+            CreatedAt = version.CreatedAt,
+            AppliedOperationCount = appliedOperationCount,
+            HeadCursor = headCursor,
+            SupersededOperations = supersededOperation is null
+                ? []
+                :
+                [
+                    new CollaborationCheckpointSupersededOperationResponse
+                    {
+                        OperationId = supersededOperation.Operation.OperationId.Value,
+                        Kind = supersededOperation.Operation.Kind,
+                        ServerCursor = supersededOperation.Operation.ServerCursor.Value,
+                        Reason = supersededOperation.Reason,
+                    },
+                ],
+        };
+        return Results.Json(
+            ApiResponse<CollaborationCheckpointResponse>.CreateSuccess(response),
+            CollaborationCheckpointJsonContext.Default.ApiResponseCollaborationCheckpointResponse,
+            statusCode: StatusCodes.Status201Created);
     }
 
     private static string BuildChangeNote(

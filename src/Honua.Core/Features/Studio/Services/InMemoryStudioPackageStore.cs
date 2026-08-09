@@ -19,6 +19,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     private readonly Dictionary<Guid, StudioPackageDraft> _drafts = new();
     private readonly Dictionary<Guid, StudioContentItemRecord> _items = new();
     private readonly Dictionary<Guid, List<StudioContentVersion>> _versionsByItem = new();
+    private readonly Dictionary<Guid, (StudioVersionCheckpoint Checkpoint, StudioContentVersion Version)> _checkpointVersions = new();
+    private readonly HashSet<Guid> _acknowledgedCheckpointVersions = new();
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
 
@@ -126,7 +128,74 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         StudioPackageDraft draft,
         string? changeNote,
         string? actorId,
+        CancellationToken cancellationToken = default) =>
+        CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        return CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var match = _checkpointVersions
+                .Where(pair =>
+                    !_acknowledgedCheckpointVersions.Contains(pair.Key) &&
+                    string.Equals(pair.Value.Checkpoint.MapId, mapId, StringComparison.Ordinal) &&
+                    pair.Value.Checkpoint.OperationCursor >= afterCursor &&
+                    pair.Value.Checkpoint.OperationCursor <= throughCursor)
+                .OrderByDescending(static pair => pair.Value.Checkpoint.OperationCursor)
+                .ThenByDescending(static pair => pair.Value.Version.VersionNumber)
+                .FirstOrDefault();
+            return Task.FromResult(match.Value.Version is null
+                ? null
+                : new StudioCheckpointedVersion
+                {
+                    Version = match.Value.Version,
+                    Checkpoint = match.Value.Checkpoint,
+                });
+        }
+    }
+
+    /// <inheritdoc />
+    public Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (_checkpointVersions.ContainsKey(versionId))
+            {
+                _acknowledgedCheckpointVersions.Add(versionId);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private Task<StudioContentVersion> CreateVersionCoreAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint? checkpoint,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
         cancellationToken.ThrowIfCancellationRequested();
@@ -161,6 +230,10 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             };
 
             versions.Add(version);
+            if (checkpoint is not null)
+            {
+                _checkpointVersions.Add(version.VersionId, (checkpoint, version));
+            }
             _items[draft.ItemId] = item with
             {
                 CurrentVersionId = version.VersionId,
