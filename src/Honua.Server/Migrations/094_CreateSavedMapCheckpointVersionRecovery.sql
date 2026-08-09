@@ -25,3 +25,30 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.saved_map_checkpoint_versions (
 CREATE INDEX IF NOT EXISTS idx_saved_map_checkpoint_versions_recovery
     ON $HonuaSchema$.saved_map_checkpoint_versions (map_id, checkpoint_cursor DESC, created_at DESC)
     WHERE acknowledged_at IS NULL;
+
+-- Advancing the operation-log cursor and acknowledging the immutable version must be one
+-- database commit. In particular, an UPDATE at an unchanged cursor (including cursor zero)
+-- still fires this trigger: that distinguishes a completion whose cursor write committed from
+-- one that still needs recovery, without making a later same-cursor checkpoint reuse a stale
+-- version after direct draft edits.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.acknowledge_saved_map_checkpoint_versions()
+RETURNS trigger
+LANGUAGE plpgsql
+AS '
+BEGIN
+    UPDATE $HonuaSchema$.saved_map_checkpoint_versions
+    SET acknowledged_at = COALESCE(acknowledged_at, NEW.updated_at)
+    WHERE map_id = NEW.map_id
+      AND checkpoint_cursor <= NEW.checkpoint_cursor
+      AND acknowledged_at IS NULL;
+    RETURN NEW;
+END;
+';
+
+DROP TRIGGER IF EXISTS trg_acknowledge_saved_map_checkpoint_versions
+    ON $HonuaSchema$.saved_map_operation_log_heads;
+
+CREATE TRIGGER trg_acknowledge_saved_map_checkpoint_versions
+AFTER UPDATE OF checkpoint_cursor ON $HonuaSchema$.saved_map_operation_log_heads
+FOR EACH ROW
+EXECUTE FUNCTION $HonuaSchema$.acknowledge_saved_map_checkpoint_versions();

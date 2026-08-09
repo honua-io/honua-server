@@ -66,6 +66,24 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             repeated.VersionId.Should().NotBe(version.VersionId);
             (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))!
                 .Version.VersionId.Should().Be(repeated.VersionId);
+
+            // The endpoint records the operation-log cursor before its best-effort explicit
+            // acknowledgement. Those writes must commit atomically so a process failure between
+            // the calls cannot leave this already-reflected completion recoverable. Exercise an
+            // unchanged cursor as well: PostgreSQL still fires the UPDATE trigger at cursor 4.
+            await RecordCheckpointCursorAsync(schema, mapId, checkpointCursor: 4);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))
+                .Should().BeNull();
+
+            var sameCursorAfterAdvance = await store.CreateCheckpointVersionAsync(
+                draft,
+                "new same-cursor checkpoint",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+            await RecordCheckpointCursorAsync(schema, mapId, checkpointCursor: 4);
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 4, throughCursor: 4))
+                .Should().BeNull();
+            sameCursorAfterAdvance.VersionId.Should().NotBe(repeated.VersionId);
         }
         finally
         {
@@ -641,6 +659,22 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             """;
         command.Parameters.AddWithValue("@version_id", versionId);
         return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private async Task RecordCheckpointCursorAsync(string schema, string mapId, long checkpointCursor)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE "{schema}".saved_map_operation_log_heads
+            SET checkpoint_cursor = GREATEST(checkpoint_cursor, @checkpoint_cursor),
+                updated_at = @updated_at
+            WHERE map_id = @map_id
+            """;
+        command.Parameters.AddWithValue("@checkpoint_cursor", checkpointCursor);
+        command.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("@map_id", mapId);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static StudioPackageDraft BuildDraft(string where, string packageKey = "parcels-query", Guid? itemId = null, string owner = "tester")
