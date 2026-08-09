@@ -15,7 +15,7 @@ public sealed class PostgresRasterImportAdmissionTests
     [Fact]
     public async Task ImportAsync_FileAboveDirectPayloadLimit_RejectsBeforeOpeningDatabase()
     {
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-raster-{Guid.NewGuid():N}.tif");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-raster-{Guid.NewGuid():N}.tif");
         try
         {
             await using (var file = new FileStream(
