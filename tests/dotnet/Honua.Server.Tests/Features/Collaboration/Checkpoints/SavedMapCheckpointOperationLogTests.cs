@@ -6,6 +6,7 @@ using Honua.Core.Features.Collaboration.Operations;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Checkpoints;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Collaboration.Checkpoints;
 
@@ -25,7 +26,7 @@ public sealed class SavedMapCheckpointOperationLogTests
 
         // A checkpoint persisted everything up to cursor 4; only cursor 5 is still pending,
         // even though cursors 1-3 have already been pruned out of the retained window.
-        log.MarkCheckpointed(MapId, 4);
+        await log.MarkCheckpointedAsync(MapId, 4, CancellationToken.None);
 
         var replay = await log.ReplayPendingAsync(MapId, CancellationToken.None);
 
@@ -64,7 +65,7 @@ public sealed class SavedMapCheckpointOperationLogTests
     }
 
     [UnitTest]
-    public void CanProveRestartContinuity_FollowsTheLogsOwnRestartDurabilitySignal()
+    public void CanProveRestartContinuity_RequiresDurableReplayAndCheckpointCursor()
     {
         // Restart continuity is a property of the LOG, not of the topology: a single-replica
         // deployment is authoritative over its own log yet still loses acknowledged operations
@@ -76,6 +77,16 @@ public sealed class SavedMapCheckpointOperationLogTests
         new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(false))
             .CanProveRestartContinuity.Should().BeFalse();
         new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(true))
+            .CanProveRestartContinuity.Should().BeFalse();
+
+        var replayOnlyRepository = Substitute.For<ISavedMapOperationLogRepository>();
+        replayOnlyRepository.SupportsRestartDurableReplay.Returns(true);
+        replayOnlyRepository.SupportsRestartDurableCheckpointCursors.Returns(false);
+        replayOnlyRepository.SupportsRestartDurableCheckpointing.Returns(false);
+
+        new SavedMapCheckpointOperationLog(
+                replayOnlyRepository,
+                SavedMapCollaborationTopology.ForMultiReplica(false))
             .CanProveRestartContinuity.Should().BeFalse();
     }
 

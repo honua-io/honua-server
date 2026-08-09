@@ -548,6 +548,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                     .PostgresqlDatabase(connectionStringBuilder.ToString(), schemaName)
                     .JournalToPostgresqlTable(schemaName, "schema_versions")
                     .WithScriptsEmbeddedInAssembly(migrationsAssembly)
+                    .WithVariable("HonuaSchema", "\"honua\"")
                     .WithTransaction()
                     .Build();
                 result = upgrader.PerformUpgrade();

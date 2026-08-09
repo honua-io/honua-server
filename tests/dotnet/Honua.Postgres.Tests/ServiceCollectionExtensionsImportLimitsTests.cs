@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
@@ -14,6 +15,31 @@ namespace Honua.Postgres.Tests;
 
 public sealed class ServiceCollectionExtensionsImportLimitsTests
 {
+    [Fact]
+    public void AddPostgreSqlServices_RegistersSingletonOperationLogWithoutCapturingScopedProvider()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] =
+                    "Host=localhost;Database=honua_test;Username=honua;Password=test"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddPostgreSqlServices(configuration);
+
+        services.Single(descriptor =>
+                descriptor.ServiceType == typeof(ISavedMapOperationLogRepository))
+            .Lifetime.Should().Be(ServiceLifetime.Singleton);
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        provider.GetRequiredService<ISavedMapOperationLogRepository>()
+            .Should().NotBeNull();
+    }
+
     [Fact]
     public void AddPostgreSqlServices_WithNegativeImportLimits_FallsBackToDefaults()
     {
