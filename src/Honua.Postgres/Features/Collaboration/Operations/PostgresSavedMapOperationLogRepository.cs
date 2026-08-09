@@ -246,6 +246,15 @@ internal sealed class PostgresSavedMapOperationLogRepository : ISavedMapOperatio
 
         try
         {
+            if (useCheckpointCursor)
+            {
+                // A zero-operation checkpoint still persists a version-to-cursor association.
+                // Materialize the head row so that association has the same durable map anchor
+                // as checkpoints that follow one or more appends.
+                await EnsureHeadAsync(connection, transaction, mapId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var head = await ReadHeadAsync(connection, transaction, mapId, cancellationToken)
                 .ConfigureAwait(false);
             if (head is null)

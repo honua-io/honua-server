@@ -50,6 +50,58 @@ internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLog
 }
 
 /// <summary>
+/// Operation-log decorator that fails the first checkpoint-cursor write after the immutable
+/// version has committed, simulating cancellation/process failure between the two durable stores.
+/// </summary>
+internal sealed class FailFirstCheckpointRecordOperationLog : ISavedMapOperationLogRepository
+{
+    private readonly ISavedMapOperationLogRepository _inner;
+    private int _remainingFailures = 1;
+
+    public FailFirstCheckpointRecordOperationLog(ISavedMapOperationLogRepository inner) =>
+        _inner = inner;
+
+    public bool SupportsReplicaSharedReplay => _inner.SupportsReplicaSharedReplay;
+
+    public bool SupportsRestartDurableReplay => _inner.SupportsRestartDurableReplay;
+
+    public bool SupportsRestartDurableCheckpointCursors =>
+        _inner.SupportsRestartDurableCheckpointCursors;
+
+    public bool SupportsRestartDurableCheckpointing =>
+        _inner.SupportsRestartDurableCheckpointing;
+
+    public Task<SavedMapOperationAppendResult> AppendAsync(
+        SavedMapOperationAppendRequest request,
+        CancellationToken cancellationToken = default) =>
+        _inner.AppendAsync(request, cancellationToken);
+
+    public Task<SavedMapOperationReplayResult> ReplayAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor sinceCursor,
+        CancellationToken cancellationToken = default) =>
+        _inner.ReplayAsync(mapId, sinceCursor, cancellationToken);
+
+    public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
+        SavedMapId mapId,
+        CancellationToken cancellationToken = default) =>
+        _inner.ReplayPendingCheckpointAsync(mapId, cancellationToken);
+
+    public Task RecordCheckpointAsync(
+        SavedMapId mapId,
+        SavedMapOperationCursor checkpointCursor,
+        CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Exchange(ref _remainingFailures, 0) != 0)
+        {
+            throw new InvalidOperationException("Simulated checkpoint cursor persistence failure.");
+        }
+
+        return _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
+    }
+}
+
+/// <summary>
 /// Op-log repository that reproduces the replay-window race in the stream handshake: the resume
 /// cursor is inside the retained window for the FIRST replay (so the preliminary check reports Ok
 /// and no <c>resync-required</c> is announced), then concurrent appends prune it before the

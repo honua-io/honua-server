@@ -875,6 +875,21 @@ public sealed class StudioPackageLifecycleServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromException<StudioContentVersion>(new NotSupportedException());
 
+        public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+            StudioPackageDraft draft,
+            string? changeNote,
+            string? actorId,
+            StudioVersionCheckpoint checkpoint,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentVersion>(new NotSupportedException());
+
+        public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+            string mapId,
+            long afterCursor,
+            long throughCursor,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioCheckpointedVersion?>(new NotSupportedException());
+
         public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
             Guid itemId,
             CancellationToken cancellationToken = default)

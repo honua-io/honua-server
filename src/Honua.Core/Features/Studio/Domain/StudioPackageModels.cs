@@ -420,6 +420,31 @@ public sealed record StudioContentVersion
 }
 
 /// <summary>
+/// Durable association between an immutable Studio version and the saved-map operation cursor
+/// that version contains.
+/// </summary>
+public sealed record StudioVersionCheckpoint
+{
+    /// <summary>Canonical saved-map identifier used by the collaboration operation log.</summary>
+    public required string MapId { get; init; }
+
+    /// <summary>Highest operation cursor included in the immutable version.</summary>
+    public required long OperationCursor { get; init; }
+}
+
+/// <summary>
+/// An immutable Studio version recovered through its durable saved-map checkpoint association.
+/// </summary>
+public sealed record StudioCheckpointedVersion
+{
+    /// <summary>Immutable version created by the checkpoint.</summary>
+    public required StudioContentVersion Version { get; init; }
+
+    /// <summary>Saved-map cursor durably associated with the version.</summary>
+    public required StudioVersionCheckpoint Checkpoint { get; init; }
+}
+
+/// <summary>
 /// Current and published version pointers for a Studio content item.
 /// </summary>
 public sealed record StudioContentItemPointers

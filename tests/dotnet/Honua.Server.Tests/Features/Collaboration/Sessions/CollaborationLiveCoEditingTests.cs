@@ -538,6 +538,60 @@ public sealed class CollaborationLiveCoEditingTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task Checkpoint_CursorWriteFailsAfterVersionCommit_RetryRecoversWithoutDuplicateOrReapply()
+    {
+        using var factory = CreateFactory(
+            restartDurableOperationLog: true,
+            decorateOperationLog: static inner => new FailFirstCheckpointRecordOperationLog(inner));
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        _ = await AppendOperationAsync(
+            client,
+            mapId,
+            "op-recover-version",
+            "SetLayerVisibility",
+            baseCursor: 0,
+            payload: """{"layerId":"parcels","visible":false}""");
+
+        using (var firstContent = new StringContent(
+                   """{"changeNote":"recover me"}""", Encoding.UTF8, "application/json"))
+        using (var firstResponse = await client.PostAsync(
+                   $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", firstContent))
+        {
+            firstResponse.StatusCode.Should().Be(
+                HttpStatusCode.Conflict,
+                "the injected cursor write fails only after the immutable version commits");
+        }
+
+        Guid committedVersionId;
+        long generationAfterCommit;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            var versions = await lifecycle.ListVersionsAsync(draft.ItemId);
+            committedVersionId = versions.Should().ContainSingle().Which.VersionId;
+            generationAfterCommit = (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation;
+        }
+
+        var recovered = await CheckpointAsync(client, mapId, "recover me");
+        recovered.GetProperty("versionId").GetGuid().Should().Be(committedVersionId);
+        recovered.GetProperty("headCursor").GetInt64().Should().Be(1);
+        recovered.GetProperty("appliedOperationCount").GetInt32().Should().Be(0);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            (await lifecycle.ListVersionsAsync(draft.ItemId)).Should().ContainSingle();
+            (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(
+                generationAfterCommit,
+                "recovery must advance the cursor before replaying the already-versioned prefix");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
         using var factory = CreateFactory(restartDurableOperationLog: true);

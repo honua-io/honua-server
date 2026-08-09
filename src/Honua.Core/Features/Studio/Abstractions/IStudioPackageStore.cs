@@ -28,6 +28,27 @@ public interface IStudioPackageStore
     /// <summary>Creates an immutable package content version.</summary>
     Task<StudioContentVersion> CreateVersionAsync(StudioPackageDraft draft, string? changeNote, string? actorId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Creates an immutable version and durably associates it with the saved-map operation cursor
+    /// it contains. Durable stores must commit both records atomically.
+    /// </summary>
+    Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the newest checkpoint version for a map whose cursor is within the supplied exclusive
+    /// lower and inclusive upper bounds.
+    /// </summary>
+    Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Lists immutable versions for a content item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);
 
@@ -131,6 +152,28 @@ public interface IStudioPackageLifecycleService
         string? changeNote,
         string? actorId,
         long? expectedGeneration = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves a draft as an immutable checkpoint version and atomically records the operation cursor
+    /// represented by that version.
+    /// </summary>
+    Task<StudioContentVersion?> SaveDraftAsCheckpointVersionAsync(
+        Guid draftId,
+        string? changeNote,
+        string? actorId,
+        long? expectedGeneration,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds a previously completed checkpoint that has not yet been reflected in the operation
+    /// log's checkpoint cursor.
+    /// </summary>
+    Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
         CancellationToken cancellationToken = default);
 
     /// <summary>Lists immutable content versions for an item.</summary>

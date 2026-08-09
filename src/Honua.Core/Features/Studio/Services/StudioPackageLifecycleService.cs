@@ -230,12 +230,54 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         => family is StudioPackageFamily.Geoprocessing or StudioPackageFamily.Etl or StudioPackageFamily.Workflow;
 
     /// <inheritdoc />
-    public async Task<StudioContentVersion?> SaveDraftAsVersionAsync(
+    public Task<StudioContentVersion?> SaveDraftAsVersionAsync(
         Guid draftId,
         string? changeNote,
         string? actorId,
         long? expectedGeneration = null,
+        CancellationToken cancellationToken = default) =>
+        SaveDraftAsVersionCoreAsync(
+            draftId,
+            changeNote,
+            actorId,
+            expectedGeneration,
+            checkpoint: null,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioContentVersion?> SaveDraftAsCheckpointVersionAsync(
+        Guid draftId,
+        string? changeNote,
+        string? actorId,
+        long? expectedGeneration,
+        StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        return SaveDraftAsVersionCoreAsync(
+            draftId,
+            changeNote,
+            actorId,
+            expectedGeneration,
+            checkpoint,
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default) =>
+        _store.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
+
+    private async Task<StudioContentVersion?> SaveDraftAsVersionCoreAsync(
+        Guid draftId,
+        string? changeNote,
+        string? actorId,
+        long? expectedGeneration,
+        StudioVersionCheckpoint? checkpoint,
+        CancellationToken cancellationToken)
     {
         using var activity = ActivitySource.StartActivity("studio.package.version.create");
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
@@ -269,7 +311,20 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         updated = await _store.UpdateDraftAsync(updated, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException("Studio package draft was not found.");
 
-        var version = await _store.CreateVersionAsync(updated, NormalizeOptional(changeNote), actorId, cancellationToken).ConfigureAwait(false);
+        var version = checkpoint is null
+            ? await _store.CreateVersionAsync(
+                    updated,
+                    NormalizeOptional(changeNote),
+                    actorId,
+                    cancellationToken)
+                .ConfigureAwait(false)
+            : await _store.CreateCheckpointVersionAsync(
+                    updated,
+                    NormalizeOptional(changeNote),
+                    actorId,
+                    checkpoint,
+                    cancellationToken)
+                .ConfigureAwait(false);
         activity?.SetTag("studio.item.id", version.ItemId.ToString("D"));
         activity?.SetTag("studio.version.id", version.VersionId.ToString("D"));
         activity?.SetTag("studio.validation.status", version.Validation.Status.ToString());

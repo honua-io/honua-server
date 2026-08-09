@@ -19,6 +19,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     private readonly Dictionary<Guid, StudioPackageDraft> _drafts = new();
     private readonly Dictionary<Guid, StudioContentItemRecord> _items = new();
     private readonly Dictionary<Guid, List<StudioContentVersion>> _versionsByItem = new();
+    private readonly Dictionary<(string MapId, long Cursor), StudioContentVersion> _checkpointVersions = new();
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
 
@@ -126,13 +127,71 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         StudioPackageDraft draft,
         string? changeNote,
         string? actorId,
+        CancellationToken cancellationToken = default) =>
+        CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        return CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var match = _checkpointVersions
+                .Where(pair =>
+                    string.Equals(pair.Key.MapId, mapId, StringComparison.Ordinal) &&
+                    pair.Key.Cursor > afterCursor &&
+                    pair.Key.Cursor <= throughCursor)
+                .OrderByDescending(static pair => pair.Key.Cursor)
+                .FirstOrDefault();
+            return Task.FromResult(match.Value is null
+                ? null
+                : new StudioCheckpointedVersion
+                {
+                    Version = match.Value,
+                    Checkpoint = new StudioVersionCheckpoint
+                    {
+                        MapId = match.Key.MapId,
+                        OperationCursor = match.Key.Cursor,
+                    },
+                });
+        }
+    }
+
+    private Task<StudioContentVersion> CreateVersionCoreAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint? checkpoint,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
         cancellationToken.ThrowIfCancellationRequested();
 
         lock (_gate)
         {
+            if (checkpoint is not null &&
+                _checkpointVersions.TryGetValue((checkpoint.MapId, checkpoint.OperationCursor), out var existingVersion))
+            {
+                return Task.FromResult(existingVersion);
+            }
+
             if (!_drafts.ContainsKey(draft.DraftId))
             {
                 throw new KeyNotFoundException("Studio package draft was not found.");
@@ -161,6 +220,10 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             };
 
             versions.Add(version);
+            if (checkpoint is not null)
+            {
+                _checkpointVersions.Add((checkpoint.MapId, checkpoint.OperationCursor), version);
+            }
             _items[draft.ItemId] = item with
             {
                 CurrentVersionId = version.VersionId,

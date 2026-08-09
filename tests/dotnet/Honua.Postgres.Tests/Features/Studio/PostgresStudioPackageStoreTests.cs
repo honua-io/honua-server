@@ -19,6 +19,48 @@ namespace Honua.Postgres.Tests.Features.Studio;
 public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task CheckpointVersion_AssociationCommitsWithVersionAndSupportsRecoveryLookup()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1"));
+            var mapId = draft.DraftId.ToString("D");
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"INSERT INTO \"{schema}\".saved_map_operation_log_heads " +
+                    "(map_id, head_cursor, checkpoint_cursor) VALUES (@map_id, 4, 0)";
+                command.Parameters.AddWithValue("@map_id", mapId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var version = await store.CreateCheckpointVersionAsync(
+                draft,
+                "checkpoint",
+                "tester",
+                new StudioVersionCheckpoint { MapId = mapId, OperationCursor = 4 });
+
+            (await store.GetLatestCheckpointVersionAsync(mapId, afterCursor: 0, throughCursor: 3))
+                .Should().BeNull();
+            var recovered = await store.GetLatestCheckpointVersionAsync(
+                mapId,
+                afterCursor: 0,
+                throughCursor: 4);
+            recovered.Should().NotBeNull();
+            recovered!.Version.VersionId.Should().Be(version.VersionId);
+            recovered.Checkpoint.OperationCursor.Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -545,6 +587,8 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "036_CreateContentPublications.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
+                     "092_CreateSavedMapOperationLog.sql",
+                     "093_CreateSavedMapCheckpointVersionRecovery.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);
@@ -556,6 +600,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        sql = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
         await fixture.ExecuteAsync(sql, schema);
     }
 

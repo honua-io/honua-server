@@ -75,6 +75,21 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
         => _inner.CreateVersionAsync(draft, changeNote, actorId, cancellationToken);
 
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken = default)
+        => _inner.CreateCheckpointVersionAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
+
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default)
+        => _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
+
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,
         CancellationToken cancellationToken = default) => _inner.ListVersionsAsync(itemId, cancellationToken);
@@ -173,6 +188,21 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
         string? actorId,
         CancellationToken cancellationToken = default)
         => _inner.CreateVersionAsync(draft, changeNote, actorId, cancellationToken);
+
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken = default)
+        => _inner.CreateCheckpointVersionAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
+
+    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default)
+        => _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
     public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,
