@@ -160,6 +160,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // exact edit rather than to an object id several edits may share (#2430).
             var layerConflictSlots = new List<int>();
             var layerConflictIds = new List<string>();
+            var layerConflictStartIndex = conflicts.Count;
             // Conflicts manual review withheld: they are never dispatched, so they have no request
             // slot, but their server state still has to be captured for the review surface.
             var layerWithheldObjectIds = new List<long>();
@@ -265,6 +266,18 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     serverStates[entry.Key] = entry.Value;
                 }
 
+                // The conflict record already exists, so make each captured envelope durable before
+                // the next cancellable operation. Leaving this solely to the protocol handler after
+                // ApplyUploadAsync returned meant a cancellation during the generation/token checks
+                // below stranded an otherwise valid conflict without its server side forever (#2430).
+                await PersistCapturedServerStatesAsync(
+                        conflicts,
+                        layerConflictStartIndex,
+                        serverStates,
+                        canRecordConflicts,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+
                 // Watermark for the conflicts whose edit is WITHHELD. Nothing of theirs is applied, so
                 // their base must describe the snapshot just taken rather than the pre-capture cursor:
                 // an edit landing between the two is inside the envelope, and pairing it with the older
@@ -298,11 +311,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
             if (boundObjectIds && editsToApply.Count > 0)
             {
-                // Two kinds of edit cannot be bound to a single detection snapshot, and manual review
-                // withholds rather than dispatching either unguarded (#2430):
-                //   * a target that was ABSENT at capture time — absence is not expressible as a
-                //     precondition, and an unguarded write would hit a row reinserted under the same
-                //     object id between the capture and the write;
+                // Two kinds of edit cannot share the ordinary state-token binding used for uploaded
+                // mutations, and manual review withholds rather than dispatching either unguarded
+                // (#2430):
+                //   * a target that was ABSENT at capture time - an update has no row to modify, and
+                //     treating an absence-bound delete as an ordinary committed upload would distort
+                //     its per-edit attribution;
                 //   * REPEATED targets — the writer revalidates the token before each mutation, so the
                 //     first operation invalidates it for the rest, failing edits that are perfectly
                 //     valid (or rolling the whole batch back).
@@ -486,6 +500,47 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         FeatureEditOperationKind.Update => 1,
         _ => 2,
     };
+
+    private async Task PersistCapturedServerStatesAsync(
+        ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
+        int layerConflictStartIndex,
+        Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
+        bool canRecordConflicts,
+        CancellationToken cancellationToken)
+    {
+        if (!canRecordConflicts || serverStates.Count == 0)
+        {
+            return;
+        }
+
+        for (var index = layerConflictStartIndex; index < conflicts.Count; index++)
+        {
+            var conflict = conflicts[index];
+            if (conflict.ConflictId is not { Length: > 0 } conflictId ||
+                !serverStates.TryGetValue((conflict.PublicLayerId, conflict.ObjectId), out var serverStateJson))
+            {
+                continue;
+            }
+
+            try
+            {
+                await _conflictRepository.TryUpdateDetectionStateAsync(
+                        new ReplicaConflictDetectionUpdate(
+                            conflictId,
+                            ConflictType: null,
+                            ClientStateJson: null,
+                            ServerStateJson: serverStateJson,
+                            ClientEditApplied: null),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log.ConflictServerStateFailed(_logger, conflictId, ex);
+                throw;
+            }
+        }
+    }
 
     private async Task MarkConflictsAppliedAsync(
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
@@ -776,5 +831,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         [LoggerMessage(EventId = 7742, Level = LogLevel.Warning,
             Message = "Failed to mark replica conflict {ConflictId} as client-edit-applied after its layer batch committed; it stays recorded as not applied")]
         public static partial void ConflictAppliedFlagFailed(ILogger logger, string conflictId, Exception exception);
+
+        [LoggerMessage(EventId = 7743, Level = LogLevel.Warning,
+            Message = "Failed to persist the captured server state for replica conflict {ConflictId}")]
+        public static partial void ConflictServerStateFailed(ILogger logger, string conflictId, Exception exception);
     }
 }

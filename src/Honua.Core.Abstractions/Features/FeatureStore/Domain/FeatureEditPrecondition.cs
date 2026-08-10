@@ -11,17 +11,18 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 
 /// <summary>
 /// Optimistic-concurrency precondition for a single feature targeted by an edit batch.
-/// Protocol adapters compute <see cref="ExpectedStateToken"/> from the feature snapshot
-/// they validated the client precondition (If-Match / ETag) against, and feature writers
-/// re-validate the stored row's token inside the write transaction so a concurrent writer
-/// cannot slip between the protocol-level check and the write (TOCTOU).
+/// Protocol adapters either compute <see cref="ExpectedStateToken"/> from the feature snapshot
+/// they validated the client precondition (If-Match / ETag) against, or set
+/// <see cref="ExpectedRowAbsent"/> when absence is the state that must still hold. Feature writers
+/// re-validate that expectation inside the write transaction so a concurrent writer cannot slip
+/// between the protocol-level check and the write (TOCTOU).
 /// </summary>
 public readonly record struct FeatureEditPrecondition
 {
     /// <summary>
     /// Object ID of the feature the precondition applies to. Update and delete
     /// operations in the same batch that target this object ID must only be applied
-    /// when the stored row still matches <see cref="ExpectedStateToken"/>.
+    /// when the stored row still matches this precondition.
     /// </summary>
     public required long ObjectId { get; init; }
 
@@ -29,7 +30,14 @@ public readonly record struct FeatureEditPrecondition
     /// Canonical state token computed via <see cref="FeatureStateToken.Compute"/> from
     /// the snapshot the caller validated its protocol precondition against.
     /// </summary>
-    public required string ExpectedStateToken { get; init; }
+    public string? ExpectedStateToken { get; init; }
+
+    /// <summary>
+    /// Whether the target row must still be absent when the writer evaluates this precondition.
+    /// This is used by idempotent delete resolutions: an absent row is a successful no-op, while
+    /// a row inserted under the same object ID causes a typed precondition failure.
+    /// </summary>
+    public bool ExpectedRowAbsent { get; init; }
 }
 
 /// <summary>

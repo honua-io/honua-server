@@ -449,10 +449,58 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 "client-payload", "the envelope is written with the record, not attached afterwards");
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_PersistsCapturedServerEnvelopeBeforeLaterFailure()
+    {
+        // A client disconnect or provider failure after capture must not strand the durable conflict
+        // without the server envelope. The protocol handler never receives a report on this path, so
+        // post-return attachment cannot repair it.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42))
+        {
+            ThrowOnGenerationRead = 2,
+        };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        Func<Task> act = () => service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
+            serverStateCapturer: new StateCapturer());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        var record = repository.Upserts.Should().ContainSingle().Subject;
+        repository.RecordFor(record.ConflictId).ServerStateJson.Should().Be(
+            "server-envelope-42",
+            "capture is persisted before the later generation read can abort the sync");
+    }
+
     /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>
     private sealed class EchoClientStateSerializer : IReplicaClientStateSerializer
     {
         public string? Serialize(ReplicaUploadEdit edit) => edit.Payload as string;
+    }
+
+    private sealed class StateCapturer : IReplicaServerStateCapturer
+    {
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
+                targets.ToDictionary(
+                    target => (target.PublicLayerId, target.ObjectId),
+                    target => $"server-envelope-{target.ObjectId}"));
+
+        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<long, string>>(
+                targets.ToDictionary(target => target.ObjectId, target => $"token-{target.ObjectId}"));
     }
 
     [UnitTest]
@@ -548,10 +596,19 @@ public sealed class ReplicaSyncClientEditAttributionTests
         /// <summary>Successive watermark readings; the last value repeats once the queue drains.</summary>
         public Queue<long>? Generations { get; init; }
 
+        /// <summary>One-based watermark read on which the test tracker throws; zero never throws.</summary>
+        public int ThrowOnGenerationRead { get; init; }
+
         private long _lastGeneration = 99L;
+        private int _generationReads;
 
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
         {
+            if (Interlocked.Increment(ref _generationReads) == ThrowOnGenerationRead)
+            {
+                throw new InvalidOperationException("Injected generation read failure.");
+            }
+
             if (Generations is { Count: > 0 })
             {
                 _lastGeneration = Generations.Dequeue();

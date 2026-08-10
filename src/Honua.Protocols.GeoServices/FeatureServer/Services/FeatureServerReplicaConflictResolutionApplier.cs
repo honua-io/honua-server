@@ -101,32 +101,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                 return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
 
-        // The caller observed no row. A delete then has nothing to remove and MUST NOT be dispatched:
-        // the object id could have been reinserted between that observation and now, and the shared
-        // pipeline has no way to express "only if still absent", so issuing the delete would remove
-        // that new row. Re-read instead: still absent means the target state already holds, present
-        // means a reinsert the resolution must not act on (#2430).
-        if (command.ExpectedRowAbsent && command.Effect == ReplicaConflictResolutionEffect.DeleteFeature)
-        {
-            var reinserted = command.StorageLayerId is { } absentLayerId
-                && await _featureReader.GetAsync(absentLayerId, command.ObjectId, cancellationToken)
-                    .ConfigureAwait(false) is not null;
-            return reinserted
-                ? new ReplicaConflictApplyResult(Applied: false, FailureMessage, PreconditionFailed: true)
-                : new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
-        }
-
         // Optimistic-concurrency precondition over the snapshot the caller evaluated its staleness
         // check against, captured through CaptureStateTokenAsync before that check ran. The writer
-        // re-computes the token from the locked row inside the write transaction, so any edit arriving
-        // between the check and this write fails the operation instead of being silently overwritten
-        // (#2430). Absent when the conflict has no storage-layer id or the row was already gone.
-        if (command.ExpectedStateToken is { Length: > 0 } expectedStateToken)
+        // re-computes the token from the locked row, or confirms expected absence, inside the write
+        // transaction. Any edit arriving between the check and this write therefore fails the
+        // operation instead of being silently overwritten (#2430).
+        if (command.ExpectedRowAbsent || command.ExpectedStateToken is { Length: > 0 })
         {
             request.Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
             {
                 ObjectId = command.ObjectId,
-                ExpectedStateToken = expectedStateToken,
+                ExpectedStateToken = command.ExpectedStateToken,
+                ExpectedRowAbsent = command.ExpectedRowAbsent,
             });
         }
 
