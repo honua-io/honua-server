@@ -655,6 +655,33 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_NoWriteResumeDuringALiveClaim_ReportsAlreadyResolved()
+    {
+        // A no-write plan used to skip the lease entirely and go straight to finalization. A retry
+        // arriving while the first request was still inside its staleness probe would therefore audit
+        // and report Applied, and the original - finding a post-conflict edit - would then release the
+        // same timestamp-bound claim back to Pending.
+        var live = Conflict(clientEditApplied: false) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow,
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(live) { ClaimSucceeds = false };
+        var audit = new NoOpAuditLog();
+        var service = CreateService(repository, new RecordingApplier(), auditLog: audit);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        audit.Records.Should().Be(0, "a live claim must not be finalized by a concurrent retry");
+        repository.Current.FinalizationPending.Should().BeTrue("the original attempt still owns it");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenTheWriteOutcomeIsUnknown_KeepsTheClaimResumable()
     {
         // An indeterminate write is not a failure. Releasing the claim here means that if the write DID
@@ -984,7 +1011,6 @@ public sealed class ReplicaConflictResolutionServiceTests
                 !string.Equals(resolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
                 action != Current.ResolutionAction ||
                 expectedResolvedAt != Current.ResolvedAt ||
-                Current.WriteCommitted ||
                 !Current.FinalizationPending)
             {
                 return Task.FromResult(false);

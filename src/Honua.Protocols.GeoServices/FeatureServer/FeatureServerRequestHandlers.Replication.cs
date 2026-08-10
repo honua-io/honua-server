@@ -1135,7 +1135,11 @@ internal static partial class FeatureServerEndpoints
                     RollbackOnFailure: rollbackOnFailure);
 
                 var report = await syncService.ApplyUploadAsync(
-                    syncRequest, applier, serverStateCapturer, cancellationToken);
+                    syncRequest,
+                    applier,
+                    serverStateCapturer,
+                    FeatureServerReplicaClientStateSerializer.Instance,
+                    cancellationToken);
                 var serverConflictStates = report.ServerStates
                     ?? new Dictionary<(int PublicLayerId, long ObjectId), string>();
 
@@ -1481,7 +1485,7 @@ internal static partial class FeatureServerEndpoints
     /// emitted as GeoServices (Esri) JSON on both the client and server sides so the two are directly
     /// comparable (#1287); it is omitted entirely when the feature has no geometry.
     /// </summary>
-    private static string SerializeStateEnvelope(
+    internal static string SerializeStateEnvelope(
         IReadOnlyDictionary<string, object?> attributes,
         GeoServicesGeometry? geometry)
     {

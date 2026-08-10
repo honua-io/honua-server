@@ -198,6 +198,40 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_PersistsTheClientEnvelopeWithTheConflictRecord()
+    {
+        // Under manual review the conflicting edit is withheld, so the record is the only copy of the
+        // client's intent. Everything after the insert - the server snapshot, the edit batch, the
+        // adapter's later state attachment - can be cut short by a disconnect, and a record inserted
+        // without its envelope reads as settled once the detection window passes while acceptClient
+        // has nothing to apply.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: "client-payload"))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
+            serverStateCapturer: null,
+            clientStateSerializer: new EchoClientStateSerializer());
+
+        repository.Upserts.Should().ContainSingle()
+            .Which.ClientStateJson.Should().Be(
+                "client-payload", "the envelope is written with the record, not attached afterwards");
+    }
+
+    /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>
+    private sealed class EchoClientStateSerializer : IReplicaClientStateSerializer
+    {
+        public string? Serialize(ReplicaUploadEdit edit) => edit.Payload as string;
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_IndeterminateEdit_RecordsTheUnknownCommitOutcome()
     {
         // The writer explicitly says the row MAY have committed. Recording that as a definite

@@ -222,10 +222,12 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         DateTimeOffset newResolvedAt,
         CancellationToken cancellationToken = default)
     {
-        // Single-winner takeover of an expired, write-less claim: bound to the old timestamp, so
-        // exactly one of several concurrent recoveries proceeds and the losers see the row has moved
-        // on. Stamping a new resolved_at also fences the previous holder, whose finalization and
-        // release are both bound to the timestamp being replaced (#2430).
+        // Single-winner takeover of an unfinalized claim: bound to the old timestamp, so exactly one
+        // of several concurrent recoveries proceeds and the losers see the row has moved on. Stamping
+        // a new resolved_at also fences the previous holder, whose finalization and release are both
+        // bound to the timestamp being replaced. A committed write does not block the takeover — the
+        // resume path is what completes such a claim, and the same statement is used to back-date a
+        // retained claim's lease so the operator's own retry can resume at once (#2430).
         const string sql = """
             UPDATE honua.replica_conflicts
             SET resolved_at = $5
@@ -233,7 +235,6 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
               AND resolved_by = $2
               AND resolution_action = $3
               AND resolved_at = $4
-              AND NOT write_committed
               AND NOT finalized
             """;
 

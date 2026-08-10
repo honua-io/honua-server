@@ -32,11 +32,17 @@ public interface IReplicaSyncService
     /// detection and before the uploaded edits apply, so the durable conflict carries the state the
     /// operator will be asked to keep or discard (#2430).
     /// </param>
+    /// <param name="clientStateSerializer">
+    /// Optional adapter seam used to serialize the client side of a conflicting edit while the
+    /// conflict record is being written, so the record is self-sufficient from the moment it exists
+    /// rather than depending on a later attachment step that a disconnect can skip (#2430).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The upload report.</returns>
     Task<ReplicaSyncUploadReport> ApplyUploadAsync(
         ReplicaSyncRequest request,
         IReplicaEditApplier editApplier,
         IReplicaServerStateCapturer? serverStateCapturer = null,
+        IReplicaClientStateSerializer? clientStateSerializer = null,
         CancellationToken cancellationToken = default);
 }

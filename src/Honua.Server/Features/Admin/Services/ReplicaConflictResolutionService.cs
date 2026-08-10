@@ -401,8 +401,21 @@ internal sealed partial class ReplicaConflictResolutionService
         // retries answered with AlreadyResolved. Finalization therefore runs on an uncancellable token.
         var finalizationToken = CancellationToken.None;
 
-        var finalized = await FinalizeAsync(claimed, request, plan, resolution, finalizationToken)
-            .ConfigureAwait(false);
+        ReplicaConflictRecord? finalized;
+        try
+        {
+            finalized = await FinalizeAsync(claimed, request, plan, resolution, finalizationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Finalization failed, so the claim is deliberately retained and resumable. Back-date its
+            // lease first: the attempt has demonstrably ended, and leaving a live lease would make the
+            // operator's own retry look like a concurrent duplicate for the length of it (#2430).
+            await ExpireClaimLeaseAsync(claimed, request).ConfigureAwait(false);
+            throw;
+        }
+
         if (finalized is not { } completed)
         {
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
@@ -487,6 +500,18 @@ internal sealed partial class ReplicaConflictResolutionService
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
         }
 
+        // The lease gates EVERY resume, not just the ones that re-dispatch a write. "Same operator,
+        // same action" cannot distinguish a crashed attempt from one still in flight, and a no-write
+        // plan used to skip straight to finalization: a retry arriving while the first request was
+        // still inside its staleness probe would audit and report Applied, and the original — finding a
+        // post-conflict edit — would then release the same timestamp-bound claim back to Pending,
+        // leaving a resolution reported as applied against a conflict that is reviewable again (#2430).
+        var claimAge = DateTimeOffset.UtcNow - (existing.ResolvedAt ?? DateTimeOffset.UtcNow);
+        if (claimAge < ClaimLease)
+        {
+            Log.ResolutionClaimStillLive(_logger, existing.ConflictId);
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
 
 
         var plan = ReplicaConflictResolutionPlanner.Plan(existing, request.Action, request.Inputs);
@@ -508,16 +533,8 @@ internal sealed partial class ReplicaConflictResolutionService
             // staleness probe skipped for exactly this case — the change it would trip over may be our
             // own (#2430).
             //
-            // The lease still applies first: "same operator, same action" cannot distinguish a crashed
-            // attempt from one still in flight, and re-dispatching over a live attempt would race it.
-            var claimAge = DateTimeOffset.UtcNow - (existing.ResolvedAt ?? DateTimeOffset.UtcNow);
-            if (claimAge < ClaimLease)
-            {
-                Log.ResolutionClaimStillLive(_logger, existing.ConflictId);
-                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
-            }
-
-            // Take ownership atomically before re-dispatching. Recovery re-applies the write, so two
+            // The lease was already checked above, for every resume. Take ownership atomically before
+            // re-dispatching. Recovery re-applies the write, so two
             // retries that both judged this claim abandoned would otherwise both re-apply, and a
             // failure in one would release a claim the other had already committed against (#2430).
             var takenOverAt = DateTimeOffset.UtcNow;
@@ -573,6 +590,29 @@ internal sealed partial class ReplicaConflictResolutionService
             existing = existing with { WriteCommitted = true };
         }
 
+        if (plan.Effect == ReplicaConflictResolutionEffect.None)
+        {
+            // No-write resumes take ownership too. Finalization and release are both bound to the claim
+            // timestamp, so stamping a new one fences the attempt being taken over: it can no longer
+            // release this conflict back to Pending after this resume has reported it applied (#2430).
+            var noWriteTakeoverAt = DateTimeOffset.UtcNow;
+            var tookOverNoWrite = await _conflictRepository.TryTakeOverClaimAsync(
+                    existing.ConflictId,
+                    request.Actor,
+                    request.Action,
+                    existing.ResolvedAt ?? default,
+                    noWriteTakeoverAt,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (!tookOverNoWrite)
+            {
+                Log.ResolutionClaimStillLive(_logger, existing.ConflictId);
+                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            }
+
+            existing = existing with { ResolvedAt = noWriteTakeoverAt };
+        }
+
         Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
         activity?.SetTag("replicaconflict.resumed", true);
 
@@ -583,8 +623,19 @@ internal sealed partial class ReplicaConflictResolutionService
             existing.ResolvedAt ?? DateTimeOffset.UtcNow,
             existing.ResolvedServerGeneration);
 
-        var finalized = await FinalizeAsync(existing, request, plan, resumedResolution, CancellationToken.None)
-            .ConfigureAwait(false);
+        ReplicaConflictRecord? finalized;
+        try
+        {
+            finalized = await FinalizeAsync(existing, request, plan, resumedResolution, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Same as the first attempt: keep the claim but end its lease so the next retry resumes.
+            await ExpireClaimLeaseAsync(existing, request).ConfigureAwait(false);
+            throw;
+        }
+
         if (finalized is not { } completed)
         {
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);

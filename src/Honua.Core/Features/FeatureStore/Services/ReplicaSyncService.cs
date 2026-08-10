@@ -54,6 +54,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ReplicaSyncRequest request,
         IReplicaEditApplier editApplier,
         IReplicaServerStateCapturer? serverStateCapturer = null,
+        IReplicaClientStateSerializer? clientStateSerializer = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(editApplier);
@@ -165,7 +166,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     // the edit would lose it with no record to resolve. Under last-write-wins the edit
                     // is still applied below, so a record failure stays tolerable (logged only).
                     var conflictId = canRecordConflicts
-                        ? await RecordConflictAsync(request, layer, objectId, conflictType, mustRecord: !applyConflicting, cancellationToken).ConfigureAwait(false)
+                        ? await RecordConflictAsync(
+                                request,
+                                layer,
+                                objectId,
+                                conflictType,
+                                mustRecord: !applyConflicting,
+                                clientStateJson: clientStateSerializer?.Serialize(edit),
+                                cancellationToken)
+                            .ConfigureAwait(false)
                         : null;
 
                     layerConflictCount++;
@@ -560,6 +569,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         long objectId,
         ReplicaConflictType conflictType,
         bool mustRecord,
+        string? clientStateJson,
         CancellationToken cancellationToken)
     {
         var publicLayerId = layer.PublicLayerId;
@@ -578,6 +588,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             UserId = request.UserId,
             ServerGeneration = request.BaseGeneration,
             ClientEditApplied = false,
+            // Written WITH the record, not attached afterwards. Under manual review the conflicting
+            // edit is withheld, so this envelope is the only copy of the client's intent, and
+            // everything after the insert - the server snapshot, the edit batch, the adapter's later
+            // state attachment - can be cut short by a disconnect or a process failure. A record
+            // inserted without it reads as settled once the detection window passes, and acceptClient
+            // then has nothing to apply (#2430).
+            ClientStateJson = clientStateJson,
             // Persisted so a later resolution can probe the change log for post-conflict edits without
             // re-resolving metadata (#2430).
             StorageLayerId = layer.StorageLayerId,
