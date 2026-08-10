@@ -78,7 +78,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                     return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
                 }
 
-                var objectIdField = await ResolveObjectIdFieldNameAsync(command.PublicLayerId, cancellationToken)
+                var objectIdField = await ResolveObjectIdFieldNameAsync(
+                        command.ServiceId, command.PublicLayerId, cancellationToken)
                     .ConfigureAwait(false);
                 if (objectIdField is null)
                 {
@@ -104,28 +105,40 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         // Anything other than a successful applyEdits payload is an error result from the shared
         // pipeline (entitlement, authorization, validation). Report it as a sanitized failure rather
         // than leaking the pipeline's internal problem detail through the conflict-review surface.
-        if (result is not JsonHttpResult<ApplyEditsResponse> { Value: { } response } ||
-            !response.Success ||
-            HasFailure(response.UpdateResults) ||
-            HasFailure(response.DeleteResults))
+        if (result is not JsonHttpResult<ApplyEditsResponse> { Value: { } response } || !response.Success)
         {
             return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
 
-        return new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
+        // Only the result collection matching the dispatched effect is meaningful: an update request
+        // returns no delete results and vice versa, so inspecting both would report every successful
+        // resolution as failed after the edit had already committed.
+        var effectResults = command.Effect == ReplicaConflictResolutionEffect.DeleteFeature
+            ? response.DeleteResults
+            : response.UpdateResults;
+
+        return Succeeded(effectResults)
+            ? new ReplicaConflictApplyResult(Applied: true, FailureMessage: null)
+            : new ReplicaConflictApplyResult(Applied: false, FailureMessage);
     }
 
     /// <summary>
-    /// Resolves the layer's configured object-id field name, or null when the layer cannot be
-    /// resolved (the resolution is then reported as an uncommitted failure rather than dispatched
-    /// against a guessed field).
+    /// Resolves the object-id field name of the layer as published by this service, or null when the
+    /// pair cannot be resolved (the resolution is then reported as an uncommitted failure rather than
+    /// dispatched against a guessed field). The lookup is service-scoped: service-local layer indexes
+    /// such as <c>0</c> are reused across services, so resolving the index alone can return another
+    /// service's resource and pin the update under the wrong attribute name.
     /// </summary>
-    private async Task<string?> ResolveObjectIdFieldNameAsync(int publicLayerId, CancellationToken cancellationToken)
+    private async Task<string?> ResolveObjectIdFieldNameAsync(
+        string serviceId,
+        int publicLayerId,
+        CancellationToken cancellationToken)
     {
-        var layer = await _resourceValidator.ValidateLayerV2Async(publicLayerId, cancellationToken)
+        var layer = await _resourceValidator
+            .ValidateServiceLayerV2Async(serviceId, publicLayerId, cancellationToken)
             .ConfigureAwait(false);
-        return layer is { IsValid: true, Resource: { } resource }
-            ? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
+        return layer is { IsValid: true, Resource: { } triple }
+            ? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(triple.Resource)
             : null;
     }
 
@@ -193,6 +206,12 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         }
     }
 
-    private static bool HasFailure(EditResult[]? results)
-        => results is null || results.Length == 0 || Array.Exists(results, static r => !r.Success);
+    /// <summary>
+    /// Whether the result collection for the dispatched effect reports the single expected row as
+    /// committed. A resolution always dispatches exactly one edit, so an absent or empty collection
+    /// means the row was never touched and is a failure — but only the collection belonging to the
+    /// dispatched effect is consulted.
+    /// </summary>
+    private static bool Succeeded(EditResult[]? results)
+        => results is { Length: > 0 } && Array.TrueForAll(results, static r => r.Success);
 }

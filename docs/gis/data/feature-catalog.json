@@ -15477,6 +15477,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_ChooseGeometryWithoutSource_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterCommittedClientDelete_ReturnsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterLastWriteWins_RestoresCapturedServerState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsCannotRetargetAnotherFeature",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsWithoutFieldValues_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WhenAlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithAcceptClient_CommitsNewServerStateAndMarksResolved",
@@ -16181,8 +16182,9 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_InvalidRequest_Returns400",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_LoserAfterAdvisoryLockReplaysWinnerOutcomeWithoutDuplicateKeyError",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_NewInsert_ReturnsApplied",
-        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_RetriedDeleteOfOwnDelete_StaysIdempotent",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_ReplayedDeleteChangeId_StaysIdempotentWithoutConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SameChangeId_ReturnsIdempotentOutcome",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SecondDeleteFromSameBaseVersion_ReturnsDeleteDeleteConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_UpdateMissingBaseVersion_ReturnsRejected",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],

@@ -194,14 +194,30 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None)
         {
-            var applyResult = await _applier!.ApplyAsync(
-                new ReplicaConflictResolutionCommand(
-                    conflict.ServiceId,
-                    conflict.LayerId,
-                    conflict.ObjectId,
-                    plan.Effect,
-                    plan.FeatureStateJson),
-                cancellationToken).ConfigureAwait(false);
+            ReplicaConflictApplyResult applyResult;
+            try
+            {
+                applyResult = await _applier!.ApplyAsync(
+                    new ReplicaConflictResolutionCommand(
+                        conflict.ServiceId,
+                        conflict.LayerId,
+                        conflict.ObjectId,
+                        plan.Effect,
+                        plan.FeatureStateJson),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // The claim has already moved the record out of the reviewable state, so an aborted
+                // apply — a cancelled request, a transport fault, a provider exception — must not
+                // leave the conflict permanently reported as resolved. Release with a fresh token:
+                // the request's own token is typically the thing that was cancelled.
+                await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+                Log.ResolutionWriteFailed(
+                    _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                throw;
+            }
 
             if (!applyResult.Applied)
             {
