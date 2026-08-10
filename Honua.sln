@@ -5,9 +5,9 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Server", "src\Honua.Server\Honua.Server.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres", "src\Honua.Postgres\Honua.Postgres.csproj", "{C3D4E5F6-A7B8-9012-CDEF-123456789012}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Postgres", "src\Honua.Db\Postgres\Honua.Postgres.csproj", "{C3D4E5F6-A7B8-9012-CDEF-123456789012}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Shared", "src\Honua.Postgres.Shared\Honua.Postgres.Shared.csproj", "{8F2A1B6C-7D3E-4F50-9C61-A8E2B4D5F671}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Postgres.Shared", "src\Honua.Db\Postgres.Shared\Honua.Postgres.Shared.csproj", "{8F2A1B6C-7D3E-4F50-9C61-A8E2B4D5F671}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.AppHost", "src\Honua.AppHost\Honua.AppHost.csproj", "{D4E5F6A7-B8C9-0123-DEF0-345678901234}"
 EndProject
@@ -23,7 +23,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Architecture.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Tests", "tests\dotnet\Honua.Core.Tests\Honua.Core.Tests.csproj", "{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Tests", "tests\dotnet\Honua.Postgres.Tests\Honua.Postgres.Tests.csproj", "{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Postgres.Tests", "tests\dotnet\Honua.Db.Postgres.Tests\Honua.Postgres.Tests.csproj", "{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\dotnet\Honua.LoadTests\Honua.LoadTests.csproj", "{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}"
 EndProject
@@ -33,25 +33,25 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core", "src\Honua.Cor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Security.Tests", "tests\dotnet\Honua.Core.Security.Tests\Honua.Core.Security.Tests.csproj", "{AE285A79-B7A3-40A2-932E-C8F194CBF780}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Security.Tests", "tests\dotnet\Honua.Postgres.Security.Tests\Honua.Postgres.Security.Tests.csproj", "{BA94AC61-9842-4F07-B871-E4801B39D621}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Postgres.Security.Tests", "tests\dotnet\Honua.Db.Postgres.Security.Tests\Honua.Postgres.Security.Tests.csproj", "{BA94AC61-9842-4F07-B871-E4801B39D621}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.DuckDB", "src\Honua.DuckDB\Honua.DuckDB.csproj", "{A077F367-021A-4BC4-8545-6D97DCD84AC6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.DuckDB", "src\Honua.Db\DuckDB\Honua.DuckDB.csproj", "{A077F367-021A-4BC4-8545-6D97DCD84AC6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.DuckDB.Tests", "tests\dotnet\Honua.DuckDB.Tests\Honua.DuckDB.Tests.csproj", "{241A15C1-E00C-404E-944F-804B892EFF80}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.DuckDB.Tests", "tests\dotnet\Honua.Db.DuckDB.Tests\Honua.DuckDB.Tests.csproj", "{241A15C1-E00C-404E-944F-804B892EFF80}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.SqlServer", "src\Honua.SqlServer\Honua.SqlServer.csproj", "{749B4B53-BE5E-46E2-BC76-300B57E10D93}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.SqlServer", "src\Honua.Db\SqlServer\Honua.SqlServer.csproj", "{749B4B53-BE5E-46E2-BC76-300B57E10D93}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dotnet", "dotnet", "{35C501C9-8590-3B46-F622-E1ABED50CEA9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.SqlServer.Tests", "tests\dotnet\Honua.SqlServer.Tests\Honua.SqlServer.Tests.csproj", "{C59E4B2D-6042-4BAB-A7A8-37DF5CC69CCA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.SqlServer.Tests", "tests\dotnet\Honua.Db.SqlServer.Tests\Honua.SqlServer.Tests.csproj", "{C59E4B2D-6042-4BAB-A7A8-37DF5CC69CCA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.MySql", "src\Honua.MySql\Honua.MySql.csproj", "{B5E1F032-7A2B-4C4D-9F31-9BFC4D70A851}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.MySql", "src\Honua.Db\MySql\Honua.MySql.csproj", "{B5E1F032-7A2B-4C4D-9F31-9BFC4D70A851}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.MySql.Tests", "tests\dotnet\Honua.MySql.Tests\Honua.MySql.Tests.csproj", "{C7F4A192-3DAC-485E-A12B-CE2BF1C20851}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.MySql.Tests", "tests\dotnet\Honua.Db.MySql.Tests\Honua.MySql.Tests.csproj", "{C7F4A192-3DAC-485E-A12B-CE2BF1C20851}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Oracle", "src\Honua.Oracle\Honua.Oracle.csproj", "{D2D5B200-D7B0-4A45-9EDE-AEE23604290C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Oracle", "src\Honua.Db\Oracle\Honua.Oracle.csproj", "{D2D5B200-D7B0-4A45-9EDE-AEE23604290C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Oracle.Tests", "tests\dotnet\Honua.Oracle.Tests\Honua.Oracle.Tests.csproj", "{98788A71-7684-400F-8E66-DEF388839CCE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Oracle.Tests", "tests\dotnet\Honua.Db.Oracle.Tests\Honua.Oracle.Tests.csproj", "{98788A71-7684-400F-8E66-DEF388839CCE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Worker.Gdal", "src\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj", "{2B9E73B2-81D7-4B5E-B812-57C7638CD90E}"
 EndProject
@@ -81,9 +81,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geocoding", "src\Honu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Jobs", "src\Honua.Jobs\Honua.Jobs.csproj", "{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Aws", "src\Honua.Aws\Honua.Aws.csproj", "{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Cloud.Aws", "src\Honua.Cloud\Aws\Honua.Aws.csproj", "{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Azure", "src\Honua.Azure\Honua.Azure.csproj", "{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Cloud.Azure", "src\Honua.Cloud\Azure\Honua.Azure.csproj", "{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geometry", "src\Honua.Geometry\Honua.Geometry.csproj", "{27A45697-554F-487C-B3CA-D002C94B9505}"
 EndProject
@@ -125,17 +125,17 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Plugins.Tests", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LicenseMint", "src\Honua.LicenseMint\Honua.LicenseMint.csproj", "{C5928A52-0640-47A7-8D3A-2B492DB56ECF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Redshift", "src\Honua.Redshift\Honua.Redshift.csproj", "{8FE5DCBE-2B8B-49F1-AD64-70ADB02E9CC0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Redshift", "src\Honua.Db\Redshift\Honua.Redshift.csproj", "{8FE5DCBE-2B8B-49F1-AD64-70ADB02E9CC0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Redshift.Tests", "tests\dotnet\Honua.Redshift.Tests\Honua.Redshift.Tests.csproj", "{685F4EAF-2DC0-4C93-B98A-C48E4E412D5A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Redshift.Tests", "tests\dotnet\Honua.Db.Redshift.Tests\Honua.Redshift.Tests.csproj", "{685F4EAF-2DC0-4C93-B98A-C48E4E412D5A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Snowflake", "src\Honua.Snowflake\Honua.Snowflake.csproj", "{AC6E505C-4254-49CE-975C-B8D75F5A3EE4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Snowflake.Tests", "tests\dotnet\Honua.Snowflake.Tests\Honua.Snowflake.Tests.csproj", "{5739038F-A1F0-4B17-BC9C-8C45657FE985}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Databricks", "src\Honua.Databricks\Honua.Databricks.csproj", "{7F49B7DF-2268-4BC2-8711-7839359F17C1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Databricks", "src\Honua.Db\Databricks\Honua.Databricks.csproj", "{7F49B7DF-2268-4BC2-8711-7839359F17C1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Databricks.Tests", "tests\dotnet\Honua.Databricks.Tests\Honua.Databricks.Tests.csproj", "{43B1BD9E-AD92-4A52-8DE3-4CE9E7B1BCD8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Db.Databricks.Tests", "tests\dotnet\Honua.Db.Databricks.Tests\Honua.Databricks.Tests.csproj", "{43B1BD9E-AD92-4A52-8DE3-4CE9E7B1BCD8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.SensorThings", "src\Honua.Protocols.SensorThings\Honua.Protocols.SensorThings.csproj", "{268C7FCA-045F-4DA1-B249-64DCF5E13D11}"
 EndProject

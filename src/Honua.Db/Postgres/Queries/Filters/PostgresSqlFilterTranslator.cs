@@ -1,0 +1,1232 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Text.Json;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.Infrastructure;
+
+namespace Honua.Db.Postgres.Queries.Filters;
+
+/// <summary>
+/// Translates filter expressions to parameterized PostgreSQL WHERE clauses.
+/// Recursion, depth-cap enforcement, parameter accumulation, literal and value-list
+/// translation are inherited from <see cref="SqlFilterExpressionVisitorBase"/>;
+/// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
+/// PostGIS function names, geography casts, range types).
+/// </summary>
+internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
+{
+    // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
+
+    private readonly bool _useJsonAttributes;
+    private readonly string _attributesColumn;
+    private readonly string _geometryColumn;
+    private readonly string _primaryKeyColumn;
+
+    public PostgresSqlFilterTranslator(
+        bool useJsonAttributes = false,
+        string attributesColumn = DatabaseSchema.AttributesColumn,
+        string geometryColumn = DatabaseSchema.GeometryColumn,
+        string primaryKeyColumn = DatabaseSchema.ObjectIdColumn)
+        : base(PostgresSqlDialect.Instance)
+    {
+        _useJsonAttributes = useJsonAttributes;
+        _attributesColumn = attributesColumn;
+        _geometryColumn = geometryColumn;
+        _primaryKeyColumn = primaryKeyColumn;
+    }
+
+    /// <summary>
+    /// Translates a filter expression to SQL using a Metadata v2 resource for
+    /// field validation and spatial-reference resolution.
+    /// </summary>
+    /// <param name="filter">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <returns>SQL fragment with parameters.</returns>
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+        => Translate(filter, FilterTranslationContext.FromResource(resource));
+
+    protected override string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
+    {
+        if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
+        {
+            return binary.Operator switch
+            {
+                BinaryOperator.In => "FALSE",
+                BinaryOperator.NotIn => "TRUE",
+                _ => TranslateBinaryWithValues(binary, context)
+            };
+        }
+
+        return TranslateBinaryWithValues(binary, context);
+    }
+
+    private string TranslateBinaryWithValues(BinaryExpression binary, FilterTranslationContext context)
+    {
+        var left = TranslateExpression(binary.Left, context);
+        var right = TranslateExpression(binary.Right, context);
+
+        var op = binary.Operator switch
+        {
+            BinaryOperator.And => "AND",
+            BinaryOperator.Or => "OR",
+            BinaryOperator.Equal => "=",
+            BinaryOperator.NotEqual => "<>",
+            BinaryOperator.LessThan => "<",
+            BinaryOperator.LessThanOrEqual => "<=",
+            BinaryOperator.GreaterThan => ">",
+            BinaryOperator.GreaterThanOrEqual => ">=",
+            BinaryOperator.Like => "LIKE",
+            BinaryOperator.NotLike => "NOT LIKE",
+            BinaryOperator.In => "IN",
+            BinaryOperator.NotIn => "NOT IN",
+            BinaryOperator.Add => "+",
+            BinaryOperator.Subtract => "-",
+            BinaryOperator.Multiply => "*",
+            BinaryOperator.Divide => "/",
+            BinaryOperator.Modulo => "%",
+            BinaryOperator.Div => "/",
+            BinaryOperator.Power => "^",
+            _ => throw new NotSupportedException($"Binary operator {binary.Operator}")
+        };
+
+        // Handle logical operators with proper parentheses
+        if (binary.Operator is BinaryOperator.And or BinaryOperator.Or)
+        {
+            return $"({left} {op} {right})";
+        }
+
+        if (binary.Operator == BinaryOperator.Div)
+        {
+            return $"TRUNC(({left}) / ({right}))";
+        }
+
+        if (binary.Operator == BinaryOperator.Power)
+        {
+            return $"POWER({left}, {right})";
+        }
+
+        if (binary.Operator is BinaryOperator.Add or BinaryOperator.Subtract or
+            BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo)
+        {
+            return $"({left} {op} {right})";
+        }
+
+        return $"{left} {op} {right}";
+    }
+
+    protected override string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
+    {
+        var operand = TranslateExpression(unary.Operand, context);
+
+        return unary.Operator switch
+        {
+            UnaryOperator.Not => $"NOT ({operand})",
+            UnaryOperator.IsNull => $"{operand} IS NULL",
+            UnaryOperator.IsNotNull => $"{operand} IS NOT NULL",
+            UnaryOperator.Negate => $"-({operand})",
+            _ => throw new NotSupportedException($"Unary operator {unary.Operator}")
+        };
+    }
+
+    protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context)
+    {
+        if (_useJsonAttributes && TryMapCoreField(property.PropertyName, context, out var coreExpression))
+        {
+            return coreExpression;
+        }
+
+        // Validate field exists in the resource schema
+        var field = context.TryGetField(property.PropertyName) ??
+            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
+
+        if (field.IsGeometry)
+        {
+            // Geometry properties (in both column and JSON-attribute modes) must be
+            // wrapped in the `::geometry` cast expression so generic spatial functions
+            // (e.g. ST_Length/ST_Area/ST_Distance) operate on a typed geometry rather
+            // than a bare/unknown column value.
+            return GetGeometryColumnExpression(context);
+        }
+
+        if (!_useJsonAttributes)
+        {
+            // Quote field name to handle reserved words and mixed-case names
+            // PostgreSQL uses double quotes for identifiers
+            return QuoteIdentifier(field.Name);
+        }
+
+        if (field.IsPrimaryKey)
+        {
+            return QuoteIdentifier(_primaryKeyColumn);
+        }
+
+        var attributesColumn = QuoteIdentifier(_attributesColumn);
+        var key = EscapeSqlLiteral(field.Name);
+        var baseExpression = $"{attributesColumn} ->> '{key}'";
+        var castType = GetJsonCastType(field.Type);
+
+        if (castType == null)
+        {
+            return baseExpression;
+        }
+
+        var nullSafe = $"NULLIF({baseExpression}, '')";
+        if (castType is "timestamptz" or "date" or "time")
+        {
+            return BuildEpochAwareTemporalCast(nullSafe, castType);
+        }
+
+        return $"{nullSafe}::{castType}";
+    }
+
+    // A date/datetime attribute stored in JSONB may be ISO-8601 text (seeded rows)
+    // or epoch-milliseconds rendered as text (Esri applyEdits). A bare
+    // `::timestamptz`/`::date` cast on epoch-ms text raises SQLSTATE 22008, which
+    // surfaced as HTTP 500 on CQL2 temporal filters. Detect the numeric form and
+    // convert via to_timestamp; otherwise cast the ISO text.
+    private static string BuildEpochAwareTemporalCast(string nullSafeText, string castType)
+    {
+        var timestamp = $"CASE WHEN {nullSafeText} ~ '^-?[0-9]+$' " +
+                        $"THEN to_timestamp({nullSafeText}::double precision / 1000.0) " +
+                        $"ELSE {nullSafeText}::timestamptz END";
+        return castType == "timestamptz" ? timestamp : $"({timestamp})::{castType}";
+    }
+
+    protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
+    {
+        // Protocol-scoped geodesic routing (OData geo.intersects over Edm.Geography):
+        // when the parser marked the predicate geodesic AND the layer context is
+        // geographic, evaluate via geography casts so long edges and
+        // antimeridian-crossing geometries intersect on the ellipsoid instead of in
+        // planar degree space. Restricted to Intersects (the only marked operator
+        // PostGIS geography supports here) and to literal/property operands; CQL2 and
+        // FES/WFS predicates never carry the flag, keeping their CITE-validated
+        // planar-in-CRS semantics byte-for-byte unchanged.
+        if (spatial is { Geodesic: true, Operator: SpatialOperator.Intersects } &&
+            IsGeographicContext(context) &&
+            CanTranslateAsGeography(spatial.Left) &&
+            CanTranslateAsGeography(spatial.Right))
+        {
+            var geographyLeft = TranslateGeographyExpression(spatial.Left, context);
+            var geographyRight = TranslateGeographyExpression(spatial.Right, context);
+            return $"ST_Intersects({geographyLeft}, {geographyRight})";
+        }
+
+        var left = TranslateGeometryExpression(spatial.Left, context);
+        var right = TranslateGeometryExpression(spatial.Right, context);
+        var function = spatial.Operator switch
+        {
+            SpatialOperator.Intersects => "ST_Intersects",
+            SpatialOperator.Contains => "ST_Contains",
+            SpatialOperator.Within => "ST_Within",
+            SpatialOperator.Crosses => "ST_Crosses",
+            SpatialOperator.Touches => "ST_Touches",
+            SpatialOperator.Overlaps => "ST_Overlaps",
+            SpatialOperator.Disjoint => "ST_Disjoint",
+            SpatialOperator.Equals => "ST_Equals",
+            _ => throw new NotSupportedException($"Spatial operator {spatial.Operator}")
+        };
+
+        return $"{function}({left}, {right})";
+    }
+
+    protected override string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
+    {
+        var useGeography = IsGeographicContext(context);
+        var left = useGeography
+            ? TranslateGeographyExpression(spatial.Left, context)
+            : TranslateGeometryExpression(spatial.Left, context);
+        var right = useGeography
+            ? TranslateGeographyExpression(spatial.Right, context)
+            : TranslateGeometryExpression(spatial.Right, context);
+        var distance = TranslateExpression(spatial.Distance, context);
+
+        return spatial.Operator switch
+        {
+            SpatialOperator.DWithin => $"ST_DWithin({left}, {right}, {distance})",
+            SpatialOperator.Beyond => $"ST_Distance({left}, {right}) > {distance}",
+            _ => throw new NotSupportedException($"Spatial operator {spatial.Operator}")
+        };
+    }
+
+    private static bool IsGeographicContext(FilterTranslationContext context)
+    {
+        if (context.IsGeographic)
+        {
+            return true;
+        }
+
+        return IsLikelyGeographicSrid(context.Wkid);
+    }
+
+    // Fallback used only when the translation context does not carry an explicit IsGeographic
+    // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
+    // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
+    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
+    // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
+    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
+    // it drops 4619 (SWEREF99) and adds 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary
+    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
+    // fallback is affected.
+    private static bool IsLikelyGeographicSrid(int srid)
+        => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
+
+    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
+    {
+        switch (expression)
+        {
+            case GeometryLiteral geometry:
+                {
+                    var wkbParam = AddParameter(geometry.Wkb);
+                    var sridParam = AddParameter(geometry.Srid);
+
+                    var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
+                    if (geometry.Srid != context.Wkid)
+                    {
+                        geometryExpression = $"ST_Transform({geometryExpression}, {context.Wkid})";
+                    }
+
+                    return geometryExpression;
+                }
+            case PropertyReference property:
+                {
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field is null)
+                    {
+                        if (IsGeometryAlias(property.PropertyName))
+                        {
+                            return GetGeometryColumnExpression(context);
+                        }
+
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    if (!field.Value.IsGeometry)
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    return GetGeometryColumnExpression(context);
+                }
+            case FunctionCall functionCall:
+                return TranslateFunction(functionCall, context);
+            default:
+                throw new NotSupportedException($"Unsupported geometry expression: {expression.GetType()}");
+        }
+    }
+
+    protected override string TranslateTemporal(TemporalPredicate temporal, FilterTranslationContext context)
+    {
+        if (temporal.Operator == TemporalOperator.Before)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                context,
+                TemporalBoundary.End,
+                TemporalBoundary.Start,
+                "<");
+        }
+
+        if (temporal.Operator == TemporalOperator.After)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                context,
+                TemporalBoundary.Start,
+                TemporalBoundary.End,
+                ">");
+        }
+
+        if (temporal.Operator == TemporalOperator.Meets)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                context,
+                TemporalBoundary.End,
+                TemporalBoundary.Start,
+                "=");
+        }
+
+        if (temporal.Operator == TemporalOperator.MetBy)
+        {
+            return TranslateTemporalBoundaryComparison(
+                temporal.Left,
+                temporal.Right,
+                context,
+                TemporalBoundary.Start,
+                TemporalBoundary.End,
+                "=");
+        }
+
+        var left = TranslateTemporalExpression(temporal.Left, context);
+        var right = TranslateTemporalExpression(temporal.Right, context);
+
+        EnsureTemporalCompatibility(temporal.Operator, left, right);
+
+        var leftStart = NormalizeTemporalStart(left);
+        var leftEnd = NormalizeTemporalEnd(left);
+        var rightStart = NormalizeTemporalStart(right);
+        var rightEnd = NormalizeTemporalEnd(right);
+
+        if (left.Kind != right.Kind)
+        {
+            leftStart = CastTemporal(leftStart, left.Kind, TemporalKind.Timestamp);
+            leftEnd = CastTemporal(leftEnd, left.Kind, TemporalKind.Timestamp);
+            rightStart = CastTemporal(rightStart, right.Kind, TemporalKind.Timestamp);
+            rightEnd = CastTemporal(rightEnd, right.Kind, TemporalKind.Timestamp);
+        }
+
+        return temporal.Operator switch
+        {
+            TemporalOperator.Equals => $"({leftStart} = {rightStart} AND {leftEnd} = {rightEnd})",
+            TemporalOperator.Disjoint => $"({leftEnd} < {rightStart} OR {leftStart} > {rightEnd})",
+            TemporalOperator.Intersects => $"NOT ({leftEnd} < {rightStart} OR {leftStart} > {rightEnd})",
+            TemporalOperator.Contains => $"({leftStart} < {rightStart} AND {leftEnd} > {rightEnd})",
+            TemporalOperator.During => $"({leftStart} > {rightStart} AND {leftEnd} < {rightEnd})",
+            TemporalOperator.Starts => $"({leftStart} = {rightStart} AND {leftEnd} < {rightEnd})",
+            TemporalOperator.StartedBy => $"({leftStart} = {rightStart} AND {leftEnd} > {rightEnd})",
+            TemporalOperator.Finishes => $"({leftEnd} = {rightEnd} AND {leftStart} > {rightStart})",
+            TemporalOperator.FinishedBy => $"({leftEnd} = {rightEnd} AND {leftStart} < {rightStart})",
+            TemporalOperator.Overlaps => $"({leftStart} < {rightStart} AND {leftEnd} > {rightStart} AND {leftEnd} < {rightEnd})",
+            TemporalOperator.OverlappedBy => $"({rightStart} < {leftStart} AND {rightEnd} > {leftStart} AND {rightEnd} < {leftEnd})",
+            _ => throw new NotSupportedException($"Temporal operator {temporal.Operator}")
+        };
+    }
+
+    private string TranslateTemporalBoundaryComparison(
+        FilterExpression leftExpression,
+        FilterExpression rightExpression,
+        FilterTranslationContext context,
+        TemporalBoundary leftBoundary,
+        TemporalBoundary rightBoundary,
+        string sqlOperator)
+    {
+        var left = TranslateTemporalBoundary(leftExpression, context, leftBoundary);
+        var right = TranslateTemporalBoundary(rightExpression, context, rightBoundary);
+
+        var leftSql = left.Sql;
+        var rightSql = right.Sql;
+        if (left.Kind != right.Kind)
+        {
+            leftSql = CastTemporal(leftSql, left.Kind, TemporalKind.Timestamp);
+            rightSql = CastTemporal(rightSql, right.Kind, TemporalKind.Timestamp);
+        }
+
+        return $"{leftSql} {sqlOperator} {rightSql}";
+    }
+
+    protected override string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
+    {
+        var left = TranslateArrayExpression(array.Left, context);
+        var right = TranslateArrayExpression(array.Right, context);
+
+        return array.Operator switch
+        {
+            ArrayOperator.Equals => $"{left} = {right}",
+            ArrayOperator.Contains => $"{left} @> {right}",
+            ArrayOperator.ContainedBy => $"{right} @> {left}",
+            ArrayOperator.Overlaps => $"EXISTS (SELECT 1 FROM jsonb_array_elements({left}) AS l JOIN jsonb_array_elements({right}) AS r ON l.value = r.value)",
+            _ => throw new NotSupportedException($"Array operator {array.Operator}")
+        };
+    }
+
+    protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)
+    {
+        if (string.Equals(function.FunctionName, "GEODISTANCE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateGeoDistance(function, context);
+        }
+
+        if (string.Equals(function.FunctionName, "GEOLENGTH", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateGeoLength(function, context);
+        }
+
+        // CAST resolves its target type from the AST literal rather than a bound
+        // parameter: the type name is a SQL keyword, not a value, so it must never
+        // become a parameter placeholder. The allowlisted switch in TranslateCast
+        // guarantees only known, safe type tokens are interpolated.
+        if (string.Equals(function.FunctionName, "CAST", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateCast(function, context);
+        }
+
+        // Searched-CASE emitted by the GeoServices SQL parser as
+        // FunctionCall("CASE", [cond1, result1, ..., (else)]). Each operand is translated
+        // recursively, so every literal inside the branches becomes a bound parameter.
+        if (string.Equals(function.FunctionName, "CASE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateCase(function, context);
+        }
+
+        // `[NOT] LIKE pattern ESCAPE 'c'` emitted as FunctionCall with three operands.
+        // The escape character is a normal Literal and is parameterized like any other value.
+        if (string.Equals(function.FunctionName, "LIKE_ESCAPE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateLikeEscape(function, context, negate: false);
+        }
+
+        if (string.Equals(function.FunctionName, "NOT_LIKE_ESCAPE", StringComparison.OrdinalIgnoreCase))
+        {
+            return TranslateLikeEscape(function, context, negate: true);
+        }
+
+        var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
+        var argString = string.Join(", ", args);
+
+        return function.FunctionName.ToUpperInvariant() switch
+        {
+            "UPPER" => $"UPPER({argString})",
+            "LOWER" => $"LOWER({argString})",
+            "LENGTH" => $"LENGTH({argString})",
+            "CHAR_LENGTH" => $"CHAR_LENGTH({argString})",
+            "CHARACTER_LENGTH" => $"CHARACTER_LENGTH({argString})",
+            "TRIM" => $"TRIM({argString})",
+            "LTRIM" => $"LTRIM({argString})",
+            "RTRIM" => $"RTRIM({argString})",
+            "SUBSTRING" => TranslateSubstring(args, function.FunctionName),
+            "SUBSTR" => TranslateSubstring(args, function.FunctionName),
+            "REPLACE" => $"REPLACE({argString})",
+            "CONCAT" => $"CONCAT({argString})",
+            "POSITION" => args.Length == 2
+                ? $"POSITION({args[0]} IN {args[1]})"
+                : throw new ArgumentException("POSITION requires two arguments"),
+            "ABS" => $"ABS({argString})",
+            "CEIL" => $"CEIL({argString})",
+            "CEILING" => $"CEILING({argString})",
+            "FLOOR" => $"FLOOR({argString})",
+            "ROUND" => $"ROUND({argString})",
+            "NOW" => args.Length == 0
+                ? "NOW()"
+                : throw new ArgumentException("NOW does not accept arguments"),
+            "YEAR" => args.Length == 1
+                ? $"EXTRACT(YEAR FROM {args[0]})"
+                : throw new ArgumentException("YEAR requires one argument"),
+            "MONTH" => args.Length == 1
+                ? $"EXTRACT(MONTH FROM {args[0]})"
+                : throw new ArgumentException("MONTH requires one argument"),
+            "DAY" => args.Length == 1
+                ? $"EXTRACT(DAY FROM {args[0]})"
+                : throw new ArgumentException("DAY requires one argument"),
+            "HOUR" => args.Length == 1
+                ? $"EXTRACT(HOUR FROM {args[0]})"
+                : throw new ArgumentException("HOUR requires one argument"),
+            "MINUTE" => args.Length == 1
+                ? $"EXTRACT(MINUTE FROM {args[0]})"
+                : throw new ArgumentException("MINUTE requires one argument"),
+            "SECOND" => args.Length == 1
+                ? $"EXTRACT(SECOND FROM {args[0]})"
+                : throw new ArgumentException("SECOND requires one argument"),
+
+            // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
+            // allowlist (never user text), so it is interpolated while the source operand
+            // stays a translated, parameter-safe sub-expression.
+            "EXTRACT_DOW" => TranslateExtractField("DOW", args),
+            "EXTRACT_DOY" => TranslateExtractField("DOY", args),
+            "EXTRACT_QUARTER" => TranslateExtractField("QUARTER", args),
+            "EXTRACT_WEEK" => TranslateExtractField("WEEK", args),
+            "EXTRACT_EPOCH" => TranslateExtractField("EPOCH", args),
+            "CURRENT_DATE" => args.Length == 0
+                ? "CURRENT_DATE"
+                : throw new ArgumentException("CURRENT_DATE does not accept arguments"),
+            "CURRENT_TIMESTAMP" => args.Length == 0
+                ? "CURRENT_TIMESTAMP"
+                : throw new ArgumentException("CURRENT_TIMESTAMP does not accept arguments"),
+            "CURRENT_TIME" => args.Length == 0
+                ? "CURRENT_TIME"
+                : throw new ArgumentException("CURRENT_TIME does not accept arguments"),
+            "COALESCE" => $"COALESCE({argString})",
+            "NULLIF" => $"NULLIF({argString})",
+            "POWER" => $"POWER({argString})",
+            "MOD" => args.Length == 2
+                ? $"MOD({CastNumeric(args[0])}, {CastNumeric(args[1])})"
+                : throw new ArgumentException("MOD requires two arguments"),
+            "CASEI" => $"LOWER({argString})",
+            "ACCENTI" => $"UNACCENT(LOWER({argString}))",
+
+            // Spatial functions per OGC standards
+            "ST_AREA" => TranslateSpatialFunction("ST_Area", args, 1),
+            "ST_LENGTH" => TranslateSpatialFunction("ST_Length", args, 1),
+            "ST_PERIMETER" => TranslateSpatialFunction("ST_Perimeter", args, 1),
+            "ST_DISTANCE" => TranslateSpatialFunction("ST_Distance", args, 2),
+            "ST_CENTROID" => TranslateSpatialFunction("ST_Centroid", args, 1),
+            "ST_BUFFER" => TranslateSpatialFunction("ST_Buffer", args, 2),
+            "ST_ENVELOPE" => TranslateSpatialFunction("ST_Envelope", args, 1),
+            "ST_CONVEXHULL" => TranslateSpatialFunction("ST_ConvexHull", args, 1),
+            "ST_BOUNDARY" => TranslateSpatialFunction("ST_Boundary", args, 1),
+            "ST_NUMGEOMETRIES" => TranslateSpatialFunction("ST_NumGeometries", args, 1),
+            "ST_GEOMETRYTYPE" => TranslateSpatialFunction("ST_GeometryType", args, 1),
+            "ST_SRID" => TranslateSpatialFunction("ST_SRID", args, 1),
+            "ST_ISVALID" => TranslateSpatialFunction("ST_IsValid", args, 1),
+            "ST_ISSIMPLE" => TranslateSpatialFunction("ST_IsSimple", args, 1),
+            "ST_ISCLOSED" => TranslateSpatialFunction("ST_IsClosed", args, 1),
+            "ST_ISEMPTY" => TranslateSpatialFunction("ST_IsEmpty", args, 1),
+
+            // Math functions per OGC standards
+            "SQRT" => $"SQRT({argString})",
+            "SIN" => $"SIN({argString})",
+            "COS" => $"COS({argString})",
+            "TAN" => $"TAN({argString})",
+            "LOG" => $"LN({argString})",
+            "EXP" => $"EXP({argString})",
+
+            // Aggregate functions
+            "COUNT" => $"COUNT({argString})",
+            "SUM" => $"SUM({argString})",
+            "AVG" => $"AVG({argString})",
+            "MIN" => $"MIN({argString})",
+            "MAX" => $"MAX({argString})",
+
+            // Type conversion
+
+            _ => throw new NotSupportedException($"Function {function.FunctionName}")
+        };
+    }
+
+    private static string TranslateSubstring(string[] args, string functionName)
+    {
+        if (args.Length is < 2 or > 3)
+        {
+            throw new ArgumentException($"{functionName} requires 2 or 3 arguments.");
+        }
+
+        var start = CastInteger(args[1]);
+        if (args.Length == 2)
+        {
+            return $"SUBSTRING({args[0]}, {start})";
+        }
+
+        var length = CastInteger(args[2]);
+        return $"SUBSTRING({args[0]}, {start}, {length})";
+    }
+
+    // EXTRACT(<field> FROM source). `field` is a parser-allowlisted SQL keyword token, never
+    // user text; the source operand is already a translated, parameter-safe expression.
+    private static string TranslateExtractField(string field, string[] args)
+    {
+        if (args.Length != 1)
+        {
+            throw new ArgumentException($"EXTRACT({field} ...) requires one argument.");
+        }
+
+        return $"EXTRACT({field} FROM {args[0]})";
+    }
+
+    // Searched-CASE: FunctionCall("CASE", [cond1, result1, cond2, result2, ..., (else)]).
+    // An even argument count has no ELSE branch; an odd count's trailing argument is the ELSE
+    // result. Every operand is translated recursively so all embedded literals are bound.
+    private string TranslateCase(FunctionCall function, FilterTranslationContext context)
+    {
+        var arguments = function.Arguments;
+        if (arguments.Count < 2)
+        {
+            throw new ArgumentException("CASE requires at least one WHEN/THEN branch.");
+        }
+
+        var branchCount = arguments.Count / 2; // integer division drops a trailing ELSE
+        var builder = new System.Text.StringBuilder("CASE");
+        for (var i = 0; i < branchCount; i++)
+        {
+            var condition = TranslateExpression(arguments[i * 2], context);
+            var result = TranslateExpression(arguments[(i * 2) + 1], context);
+            builder.Append(" WHEN ").Append(condition).Append(" THEN ").Append(result);
+        }
+
+        // Odd count => trailing ELSE result.
+        if (arguments.Count % 2 == 1)
+        {
+            var elseResult = TranslateExpression(arguments[^1], context);
+            builder.Append(" ELSE ").Append(elseResult);
+        }
+
+        builder.Append(" END");
+        return $"({builder})";
+    }
+
+    // `[NOT] LIKE pattern ESCAPE 'c'` -> `<left> [NOT] LIKE <pattern> ESCAPE <escapeParam>`.
+    // The escape character is a normal Literal operand and is bound as a parameter; nothing
+    // user-supplied is interpolated into the SQL string.
+    private string TranslateLikeEscape(FunctionCall function, FilterTranslationContext context, bool negate)
+    {
+        if (function.Arguments.Count != 3)
+        {
+            throw new ArgumentException("LIKE ... ESCAPE requires a value, a pattern, and an escape character.");
+        }
+
+        var value = TranslateExpression(function.Arguments[0], context);
+        var pattern = TranslateExpression(function.Arguments[1], context);
+        var escape = TranslateExpression(function.Arguments[2], context);
+        var op = negate ? "NOT LIKE" : "LIKE";
+        return $"{value} {op} {pattern} ESCAPE {escape}";
+    }
+
+    private static string TranslateSpatialFunction(string postgisName, string[] args, int expectedArgCount)
+    {
+        if (args.Length != expectedArgCount)
+        {
+            throw new ArgumentException($"{postgisName} requires {expectedArgCount} argument(s)");
+        }
+
+        return $"{postgisName}({string.Join(", ", args)})";
+    }
+
+    private string TranslateCast(FunctionCall function, FilterTranslationContext context)
+    {
+        if (function.Arguments.Count != 2)
+        {
+            throw new ArgumentException($"{function.FunctionName} requires two arguments (value, type)");
+        }
+
+        // The target type must be a literal SQL type token, supplied as a text
+        // literal by the filter parser. Reading it from the AST (instead of the
+        // translated argument) keeps it out of the parameter list while the
+        // allowlist below still rejects anything unknown.
+        if (function.Arguments[1] is not Literal { Type: LiteralType.Text } typeLiteral
+            || typeLiteral.Value is not string targetTypeRaw)
+        {
+            throw new ArgumentException($"{function.FunctionName} target type must be a constant type name.");
+        }
+
+        var value = TranslateExpression(function.Arguments[0], context);
+        var targetType = targetTypeRaw.Trim('\'', '"').ToUpperInvariant();
+
+        // Split an optional length/precision argument list off the base type token,
+        // e.g. VARCHAR(20) -> ("VARCHAR", "(20)"), DECIMAL(10,2) -> ("DECIMAL", "(10,2)").
+        // The parser only emits all-digit (and comma) arguments, but re-validate here so
+        // the suffix can be safely interpolated into the cast for length-bearing types.
+        var (baseType, typeArgs) = SplitCastType(targetType);
+
+        return baseType switch
+        {
+            "INTEGER" or "INT" => $"({value})::INTEGER",
+            "NUMERIC" or "DECIMAL" => $"({value})::NUMERIC{typeArgs}",
+            "REAL" or "FLOAT" => $"({value})::REAL",
+            "DOUBLE" or "DOUBLE PRECISION" => $"({value})::DOUBLE PRECISION",
+            // CHAR/VARCHAR keep their length so a Esri `CAST(x AS VARCHAR(n))` truncates
+            // exactly as ArcGIS does; bare VARCHAR (no length) maps to unbounded TEXT.
+            "VARCHAR" or "CHAR" when typeArgs.Length > 0 => $"({value})::{baseType}{typeArgs}",
+            "TEXT" or "STRING" or "VARCHAR" => $"({value})::TEXT",
+            "BOOLEAN" or "BOOL" => $"({value})::BOOLEAN",
+            "DATE" => $"({value})::DATE",
+            "TIMESTAMP" => $"({value})::TIMESTAMP",
+            "GEOMETRY" => $"({value})::GEOMETRY",
+            "GEOGRAPHY" => $"({value})::GEOGRAPHY",
+            _ => throw new NotSupportedException($"Unsupported cast target type: {targetType}")
+        };
+    }
+
+    // Separates a CAST target type into its base token and an optional, validated
+    // length/precision suffix. The suffix is preserved verbatim (e.g. "(20)",
+    // "(10,2)") for types that support it; everything inside the parentheses must be
+    // digits, an optional single comma, and whitespace so nothing unsafe is emitted.
+    private static (string BaseType, string TypeArgs) SplitCastType(string targetType)
+    {
+        var open = targetType.IndexOf('(', StringComparison.Ordinal);
+        if (open < 0)
+        {
+            return (targetType, string.Empty);
+        }
+
+        if (!targetType.EndsWith(')'))
+        {
+            throw new ArgumentException($"Malformed cast target type: {targetType}");
+        }
+
+        var baseType = targetType[..open].TrimEnd();
+        var inner = targetType[(open + 1)..^1];
+        var normalized = new System.Text.StringBuilder("(");
+        var commaCount = 0;
+        var hasDigit = false;
+        foreach (var ch in inner)
+        {
+            if (char.IsWhiteSpace(ch))
+            {
+                continue;
+            }
+
+            if (ch == ',')
+            {
+                if (++commaCount > 1 || !hasDigit)
+                {
+                    throw new ArgumentException($"Malformed cast target type: {targetType}");
+                }
+
+                normalized.Append(',');
+                continue;
+            }
+
+            if (!char.IsAsciiDigit(ch))
+            {
+                throw new ArgumentException($"Malformed cast target type: {targetType}");
+            }
+
+            hasDigit = true;
+            normalized.Append(ch);
+        }
+
+        if (!hasDigit)
+        {
+            throw new ArgumentException($"Malformed cast target type: {targetType}");
+        }
+
+        normalized.Append(')');
+        return (baseType, normalized.ToString());
+    }
+
+    private string TranslateGeoDistance(FunctionCall function, FilterTranslationContext context)
+    {
+        if (function.Arguments.Count != 2)
+        {
+            throw new ArgumentException("GEODISTANCE requires two arguments");
+        }
+
+        var left = TranslateGeographyExpression(function.Arguments[0], context);
+        var right = TranslateGeographyExpression(function.Arguments[1], context);
+        return $"ST_Distance({left}, {right})";
+    }
+
+    // OData geo.length: geodesic length in meters over geography operands, mirroring
+    // the GEODISTANCE treatment above. Distinct from the planar CQL2/OGC "ST_LENGTH"
+    // case in TranslateFunction, which evaluates in the layer CRS's linear unit.
+    private string TranslateGeoLength(FunctionCall function, FilterTranslationContext context)
+    {
+        if (function.Arguments.Count != 1)
+        {
+            throw new ArgumentException("GEOLENGTH requires one argument");
+        }
+
+        var operand = TranslateGeographyExpression(function.Arguments[0], context);
+        return $"ST_Length({operand})";
+    }
+
+    // Geography routing only understands geometry literals and geometry property
+    // references; anything else (nested function calls, arithmetic) falls back to the
+    // planar path rather than failing the whole filter.
+    private static bool CanTranslateAsGeography(FilterExpression expression)
+        => expression is GeometryLiteral or PropertyReference;
+
+    private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
+    {
+        switch (expression)
+        {
+            case GeometryLiteral geometry:
+                {
+                    var wkbParam = AddParameter(geometry.Wkb);
+                    var sridParam = AddParameter(geometry.Srid);
+
+                    var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
+                    var wgs84Srid = SpatialReference.WGS84.Wkid;
+                    if (geometry.Srid != wgs84Srid)
+                    {
+                        geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                    }
+
+                    return $"{geometryExpression}::geography";
+                }
+            case PropertyReference property:
+                {
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field is null && !IsGeometryAlias(property.PropertyName))
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    if (field is not null && !field.Value.IsGeometry)
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    var geometryExpression = GetGeometryColumnExpression(context);
+                    var wgs84Srid = SpatialReference.WGS84.Wkid;
+                    if (context.Wkid != wgs84Srid)
+                    {
+                        geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                    }
+
+                    return $"{geometryExpression}::geography";
+                }
+            default:
+                throw new NotSupportedException($"Unsupported geography expression: {expression.GetType()}");
+        }
+    }
+
+    protected override string TranslateIntervalLiteral(IntervalLiteral interval)
+    {
+        var boundsKind = interval.Start?.Type ?? interval.End?.Type ?? LiteralType.DateTime;
+        var rangeFunction = boundsKind == LiteralType.Date ? "DATERANGE" : "TSTZRANGE";
+
+        var startSql = interval.Start == null ? "NULL" : TranslateLiteral(interval.Start);
+        var endSql = interval.End == null ? "NULL" : TranslateLiteral(interval.End);
+
+        return $"{rangeFunction}({startSql}, {endSql}, '[]')";
+    }
+
+    protected override string TranslateArrayLiteral(ArrayLiteral arrayLiteral)
+    {
+        var values = arrayLiteral.Elements.Select(ConvertArrayElement).ToList();
+        var json = JsonSerializer.Serialize(values, FeatureAttributesJsonContext.Default.ListObject);
+        var paramName = AddParameter(json);
+        return $"{paramName}::jsonb";
+    }
+
+    private object? ConvertArrayElement(FilterExpression expression)
+    {
+        return expression switch
+        {
+            Literal literal => ConvertLiteralValue(literal),
+            ArrayLiteral array => array.Elements.Select(ConvertArrayElement).ToList(),
+            IntervalLiteral interval => new Dictionary<string, object?>
+            {
+                ["interval"] = new object?[]
+                {
+                    ConvertIntervalBound(interval.Start),
+                    ConvertIntervalBound(interval.End)
+                }
+            },
+            GeometryLiteral geometry => ConvertGeometryLiteral(geometry),
+            _ => throw new NotSupportedException($"Array literal element '{expression.GetType()}' is not supported")
+        };
+    }
+
+    private static object? ConvertIntervalBound(Literal? literal)
+    {
+        if (literal == null)
+        {
+            return "..";
+        }
+
+        return literal.Type switch
+        {
+            LiteralType.Date => ((DateOnly)literal.Value!).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            LiteralType.DateTime => ((DateTimeOffset)literal.Value!).ToString("O", CultureInfo.InvariantCulture),
+            _ => literal.Value
+        };
+    }
+
+    private static object? ConvertLiteralValue(Literal literal)
+    {
+        return literal.Type switch
+        {
+            LiteralType.Date => new Dictionary<string, object?>
+            {
+                ["date"] = ((DateOnly)literal.Value!).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            },
+            LiteralType.DateTime => new Dictionary<string, object?>
+            {
+                ["timestamp"] = ((DateTimeOffset)literal.Value!).ToString("O", CultureInfo.InvariantCulture)
+            },
+            _ => literal.Value
+        };
+    }
+
+    private static object? ConvertGeometryLiteral(GeometryLiteral geometry)
+    {
+        var trimmed = geometry.OriginalFormat.TrimStart();
+        if (trimmed.StartsWith('{'))
+        {
+            using var document = JsonDocument.Parse(geometry.OriginalFormat);
+            return document.RootElement.Clone();
+        }
+
+        return geometry.OriginalFormat;
+    }
+
+    // QuoteIdentifier is provided by Dialect (PostgresSqlDialect). The previous local
+    // static is removed; all call sites route through Dialect.QuoteIdentifier to keep
+    // the SQL-injection boundary in one place.
+
+    private string QuoteIdentifier(string identifier) => Dialect.QuoteIdentifier(identifier);
+
+    private static string EscapeSqlLiteral(string value)
+        => value.Replace("'", "''");
+
+    private static string CastNumeric(string sql)
+        => $"({sql})::numeric";
+
+    private static string CastInteger(string sql)
+        => $"({sql})::int";
+
+    private string GetGeometryColumnExpression(FilterTranslationContext context)
+    {
+        var geomColumnName = _useJsonAttributes ? _geometryColumn : context.GeometryColumnName ?? _geometryColumn;
+        var quoted = QuoteIdentifier(geomColumnName);
+        return $"{quoted}::geometry";
+    }
+
+    private bool TryMapCoreField(string propertyName, FilterTranslationContext context, out string expression)
+    {
+        if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            context.PrimaryKeyName is not null)
+        {
+            expression = QuoteIdentifier(_primaryKeyColumn);
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase))
+        {
+            expression = QuoteIdentifier(_primaryKeyColumn);
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.LayerIdColumnAlt, StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals(DatabaseSchema.LayerIdColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            expression = QuoteIdentifier(DatabaseSchema.LayerIdColumn);
+            return true;
+        }
+
+        if (IsGeometryAlias(propertyName))
+        {
+            expression = GetGeometryColumnExpression(context);
+            return true;
+        }
+
+        // Audit-trail system columns. The canonical aliases "created"/"updated"
+        // (DatabaseSchema.CreatedColumn/UpdatedColumn) are the reserved, server-side
+        // names that resolve to the physical audit-timestamp columns on managed
+        // feature tables. Those physical columns are named "created_at"/"updated_at"
+        // (see migration 001_CreateHonuaSchema and the metadata-v1
+        // FeatureQueryBuilder), so the alias must be rewritten to the real column
+        // rather than emitted verbatim (a bare "updated" column does not exist).
+        // The OData $deltatoken "changed since" predicate targets the "updated"
+        // alias so the delta filter resolves to the real updated_at column (#1436).
+        //
+        // Only map the alias when the resource does not expose it as a queryable
+        // attribute (TryGetField == null); otherwise fall through to normal schema
+        // resolution. This intentionally does NOT recognize the literal physical
+        // names "created_at"/"updated_at" here: per #1415 those names are resolved
+        // through the schema so a user CQL2/OData filter on a layer-defined
+        // attribute field (JSONB) maps to the typed attributes path (200), and a
+        // filter on an undefined field raises ArgumentException (400) instead of
+        // emitting an invalid bare column reference (PostgreSQL 42883 -> HTTP 500).
+        if (propertyName.Equals(DatabaseSchema.CreatedColumn, StringComparison.OrdinalIgnoreCase) &&
+            context.TryGetField(propertyName) is null)
+        {
+            expression = QuoteIdentifier("created_at");
+            return true;
+        }
+
+        if (propertyName.Equals(DatabaseSchema.UpdatedColumn, StringComparison.OrdinalIgnoreCase) &&
+            context.TryGetField(propertyName) is null)
+        {
+            expression = QuoteIdentifier("updated_at");
+            return true;
+        }
+
+        expression = string.Empty;
+        return false;
+    }
+
+    private static bool IsGeometryAlias(string propertyName)
+        => propertyName.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase) ||
+           propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
+           propertyName.Equals("geometry", StringComparison.OrdinalIgnoreCase);
+
+    private string TranslateArrayExpression(FilterExpression expression, FilterTranslationContext context)
+    {
+        if (expression is ArrayLiteral arrayLiteral)
+        {
+            return TranslateArrayLiteral(arrayLiteral);
+        }
+
+        if (expression is PropertyReference propertyReference)
+        {
+            var field = context.TryGetField(propertyReference.PropertyName);
+            if (field is null || field.Value.Type != MetadataV2FieldType.Json)
+            {
+                throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
+            }
+
+            var attributesColumn = QuoteIdentifier(_attributesColumn);
+            var key = EscapeSqlLiteral(field.Value.Name);
+            return $"{attributesColumn} -> '{key}'";
+        }
+
+        throw new NotSupportedException($"Unsupported array expression: {expression.GetType()}");
+    }
+
+    private TemporalBounds TranslateTemporalExpression(FilterExpression expression, FilterTranslationContext context)
+    {
+        switch (expression)
+        {
+            case IntervalLiteral interval:
+                {
+                    var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
+                        ? TemporalKind.Date
+                        : TemporalKind.Timestamp;
+
+                    var startSql = interval.Start == null ? "NULL" : TranslateLiteral(interval.Start);
+                    var endSql = interval.End == null ? "NULL" : TranslateLiteral(interval.End);
+
+                    return new TemporalBounds(
+                        startSql,
+                        endSql,
+                        kind,
+                        true,
+                        interval.Start == null,
+                        interval.End == null);
+                }
+            case Literal literal when literal.Type is LiteralType.Date or LiteralType.DateTime:
+                {
+                    var sql = TranslateLiteral(literal);
+                    var kind = literal.Type == LiteralType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    return new TemporalBounds(sql, sql, kind, false, false, false);
+                }
+            case PropertyReference property:
+                {
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field?.Type == MetadataV2FieldType.Time)
+                    {
+                        throw new ArgumentException(
+                            $"Field '{property.PropertyName}' is a time-only field and cannot be used with temporal interval predicates.");
+                    }
+
+                    var kind = field?.Type == MetadataV2FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    var sql = TranslateProperty(property, context);
+                    return new TemporalBounds(sql, sql, kind, false, false, false);
+                }
+            case FunctionCall functionCall:
+                {
+                    var sql = TranslateFunction(functionCall, context);
+                    return new TemporalBounds(sql, sql, TemporalKind.Timestamp, false, false, false);
+                }
+            default:
+                throw new NotSupportedException($"Unsupported temporal expression: {expression.GetType()}");
+        }
+    }
+
+    private TemporalBound TranslateTemporalBoundary(
+        FilterExpression expression,
+        FilterTranslationContext context,
+        TemporalBoundary boundary)
+    {
+        if (expression is IntervalLiteral interval)
+        {
+            var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
+                ? TemporalKind.Date
+                : TemporalKind.Timestamp;
+            var literal = boundary == TemporalBoundary.Start ? interval.Start : interval.End;
+            var sql = literal == null
+                ? CreateOpenTemporalBoundarySql(kind, boundary)
+                : TranslateLiteral(literal);
+
+            return new TemporalBound(sql, kind);
+        }
+
+        var bounds = TranslateTemporalExpression(expression, context);
+        return new TemporalBound(
+            boundary == TemporalBoundary.Start
+                ? NormalizeTemporalStart(bounds)
+                : NormalizeTemporalEnd(bounds),
+            bounds.Kind);
+    }
+
+    private static string CreateOpenTemporalBoundarySql(TemporalKind kind, TemporalBoundary boundary)
+        => kind == TemporalKind.Date
+            ? boundary == TemporalBoundary.Start ? "'-infinity'::date" : "'infinity'::date"
+            : boundary == TemporalBoundary.Start ? "'-infinity'::timestamptz" : "'infinity'::timestamptz";
+
+    private static void EnsureTemporalCompatibility(TemporalOperator op, TemporalBounds left, TemporalBounds right)
+    {
+        if (op is TemporalOperator.Contains or TemporalOperator.During or TemporalOperator.FinishedBy or
+            TemporalOperator.Finishes or TemporalOperator.Meets or TemporalOperator.MetBy or
+            TemporalOperator.OverlappedBy or TemporalOperator.Overlaps or TemporalOperator.StartedBy or
+            TemporalOperator.Starts &&
+            !left.IsInterval && !right.IsInterval)
+        {
+            throw new ArgumentException($"Temporal operator {op} requires interval operands");
+        }
+    }
+
+    private static string NormalizeTemporalStart(TemporalBounds bounds)
+    {
+        if (!bounds.IsInterval)
+        {
+            return bounds.StartSql;
+        }
+
+        if (!bounds.OpenStart)
+        {
+            return bounds.StartSql;
+        }
+
+        return bounds.Kind == TemporalKind.Date ? "'-infinity'::date" : "'-infinity'::timestamptz";
+    }
+
+    private static string NormalizeTemporalEnd(TemporalBounds bounds)
+    {
+        if (!bounds.IsInterval)
+        {
+            return bounds.EndSql;
+        }
+
+        if (!bounds.OpenEnd)
+        {
+            return bounds.EndSql;
+        }
+
+        return bounds.Kind == TemporalKind.Date ? "'infinity'::date" : "'infinity'::timestamptz";
+    }
+
+    private static string CastTemporal(string sql, TemporalKind from, TemporalKind to)
+    {
+        if (from == to)
+        {
+            return sql;
+        }
+
+        return to == TemporalKind.Timestamp ? $"({sql})::timestamptz" : $"({sql})::date";
+    }
+
+    private sealed record TemporalBounds(
+        string StartSql,
+        string EndSql,
+        TemporalKind Kind,
+        bool IsInterval,
+        bool OpenStart,
+        bool OpenEnd);
+
+    private sealed record TemporalBound(
+        string Sql,
+        TemporalKind Kind);
+
+    private enum TemporalBoundary
+    {
+        Start,
+        End
+    }
+
+    private enum TemporalKind
+    {
+        Date,
+        Timestamp
+    }
+
+    private static string? GetJsonCastType(MetadataV2FieldType fieldType)
+    {
+        return fieldType switch
+        {
+            MetadataV2FieldType.Integer => "integer",
+            MetadataV2FieldType.BigInteger => "bigint",
+            MetadataV2FieldType.Float => "real",
+            MetadataV2FieldType.Double => "double precision",
+            MetadataV2FieldType.Boolean => "boolean",
+            MetadataV2FieldType.DateTime => "timestamptz",
+            MetadataV2FieldType.Date => "date",
+            MetadataV2FieldType.Time => "time",
+            MetadataV2FieldType.Uuid => "uuid",
+            _ => null
+        };
+    }
+}

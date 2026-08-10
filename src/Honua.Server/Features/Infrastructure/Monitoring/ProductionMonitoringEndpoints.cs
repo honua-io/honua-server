@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Import;

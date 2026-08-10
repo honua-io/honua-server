@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 

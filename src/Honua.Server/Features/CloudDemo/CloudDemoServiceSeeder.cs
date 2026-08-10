@@ -6,7 +6,7 @@ using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.CloudDemo;
 
 internal sealed class CloudDemoServiceSeeder(

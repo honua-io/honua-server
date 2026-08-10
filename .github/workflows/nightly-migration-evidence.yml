@@ -45,7 +45,7 @@ jobs:
       - name: Run slice 1-3 fixture-driven apply tests (Postgres harness)
         run: |
           mkdir -p tests/TestResults
-          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \

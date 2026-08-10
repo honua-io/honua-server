@@ -6,7 +6,7 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Hosting;
-using Honua.Postgres;
+using Honua.Db.Postgres;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

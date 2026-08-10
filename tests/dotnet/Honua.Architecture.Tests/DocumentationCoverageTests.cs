@@ -4,7 +4,7 @@
 using System.Reflection;
 using System.Xml;
 using FluentAssertions;
-using Honua.Postgres;
+using Honua.Db.Postgres;
 using Honua.Server;
 using Xunit;
 
@@ -74,7 +74,7 @@ public sealed class DocumentationCoverageTests
         {
             ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Core", "Honua.Core.csproj"),
             ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Honua.Server.csproj"),
-            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Postgres", "Honua.Postgres.csproj")
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Db", "Postgres", "Honua.Postgres.csproj")
         };
 
         var projectsWithXmlDoc = new List<string>();

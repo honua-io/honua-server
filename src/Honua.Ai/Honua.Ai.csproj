@@ -14,8 +14,8 @@
       durable store, and the AiBuilder fixture catalog. Namespaces are
       preserved (Honua.Server.Features.{AiBuilder,Grounding,NlQuery,
       AnalysisContent}) so Server's DI composition keeps compiling
-      without a using-clause sweep — the same pattern Honua.Aws,
-      Honua.Azure, and Honua.Jobs already use.
+      without a using-clause sweep — the same pattern Honua.Cloud.Aws,
+      Honua.Cloud.Azure, and Honua.Jobs already use.
 
       The McpPlanAnalysisModels DTO surface moves here too because
       AiBuilder's FixturePlanAnalysisService is the producer of those

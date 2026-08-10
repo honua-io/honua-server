@@ -17,7 +17,7 @@ name: honua-proj-grids
 # Point the gated integration test at this DB:
 #   export HONUA_PROJ_GRID_TEST=1
 #   export HONUA_TEST_DB_URL='Host=localhost;Port=5436;Database=honua_test;Username=test;Password=test'
-#   dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+#   dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
 #       --filter "FullyQualifiedName~DatumGridProvisioning"
 
 services:

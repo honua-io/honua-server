@@ -318,12 +318,12 @@ of the MySQL services.
 
 ### Unit tests
 
-`tests/dotnet/Honua.MySql.Tests` contains unit tests for SQL generation,
+`tests/dotnet/Honua.Db.MySql.Tests` contains unit tests for SQL generation,
 filter translation, registry behaviour, and provider resolution. They run on
 every PR and require no external services.
 
 ```bash
-dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
     --filter "Category!=MySql"
 ```
 
@@ -340,7 +340,7 @@ Docker containers in CI environments without Docker.
 # Requires Docker and the MySQL 8 image. Both the category filter AND the
 # environment variable are required — the env gate keeps the suite inert
 # unless explicitly enabled.
-HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
     --filter "Category=MySql"
 ```
 

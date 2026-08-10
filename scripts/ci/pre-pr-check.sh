@@ -352,7 +352,7 @@ affected_contains() {
 UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
-tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj'
+tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -686,7 +686,7 @@ run_unit_project() {
 run_unit_project tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
-run_unit_project tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+run_unit_project tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
 
 # Server-test shards: run the targeted subset (or all, when run_all). FAST tier
 # skips them entirely (CI / the merge queue is the gate); otherwise run them in

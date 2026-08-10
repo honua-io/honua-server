@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
-using Honua.Postgres.Features.Scene;
+using Honua.Db.Postgres.Features.Scene;
 using Honua.Server.Features.Admin.Scene;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

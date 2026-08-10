@@ -108,11 +108,11 @@
 - `src/Honua.Server/Features/Infrastructure/Caching/DistributedCacheRefreshCoordinator.cs` [NEW]
 - `src/Honua.Server/Features/Infrastructure/Coordination/RedisDistributedLeaderElection.cs` [NEW]
 - `src/Honua.Server/Features/Infrastructure/Caching/CacheRefreshCoordinator.cs` [MODIFIED - marked obsolete]
-- `src/Honua.Postgres/Features/Infrastructure/Crs/PostgresCrsWarmupService.cs` [MODIFIED - added leader election]
+- `src/Honua.Db/Postgres/Features/Infrastructure/Crs/PostgresCrsWarmupService.cs` [MODIFIED - added leader election]
 
 ### Registration
 - `src/Honua.Server/Program.cs` [MODIFIED - distributed cache coordinator registration]
-- `src/Honua.Postgres/ServiceCollectionExtensions.cs` [MODIFIED - leader election registration]
+- `src/Honua.Db/Postgres/ServiceCollectionExtensions.cs` [MODIFIED - leader election registration]
 
 ### Tests
 - `tests/dotnet/Honua.Server.Tests/Features/Caching/DistributedCacheRefreshCoordinatorTests.cs` [NEW]

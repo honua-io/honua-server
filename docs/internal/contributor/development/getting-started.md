@@ -158,8 +158,8 @@ src/
 ├── Honua.Server/          # ASP.NET Core host (Minimal APIs, vertical slices)
 │   └── Features/          # FeatureServer, OGC, OData, Admin, Import, Tiles
 ├── Honua.Core/            # Domain models and abstractions (no infrastructure deps)
-├── Honua.Postgres/        # PostGIS implementation of Core interfaces
-└── Honua.DuckDB/          # DuckDB read-only provider
+├── Honua.Db.Postgres/        # PostGIS implementation of Core interfaces
+└── Honua.Db.DuckDB/          # DuckDB read-only provider
 
 tests/
 ├── Honua.Server.Tests/    # Integration tests (Testcontainers + real PostGIS)

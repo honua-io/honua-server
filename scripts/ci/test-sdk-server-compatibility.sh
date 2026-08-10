@@ -94,7 +94,7 @@ if SDK_COMPATIBILITY_CLASSIFY_ONLY=true \
     fail "current capability cell must not pass through classify-only"
 fi
 
-grep -Fq 'compatibility-source/tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json' "$WORKFLOW" \
+grep -Fq 'compatibility-source/tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json' "$WORKFLOW" \
   || fail "workflow must source the GeoServer fixture from the compatibility checkout"
 grep -Fq 'HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json' "$WORKFLOW" \
   || fail "workflow must pass the preserved fixture to historical server checkouts"

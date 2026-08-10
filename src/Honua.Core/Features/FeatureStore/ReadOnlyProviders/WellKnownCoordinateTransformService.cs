@@ -23,7 +23,7 @@ namespace Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 /// <see cref="ICoordinateTransformService"/> registration at all, every OGC API Features
 /// request failed DI activation outright under <c>DataSource:Provider=duckdb</c> or
 /// <c>mysql</c> — not just requests that transform between CRSes. Only
-/// <c>Honua.Postgres.Features.Infrastructure.Transforms.PostGisCoordinateTransformService</c>
+/// <c>Honua.Db.Postgres.Features.Infrastructure.Transforms.PostGisCoordinateTransformService</c>
 /// ever registered an implementation, because arbitrary SRID-pair transforms genuinely
 /// depend on PostGIS's <c>ST_Transform</c>/<c>spatial_ref_sys</c>.
 /// </para>

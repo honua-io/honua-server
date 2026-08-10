@@ -69,7 +69,7 @@ public sealed class SeedRbacTableParityTests
     private static HashSet<string> EnumerateAuthorizationStoreTables(string projectRoot)
     {
         var authorizationDirectory = ArchitectureTestHelpers.CombinePath(
-            projectRoot, "src", "Honua.Postgres", "Features", "Authorization");
+            projectRoot, "src", "Honua.Db", "Postgres", "Features", "Authorization");
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
 

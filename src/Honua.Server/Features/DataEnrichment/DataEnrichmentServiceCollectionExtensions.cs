@@ -5,7 +5,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.DataEnrichment.Domain;
 using Honua.Core.Features.EnrichmentCatalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.EnrichmentCatalog;
+using Honua.Db.Postgres.Features.EnrichmentCatalog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

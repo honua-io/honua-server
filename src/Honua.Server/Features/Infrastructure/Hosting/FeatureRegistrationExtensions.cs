@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata;
 using Honua.Core.Features.Portal;
 using Honua.Core.Features.Temporal;
 using Honua.Server.Features.Temporal;
-using Honua.Postgres.Features.Scene;
+using Honua.Db.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
 using Honua.ControlPlane;
 using Honua.Ai.AnalysisContent;

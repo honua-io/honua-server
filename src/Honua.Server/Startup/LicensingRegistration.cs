@@ -39,7 +39,7 @@ internal static class LicensingRegistration
         // consumes only the ILicenseContentSecretResolver abstraction, iterates every registered
         // resolver, dispatches by reference prefix, and falls back to Community when none matches.
 #if !HONUA_EXCLUDE_AWS
-        Honua.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
+        Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
             .AddAwsLicenseSecretResolver(services, configuration);
 #endif
 #if !HONUA_EXCLUDE_AZURE

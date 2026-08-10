@@ -141,7 +141,7 @@ runbooks (referenced below) prove old/new `keyId` coexistence and retirement.
 
 ### Project / Namespace Layout
 
-Following the dependency rule `Honua.Core ← Honua.Postgres / Honua.DuckDB ← Honua.Server`:
+Following the dependency rule `Honua.Core ← Honua.Db.Postgres / Honua.Db.DuckDB ← Honua.Server`:
 
 - **`Honua.Core/Features/Licensing/`** (no infrastructure deps, AOT-safe, public abstractions documented):
   - `Abstractions/` — #338 adds `ILicenseEntitlementService` and keeps
