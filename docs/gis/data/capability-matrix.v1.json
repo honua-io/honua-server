@@ -837,7 +837,7 @@
       "category": "FieldOps",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 143,
+      "provingTestCount": 144,
       "maturity": {
         "implemented": 18
       },

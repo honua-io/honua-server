@@ -55,27 +55,17 @@ internal static partial class FeatureServerEndpoints
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
         EditLimits editLimits)
     {
-        var uploadedEditCount = 0;
-        foreach (var layer in layerEdits)
-        {
-            if (!layer.Edits.IsDefault)
-            {
-                uploadedEditCount += layer.Edits.Length;
-            }
-        }
+        var uploadedEditCount = layerEdits
+            .Where(layer => !layer.Edits.IsDefault)
+            .Sum(layer => layer.Edits.Length);
 
         if (uploadedEditCount > editLimits.MaxEditsPerTransaction)
         {
             return $"Uploaded replica edits exceed the maximum of {editLimits.MaxEditsPerTransaction} edits per transaction.";
         }
 
-        foreach (var layer in layerEdits)
+        foreach (var layer in layerEdits.Where(layer => !layer.Edits.IsDefault))
         {
-            if (layer.Edits.IsDefault)
-            {
-                continue;
-            }
-
             var adds = 0;
             var updates = 0;
             var deletes = 0;
@@ -1164,8 +1154,13 @@ internal static partial class FeatureServerEndpoints
                 if (!report.Conflicts.IsDefaultOrEmpty)
                 {
                     var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
+                    // Uncancellable: the conflicts are already durable at this point, and under
+                    // manualReview the record is the ONLY copy of the withheld client edit. A client
+                    // disconnect here left the record with no client-state envelope, so after the
+                    // settle window acceptClient had nothing to apply and the edit was permanently
+                    // unresolvable (#2430).
                     var refinedTypes = await AttachConflictStatesAsync(
-                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, cancellationToken);
+                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, CancellationToken.None);
 
                     // Mirror the refined classification onto the transient synchronize response so the
                     // wire hint matches the durable conflict record the review API returns (#1287).
@@ -1562,11 +1557,24 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
+            // Each accepted entry becomes one ReplicaUploadLayerEdits whose edit slots restart at zero,
+            // and conflicts are keyed by (layerId, slot) for client-state attachment. A repeated layer
+            // id would therefore collide two entries' slots and attach both conflicts to the later
+            // payload, so a resolution could write the wrong client state. The Esri per-layer edits
+            // shape has no meaning for a repeated layer either, so reject it (#2430).
+            var seenLayerIds = new HashSet<int>();
+
             foreach (var entry in perLayer)
             {
                 if (!storageByPublicId.TryGetValue(entry.Id, out var storageLayerId))
                 {
                     error = $"edits reference layer {entry.Id} which is not part of this replica.";
+                    return false;
+                }
+
+                if (!seenLayerIds.Add(entry.Id))
+                {
+                    error = $"edits list layer {entry.Id} more than once; combine its edits into a single entry.";
                     return false;
                 }
 

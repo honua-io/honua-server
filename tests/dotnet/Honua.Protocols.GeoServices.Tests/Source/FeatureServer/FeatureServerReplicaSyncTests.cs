@@ -116,6 +116,38 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_DuplicateLayerEntries_ReturnsBadRequest()
+    {
+        // Each per-layer entry becomes its own upload batch whose edit slots restart at zero, and
+        // conflicts are keyed by (layerId, slot) when the client-state envelope is attached. A repeated
+        // layer id collides two entries' slots, so both conflicts would be attached to the later
+        // payload and a resolution could write the wrong client state (#2430).
+        var replicaId = await CreateReplicaAsync("DuplicateLayerEntries", "0");
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { id = 0, adds = new[] { new { attributes = new { name = "dup-a" } } } },
+            new { id = 0, adds = new[] { new { attributes = new { name = "dup-b" } } } },
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            edits,
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_UploadThenExtract_ExcludesOwnEdits()
     {
         var replicaId = await CreateReplicaAsync("RoundTrip", "0");

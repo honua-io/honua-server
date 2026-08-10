@@ -149,6 +149,20 @@ public static class ReplicaConflictResolutionPlanner
             return Invalid("A field merge requires a non-empty 'fieldValues' object of operator-selected attribute values.");
         }
 
+        // Field names are matched to schema fields case-insensitively, so `status` and `STATUS` in one
+        // payload name the same field with two values and which one wins depends on dictionary
+        // enumeration order. Reject rather than pick: the request does not describe a single state, and
+        // an ambiguous merge cannot be reproduced by the resume path either (#2430).
+        var distinctNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in fieldValues.Keys)
+        {
+            if (!distinctNames.Add(name))
+            {
+                return Invalid(
+                    $"'fieldValues' names field '{name}' more than once (field names are case-insensitive); supply a single value per field.");
+            }
+        }
+
         if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate or ReplicaConflictType.UpdateDelete)
         {
             return NotApplicable(

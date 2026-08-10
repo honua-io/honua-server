@@ -167,6 +167,22 @@ public sealed class ReplicaConflictResolutionPlannerTests
     }
 
     [Fact]
+    public void Plan_MergeFieldsWithCaseInsensitiveDuplicateNames_IsRejectedAsInvalidRequest()
+    {
+        // Field names are matched to schema fields case-insensitively, so these two entries name the
+        // same field with two values and which one wins depends on dictionary enumeration order. The
+        // request does not describe a single state, and an ambiguous merge is not reproducible by the
+        // resume path either.
+        var plan = ReplicaConflictResolutionPlanner.Plan(
+            Conflict(clientEditApplied: true),
+            ReplicaConflictResolutionAction.MergeFields,
+            Merge(("status", "\"a\""), ("STATUS", "\"b\"")));
+
+        plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.InvalidRequest);
+        plan.RejectionMessage.Should().Contain("case-insensitive");
+    }
+
+    [Fact]
     public void Plan_MergeFieldsOverridesFieldsCaseInsensitivelyAndKeepsGeometry()
     {
         var conflict = Conflict(
