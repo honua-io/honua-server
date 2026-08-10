@@ -1,0 +1,13 @@
+{
+  "id": "geometry-buffer-point",
+  "process": "geometry.buffer",
+  "description": "Buffer POINT(0 0) by 10 units in the input CRS (EPSG:4326). A vector op: the golden is a GeoJSON Feature compared coordinate-by-coordinate with an NTS tolerance, not byte-for-byte.",
+  "mode": "geometry",
+  "tolerance": { "coordinate": 1e-6, "numeric": 1e-6 },
+  "inputs": {
+    "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "srid": "4326",
+    "distance": "10"
+  },
+  "golden": "golden.geojson"
+}
