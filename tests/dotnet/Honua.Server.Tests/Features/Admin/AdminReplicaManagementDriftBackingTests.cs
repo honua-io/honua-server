@@ -3,7 +3,9 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
@@ -28,7 +30,10 @@ public sealed class AdminReplicaManagementDriftBackingTests : IAsyncLifetime
 
     public AdminReplicaManagementDriftBackingTests()
     {
+        // Pro licence: the replica/conflict-review surface enforces the fieldops.offline-sync
+        // entitlement in its own right, which admin authorization does not imply (#2430).
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {

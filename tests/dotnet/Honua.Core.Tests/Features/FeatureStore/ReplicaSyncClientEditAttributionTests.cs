@@ -174,6 +174,29 @@ public sealed class ReplicaSyncClientEditAttributionTests
         report.Conflicts.Select(c => c.EditIndex).Should().Equal(0, 1);
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_TwoCommittedEditsForOneObject_PromotesOnlyTheLastOne()
+    {
+        // Both updates commit, but only the last leaves its state in the row. Promoting both made
+        // accepting the earlier conflict look like a no-op while the feature held the later edit, so
+        // acceptClient reported resolved without writing the state the operator reviewed.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(committedEditIndexes: [0, 1], failed: false));
+
+        report.Conflicts.Should().HaveCount(2);
+        report.Conflicts[0].Applied.Should().BeFalse("the first update was superseded by the second");
+        report.Conflicts[1].Applied.Should().BeTrue("only the last committed edit remains in the row");
+        repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
+    }
+
     private static FeatureChange ServerChange(long objectId) => new()
     {
         ChangeId = objectId,

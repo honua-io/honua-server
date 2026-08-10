@@ -1116,10 +1116,14 @@ internal static partial class FeatureServerEndpoints
                     // wire hint matches the durable conflict record the review API returns (#1287).
                     if (conflicts is not null && refinedTypes.Count > 0)
                     {
+                        // Keyed by request slot: several occurrences of the same object can refine
+                        // differently (one geometry-only, another attribute-changing), and collapsing
+                        // them by object id gave every wire conflict one type while the durable records
+                        // were refined individually (#2430).
                         foreach (var wireConflict in conflicts.Where(
-                            c => refinedTypes.ContainsKey((c.LayerId, c.ObjectId))))
+                            c => refinedTypes.ContainsKey((c.LayerId, c.EditIndex))))
                         {
-                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.ObjectId)];
+                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.EditIndex)];
                         }
                     }
                 }
@@ -1299,7 +1303,8 @@ internal static partial class FeatureServerEndpoints
                 ObjectId = conflict.ObjectId,
                 ConflictType = (int)conflict.ConflictType,
                 Applied = conflict.Applied,
-                ConflictId = conflict.ConflictId
+                ConflictId = conflict.ConflictId,
+                EditIndex = conflict.EditIndex
             };
         }
 
@@ -1333,14 +1338,14 @@ internal static partial class FeatureServerEndpoints
     /// record cannot be loaded, or for which neither side has a captured state (e.g. delete-vs-delete),
     /// are left unchanged.
     /// </summary>
-    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>> AttachConflictStatesAsync(
+    private static async Task<Dictionary<(int PublicLayerId, int EditIndex), ReplicaConflictType>> AttachConflictStatesAsync(
         IReplicaConflictRepository conflictRepository,
         ImmutableArray<ReplicaSyncConflict> conflicts,
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
         IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string> serverStates,
         CancellationToken cancellationToken)
     {
-        var refinedTypes = new Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>();
+        var refinedTypes = new Dictionary<(int PublicLayerId, int EditIndex), ReplicaConflictType>();
         var clientStates = BuildClientConflictStates(layerEdits);
         foreach (var conflict in conflicts)
         {
@@ -1372,7 +1377,7 @@ internal static partial class FeatureServerEndpoints
             var refinedType = ReplicaConflictClassifier.Refine(existing.ConflictType, clientState, serverState);
             if (refinedType != existing.ConflictType)
             {
-                refinedTypes[key] = refinedType;
+                refinedTypes[(conflict.PublicLayerId, conflict.EditIndex)] = refinedType;
             }
 
             // Guarded, column-scoped update rather than a whole-record upsert: an operator can resolve

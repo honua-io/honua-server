@@ -3,9 +3,11 @@
 
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
@@ -68,8 +70,10 @@ internal static class ReplicaManagementEndpoints
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
-            // Promoted to GA in #2430 — no capability gate; admin authorization still
-            // required below.
+            // Promoted to GA in #2430 — no capability gate. The Pro entitlement that the experimental
+            // gate used to stand in front of is NOT implied by admin authorization, so every handler
+            // enforces it explicitly below: promoting the capability must not hand Community-edition
+            // admins a surface the GeoServices and FieldCollection sync paths already charge for.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Replicas")
@@ -159,12 +163,29 @@ internal static class ReplicaManagementEndpoints
             ReplicaManagementJsonContext.Default.ApiResponseReplicaManagementDetail);
     }
 
+    /// <summary>
+    /// Enforces the Pro <c>fieldops.offline-sync</c> entitlement on the replica/conflict-review
+    /// surface. Kept explicit rather than relying on the admin policy, which checks roles and
+    /// permissions but not edition (#2430).
+    /// </summary>
+    private static IResult? RequireOfflineSyncEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.FieldOpsOfflineSyncKey,
+            "Offline/disconnected sync");
+
     private static async Task<IResult?> ValidateServiceAsync(
         string serviceId,
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
+        var entitlement = RequireOfflineSyncEntitlement(context);
+        if (entitlement != null)
+        {
+            return entitlement;
+        }
+
         var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken)
             .ConfigureAwait(false);
         if (serviceResult.IsValid && serviceResult.Resource != null)

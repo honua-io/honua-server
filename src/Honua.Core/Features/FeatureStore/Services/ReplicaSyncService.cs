@@ -357,16 +357,36 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             ? []
             : new HashSet<int>(applyResult.CommittedEditIndexes);
 
-        var promoted = new HashSet<string>(StringComparer.Ordinal);
+        // Only the LAST committed edit for a given object leaves its client state in the row. Promoting
+        // every committed occurrence made accepting an earlier conflict look like a no-op while the
+        // feature actually held the later edit, so acceptClient reported resolved without writing the
+        // state the operator reviewed (#2430).
+        var lastCommittedSlotByObject = new Dictionary<long, int>();
         for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
-            if (!committedSlots.Contains(layerConflictSlots[i]))
+            var slot = layerConflictSlots[i];
+            if (!committedSlots.Contains(slot))
             {
                 continue;
             }
 
+            var objectId = conflicts[layerConflictIndexes[i]].ObjectId;
+            if (!lastCommittedSlotByObject.TryGetValue(objectId, out var current) || slot > current)
+            {
+                lastCommittedSlotByObject[objectId] = slot;
+            }
+        }
+
+        var promoted = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < layerConflictIndexes.Count; i++)
+        {
             var index = layerConflictIndexes[i];
             var conflict = conflicts[index];
+            if (lastCommittedSlotByObject.GetValueOrDefault(conflict.ObjectId, -1) != layerConflictSlots[i])
+            {
+                continue;
+            }
+
             conflicts[index] = conflict with { Applied = true };
 
             if (conflict.ConflictId is { Length: > 0 } promotedId)
