@@ -153,6 +153,27 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_RepeatedEditsForOneObject_TagsEachConflictWithItsRequestSlot()
+    {
+        // The adapter attaches the client state envelope per conflict, and a payload can carry several
+        // operations for one object. Without the slot, every record for that object ended up holding
+        // the last envelope, so accepting an earlier conflict wrote the later edit.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(committedEditIndexes: [0, 1], failed: false));
+
+        report.Conflicts.Should().HaveCount(2);
+        report.Conflicts.Select(c => c.EditIndex).Should().Equal(0, 1);
+    }
+
     private static FeatureChange ServerChange(long objectId) => new()
     {
         ChangeId = objectId,

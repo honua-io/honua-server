@@ -104,7 +104,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         // Anything other than a successful applyEdits payload is an error result from the shared
         // pipeline (entitlement, authorization, validation). Report it as a sanitized failure rather
         // than leaking the pipeline's internal problem detail through the conflict-review surface.
-        if (result is not JsonHttpResult<ApplyEditsResponse> { Value: { } response } || !response.Success)
+        if (result is not JsonHttpResult<ApplyEditsResponse> { Value: { } response })
         {
             return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
@@ -116,7 +116,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             ? response.DeleteResults
             : response.UpdateResults;
 
-        return Succeeded(effectResults)
+        return Succeeded(effectResults, command.Effect)
             ? new ReplicaConflictApplyResult(Applied: true, FailureMessage: null)
             : new ReplicaConflictApplyResult(Applied: false, FailureMessage);
     }
@@ -231,6 +231,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     /// means the row was never touched and is a failure — but only the collection belonging to the
     /// dispatched effect is consulted.
     /// </summary>
-    private static bool Succeeded(EditResult[]? results)
-        => results is { Length: > 0 } && Array.TrueForAll(results, static r => r.Success);
+    /// <remarks>
+    /// A delete that reports <see cref="GeoServicesEditErrorCodes.DeleteNotFound"/> counts as
+    /// committed. That is what makes the resolution write genuinely idempotent, which the recovery path
+    /// depends on: an interrupted attempt whose delete already landed re-dispatches it, and treating
+    /// "already absent" as a failure would release the claim and strand the conflict forever (#2430).
+    /// The desired end state — the feature is gone — holds either way.
+    /// </remarks>
+    private static bool Succeeded(EditResult[]? results, ReplicaConflictResolutionEffect effect)
+        => results is { Length: > 0 }
+            && Array.TrueForAll(results, r => r.Success || IsAlreadyAbsent(r, effect));
+
+    private static bool IsAlreadyAbsent(EditResult result, ReplicaConflictResolutionEffect effect)
+        => effect == ReplicaConflictResolutionEffect.DeleteFeature
+            && result.Error?.Code == GeoServicesEditErrorCodes.DeleteNotFound;
 }

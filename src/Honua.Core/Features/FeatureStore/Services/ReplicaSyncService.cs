@@ -129,6 +129,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             }
 
             var editsToApply = ImmutableArray.CreateBuilder<ReplicaUploadEdit>(edits.Length);
+            var editIndex = -1;
             // Indexes into `conflicts` for this layer whose client edit was dispatched, so the
             // recorded/reported "the client edit landed" flag can be corrected from the layer's actual
             // apply outcome below. `layerConflictIds` covers every conflict on the layer, including the
@@ -145,6 +146,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var layerConflictCount = 0;
             foreach (var edit in edits)
             {
+                editIndex++;
                 if (edit.Kind != FeatureEditOperationKind.Create &&
                     edit.ObjectId is { } objectId &&
                     serverByObjectId.TryGetValue(objectId, out var serverOp))
@@ -189,7 +191,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         edit.Kind,
                         serverOp,
                         Applied: false,
-                        ConflictId: conflictId));
+                        ConflictId: conflictId,
+                        EditIndex: editIndex));
 
                     if (!applyConflicting)
                     {

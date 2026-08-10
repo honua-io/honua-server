@@ -1322,7 +1322,11 @@ internal static partial class FeatureServerEndpoints
             }
 
             var key = (conflict.PublicLayerId, conflict.ObjectId);
-            clientStates.TryGetValue(key, out var clientState);
+            // Keyed by request slot, not by object id: a payload may carry several updates for the same
+            // object, and keying by id left every one of that object's records holding the LAST
+            // envelope — so accepting an earlier conflict wrote the later edit instead of the client
+            // intent the operator reviewed (#2430).
+            clientStates.TryGetValue((conflict.PublicLayerId, conflict.EditIndex), out var clientState);
             serverStates.TryGetValue(key, out var serverState);
             if (clientState is null && serverState is null)
             {
@@ -1360,26 +1364,26 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id, object
-    /// id). Delete edits carry no client attributes and are omitted.
+    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id,
+    /// request slot). Delete edits carry no client attributes and are omitted.
     /// </summary>
-    private static Dictionary<(int PublicLayerId, long ObjectId), string> BuildClientConflictStates(
+    private static Dictionary<(int PublicLayerId, int EditIndex), string> BuildClientConflictStates(
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits)
     {
-        var states = new Dictionary<(int, long), string>();
+        var states = new Dictionary<(int, int), string>();
         foreach (var layer in layerEdits)
         {
             var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
-            // Not rewritten as .Where: the pattern-matched `objectId`/`feature` locals are bound
-            // by the filter condition itself and consumed in the loop body — a Where lambda's
-            // pattern variables do not escape to the outer foreach body.
+            // Keyed by request slot so several operations on the same object each keep their own
+            // envelope (#2430).
             foreach (var edit in edits
-                         .Select(edit => (
+                         .Select((edit, slot) => (
+                             Slot: slot,
                              ObjectId: edit.ObjectId,
                              Feature: edit.Payload as GeoServicesFeature))
                          .Where(edit => edit.ObjectId.HasValue && edit.Feature is not null))
             {
-                states[(layer.PublicLayerId, edit.ObjectId.GetValueOrDefault())] =
+                states[(layer.PublicLayerId, edit.Slot)] =
                     SerializeStateEnvelope(edit.Feature!.Attributes, edit.Feature.Geometry);
             }
         }

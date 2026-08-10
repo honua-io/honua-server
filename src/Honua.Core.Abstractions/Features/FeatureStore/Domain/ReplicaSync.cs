@@ -112,6 +112,11 @@ public readonly record struct ReplicaSyncRequest(
 /// <param name="ConflictId">
 /// Durable conflict-record id when a record was written; null when conflict review is unsupported.
 /// </param>
+/// <param name="EditIndex">
+/// Position of the conflicting edit within its layer's uploaded edit array. A payload may carry several
+/// operations for the same object, so object identity alone cannot say which upload a conflict belongs
+/// to — the adapter needs this to attach the right client state envelope to each record (#2430).
+/// </param>
 public readonly record struct ReplicaSyncConflict(
     int PublicLayerId,
     long ObjectId,
@@ -119,7 +124,8 @@ public readonly record struct ReplicaSyncConflict(
     FeatureEditOperationKind ClientKind,
     FeatureChangeOperation ServerOperation,
     bool Applied,
-    string? ConflictId);
+    string? ConflictId,
+    int EditIndex = -1);
 
 /// <summary>
 /// Outcome of applying the uploaded edits for a single layer through the shared edit pipeline.
