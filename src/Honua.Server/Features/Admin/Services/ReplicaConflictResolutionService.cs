@@ -89,6 +89,13 @@ internal sealed partial class ReplicaConflictResolutionService
 {
     private static readonly ActivitySource _activitySource = new("Honua.Server.ReplicaConflicts");
 
+    /// <summary>
+    /// How long a claimed-but-unfinalized resolution is assumed to still be in flight. Only a claim
+    /// older than this is treated as abandoned and eligible for resume or release, so a second request
+    /// from the same operator cannot tear down its own live first attempt (#2430).
+    /// </summary>
+    private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(2);
+
     private readonly IReplicaConflictRepository _conflictRepository;
     private readonly IChangeTracker _changeTracker;
     private readonly IAuditLog _auditLog;
@@ -355,6 +362,8 @@ internal sealed partial class ReplicaConflictResolutionService
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
         }
 
+
+
         var plan = ReplicaConflictResolutionPlanner.Plan(existing, request.Action, request.Inputs);
         if (!plan.IsAccepted)
         {
@@ -363,24 +372,35 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None && !existing.WriteCommitted)
         {
-            // The marker is written after the edit commits, not inside its transaction, so a crash in
-            // that window leaves it false even though the write landed. Re-derive the fact from the
-            // change log instead of trusting the flag: a change to the conflicting feature after the
-            // conflict's own base generation means the write did commit, and resuming (rather than
-            // releasing) is what stops a retry from applying the edit a second time (#2430).
-            if (await HasPostConflictEditAsync(existing, cancellationToken).ConfigureAwait(false))
+            // Releasing is the only destructive branch here, and "same operator, same action,
+            // unfinalized" cannot by itself tell a CRASHED attempt from one still in flight. Without a
+            // lease, a second request from the same operator would tear down its own live first
+            // attempt, which could then still commit its edit while a third request claimed and wrote
+            // concurrently. Only a claim that has been silent longer than the lease is treated as
+            // abandoned; a live one is reported as already-resolved and left alone (#2430).
+            //
+            // Resuming finalization needs no such guard: it is idempotent and claim-bound, so a
+            // duplicate request converges on the same generation instead of corrupting anything.
+            var claimAge = DateTimeOffset.UtcNow - (existing.ResolvedAt ?? DateTimeOffset.UtcNow);
+            if (claimAge < ClaimLease)
             {
-                Log.ResolutionWriteMarkerRecovered(_logger, existing.ConflictId);
+                Log.ResolutionClaimStillLive(_logger, existing.ConflictId);
+                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
             }
-            else
-            {
-                // Nothing landed. Release rather than resume: resuming would report a committed
-                // resolution for a state that does not exist.
-                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
-                return Failure(
-                    ReplicaConflictResolutionStatus.WriteFailed,
-                    "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
-            }
+
+            // No durable evidence the write committed, so the abandoned attempt is released and the
+            // conflict returns to pending for a clean retry.
+            //
+            // Deliberately NOT inferred from the change log: a change-log entry carries no resolution
+            // identity, so an ordinary edit by someone else would look identical to "our write landed"
+            // and the retry would skip the write and finalize a state that never existed. The
+            // double-apply this might seem to risk is already prevented by the staleness precondition
+            // — if the write did land, the retry's probe sees it and returns 409 rather than
+            // re-applying (#2430).
+            await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+            return Failure(
+                ReplicaConflictResolutionStatus.WriteFailed,
+                "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
         }
 
         Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
@@ -611,9 +631,9 @@ internal sealed partial class ReplicaConflictResolutionService
         public static partial void ResolutionResumed(
             ILogger logger, string conflictId, string serviceId, int layerId);
 
-        [LoggerMessage(EventId = 7752, Level = LogLevel.Warning,
-            Message = "Replica conflict {ConflictId} had no committed-write marker but its feature has changed since the conflict generation; treating the write as committed and resuming finalization")]
-        public static partial void ResolutionWriteMarkerRecovered(ILogger logger, string conflictId);
+        [LoggerMessage(EventId = 7752, Level = LogLevel.Information,
+            Message = "Replica conflict {ConflictId} is claimed by an attempt that is still within the lease window; reporting already-resolved rather than resuming or releasing it")]
+        public static partial void ResolutionClaimStillLive(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7751, Level = LogLevel.Debug,
             Message = "Replica conflict {ConflictId} carries no storage layer / resolution-base generation, so the post-conflict-edit precondition was skipped")]

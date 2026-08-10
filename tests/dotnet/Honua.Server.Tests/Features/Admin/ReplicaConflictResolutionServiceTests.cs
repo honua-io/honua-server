@@ -215,6 +215,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             Status = ReplicaConflictStatus.Resolved,
             ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
             ResolvedBy = "someone-else",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             FinalizationPending = true,
             WriteCommitted = true,
         })
@@ -255,38 +256,55 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_WhenWriteMarkerWasLostButTheWriteLanded_ResumesInsteadOfReapplying()
+    public async Task ResolveAsync_WhenAbandonedClaimHasACommittedWrite_ResumesInsteadOfReapplying()
     {
-        // The committed-write marker is not inside the edit transaction, so a crash between the two
-        // leaves it false even though the write landed. Re-deriving the fact from the change log is
-        // what stops a retry from applying the edit a second time.
+        // An abandoned claim whose write is durably marked committed resumes finalization; the
+        // committed edit is never dispatched a second time.
         var claimed = Conflict(clientEditApplied: true) with
         {
             Status = ReplicaConflictStatus.Resolved,
             ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
             ResolvedBy = "operator-1",
             FinalizationPending = true,
-            WriteCommitted = false,
+            WriteCommitted = true,
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
         };
         var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
-        var tracker = new FakeChangeTracker();
-        tracker.ChangesSinceBase.Add(new FeatureChange
-        {
-            ChangeId = 1,
-            Generation = 60,
-            LayerId = 10,
-            ObjectId = 42,
-            Operation = FeatureChangeOperation.Update,
-            ChangedAt = DateTimeOffset.UtcNow,
-        });
         var applier = new RecordingApplier();
-        var service = CreateService(repository, applier, tracker);
+        var service = CreateService(repository, applier);
 
         var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
 
         result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
-        applier.Calls.Should().Be(0, "the write already landed and must not be applied twice");
+        applier.Calls.Should().Be(0, "the committed write must not be applied twice");
         repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenAnotherAttemptIsStillWithinTheClaimLease_DoesNotTearItDown()
+    {
+        // Two requests from the same operator with the same action: the second must not release or
+        // resume the first's live claim, or the first's edit could land while a third request writes
+        // concurrently.
+        var live = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow,
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(live) { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        applier.Calls.Should().Be(0);
+        repository.Current.Status.Should().Be(
+            ReplicaConflictStatus.Resolved, "the live claim must survive a concurrent duplicate request");
     }
 
     [UnitTest]
@@ -299,6 +317,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedBy = "operator-1",
             FinalizationPending = true,
             WriteCommitted = false,
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
         };
         var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
         var applier = new RecordingApplier();
