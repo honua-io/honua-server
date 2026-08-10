@@ -2009,6 +2009,13 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             int layerId,
             CancellationToken cancellationToken = default)
             => throw exception;
+
+        public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+            string serviceId,
+            int layerId,
+            string requiredProtocol,
+            CancellationToken cancellationToken = default)
+            => throw exception;
     }
 
     private sealed class InMemoryExecutionJobStore : IExecutionJobStore
