@@ -462,11 +462,17 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         // The base generation alone is NOT the completion signal: the sync service stamps it before
-        // the protocol adapter attaches the client/server envelopes, so a record can look settled while
-        // the states a resolution actually reads are still missing (#2430). Detection counts as settled
-        // only once both are durable.
+        // the protocol adapter attaches the server envelope, so a record can look settled while a state
+        // a resolution actually reads is still missing (#2430). Detection counts as settled only once
+        // BOTH envelopes are durable: the client side is now written with the record while the server
+        // side is attached afterwards, so "either one present" let an operator resolve in between and
+        // run a field merge or geometry choice against the client envelope alone, overwriting server
+        // attributes that were supposed to be preserved. The settle window above bounds the wait, so a
+        // conflict that genuinely has only one side (a client delete, or a feature the server already
+        // deleted) still becomes resolvable.
         return conflict.ResolutionBaseGeneration is null
-            || string.IsNullOrWhiteSpace(conflict.ClientStateJson) && string.IsNullOrWhiteSpace(conflict.ServerStateJson);
+            || string.IsNullOrWhiteSpace(conflict.ClientStateJson)
+            || string.IsNullOrWhiteSpace(conflict.ServerStateJson);
     }
 
     /// <summary>
@@ -701,7 +707,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // than an absent one, and the resolution id makes the duplicate identifiable.
         await RecordAuditAsync(request, claimed, plan, resolution, cancellationToken).ConfigureAwait(false);
 
-        await _conflictRepository.TryUpdateFinalizationStateAsync(
+        var markedFinalized = await _conflictRepository.TryUpdateFinalizationStateAsync(
                 new ReplicaConflictFinalizationUpdate(
                     claimed.ConflictId,
                     request.Actor,
@@ -712,6 +718,16 @@ internal sealed partial class ReplicaConflictResolutionService
                     Finalized: true),
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!markedFinalized)
+        {
+            // Same guard as the generation stamp above, and it matters just as much: a slow audit can
+            // outlive the lease and a retry can take the claim over by restamping resolved_at. Clearing
+            // the local pending flag and reporting Applied would then describe a resolution this
+            // request no longer owns, and if the replacement fails the durable conflict stays
+            // unfinalized behind a success response (#2430).
+            Log.ResolutionClaimLost(_logger, claimed.ConflictId);
+            return null;
+        }
 
         claimed = claimed with { FinalizationPending = false };
 

@@ -198,6 +198,31 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_LaterIndeterminateEditForOneObject_ShadowsTheEarlierCommittedOne()
+    {
+        // rollbackOnFailure=false commits rows independently: the first update lands, the second loses
+        // its acknowledgement. Promoting the first as the definite final writer let acceptClient on it
+        // finalize as a no-op even though the row may hold the second edit.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(
+                committedEditIndexes: [0], failed: true, indeterminateEditIndexes: [1]));
+
+        report.Conflicts.Should().HaveCount(2);
+        report.Conflicts.Should().OnlyContain(c => !c.Applied, "no edit is the definite final writer");
+        repository.DetectionUpdates.Should().OnlyContain(u => u.ClientEditApplied == null);
+        repository.DetectionUpdates.Count(u => u.ClientEditOutcomeUnknown == true)
+            .Should().Be(2, "both the indeterminate edit and the one it may have overwritten are unknown");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_PersistsTheClientEnvelopeWithTheConflictRecord()
     {
         // Under manual review the conflicting edit is withheld, so the record is the only copy of the

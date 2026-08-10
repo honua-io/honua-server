@@ -464,6 +464,58 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenOnlyTheClientEnvelopeIsAttached_TreatsDetectionAsStillInFlight()
+    {
+        // The client envelope is now written with the conflict record while the server envelope is
+        // attached afterwards, so "either one present" let an operator resolve in between - and a field
+        // merge or geometry choice would then run against the client envelope alone and overwrite the
+        // server attributes it was supposed to preserve.
+        var partial = Conflict(clientEditApplied: false) with
+        {
+            ServerStateJson = null,
+            DetectedAt = DateTimeOffset.UtcNow,
+        };
+        var repository = new FakeConflictRepository(partial);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(
+            Request(ReplicaConflictResolutionAction.MergeFields) with
+            {
+                ActionName = "mergeFields",
+                Inputs = new ReplicaConflictResolutionInputs(
+                    new Dictionary<string, JsonElement>
+                    {
+                        ["name"] = JsonDocument.Parse("\"merged\"").RootElement.Clone(),
+                    },
+                    GeometrySource: null),
+            });
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.DetectionInFlight);
+        applier.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenTheFinalMarkerLosesTheClaim_DoesNotReportApplied()
+    {
+        // A slow audit can outlive the lease and a retry can take the claim over by restamping
+        // resolved_at. Clearing the local pending flag and reporting Applied would describe a
+        // resolution this request no longer owns, and if the replacement fails the durable conflict
+        // stays unfinalized behind a success response.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true))
+        {
+            LoseClaimBeforeFinalMarker = true,
+        };
+        var service = CreateService(repository, new RecordingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        repository.Current.FinalizationPending.Should().BeTrue(
+            "the row still belongs to the replacement claim, unfinalized");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenADeferredClaimNeverFinalized_ResumesItRatherThanSupersedingIt()
     {
         // A defer whose audit failed is still owed its evidence; letting a later action supersede it
@@ -969,6 +1021,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Simulates another recovery winning the takeover first.</summary>
         public bool TakeoverLoses { get; init; }
 
+        /// <summary>Simulates a retry taking the claim over while this request's audit is running.</summary>
+        public bool LoseClaimBeforeFinalMarker { get; init; }
+
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
@@ -1059,6 +1114,13 @@ public sealed class ReplicaConflictResolutionServiceTests
             FinalizationUpdates.Add(update);
 
             if (LoseClaimAfterWrite && update.WriteCommitted != true)
+            {
+                return Task.FromResult(false);
+            }
+
+            // Only the final marker fails, so the generation stamp and audit still run: that is the
+            // state a claim taken over during a slow audit actually leaves behind.
+            if (LoseClaimBeforeFinalMarker && update.Finalized == true)
             {
                 return Task.FromResult(false);
             }

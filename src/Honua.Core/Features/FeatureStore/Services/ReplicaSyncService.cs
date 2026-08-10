@@ -371,6 +371,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     /// operations were listed in, so this — not the request slot — is what decides which of several
     /// edits to the same object leaves its state in the row.
     /// </summary>
+    /// <summary>
+    /// Whether <paramref name="candidate"/> executes after <paramref name="current"/> in the shared
+    /// edit pipeline's fixed order (kind first, then request slot).
+    /// </summary>
+    private static bool Outranks((int Rank, int Slot) candidate, (int Rank, int Slot) current)
+        => candidate.Rank > current.Rank || (candidate.Rank == current.Rank && candidate.Slot > current.Slot);
+
     private static int ExecutionRank(FeatureEditOperationKind kind) => kind switch
     {
         FeatureEditOperationKind.Create => 0,
@@ -411,21 +418,24 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         // update(5) still ends with the row deleted. Ranking by slot promoted the update, and an
         // acceptClient on it then finalized as a no-op while the feature was in fact gone (#2430).
         var lastCommittedByObject = new Dictionary<long, (int Rank, int Slot)>();
+        var lastIndeterminateByObject = new Dictionary<long, (int Rank, int Slot)>();
         for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
             var slot = layerConflictSlots[i];
-            if (!committedSlots.Contains(slot))
+            var conflict = conflicts[layerConflictIndexes[i]];
+            var candidate = (Rank: ExecutionRank(conflict.ClientKind), Slot: slot);
+
+            var target = committedSlots.Contains(slot) ? lastCommittedByObject
+                : indeterminateSlots.Contains(slot) ? lastIndeterminateByObject
+                : null;
+            if (target is null)
             {
                 continue;
             }
 
-            var conflict = conflicts[layerConflictIndexes[i]];
-            var candidate = (Rank: ExecutionRank(conflict.ClientKind), Slot: slot);
-            if (!lastCommittedByObject.TryGetValue(conflict.ObjectId, out var current) ||
-                candidate.Rank > current.Rank ||
-                (candidate.Rank == current.Rank && candidate.Slot > current.Slot))
+            if (!target.TryGetValue(conflict.ObjectId, out var current) || Outranks(candidate, current))
             {
-                lastCommittedByObject[conflict.ObjectId] = candidate;
+                target[conflict.ObjectId] = candidate;
             }
         }
 
@@ -444,6 +454,21 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var winner = lastCommittedByObject.GetValueOrDefault(conflict.ObjectId, (Rank: -1, Slot: -1));
             if (winner.Rank != ExecutionRank(conflict.ClientKind) || winner.Slot != layerConflictSlots[i])
             {
+                continue;
+            }
+
+            // A committed edit is only the definite final writer if nothing that executes AFTER it for
+            // the same object is indeterminate. With rollbackOnFailure=false an earlier row can commit
+            // while a later one loses its acknowledgement, and promoting the earlier conflict then let
+            // acceptClient finalize as a no-op even though the row may hold the later edit (#2430).
+            if (lastIndeterminateByObject.TryGetValue(conflict.ObjectId, out var laterUnknown) &&
+                Outranks(laterUnknown, winner))
+            {
+                if (conflict.ConflictId is { Length: > 0 } shadowedId)
+                {
+                    indeterminate.Add(shadowedId);
+                }
+
                 continue;
             }
 
