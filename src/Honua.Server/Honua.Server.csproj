@@ -61,6 +61,7 @@
     <ProjectReference Include="..\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.Redshift\Honua.Redshift.csproj" />
+    <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
     <ProjectReference Include="..\Honua.Databricks\Honua.Databricks.csproj" />
     <ProjectReference Include="..\Honua.Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
     <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />
@@ -130,7 +131,6 @@
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Yarp.ReverseProxy" />
-    <PackageReference Include="Honua.Sdk.GeoServices" />
   </ItemGroup>
 
   <ItemGroup>
