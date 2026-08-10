@@ -142,6 +142,58 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void IndexSourceGovernanceByStorageLayer_WithProtocolAggregateAndDedicatedFeatureServices_UsesDedicatedFeatureResource()
+    {
+        var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures]
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
+                    Protocols = [ServiceProtocols.FeatureServer]
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-aggregate", License = "MIT" } },
+                new MetadataV2Resource { Metadata = featureMetadata }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-aggregate" },
+                    ResourceId = "resource-aggregate",
+                    StorageLayerId = 7
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-feature" },
+                    ResourceId = "resource-feature",
+                    StorageLayerId = 7
+                }
+            ],
+            Publications =
+            [
+                CreatePublication("pub-aggregate", "service-aggregate", "resource-aggregate", "binding-aggregate", 7, MetadataV2PublicationType.OgcCollection),
+                CreatePublication("pub-feature", "service-feature", "resource-feature", "binding-feature", 7, MetadataV2PublicationType.EsriFeatureLayer)
+            ]
+        };
+
+        var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
+
+        result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, featureMetadata));
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithMixedPublicationsOnFeatureService_UsesEsriResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };

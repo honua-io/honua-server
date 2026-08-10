@@ -282,6 +282,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToArray();
         var service = matchingFeatureServices.FirstOrDefault(candidate =>
             string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
+        if (service is null && matchingFeatureServices.Length > 1)
+        {
+            var publishedFeatureServices = matchingFeatureServices
+                .Where(candidate => graph.Publications.Any(publication =>
+                    string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&
+                    MetadataV2ServiceProtocols.IsPreferredPublicationType(
+                        MetadataV2ServiceProtocols.FeatureServer,
+                        publication.PublicationType)))
+                .ToArray();
+            service = publishedFeatureServices.Length == 1 ? publishedFeatureServices[0] : null;
+        }
+
         service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
         if (service is null && matchingServices.Length > 0)
         {
