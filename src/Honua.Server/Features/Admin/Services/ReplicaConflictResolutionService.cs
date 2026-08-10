@@ -61,6 +61,12 @@ internal enum ReplicaConflictResolutionStatus
     /// resolution would overwrite that newer edit.
     /// </summary>
     Stale = 7,
+
+    /// <summary>
+    /// The synchronization that produced this conflict is still recording it, so its detection state
+    /// is provisional and cannot be resolved against yet.
+    /// </summary>
+    DetectionInFlight = 8,
 }
 
 /// <summary>
@@ -95,6 +101,12 @@ internal sealed partial class ReplicaConflictResolutionService
     /// from the same operator cannot tear down its own live first attempt (#2430).
     /// </summary>
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// How long after detection a conflict that still carries no resolution-base generation is treated
+    /// as being recorded by an in-flight sync rather than as a legacy record (#2430).
+    /// </summary>
+    private static readonly TimeSpan DetectionSettleWindow = TimeSpan.FromMinutes(2);
 
     private readonly IReplicaConflictRepository _conflictRepository;
     private readonly IChangeTracker _changeTracker;
@@ -160,6 +172,19 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.type", conflict.ConflictType.ToString());
         activity?.SetTag("replicaconflict.client_edit_applied", conflict.ClientEditApplied);
+
+        if (IsDetectionInFlight(conflict))
+        {
+            // The originating upload is still applying, so ClientEditApplied has not been decided yet.
+            // Resolving now would plan against a provisional snapshot: a keep-server would be recorded
+            // as a no-op and then the client edit would commit, leaving the feature holding the client
+            // state while the durable resolution claims the server state was kept (#2430).
+            Log.ResolutionDetectionInFlight(_logger, conflict.ConflictId);
+            activity?.SetStatus(ActivityStatusCode.Error, "detection-in-flight");
+            return Failure(
+                ReplicaConflictResolutionStatus.DetectionInFlight,
+                "This conflict is still being recorded by the synchronization that produced it. Retry the resolution shortly.");
+        }
 
         var plan = ReplicaConflictResolutionPlanner.Plan(conflict, request.Action, request.Inputs);
         if (!plan.IsAccepted)
@@ -337,6 +362,22 @@ internal sealed partial class ReplicaConflictResolutionService
             plan.Effect,
             Message: null);
     }
+
+    /// <summary>
+    /// Whether the conflict's own sync batch is still finalizing its detection state. The batch stamps
+    /// <see cref="ReplicaConflictRecord.ResolutionBaseGeneration"/> once it has settled, so a record
+    /// that lacks it and was detected moments ago is still in flight and must not be resolved yet.
+    /// </summary>
+    /// <remarks>
+    /// The age test is what separates an in-flight record from a legacy one: conflicts recorded before
+    /// the base generation existed also lack it, and blocking those forever would make them
+    /// permanently unresolvable. Anything older than the detection window is treated as legacy and
+    /// resolvable (with the staleness precondition skipped, as documented on
+    /// <see cref="HasPostConflictEditAsync"/>).
+    /// </remarks>
+    private static bool IsDetectionInFlight(ReplicaConflictRecord conflict)
+        => conflict.ResolutionBaseGeneration is null
+            && DateTimeOffset.UtcNow - conflict.DetectedAt < DetectionSettleWindow;
 
     /// <summary>
     /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely
@@ -541,16 +582,16 @@ internal sealed partial class ReplicaConflictResolutionService
     {
         try
         {
-            await _conflictRepository.UpsertAsync(
-                conflict with
-                {
-                    Status = ReplicaConflictStatus.Pending,
-                    ResolutionAction = null,
-                    ResolvedBy = null,
-                    ResolvedAt = null,
-                    ResolvedServerGeneration = null,
-                },
-                cancellationToken).ConfigureAwait(false);
+            // Claim-bound, not a whole-record write: two retries can both judge an expired claim
+            // abandoned, and once the first has released it a third request can claim it again. An
+            // unconditional release would clear that replacement claim and let its feature write
+            // proceed with no ownership (#2430). A release that no longer matches is a no-op.
+            if (conflict is { ResolvedBy: { } resolvedBy, ResolutionAction: { } action, ResolvedAt: { } resolvedAt })
+            {
+                await _conflictRepository
+                    .TryReleaseClaimAsync(conflict.ConflictId, resolvedBy, action, resolvedAt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -634,6 +675,10 @@ internal sealed partial class ReplicaConflictResolutionService
         [LoggerMessage(EventId = 7752, Level = LogLevel.Information,
             Message = "Replica conflict {ConflictId} is claimed by an attempt that is still within the lease window; reporting already-resolved rather than resuming or releasing it")]
         public static partial void ResolutionClaimStillLive(ILogger logger, string conflictId);
+
+        [LoggerMessage(EventId = 7753, Level = LogLevel.Information,
+            Message = "Refused to resolve replica conflict {ConflictId}: the synchronization that produced it is still recording its detection state")]
+        public static partial void ResolutionDetectionInFlight(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7751, Level = LogLevel.Debug,
             Message = "Replica conflict {ConflictId} carries no storage layer / resolution-base generation, so the post-conflict-edit precondition was skipped")]

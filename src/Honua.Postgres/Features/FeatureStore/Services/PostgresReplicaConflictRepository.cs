@@ -206,6 +206,41 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         return affected > 0;
     }
 
+    public async Task<bool> TryReleaseClaimAsync(
+        string conflictId,
+        string resolvedBy,
+        ReplicaConflictResolutionAction action,
+        DateTimeOffset resolvedAt,
+        CancellationToken cancellationToken = default)
+    {
+        // Bound to the exact claim, including its timestamp, so a stale release cannot clear a
+        // replacement claim taken after this one expired (#2430).
+        var sql = $"""
+            UPDATE honua.replica_conflicts
+            SET status = {(short)ReplicaConflictStatus.Pending},
+                resolution_action = NULL,
+                resolved_by = NULL,
+                resolved_at = NULL,
+                resolved_server_generation = NULL,
+                write_committed = FALSE,
+                finalized = FALSE
+            WHERE conflict_id = $1
+              AND resolved_by = $2
+              AND resolution_action = $3
+              AND resolved_at = $4
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, conflictId);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, resolvedBy);
+        command.Parameters.AddWithValue(NpgsqlDbType.Smallint, (short)action);
+        command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, resolvedAt);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     public async Task<ReplicaConflictResolutionOutcome> ResolveAsync(
         ReplicaConflictResolution resolution,
         CancellationToken cancellationToken = default)

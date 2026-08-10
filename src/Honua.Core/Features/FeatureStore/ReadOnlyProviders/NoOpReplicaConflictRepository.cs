@@ -46,6 +46,15 @@ public sealed class NoOpReplicaConflictRepository : IReplicaConflictRepository
         => Task.FromResult(false);
 
     /// <inheritdoc />
+    public Task<bool> TryReleaseClaimAsync(
+        string conflictId,
+        string resolvedBy,
+        ReplicaConflictResolutionAction action,
+        DateTimeOffset resolvedAt,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    /// <inheritdoc />
     public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
         ReplicaConflictResolution resolution,
         CancellationToken cancellationToken = default)

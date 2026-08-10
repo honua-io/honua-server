@@ -330,6 +330,76 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhileDetectionIsStillRecording_RefusesRatherThanPlanningOnAProvisionalSnapshot()
+    {
+        // A freshly listed last-write-wins conflict whose upload is still applying has not had
+        // ClientEditApplied decided yet. Resolving now would record keepServer as a no-op and then the
+        // client edit would commit, leaving the feature holding the client state while the resolution
+        // claims the server state was kept.
+        var inFlight = Conflict(clientEditApplied: false) with
+        {
+            ResolutionBaseGeneration = null,
+            DetectedAt = DateTimeOffset.UtcNow,
+        };
+        var repository = new FakeConflictRepository(inFlight);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.DetectionInFlight);
+        applier.Calls.Should().Be(0);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending, "the conflict stays reviewable");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_ForALegacyConflictWithoutABaseGeneration_StillResolves()
+    {
+        // Conflicts recorded before the base generation existed also lack it; the age test is what
+        // stops them being permanently unresolvable.
+        var legacy = Conflict(clientEditApplied: true) with
+        {
+            StorageLayerId = null,
+            ResolutionBaseGeneration = null,
+            DetectedAt = DateTimeOffset.UtcNow.AddDays(-3),
+        };
+        var repository = new FakeConflictRepository(legacy);
+        var service = CreateService(repository, new RecordingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+    }
+
+    [UnitTest]
+    public async Task ReleaseClaim_WhenTheClaimHasAlreadyBeenReplaced_DoesNotClearTheReplacement()
+    {
+        // Two retries can both judge an expired claim abandoned. Once the first releases it and a third
+        // request re-claims, the second release must be a no-op or it would strip the new owner.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var service = CreateService(repository, new RecordingApplier());
+
+        // A replacement claim is taken before the stale release runs.
+        var replacementClaimedAt = DateTimeOffset.UtcNow;
+        repository.Replace(expired with { ResolvedBy = "operator-2", ResolvedAt = replacementClaimedAt });
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        repository.Current.ResolvedBy.Should().Be("operator-2", "the replacement claim must survive");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Resolved);
+    }
+
     private static ReplicaConflictResolutionService CreateService(
         FakeConflictRepository repository,
         IReplicaConflictResolutionApplier applier,
@@ -365,9 +435,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         StorageLayerId = 10,
         ResolutionBaseGeneration = 40,
         ClientEditApplied = clientEditApplied,
+        DetectedAt = DateTimeOffset.UtcNow.AddHours(-1),
         ClientStateJson = """{"attributes":{"objectid":42,"name":"client"}}""",
         ServerStateJson = """{"attributes":{"objectid":42,"name":"server"}}""",
-        DetectedAt = DateTimeOffset.UtcNow,
     };
 
     private sealed class FakeChangeTracker : IChangeTracker
@@ -460,6 +530,9 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
 
+        /// <summary>Swaps the stored record, simulating another request winning the row.</summary>
+        public void Replace(ReplicaConflictRecord record) => Current = record;
+
         public Task UpsertAsync(ReplicaConflictRecord record, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -481,6 +554,36 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictDetectionUpdate update,
             CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+
+        public Task<bool> TryReleaseClaimAsync(
+            string conflictId,
+            string resolvedBy,
+            ReplicaConflictResolutionAction action,
+            DateTimeOffset resolvedAt,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Mirror the real guard: a release only applies to the exact claim it names.
+            if (!string.Equals(resolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
+                action != Current.ResolutionAction ||
+                resolvedAt != Current.ResolvedAt)
+            {
+                return Task.FromResult(false);
+            }
+
+            Current = Current with
+            {
+                Status = ReplicaConflictStatus.Pending,
+                ResolutionAction = null,
+                ResolvedBy = null,
+                ResolvedAt = null,
+                ResolvedServerGeneration = null,
+                WriteCommitted = false,
+                FinalizationPending = false,
+            };
+            return Task.FromResult(true);
+        }
 
         public Task<bool> TryUpdateFinalizationStateAsync(
             ReplicaConflictFinalizationUpdate update,

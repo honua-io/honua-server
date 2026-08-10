@@ -162,6 +162,25 @@ public interface IReplicaConflictRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns a claimed conflict to the pending, reviewable state, but only while the row still
+    /// carries the exact claim identified by the arguments. Returns true when the claim was released.
+    /// </summary>
+    /// <remarks>
+    /// Bound to the claim rather than performing a whole-record write: two retries can both decide an
+    /// expired claim is abandoned, and once the first has released it a third request can claim it
+    /// again. An unconditional release would then clear that replacement claim and let its feature
+    /// write proceed with no ownership, enabling a concurrent write (#2430). Matching
+    /// <paramref name="resolvedAt"/> as well as the operator and action makes a replacement claim —
+    /// which necessarily carries a new timestamp — non-matching.
+    /// </remarks>
+    Task<bool> TryReleaseClaimAsync(
+        string conflictId,
+        string resolvedBy,
+        ReplicaConflictResolutionAction action,
+        DateTimeOffset resolvedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Applies a resolution to a pending or deferred conflict, transitioning it to a terminal status
     /// and recording the resolution evidence. The transition is atomic: if the conflict was already
     /// resolved (including by a concurrent caller) the resolution is not re-applied and the returned
