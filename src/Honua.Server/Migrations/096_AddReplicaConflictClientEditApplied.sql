@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 092_AddReplicaConflictClientEditApplied.sql
+-- Migration: 096_AddReplicaConflictClientEditApplied.sql
 -- Description: Records whether a disconnected-sync conflict's client edit was still committed to the
 --              layer when the conflict was detected. Conflict resolution cannot be planned without it:
 --              under last-write-wins the client edit already landed (so "accept client" is a no-op and
