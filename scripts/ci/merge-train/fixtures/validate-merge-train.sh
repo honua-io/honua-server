@@ -1498,8 +1498,10 @@ git checkout -q origin/trunk 2>/dev/null || true
 
 echo
 echo "== Single merge authority static guard =="
-node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
-  && ok "review gate: active/dismissed/unresolved evidence fixtures" \
+node --test \
+  "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
+  "${REAL_ROOT}/scripts/ci/review-gate-snapshot.test.js" \
+  && ok "review gate: evidence and pagination fixtures" \
   || bad "review gate: evidence fixtures failed"
 assert_not_contains "review gate: reaction permission removed with reaction evidence" \
   "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \
