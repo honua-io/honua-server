@@ -48,9 +48,11 @@ public sealed class ReplicaSyncClientEditAttributionTests
         report.Conflicts.Single(c => c.ObjectId == 43).Applied.Should().BeFalse(
             "the conflicting edit for 43 never committed");
 
-        repository.DetectionUpdates.Should().ContainSingle();
-        var promoted = repository.DetectionUpdates.Single();
-        promoted.ClientEditApplied.Should().BeTrue();
+        // Every conflict on the layer is stamped with the resolution-base generation; only the one
+        // whose own edit committed is also promoted to client-edit-applied.
+        repository.DetectionUpdates.Should().HaveCount(2);
+        repository.DetectionUpdates.Should().OnlyContain(u => u.ResolutionBaseGeneration != null);
+        var promoted = repository.DetectionUpdates.Should().ContainSingle(u => u.ClientEditApplied == true).Subject;
         repository.RecordFor(promoted.ConflictId).ObjectId.Should().Be(42);
     }
 
@@ -71,7 +73,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
         repository.Upserts.Should().ContainSingle();
         repository.Upserts.Single().ClientEditApplied.Should().BeFalse();
-        repository.DetectionUpdates.Should().BeEmpty("a failed edit is never promoted");
+        repository.Upserts.Single().StorageLayerId.Should().Be(
+            10, "a resolution needs the storage layer id to probe the change log for post-conflict edits");
+        repository.DetectionUpdates.Should().NotContain(
+            u => u.ClientEditApplied == true, "a failed edit is never promoted");
     }
 
     [UnitTest]
@@ -94,6 +99,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Should().ContainSingle();
         var update = repository.DetectionUpdates.Single();
         update.ClientEditApplied.Should().BeTrue();
+        update.ResolutionBaseGeneration.Should().NotBeNull(
+            "the resolution staleness precondition needs the generation the captured states describe");
         update.ConflictType.Should().BeNull("promotion must not overwrite the refined classification");
         update.ClientStateJson.Should().BeNull();
         update.ServerStateJson.Should().BeNull();
@@ -115,7 +122,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
             new PartialFailureEditApplier(committedObjectIds: null, failed: false));
 
         report.Conflicts.Single().Applied.Should().BeFalse();
-        repository.DetectionUpdates.Should().BeEmpty();
+        repository.DetectionUpdates.Should().NotContain(u => u.ClientEditApplied == true);
     }
 
     private static FeatureChange ServerChange(long objectId) => new()
@@ -225,9 +232,15 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 ClientStateJson = update.ClientStateJson ?? record.ClientStateJson,
                 ServerStateJson = update.ServerStateJson ?? record.ServerStateJson,
                 ClientEditApplied = update.ClientEditApplied ?? record.ClientEditApplied,
+                ResolutionBaseGeneration = update.ResolutionBaseGeneration ?? record.ResolutionBaseGeneration,
             };
             return Task.FromResult(true);
         }
+
+        public Task<bool> TryUpdateFinalizationStateAsync(
+            ReplicaConflictFinalizationUpdate update,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
             ReplicaConflictResolution resolution,

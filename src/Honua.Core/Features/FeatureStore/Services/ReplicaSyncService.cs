@@ -126,9 +126,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             }
 
             var editsToApply = ImmutableArray.CreateBuilder<ReplicaUploadEdit>(edits.Length);
-            // Indexes into `conflicts` for this layer, so the recorded/reported "the client edit
-            // landed" flag can be corrected from the layer's actual apply outcome below.
+            // Indexes into `conflicts` for this layer whose client edit was dispatched, so the
+            // recorded/reported "the client edit landed" flag can be corrected from the layer's actual
+            // apply outcome below. `layerConflictIds` covers every conflict on the layer, including the
+            // ones manual review withheld, because all of them need the resolution-base generation.
             var layerConflictIndexes = new List<int>();
+            var layerConflictIds = new List<string>();
+            var layerConflictCount = 0;
             foreach (var edit in edits)
             {
                 if (edit.Kind != FeatureEditOperationKind.Create &&
@@ -149,8 +153,14 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     // the edit would lose it with no record to resolve. Under last-write-wins the edit
                     // is still applied below, so a record failure stays tolerable (logged only).
                     var conflictId = canRecordConflicts
-                        ? await RecordConflictAsync(request, layer.PublicLayerId, objectId, conflictType, mustRecord: !applyConflicting, cancellationToken).ConfigureAwait(false)
+                        ? await RecordConflictAsync(request, layer, objectId, conflictType, mustRecord: !applyConflicting, cancellationToken).ConfigureAwait(false)
                         : null;
+
+                    layerConflictCount++;
+                    if (conflictId is { Length: > 0 })
+                    {
+                        layerConflictIds.Add(conflictId);
+                    }
 
                     if (applyConflicting)
                     {
@@ -192,10 +202,21 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 firstFailure ??= applyResult.FailureMessage;
             }
 
-            if (layerConflictIndexes.Count > 0)
+            if (layerConflictCount > 0)
             {
+                // Everything this sync did to the layer is at or below this cursor, so a later change
+                // to one of its conflicting features is unambiguously a post-conflict edit. Stamping
+                // it here is what lets a resolution reject a stale overwrite (#2430).
+                var layerGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 await MarkConflictsAppliedAsync(
-                        conflicts, layerConflictIndexes, applyResult, canRecordConflicts, cancellationToken)
+                        conflicts,
+                        layerConflictIndexes,
+                        layerConflictIds,
+                        applyResult,
+                        layerGeneration,
+                        canRecordConflicts,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -268,18 +289,17 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     private async Task MarkConflictsAppliedAsync(
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
+        List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
+        long layerGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
         var committed = applyResult.CommittedObjectIds.IsDefaultOrEmpty
             ? []
             : new HashSet<long>(applyResult.CommittedObjectIds);
-        if (committed.Count == 0)
-        {
-            return;
-        }
 
+        var promoted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var index in layerConflictIndexes)
         {
             var conflict = conflicts[index];
@@ -290,11 +310,21 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
             conflicts[index] = conflict with { Applied = true };
 
-            if (!canRecordConflicts || conflict.ConflictId is not { Length: > 0 } conflictId)
+            if (conflict.ConflictId is { Length: > 0 } promotedId)
             {
-                continue;
+                promoted.Add(promotedId);
             }
+        }
 
+        if (!canRecordConflicts)
+        {
+            return;
+        }
+
+        // Every conflict on the layer gets the resolution-base generation, including the ones manual
+        // review withheld; only the ones whose own edit committed also get the applied flag.
+        foreach (var conflictId in layerConflictIds)
+        {
             try
             {
                 await _conflictRepository.TryUpdateDetectionStateAsync(
@@ -303,7 +333,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ConflictType: null,
                             ClientStateJson: null,
                             ServerStateJson: null,
-                            ClientEditApplied: true),
+                            ClientEditApplied: promoted.Contains(conflictId) ? true : null,
+                            ResolutionBaseGeneration: layerGeneration),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -330,12 +361,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     // describes what actually landed rather than the requested conflict policy (#2430).
     private async Task<string?> RecordConflictAsync(
         ReplicaSyncRequest request,
-        int publicLayerId,
+        ReplicaUploadLayerEdits layer,
         long objectId,
         ReplicaConflictType conflictType,
         bool mustRecord,
         CancellationToken cancellationToken)
     {
+        var publicLayerId = layer.PublicLayerId;
         var conflictId = Guid.NewGuid().ToString("N");
         var record = new ReplicaConflictRecord
         {
@@ -351,6 +383,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             UserId = request.UserId,
             ServerGeneration = request.BaseGeneration,
             ClientEditApplied = false,
+            // Persisted so a later resolution can probe the change log for post-conflict edits without
+            // re-resolving metadata (#2430).
+            StorageLayerId = layer.StorageLayerId,
             DetectedAt = DateTimeOffset.UtcNow,
         };
 

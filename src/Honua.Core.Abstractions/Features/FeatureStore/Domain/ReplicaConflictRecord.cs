@@ -94,6 +94,14 @@ public readonly record struct ReplicaConflictRecord
     /// <summary>Service-local layer id of the conflicting feature.</summary>
     public required int LayerId { get; init; }
 
+    /// <summary>
+    /// Storage-layer id of the conflicting feature, as used by the change log. Persisted so a
+    /// resolution can probe the change tracker for post-conflict edits without
+    /// re-resolving metadata; null on records written before the staleness precondition existed, which
+    /// simply skips that precondition (#2430).
+    /// </summary>
+    public int? StorageLayerId { get; init; }
+
     /// <summary>Stable object id of the conflicting feature.</summary>
     public required long ObjectId { get; init; }
 
@@ -121,9 +129,45 @@ public readonly record struct ReplicaConflictRecord
 
     /// <summary>
     /// Server generation cursor captured when the conflict was recorded. Links the conflict to the
-    /// temporal change-set history (#1166).
+    /// temporal change-set history (#1166). This is the replica's <em>base</em> generation, i.e. the
+    /// cursor the upload was computed against — not the generation the conflict's own edit produced,
+    /// which is <see cref="ResolutionBaseGeneration"/>.
     /// </summary>
     public required long ServerGeneration { get; init; }
+
+    /// <summary>
+    /// Server generation as of the moment this conflict's own sync batch finished touching its layer,
+    /// i.e. the cursor the captured client/server states describe. A change to
+    /// <c>(StorageLayerId, ObjectId)</c> after this generation is a <em>newer, post-conflict</em> edit,
+    /// which is what makes a late resolution unsafe to apply (#2430).
+    /// </summary>
+    /// <remarks>
+    /// Null when the conflict predates the staleness precondition or its layer's generation could not
+    /// be stamped; the resolution surface then skips the precondition rather than blocking on a value
+    /// it does not have, and says so in the code path.
+    /// </remarks>
+    public long? ResolutionBaseGeneration { get; init; }
+
+    /// <summary>
+    /// Whether the resolution's feature write has committed. Set immediately after the shared edit
+    /// pipeline reports the write applied and before finalization begins, so a retry of an
+    /// interrupted resolution knows whether it must still perform the write or only resume
+    /// finalization — the write is never applied twice (#2430).
+    /// </summary>
+    public bool WriteCommitted { get; init; }
+
+    /// <summary>
+    /// Whether the resolution has been claimed but not yet finalized — its produced generation not
+    /// persisted, or its audit evidence not written. Such a resolution is resumable: a retry completes
+    /// the remaining finalization instead of short-circuiting to already-resolved, so an interruption
+    /// after the feature write cannot leave the generation or audit trail permanently absent (#2430).
+    /// </summary>
+    /// <remarks>
+    /// Expressed as "pending" rather than "finalized" so the default is the safe, terminal value:
+    /// records written before the resume path existed, and any record built without this field, read
+    /// as complete rather than perpetually resumable.
+    /// </remarks>
+    public bool FinalizationPending { get; init; }
 
     /// <summary>
     /// Whether the conflicting client edit was still committed to the layer when the conflict was

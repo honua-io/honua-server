@@ -392,6 +392,9 @@ internal static class ReplicaManagementEndpoints
             ReplicaConflictResolutionStatus.NotApplicable => (
                 StatusCodes.Status409Conflict,
                 result.Message ?? "The selected resolution does not apply to this conflict."),
+            ReplicaConflictResolutionStatus.Stale => (
+                StatusCodes.Status409Conflict,
+                result.Message ?? "The feature was edited after this conflict was recorded; re-review the conflict against the current server state."),
             ReplicaConflictResolutionStatus.WriteUnsupported => (
                 StatusCodes.Status501NotImplemented,
                 result.Message ?? "Applying this resolution is not supported by this deployment."),

@@ -19,7 +19,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         sync_operation_id, device_id, user_id, server_generation,
         base_state_json, client_state_json, server_state_json, detected_at,
         resolution_action, resolved_by, resolved_at, resolved_server_generation,
-        client_edit_applied
+        client_edit_applied, storage_layer_id, resolution_base_generation,
+        write_committed, finalized
         """;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -39,8 +40,10 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 sync_operation_id, device_id, user_id, server_generation,
                 base_state_json, client_state_json, server_state_json, detected_at,
                 resolution_action, resolved_by, resolved_at, resolved_server_generation,
-                client_edit_applied)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                client_edit_applied, storage_layer_id, resolution_base_generation,
+                write_committed, finalized)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                    $21, $22, $23, $24)
             ON CONFLICT (conflict_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 conflict_type = EXCLUDED.conflict_type,
@@ -51,7 +54,11 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 resolved_by = EXCLUDED.resolved_by,
                 resolved_at = EXCLUDED.resolved_at,
                 resolved_server_generation = EXCLUDED.resolved_server_generation,
-                client_edit_applied = EXCLUDED.client_edit_applied
+                client_edit_applied = EXCLUDED.client_edit_applied,
+                storage_layer_id = EXCLUDED.storage_layer_id,
+                resolution_base_generation = EXCLUDED.resolution_base_generation,
+                write_committed = EXCLUDED.write_committed,
+                finalized = EXCLUDED.finalized
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -77,6 +84,10 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableTimestampTz(record.ResolvedAt));
         command.Parameters.Add(NullableBigint(record.ResolvedServerGeneration));
         command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.ClientEditApplied);
+        command.Parameters.Add(NullableInteger(record.StorageLayerId));
+        command.Parameters.Add(NullableBigint(record.ResolutionBaseGeneration));
+        command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.WriteCommitted);
+        command.Parameters.AddWithValue(NpgsqlDbType.Boolean, !record.FinalizationPending);
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -143,7 +154,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
             SET conflict_type = COALESCE($2, conflict_type),
                 client_state_json = COALESCE($3, client_state_json),
                 server_state_json = COALESCE($4, server_state_json),
-                client_edit_applied = COALESCE($5, client_edit_applied)
+                client_edit_applied = COALESCE($5, client_edit_applied),
+                resolution_base_generation = COALESCE($6, resolution_base_generation)
             WHERE conflict_id = $1
               AND status = {(short)ReplicaConflictStatus.Pending}
             """;
@@ -155,6 +167,33 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableJsonb(update.ClientStateJson));
         command.Parameters.Add(NullableJsonb(update.ServerStateJson));
         command.Parameters.Add(NullableBoolean(update.ClientEditApplied));
+        command.Parameters.Add(NullableBigint(update.ResolutionBaseGeneration));
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
+    public async Task<bool> TryUpdateFinalizationStateAsync(
+        ReplicaConflictFinalizationUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        // Guarded on the conflict having been claimed (it is no longer pending): finalization progress
+        // is only meaningful for a resolution in flight, and a released claim must not be re-marked.
+        var sql = $"""
+            UPDATE honua.replica_conflicts
+            SET write_committed = COALESCE($2, write_committed),
+                resolved_server_generation = COALESCE($3, resolved_server_generation),
+                finalized = COALESCE($4, finalized)
+            WHERE conflict_id = $1
+              AND status <> {(short)ReplicaConflictStatus.Pending}
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, update.ConflictId);
+        command.Parameters.Add(NullableBoolean(update.WriteCommitted));
+        command.Parameters.Add(NullableBigint(update.ResolvedServerGeneration));
+        command.Parameters.Add(NullableBoolean(update.Finalized));
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
@@ -178,7 +217,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 resolution_action = $3,
                 resolved_by = $4,
                 resolved_at = $5,
-                resolved_server_generation = $6
+                resolved_server_generation = $6,
+                write_committed = FALSE,
+                finalized = FALSE
             WHERE conflict_id = $1
               AND status <> {(short)ReplicaConflictStatus.Resolved}
             RETURNING {SelectColumns}
@@ -230,6 +271,10 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         ResolvedAt = reader.IsDBNull(17) ? null : reader.GetFieldValue<DateTimeOffset>(17),
         ResolvedServerGeneration = reader.IsDBNull(18) ? null : reader.GetInt64(18),
         ClientEditApplied = reader.GetBoolean(19),
+        StorageLayerId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+        ResolutionBaseGeneration = reader.IsDBNull(21) ? null : reader.GetInt64(21),
+        WriteCommitted = reader.GetBoolean(22),
+        FinalizationPending = !reader.GetBoolean(23),
     };
 
     private static NpgsqlParameter NullableText(string? value) =>
@@ -243,6 +288,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
 
     private static NpgsqlParameter NullableBigint(long? value) =>
         new() { NpgsqlDbType = NpgsqlDbType.Bigint, Value = (object?)value ?? DBNull.Value };
+
+    private static NpgsqlParameter NullableInteger(int? value) =>
+        new() { NpgsqlDbType = NpgsqlDbType.Integer, Value = (object?)value ?? DBNull.Value };
 
     private static NpgsqlParameter NullableBoolean(bool? value) =>
         new() { NpgsqlDbType = NpgsqlDbType.Boolean, Value = (object?)value ?? DBNull.Value };

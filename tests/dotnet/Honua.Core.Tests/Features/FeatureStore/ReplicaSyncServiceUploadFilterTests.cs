@@ -198,6 +198,11 @@ public sealed class ReplicaSyncServiceUploadFilterTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
+        public Task<bool> TryUpdateFinalizationStateAsync(
+            ReplicaConflictFinalizationUpdate update,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
             ReplicaConflictResolution resolution,
             CancellationToken cancellationToken = default)

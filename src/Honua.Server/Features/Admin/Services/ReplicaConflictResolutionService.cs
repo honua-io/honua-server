@@ -55,6 +55,12 @@ internal enum ReplicaConflictResolutionStatus
 
     /// <summary>The resolved feature state failed to commit through the shared edit pipeline.</summary>
     WriteFailed = 6,
+
+    /// <summary>
+    /// The feature was edited after the conflict was recorded, so applying the conflict-time
+    /// resolution would overwrite that newer edit.
+    /// </summary>
+    Stale = 7,
 }
 
 /// <summary>
@@ -138,7 +144,11 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (conflict.Status == ReplicaConflictStatus.Resolved)
         {
-            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            // Already claimed. That is only terminal if the resolution actually finished — an
+            // interrupted one is resumed here rather than reported as already-resolved, which is what
+            // stops a post-write failure from stranding the generation and audit evidence (#2430).
+            return await ResumeOrRejectAsync(conflict, request, activity, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         activity?.SetTag("replicaconflict.type", conflict.ConflictType.ToString());
@@ -185,9 +195,12 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (!outcome.Applied)
         {
-            // A concurrent operator won the guarded claim; do not write, report success, or emit a
-            // success audit event for this losing request.
-            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            // Either a concurrent operator won the guarded claim, or a previous attempt by THIS
+            // resolution claimed the conflict and then failed part-way through finalization. Only the
+            // first is genuinely already-resolved; the second is resumable, and short-circuiting it
+            // would strand the produced generation and audit evidence forever (#2430).
+            return await ResumeOrRejectAsync(outcome.Record.Value, request, activity, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var claimed = outcome.Record.Value;
@@ -218,6 +231,20 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
+
+        if (plan.Effect != ReplicaConflictResolutionEffect.None &&
+            await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false))
+        {
+            // The feature moved after this conflict was recorded, so the captured conflict-time state
+            // is no longer a safe thing to write: applying it would silently clobber that newer edit.
+            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+            Log.ResolutionStale(
+                _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
+            activity?.SetStatus(ActivityStatusCode.Error, "stale");
+            return Failure(
+                ReplicaConflictResolutionStatus.Stale,
+                "This feature was edited after the conflict was recorded, so applying the conflict-time resolution would overwrite that newer edit. Re-review the conflict against the current server state.");
+        }
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None)
         {
@@ -261,6 +288,15 @@ internal sealed partial class ReplicaConflictResolutionService
                     ReplicaConflictResolutionStatus.WriteFailed,
                     applyResult.FailureMessage ?? "The resolved conflict state could not be committed.");
             }
+
+            // Record that the write landed BEFORE finalization begins, so a resumed attempt knows not
+            // to apply it a second time.
+            await _conflictRepository.TryUpdateFinalizationStateAsync(
+                    new ReplicaConflictFinalizationUpdate(
+                        claimed.ConflictId, WriteCommitted: true, ResolvedServerGeneration: null, Finalized: null),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            claimed = claimed with { WriteCommitted = true };
         }
 
         // Past this point the feature write has committed, so finalization must not be abandoned
@@ -269,18 +305,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // retries answered with AlreadyResolved. Finalization therefore runs on an uncancellable token.
         var finalizationToken = CancellationToken.None;
 
-        // The generation cursor is read AFTER the write so it names the generation the resolution
-        // actually produced, not the one that happened to be current when the request arrived.
-        if (plan.CommittedNewServerState)
-        {
-            var resolvedGeneration = await _changeTracker.GetCurrentGenerationAsync(finalizationToken)
-                .ConfigureAwait(false);
-            resolution = resolution with { ResolvedServerGeneration = resolvedGeneration };
-            claimed = claimed with { ResolvedServerGeneration = resolvedGeneration };
-            await _conflictRepository.UpsertAsync(claimed, finalizationToken).ConfigureAwait(false);
-        }
-
-        await RecordAuditAsync(request, conflict, plan, resolution, finalizationToken).ConfigureAwait(false);
+        claimed = await FinalizeAsync(claimed, request, plan, resolution, finalizationToken).ConfigureAwait(false);
 
         Log.ResolutionApplied(
             _logger,
@@ -297,6 +322,144 @@ internal sealed partial class ReplicaConflictResolutionService
             plan.CommittedNewServerState,
             plan.Effect,
             Message: null);
+    }
+
+    /// <summary>
+    /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely
+    /// already-resolved. One that was claimed but never finalized is a previous attempt of this same
+    /// resolution that failed part-way through finalization: it is resumed and completed here rather
+    /// than short-circuited, so the produced generation and audit evidence cannot be stranded (#2430).
+    /// </summary>
+    /// <remarks>
+    /// Resume never re-applies the feature write — <see cref="ReplicaConflictRecord.WriteCommitted"/>
+    /// records that it already landed, and a record that was claimed without the write committing is
+    /// released back to pending so the operator can retry cleanly.
+    /// </remarks>
+    private async Task<ReplicaConflictResolutionResult> ResumeOrRejectAsync(
+        ReplicaConflictRecord existing,
+        ReplicaConflictResolutionServiceRequest request,
+        Activity? activity,
+        CancellationToken cancellationToken)
+    {
+        var sameResolution = existing.ResolutionAction == request.Action
+            && string.Equals(existing.ResolvedBy, request.Actor, StringComparison.Ordinal);
+        if (!existing.FinalizationPending || !sameResolution)
+        {
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(existing, request.Action, request.Inputs);
+        if (!plan.IsAccepted)
+        {
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
+
+        if (plan.Effect != ReplicaConflictResolutionEffect.None && !existing.WriteCommitted)
+        {
+            // Claimed, but the write never landed. Release rather than resume: resuming would report a
+            // committed resolution for a state that does not exist.
+            await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+            return Failure(
+                ReplicaConflictResolutionStatus.WriteFailed,
+                "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
+        }
+
+        Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
+        activity?.SetTag("replicaconflict.resumed", true);
+
+        var resumedResolution = new ReplicaConflictResolution(
+            existing.ConflictId,
+            request.Action,
+            request.Actor,
+            existing.ResolvedAt ?? DateTimeOffset.UtcNow,
+            existing.ResolvedServerGeneration);
+
+        var finalized = await FinalizeAsync(existing, request, plan, resumedResolution, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        return new ReplicaConflictResolutionResult(
+            ReplicaConflictResolutionStatus.Applied,
+            finalized,
+            plan.CommittedNewServerState,
+            plan.Effect,
+            Message: null);
+    }
+
+    /// <summary>
+    /// Completes a claimed resolution: stamps the generation the committed write produced, records the
+    /// audit evidence, and marks the resolution finalized. Idempotent — a resume re-runs it without
+    /// re-applying the feature write, and an already-stamped generation is reused rather than replaced.
+    /// </summary>
+    private async Task<ReplicaConflictRecord> FinalizeAsync(
+        ReplicaConflictRecord claimed,
+        ReplicaConflictResolutionServiceRequest request,
+        ReplicaConflictResolutionPlan plan,
+        ReplicaConflictResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        long? resolvedGeneration = claimed.ResolvedServerGeneration;
+        if (plan.CommittedNewServerState && resolvedGeneration is null)
+        {
+            // The cursor is read AFTER the write so it names the generation the resolution actually
+            // produced, not the one that happened to be current when the request arrived.
+            resolvedGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        resolution = resolution with { ResolvedServerGeneration = resolvedGeneration };
+        claimed = claimed with { ResolvedServerGeneration = resolvedGeneration, FinalizationPending = false };
+
+        await _conflictRepository.TryUpdateFinalizationStateAsync(
+                new ReplicaConflictFinalizationUpdate(
+                    claimed.ConflictId,
+                    WriteCommitted: null,
+                    ResolvedServerGeneration: resolvedGeneration,
+                    Finalized: true),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await RecordAuditAsync(request, claimed, plan, resolution, cancellationToken).ConfigureAwait(false);
+
+        Log.ResolutionApplied(
+            _logger,
+            claimed.ConflictId,
+            claimed.ServiceId,
+            claimed.LayerId,
+            claimed.ObjectId,
+            request.Action,
+            plan.Effect);
+
+        return claimed;
+    }
+
+    /// <summary>
+    /// Whether the conflicting feature has been edited since the generation the conflict's captured
+    /// states describe. That is the precondition a late resolution must satisfy: without it a
+    /// keep-server, field merge, geometry choice, or accepted delete reviewed long after detection
+    /// silently overwrites a legitimate post-conflict edit (#2430).
+    /// </summary>
+    /// <remarks>
+    /// Requires both the storage-layer id and the resolution-base generation the sync service stamps
+    /// on the record. Conflicts recorded before those existed carry neither, and the precondition is
+    /// skipped for them rather than blocking every legacy conflict from ever being resolved; the same
+    /// applies when the change tracker cannot answer, which is logged.
+    /// </remarks>
+    private async Task<bool> HasPostConflictEditAsync(
+        ReplicaConflictRecord conflict,
+        CancellationToken cancellationToken)
+    {
+        if (conflict.StorageLayerId is not { } storageLayerId ||
+            conflict.ResolutionBaseGeneration is not { } baseGeneration)
+        {
+            Log.ResolutionStalenessUncheckable(_logger, conflict.ConflictId);
+            return false;
+        }
+
+        var changes = await _changeTracker
+            .GetChangesSinceAsync(baseGeneration, [storageLayerId], new HashSet<long> { conflict.ObjectId }, cancellationToken)
+            .ConfigureAwait(false);
+
+        return changes.Any(change => change.ObjectId == conflict.ObjectId);
     }
 
     /// <summary>
@@ -397,6 +560,20 @@ internal sealed partial class ReplicaConflictResolutionService
             Message = "Replica conflict {ConflictId} for service {ServiceId} layer {LayerId} needs a feature write but no replica conflict-resolution applier is registered")]
         public static partial void ResolutionWriteUnsupported(
             ILogger logger, string conflictId, string serviceId, int layerId);
+
+        [LoggerMessage(EventId = 7749, Level = LogLevel.Warning,
+            Message = "Refused to resolve replica conflict {ConflictId} for service {ServiceId} layer {LayerId} objectId {ObjectId}: the feature was edited after the conflict was recorded")]
+        public static partial void ResolutionStale(
+            ILogger logger, string conflictId, string serviceId, int layerId, long objectId);
+
+        [LoggerMessage(EventId = 7750, Level = LogLevel.Information,
+            Message = "Resuming finalization of replica conflict {ConflictId} for service {ServiceId} layer {LayerId} after an interrupted resolution")]
+        public static partial void ResolutionResumed(
+            ILogger logger, string conflictId, string serviceId, int layerId);
+
+        [LoggerMessage(EventId = 7751, Level = LogLevel.Debug,
+            Message = "Replica conflict {ConflictId} carries no storage layer / resolution-base generation, so the post-conflict-edit precondition was skipped")]
+        public static partial void ResolutionStalenessUncheckable(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7748, Level = LogLevel.Error,
             Message = "Replica conflict {ConflictId} could not be returned to the pending state after its resolved feature state failed to commit; it may remain recorded as resolved")]

@@ -58,12 +58,40 @@ public readonly record struct ReplicaConflictResolutionOutcome(
 /// <param name="ClientEditApplied">
 /// Whether the conflicting client edit committed, or null to leave it unchanged.
 /// </param>
+/// <param name="ResolutionBaseGeneration">
+/// Server generation as of the moment the conflict's own sync batch finished touching its layer — the
+/// cursor the captured states describe, and the precondition a later resolution checks against. Null
+/// leaves it unchanged.
+/// </param>
 public readonly record struct ReplicaConflictDetectionUpdate(
     string ConflictId,
     ReplicaConflictType? ConflictType,
     string? ClientStateJson,
     string? ServerStateJson,
-    bool? ClientEditApplied);
+    bool? ClientEditApplied,
+    long? ResolutionBaseGeneration = null);
+
+/// <summary>
+/// A progress marker for an in-flight resolution: whether its feature write has committed, the
+/// generation that write produced, and whether finalization is complete. Lets an interrupted
+/// resolution be resumed exactly once rather than leaving the conflict terminally claimed with its
+/// generation or audit evidence missing (#2430).
+/// </summary>
+/// <param name="ConflictId">Conflict being resolved.</param>
+/// <param name="WriteCommitted">
+/// Whether the resolution's feature write has committed, or null to leave it unchanged.
+/// </param>
+/// <param name="ResolvedServerGeneration">
+/// Generation produced by the committed write, or null to leave it unchanged.
+/// </param>
+/// <param name="Finalized">
+/// Whether finalization is complete, or null to leave it unchanged.
+/// </param>
+public readonly record struct ReplicaConflictFinalizationUpdate(
+    string ConflictId,
+    bool? WriteCommitted,
+    long? ResolvedServerGeneration,
+    bool? Finalized);
 
 /// <summary>
 /// Persistent storage for durable disconnected-sync conflict records (#1167). Conflict records are
@@ -110,6 +138,16 @@ public interface IReplicaConflictRepository
     /// </summary>
     Task<bool> TryUpdateDetectionStateAsync(
         ReplicaConflictDetectionUpdate update,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records resolution progress on a conflict that is no longer pending. Returns true when the row
+    /// was updated. Used to mark the feature write committed before finalization begins, and to mark
+    /// finalization complete once the produced generation and audit evidence are durable, so an
+    /// interrupted resolution can be resumed without re-applying the write (#2430).
+    /// </summary>
+    Task<bool> TryUpdateFinalizationStateAsync(
+        ReplicaConflictFinalizationUpdate update,
         CancellationToken cancellationToken = default);
 
     /// <summary>

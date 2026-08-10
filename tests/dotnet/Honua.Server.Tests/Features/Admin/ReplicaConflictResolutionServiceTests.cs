@@ -89,12 +89,152 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.Current.ResolvedServerGeneration.Should().Be(FakeChangeTracker.Generation);
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenFeatureWasEditedAfterTheConflict_ReturnsStaleAndDoesNotWrite()
+    {
+        // A resolution reviewed long after detection must not apply the conflict-time state over a
+        // legitimate newer edit. The change tracker reports a change to the conflicting feature after
+        // the generation the captured states describe, so the write is refused.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(new FeatureChange
+        {
+            ChangeId = 1,
+            Generation = 55,
+            LayerId = 10,
+            ObjectId = 42,
+            Operation = FeatureChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UtcNow,
+        });
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        applier.Calls.Should().Be(0, "a stale resolution must never overwrite the newer edit");
+        repository.Current.Status.Should().Be(
+            ReplicaConflictStatus.Pending, "the conflict stays reviewable against the current state");
+        repository.Current.ResolutionAction.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenAnUnrelatedFeatureChanged_StillResolves()
+    {
+        // The probe is scoped to the conflicting feature: unrelated churn on the layer must not block
+        // every resolution.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(new FeatureChange
+        {
+            ChangeId = 1,
+            Generation = 55,
+            LayerId = 10,
+            ObjectId = 4242,
+            Operation = FeatureChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UtcNow,
+        });
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenConflictPredatesThePrecondition_SkipsTheStalenessCheck()
+    {
+        // Conflicts recorded before the precondition existed carry no storage layer / base generation.
+        // They must stay resolvable rather than being permanently blocked.
+        var legacy = Conflict(clientEditApplied: true) with
+        {
+            StorageLayerId = null,
+            ResolutionBaseGeneration = null,
+        };
+        var repository = new FakeConflictRepository(legacy);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenFinalizationFailsAfterTheWrite_ARetryResumesAndCompletesIt()
+    {
+        // The write commits, then finalization throws. The claim is terminal, so a naive retry would
+        // answer AlreadyResolved and the produced generation would be lost forever. The retry must
+        // instead resume finalization — without re-applying the feature write.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        repository.FinalizationThrows = true;
+        var first = async () => await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        await first.Should().ThrowAsync<InvalidOperationException>();
+
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Resolved);
+        repository.Current.FinalizationPending.Should().BeTrue("the resolution is incomplete and resumable");
+        applier.Calls.Should().Be(1);
+
+        // Retry: same operator, same action.
+        repository.FinalizationThrows = false;
+        var resumed = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        resumed.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(1, "a resumed finalization must not re-apply the committed write");
+        repository.Current.FinalizationPending.Should().BeFalse();
+        repository.Current.ResolvedServerGeneration.Should().Be(FakeChangeTracker.Generation);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenResolutionIsComplete_StillReportsAlreadyResolved()
+    {
+        // Resume must not turn a genuinely finished resolution into a repeatable one.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var service = CreateService(repository, new RecordingApplier());
+
+        var first = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        first.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+
+        var second = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        second.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenClaimedByAnotherOperator_IsNotResumedByThisRequest()
+    {
+        // An unfinalized claim belonging to someone else is still already-resolved from here: resume
+        // is only for retries of the same resolution.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "someone-else",
+            FinalizationPending = true,
+            WriteCommitted = true,
+        })
+        { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        applier.Calls.Should().Be(0);
+    }
+
     private static ReplicaConflictResolutionService CreateService(
         FakeConflictRepository repository,
-        IReplicaConflictResolutionApplier applier)
+        IReplicaConflictResolutionApplier applier,
+        FakeChangeTracker? changeTracker = null)
         => new(
             repository,
-            new FakeChangeTracker(),
+            changeTracker ?? new FakeChangeTracker(),
             new NoOpAuditLog(),
             NullLogger<ReplicaConflictResolutionService>.Instance,
             applier);
@@ -119,6 +259,8 @@ public sealed class ReplicaConflictResolutionServiceTests
         ConflictType = ReplicaConflictType.Attribute,
         Status = ReplicaConflictStatus.Pending,
         ServerGeneration = 5,
+        StorageLayerId = 10,
+        ResolutionBaseGeneration = 40,
         ClientEditApplied = clientEditApplied,
         ClientStateJson = """{"attributes":{"objectid":42,"name":"client"}}""",
         ServerStateJson = """{"attributes":{"objectid":42,"name":"server"}}""",
@@ -128,6 +270,9 @@ public sealed class ReplicaConflictResolutionServiceTests
     private sealed class FakeChangeTracker : IChangeTracker
     {
         public const long Generation = 77L;
+
+        /// <summary>Changes the tracker reports for the staleness probe.</summary>
+        public List<FeatureChange> ChangesSinceBase { get; } = [];
 
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(Generation);
@@ -143,7 +288,10 @@ public sealed class ReplicaConflictResolutionServiceTests
             int[] layerIds,
             IReadOnlySet<long>? objectIds,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FeatureChange>>([]);
+            => Task.FromResult<IReadOnlyList<FeatureChange>>(
+                objectIds is null
+                    ? ChangesSinceBase
+                    : ChangesSinceBase.Where(c => objectIds.Contains(c.ObjectId)).ToList());
     }
 
     private sealed class NoOpAuditLog : IAuditLog
@@ -191,6 +339,10 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public bool ClaimSucceeds { get; init; } = true;
 
+        public bool FinalizationThrows { get; set; }
+
+        public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
+
         public ReplicaConflictRecord Current { get; private set; } = seed;
 
         public Task UpsertAsync(ReplicaConflictRecord record, CancellationToken cancellationToken = default)
@@ -215,6 +367,29 @@ public sealed class ReplicaConflictResolutionServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
+        public Task<bool> TryUpdateFinalizationStateAsync(
+            ReplicaConflictFinalizationUpdate update,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FinalizationUpdates.Add(update);
+
+            // Fail only the finalize step, so the write-committed marker still lands: that is the
+            // state a post-write finalization failure actually leaves behind.
+            if (FinalizationThrows && update.Finalized == true)
+            {
+                throw new InvalidOperationException("finalization store unavailable");
+            }
+
+            Current = Current with
+            {
+                WriteCommitted = update.WriteCommitted ?? Current.WriteCommitted,
+                ResolvedServerGeneration = update.ResolvedServerGeneration ?? Current.ResolvedServerGeneration,
+                FinalizationPending = update.Finalized is { } f ? !f : Current.FinalizationPending,
+            };
+            return Task.FromResult(true);
+        }
+
         public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
             ReplicaConflictResolution resolution,
             CancellationToken cancellationToken = default)
@@ -233,6 +408,8 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedBy = resolution.ResolvedBy,
                 ResolvedAt = resolution.ResolvedAt,
                 ResolvedServerGeneration = resolution.ResolvedServerGeneration,
+                WriteCommitted = false,
+                FinalizationPending = true,
             };
             return Task.FromResult(new ReplicaConflictResolutionOutcome(Current, Applied: true));
         }
