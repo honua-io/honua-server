@@ -12,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.Models;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -81,6 +82,10 @@ internal static partial class FeatureServerEndpoints
         {
             ServiceName = service.Metadata.Name,
             ServiceDescription = service.Metadata.Description ?? string.Empty,
+            CopyrightText = service.Metadata.Attribution,
+            License = service.Metadata.License,
+            Publisher = service.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
@@ -164,6 +169,10 @@ internal static partial class FeatureServerEndpoints
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
             Description = resource.Metadata.Description,
+            CopyrightText = resource.Metadata.Attribution,
+            License = resource.Metadata.License,
+            Publisher = resource.Metadata.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,

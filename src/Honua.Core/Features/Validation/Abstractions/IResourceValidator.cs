@@ -71,11 +71,21 @@ public interface IResourceValidator
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates a service layer while preferring the publication type that is canonical for the
+    /// requested protocol when the same layer index is published through several surfaces.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+        string serviceId,
+        int layerId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
 /// Resolved (service, publication, resource) triple returned by
-/// <see cref="IResourceValidator.ValidateServiceLayerV2Async"/>.
+/// <see cref="IResourceValidator.ValidateServiceLayerV2Async(string, int, CancellationToken)"/>.
 /// </summary>
 public readonly record struct MetadataV2ServiceLayerTriple(
     MetadataV2Service Service,

@@ -33,6 +33,11 @@ internal static class StacResourceExtensions
     public static string ResolveLicense(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.License))
+        {
+            return resource.Metadata.License.Trim();
+        }
+
         var declared = ReadString(resource, "license");
         return string.IsNullOrWhiteSpace(declared)
             ? "proprietary"

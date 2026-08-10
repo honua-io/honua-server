@@ -153,10 +153,28 @@ public sealed class ResourceValidator : IResourceValidator
     }
 
     /// <inheritdoc />
-    public async Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+    public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default)
+        => ValidateServiceLayerCoreAsync(serviceId, layerId, requiredProtocol: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+        string serviceId,
+        int layerId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requiredProtocol);
+        return ValidateServiceLayerCoreAsync(serviceId, layerId, requiredProtocol, cancellationToken);
+    }
+
+    private async Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerCoreAsync(
+        string serviceId,
+        int layerId,
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
     {
         var serviceResult = await ValidateServiceV2Async(serviceId, cancellationToken).ConfigureAwait(false);
         if (!serviceResult.IsValid)
@@ -171,6 +189,8 @@ public sealed class ResourceValidator : IResourceValidator
         foreach (var candidate in snapshot.Index.PublicationsByService[service.Metadata.Id]
                      .Where(pub => pub.LayerIndex == layerId &&
                                    pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                     .OrderByDescending(pub =>
+                         ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
                      .Where(candidate =>
                          candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))

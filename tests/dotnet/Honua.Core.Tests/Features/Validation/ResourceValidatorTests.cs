@@ -53,6 +53,75 @@ public sealed class ResourceValidatorTests
         result.Resource!.Metadata.Id.Should().Be("res-layer-2000");
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceLayerV2Async_WithProtocol_PrefersCanonicalPublicationType()
+    {
+        var provider = new TestMetadataV2GraphProvider(MixedProtocolPublicationGraph());
+        var validator = new ResourceValidator(provider);
+
+        var result = await validator.ValidateServiceLayerV2Async(
+            "mixed-service",
+            7,
+            ServiceProtocols.FeatureServer);
+
+        result.IsValid.Should().BeTrue();
+        result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+    }
+
+    private static MetadataV2Graph MixedProtocolPublicationGraph()
+    {
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "Production",
+            GeneratedAt = DateTimeOffset.Parse(
+                "2026-06-01T00:00:00Z",
+                System.Globalization.CultureInfo.InvariantCulture),
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-ogc", Name = "OGC resource" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                },
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-feature", Name = "FeatureServer resource" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                },
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "mixed-service", Name = "mixed-service" },
+                    Protocols = [ServiceProtocols.OgcFeatures, ServiceProtocols.FeatureServer],
+                },
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-ogc", Name = "7" },
+                    ResourceId = "res-ogc",
+                    ServiceId = "mixed-service",
+                    PublicationType = MetadataV2PublicationType.OgcCollection,
+                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                },
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-feature", Name = "7" },
+                    ResourceId = "res-feature",
+                    ServiceId = "mixed-service",
+                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                },
+            ],
+        };
+    }
+
     /// <summary>
     /// Builds a graph where storage layer index 2000 is published twice: a raster
     /// sidecar publication (ordered first, no integer StorageLayerId) and a

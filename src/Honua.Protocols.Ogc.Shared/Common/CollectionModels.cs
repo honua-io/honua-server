@@ -53,6 +53,10 @@ public sealed record CollectionInfo
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
+    /// <summary>Human-readable data attribution from canonical metadata.</summary>
+    [JsonPropertyName("attribution")]
+    public string? Attribution { get; init; }
+
     /// <summary>
     /// Links to related resources.
     /// </summary>

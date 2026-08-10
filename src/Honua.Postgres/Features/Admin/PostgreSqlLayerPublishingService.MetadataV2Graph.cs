@@ -151,6 +151,156 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task UpsertLinkedLayerMetadataV2Async(
+        string serviceName,
+        PublishedLayerSummary layer,
+        CancellationToken cancellationToken)
+    {
+        var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        var updatedGraph = BuildLinkedLayerMetadataV2Graph(
+            graph,
+            serviceName,
+            layer.LayerId,
+            layer.LayerName,
+            layer.Srid,
+            DateTimeOffset.UtcNow);
+        if (updatedGraph is null)
+        {
+            return;
+        }
+
+        var validation = MetadataV2GraphValidator.Validate(updatedGraph);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Linked layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
+        }
+
+        await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static MetadataV2Graph? BuildLinkedLayerMetadataV2Graph(
+        MetadataV2Graph graph,
+        string serviceName,
+        int layerId,
+        string layerName,
+        int srid,
+        DateTimeOffset now)
+    {
+        var storageLayerBindings = graph.StorageBindings
+            .Where(candidate => candidate.StorageLayerId == layerId)
+            .ToArray();
+        var canonicalBindingId = BuildStorageBindingId(layerId);
+        var binding = storageLayerBindings.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, canonicalBindingId, StringComparison.Ordinal));
+        if (binding is null && storageLayerBindings.Length > 1)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Layer {layerId} has multiple legacy storage bindings and no canonical '{canonicalBindingId}' binding.",
+                layerId);
+        }
+
+        binding ??= storageLayerBindings.SingleOrDefault();
+        var resource = binding is null
+            ? null
+            : graph.Resources.FirstOrDefault(candidate =>
+                string.Equals(candidate.Metadata.Id, binding.ResourceId, StringComparison.Ordinal));
+        if (binding is null || resource is null)
+        {
+            return null;
+        }
+
+        var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
+        service ??= BuildPublishedService(graph, serviceName, srid, now);
+        var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
+            string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+            string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+            string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        MetadataV2Publication featurePublication;
+        if (existingFeaturePublication is not null)
+        {
+            featurePublication = existingFeaturePublication;
+        }
+        else
+        {
+            var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
+                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+                publication.LayerIndex == layerId &&
+                (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
+                 !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
+            if (collidingFeaturePublication is not null)
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Conflict,
+                    $"Service '{serviceName}' already publishes FeatureServer layer {layerId} from another storage binding.",
+                    layerId);
+            }
+
+            var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+            featurePublication = BuildPublishedPublication(
+                service,
+                resource,
+                binding,
+                layerIdText,
+                layerName,
+                MetadataV2PublicationType.EsriFeatureLayer,
+                isPrimary: true,
+                idPrefix: "pub",
+                now);
+        }
+        service = service with
+        {
+            PublicationIds = service.PublicationIds
+                .Append(featurePublication.Metadata.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        };
+
+        return graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = now,
+            Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
+            Publications = UpsertPublication(graph.Publications, featurePublication)
+        };
+    }
+
+    private static MetadataV2Service? ResolveUniquePublishedFeatureService(
+        MetadataV2Graph graph,
+        string serviceName,
+        int? layerId)
+    {
+        var matchingServices = graph.Services
+            .Where(candidate =>
+                string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal))
+            .ToArray();
+        var matchingFeatureServices = matchingServices
+            .Where(candidate => IsFeatureServerService(graph, candidate))
+            .ToArray();
+        var service = matchingFeatureServices.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
+        service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
+        if (service is null && matchingServices.Length > 0)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Service '{serviceName}' does not resolve to one unique Esri FeatureServer service.",
+                layerId);
+        }
+
+        return service;
+    }
+
+    private static bool IsFeatureServerService(MetadataV2Graph graph, MetadataV2Service service)
+        => service.ServiceType == MetadataV2ServiceType.EsriFeatureService ||
+           service.Protocols.Contains(MetadataV2ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
+           graph.Publications.Any(publication =>
+               string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran
     // but the compat/bootstrap compile has not). In that case we start from an
@@ -334,6 +484,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 Name = request.LayerName.Trim(),
                 Title = request.LayerName.Trim(),
                 Description = request.Description,
+                License = request.SourceGovernance?.License,
+                Attribution = request.SourceGovernance?.Attribution,
+                Publisher = request.SourceGovernance?.Publisher,
+                Links = request.SourceGovernance?.ToMetadataLinks() ?? [],
                 CreatedAt = now,
                 UpdatedAt = now
             },

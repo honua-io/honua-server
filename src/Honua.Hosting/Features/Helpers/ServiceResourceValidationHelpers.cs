@@ -115,6 +115,7 @@ internal static class ServiceResourceValidationHelpers
             resourceResult = await resourceValidator.ValidateServiceLayerV2Async(
                 serviceId,
                 layerId,
+                protocol,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsCatalogStorageUnavailable(ex))

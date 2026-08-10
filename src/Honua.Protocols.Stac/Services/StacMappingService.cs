@@ -106,6 +106,20 @@ internal sealed class StacMappingService
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
 
+        foreach (var governanceLink in resource.Metadata.Links.Where(link =>
+                     string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
+        {
+            links.Add(new Link
+            {
+                Href = governanceLink.Href,
+                Rel = governanceLink.Rel,
+                Type = governanceLink.Type,
+                Title = governanceLink.Title,
+                HrefLang = governanceLink.Hreflang
+            });
+        }
+
         var extent = await BuildStacExtentV2Async(
             resource,
             layerIndex,
@@ -119,6 +133,13 @@ internal sealed class StacMappingService
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
             License = resource.ResolveLicense(),
+            Providers = string.IsNullOrWhiteSpace(resource.Metadata.Publisher)
+                ? null
+                : ImmutableArray.Create(new StacProvider
+                {
+                    Name = resource.Metadata.Publisher.Trim(),
+                    Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Producer)
+                }),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
             Links = links.ToImmutable(),

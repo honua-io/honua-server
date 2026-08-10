@@ -137,7 +137,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             });
         }
 
-        return layers;
+        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PublishedLayerSummary> PublishLayerAsync(
@@ -360,6 +360,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             LayerId = layerId,
             LayerName = request.LayerName.Trim(),
             Description = request.Description,
+            License = request.SourceGovernance?.License,
+            Attribution = request.SourceGovernance?.Attribution,
+            Publisher = request.SourceGovernance?.Publisher,
+            LicenseUrl = request.SourceGovernance?.LicenseUrl,
+            SourceUrl = request.SourceGovernance?.SourceUrl,
             Schema = schema,
             Table = table,
             GeometryType = geometryType,
@@ -409,8 +414,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
             .ConfigureAwait(false);
 
+        if (linkedLayer is not null)
+        {
+            await UpsertLinkedLayerMetadataV2Async(normalizedService, linkedLayer, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await transaction.CommitSafelyAsync(cancellationToken);
-        return linkedLayer;
+        return await HydrateSourceGovernanceAsync(linkedLayer, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(
@@ -533,7 +544,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         await transaction.CommitSafelyAsync(cancellationToken);
-        return layer;
+        return await HydrateSourceGovernanceAsync(layer, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(

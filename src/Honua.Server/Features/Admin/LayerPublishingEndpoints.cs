@@ -165,6 +165,18 @@ internal static class LayerPublishingEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
         }
 
+        if (!LayerSourceGovernance.TryCreate(
+                request.License,
+                request.Attribution,
+                request.Publisher,
+                request.LicenseUrl,
+                request.SourceUrl,
+                out var sourceGovernance,
+                out var governanceError))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {governanceError}"));
+        }
+
         try
         {
             var connectionString = await ResolveConnectionStringAsync(id, resolver, context.RequestAborted);
@@ -193,7 +205,8 @@ internal static class LayerPublishingEndpoints
                 Fields = request.Fields ?? Array.Empty<string>(),
                 ServiceName = request.ServiceName,
                 ConnectionId = connectionId,
-                Enabled = request.Enabled
+                Enabled = request.Enabled,
+                SourceGovernance = sourceGovernance
             };
 
             var result = await publishingService.PublishLayerAsync(
