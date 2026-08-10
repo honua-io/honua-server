@@ -581,6 +581,79 @@ public sealed class ReplicaConflictResolutionServiceTests
         audit.Records.Should().Be(0, "a request that lost its claim must not write success evidence");
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_AfterAReleasedClaim_TheConflictCanBeClaimedAgain()
+    {
+        // A released row must return to a claimable state. `finalized` means "no attempt in flight",
+        // and the claim guard requires it — leaving it false made a released conflict unclaimable and,
+        // because the release also clears the actor/action identity, unresumable too.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var service = CreateService(repository, new FailingApplier());
+
+        var failed = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        failed.Status.Should().Be(ReplicaConflictResolutionStatus.WriteFailed);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+        repository.Current.FinalizationPending.Should().BeFalse("the released row is not mid-flight");
+
+        var retried = await CreateService(repository, new RecordingApplier())
+            .ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        retried.Status.Should().Be(
+            ReplicaConflictResolutionStatus.Applied, "a released conflict must be resolvable again");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_ResumeIgnoresInputsTheActionDoesNotUse()
+    {
+        // fieldValues and geometry are documented as ignored outside their own actions, so including
+        // one must not make an otherwise identical request unresumable.
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = true,
+        };
+        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
+        var service = CreateService(repository, new RecordingApplier());
+
+        // Claim the hash the way a request carrying an irrelevant geometry hint would have.
+        repository.Replace(claimed with
+        {
+            ResolutionInputHash = ComputeKeepServerHashViaService(service, geometrySource: "client"),
+        });
+
+        var result = await service.ResolveAsync(
+            Request(ReplicaConflictResolutionAction.KeepServer) with
+            {
+                Inputs = new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: null),
+            });
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+    }
+
+    /// <summary>
+    /// Drives the service once to capture the hash it records for a keepServer claim carrying an
+    /// irrelevant geometry hint, so the test asserts against the real normalization rather than a
+    /// duplicate of it.
+    /// </summary>
+    private static string? ComputeKeepServerHashViaService(
+        ReplicaConflictResolutionService service,
+        string geometrySource)
+    {
+        var probeRepository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var probeService = CreateService(probeRepository, new RecordingApplier());
+        probeService.ResolveAsync(
+                Request(ReplicaConflictResolutionAction.KeepServer) with
+                {
+                    Inputs = new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: geometrySource),
+                })
+            .GetAwaiter().GetResult();
+        return probeRepository.Current.ResolutionInputHash;
+    }
+
     private static FeatureChange Change(long generation) => new()
     {
         ChangeId = generation,
@@ -776,6 +849,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedBy = null,
                 ResolvedAt = null,
                 ResolvedServerGeneration = null,
+                ResolutionInputHash = null,
                 WriteCommitted = false,
                 FinalizationPending = false,
             };

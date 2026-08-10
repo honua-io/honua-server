@@ -610,9 +610,17 @@ internal sealed partial class ReplicaConflictResolutionService
     {
         var builder = new StringBuilder();
         builder.Append(request.Action).Append('\u001f');
-        builder.Append(request.Inputs.GeometrySource?.Trim().ToLowerInvariant()).Append('\u001f');
 
-        if (request.Inputs.FieldValues is { Count: > 0 } fieldValues)
+        // Only the inputs the selected action actually consumes. The others are documented as ignored,
+        // so folding them in would make a resumable request differ from the semantically identical
+        // minimal one — leaving the unfinalized resolution stranded (#2430).
+        if (request.Action == ReplicaConflictResolutionAction.ChooseGeometry)
+        {
+            builder.Append(request.Inputs.GeometrySource?.Trim().ToLowerInvariant()).Append('\u001f');
+        }
+
+        if (request.Action == ReplicaConflictResolutionAction.MergeFields &&
+            request.Inputs.FieldValues is { Count: > 0 } fieldValues)
         {
             // Ordered so an equivalent request hashes equally regardless of payload key order.
             foreach (var field in fieldValues.OrderBy(field => field.Key, StringComparer.Ordinal))

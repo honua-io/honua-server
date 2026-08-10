@@ -226,8 +226,13 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 resolved_by = NULL,
                 resolved_at = NULL,
                 resolved_server_generation = NULL,
+                resolution_input_hash = NULL,
                 write_committed = FALSE,
-                finalized = FALSE
+                -- Back to TRUE: `finalized` means "no attempt in flight", and the claim guard requires
+                -- it. Leaving it FALSE made a released row unclaimable AND unresumable — the release
+                -- clears the actor/action identity a resume matches on — so every conflict released
+                -- after a stale, cancelled, or failed resolution would have been bricked (#2430).
+                finalized = TRUE
             WHERE conflict_id = $1
               AND resolved_by = $2
               AND resolution_action = $3
