@@ -104,9 +104,13 @@ public readonly record struct ReplicaConflictResolutionPlan(
 /// <see cref="ReplicaConflictResolutionEffect.WriteFeatureState"/>.
 /// </param>
 /// <param name="StorageLayerId">
-/// Storage-layer id of the conflicting feature, when the conflict recorded one. Lets the applier read
-/// the row it is about to overwrite so it can carry an optimistic-concurrency precondition into the
-/// write transaction (#2430).
+/// Storage-layer id of the conflicting feature, when the conflict recorded one.
+/// </param>
+/// <param name="ExpectedStateToken">
+/// Optimistic-concurrency token for the row as it was when the staleness precondition was evaluated,
+/// carried into the write transaction so the two checks describe the same snapshot. Null when the
+/// conflict has no storage-layer id or the row does not exist, where there is nothing to bind to
+/// (#2430).
 /// </param>
 public readonly record struct ReplicaConflictResolutionCommand(
     string ServiceId,
@@ -114,7 +118,8 @@ public readonly record struct ReplicaConflictResolutionCommand(
     long ObjectId,
     ReplicaConflictResolutionEffect Effect,
     string? FeatureStateJson,
-    int? StorageLayerId = null);
+    int? StorageLayerId = null,
+    string? ExpectedStateToken = null);
 
 /// <summary>
 /// Outcome of applying a planned conflict resolution through the shared edit pipeline.

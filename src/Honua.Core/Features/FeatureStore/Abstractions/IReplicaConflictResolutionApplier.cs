@@ -36,4 +36,22 @@ public interface IReplicaConflictResolutionApplier
     Task<ReplicaConflictApplyResult> ApplyAsync(
         ReplicaConflictResolutionCommand command,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the conflicting feature and returns the optimistic-concurrency token for its current
+    /// state, or <see langword="null"/> when the row does not exist.
+    /// </summary>
+    /// <remarks>
+    /// Called BEFORE the staleness precondition is evaluated, and the token is then carried into the
+    /// write through <see cref="ReplicaConflictResolutionCommand.ExpectedStateToken"/>. Binding both
+    /// checks to the same snapshot is what makes them one decision: a token captured after the probe
+    /// would already describe an edit the probe did not see, and the write would accept it (#2430).
+    /// </remarks>
+    /// <param name="storageLayerId">Storage-layer id of the conflicting feature.</param>
+    /// <param name="objectId">Stable object id of the conflicting feature.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<string?> CaptureStateTokenAsync(
+        int storageLayerId,
+        long objectId,
+        CancellationToken cancellationToken = default);
 }

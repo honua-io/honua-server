@@ -819,10 +819,11 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_PassesTheStorageLayerIdSoTheWriteCanCarryAPrecondition()
+    public async Task ResolveAsync_CapturesTheStateTokenBeforeTheStalenessProbeAndCarriesItIntoTheWrite()
     {
-        // The applier needs it to read the row it is about to overwrite; without it there is no
-        // snapshot to bind the precondition to.
+        // The token has to describe the same snapshot the staleness probe judged. Captured afterwards
+        // it would already include an edit the probe did not see, and the write would accept exactly
+        // the change the probe exists to reject.
         var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
         var applier = new RecordingApplier();
         var service = CreateService(repository, applier);
@@ -830,6 +831,8 @@ public sealed class ReplicaConflictResolutionServiceTests
         await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
 
         applier.LastCommand!.Value.StorageLayerId.Should().Be(10);
+        applier.LastCommand!.Value.ExpectedStateToken.Should().Be("token-1");
+        applier.Trace.Should().Equal("capture", "apply");
     }
 
     [UnitTest]
@@ -1099,18 +1102,33 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public ReplicaConflictResolutionCommand? LastCommand { get; private set; }
 
+        /// <summary>Order of seam calls, so the token capture can be asserted to precede the probe.</summary>
+        public List<string> Trace { get; } = [];
+
+        public Task<string?> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+        {
+            Trace.Add("capture");
+            return Task.FromResult<string?>("token-1");
+        }
+
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
         {
             Calls++;
             LastCommand = command;
+            Trace.Add("apply");
             return Task.FromResult(new ReplicaConflictApplyResult(Applied: true, FailureMessage: null));
         }
     }
 
     private sealed class FailingApplier : IReplicaConflictResolutionApplier
     {
+        public Task<string?> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("token-1");
+
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
@@ -1120,6 +1138,10 @@ public sealed class ReplicaConflictResolutionServiceTests
     /// <summary>Applier whose precondition caught an edit arriving just before the write transaction.</summary>
     private sealed class PreconditionFailingApplier : IReplicaConflictResolutionApplier
     {
+        public Task<string?> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("token-1");
+
         public int Calls { get; private set; }
 
         public Task<ReplicaConflictApplyResult> ApplyAsync(
@@ -1135,6 +1157,10 @@ public sealed class ReplicaConflictResolutionServiceTests
     /// <summary>Applier whose write may or may not have committed, as a lost commit ack reports.</summary>
     private sealed class IndeterminateApplier : IReplicaConflictResolutionApplier
     {
+        public Task<string?> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("token-1");
+
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
@@ -1144,6 +1170,10 @@ public sealed class ReplicaConflictResolutionServiceTests
 
     private sealed class ThrowingApplier : IReplicaConflictResolutionApplier
     {
+        public Task<string?> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("token-1");
+
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)

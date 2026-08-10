@@ -101,24 +101,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                 return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
 
-        // Optimistic-concurrency precondition over the row as it is right now. The writer re-computes
-        // the token from the locked row inside the write transaction, so an edit arriving between the
-        // resolution's staleness check and this write fails the operation instead of being silently
-        // overwritten (#2430). Skipped when the conflict predates the stored storage-layer id or the
-        // row is already gone, where there is no snapshot to bind to.
-        if (command.StorageLayerId is { } storageLayerId)
+        // Optimistic-concurrency precondition over the snapshot the caller evaluated its staleness
+        // check against, captured through CaptureStateTokenAsync before that check ran. The writer
+        // re-computes the token from the locked row inside the write transaction, so any edit arriving
+        // between the check and this write fails the operation instead of being silently overwritten
+        // (#2430). Absent when the conflict has no storage-layer id or the row was already gone.
+        if (command.ExpectedStateToken is { Length: > 0 } expectedStateToken)
         {
-            var current = await _featureReader
-                .GetAsync(storageLayerId, command.ObjectId, cancellationToken)
-                .ConfigureAwait(false);
-            if (current is { } row)
+            request.Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
             {
-                request.Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
-                {
-                    ObjectId = command.ObjectId,
-                    ExpectedStateToken = FeatureStateToken.Compute(row),
-                });
-            }
+                ObjectId = command.ObjectId,
+                ExpectedStateToken = expectedStateToken,
+            });
         }
 
         var result = await _editsHandler
@@ -154,6 +148,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             FailureMessage,
             CommitOutcomeUnknown: CommitOutcomeUnknown(effectResults),
             PreconditionFailed: PreconditionFailed(effectResults));
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> CaptureStateTokenAsync(
+        int storageLayerId,
+        long objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await _featureReader
+            .GetAsync(storageLayerId, objectId, cancellationToken)
+            .ConfigureAwait(false);
+        return current is { } row ? FeatureStateToken.Compute(row) : null;
     }
 
     /// <summary>

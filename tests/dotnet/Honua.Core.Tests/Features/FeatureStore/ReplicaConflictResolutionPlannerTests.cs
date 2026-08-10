@@ -186,6 +186,26 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
     }
 
+    [Theory]
+    [InlineData(ReplicaConflictResolutionAction.MergeFields)]
+    [InlineData(ReplicaConflictResolutionAction.ChooseGeometry)]
+    public void Plan_PartialActionsOnASupersededClientEdit_AreRejectedAsNotApplicable(
+        ReplicaConflictResolutionAction action)
+    {
+        // The row holds the later client update, which this conflict captured as neither envelope, so a
+        // partial resolution would revert every unmentioned field and the geometry to the pre-upload
+        // server state.
+        var conflict = Conflict(clientEditApplied: false) with { ClientEditSuperseded = true };
+        var inputs = action == ReplicaConflictResolutionAction.MergeFields
+            ? Merge(("name", "\"merged\""))
+            : new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: "client");
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(conflict, action, inputs);
+
+        plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
+    }
+
     [Fact]
     public void Plan_KeepServerOnASupersededClientEdit_RestoresTheServerStateInsteadOfNoOp()
     {

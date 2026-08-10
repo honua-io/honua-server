@@ -282,9 +282,23 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
 
+        // Snapshot the row BEFORE the staleness probe and carry that token into the write. Capturing it
+        // afterwards would already describe an edit the probe did not see, and the write would then
+        // accept the very change the probe exists to reject; binding both to one snapshot makes them a
+        // single decision (#2430).
+        string? expectedStateToken = null;
         bool stale;
         try
         {
+            if (_applier is not null &&
+                plan.Effect != ReplicaConflictResolutionEffect.None &&
+                claimed.StorageLayerId is { } tokenLayerId)
+            {
+                expectedStateToken = await _applier
+                    .CaptureStateTokenAsync(tokenLayerId, claimed.ObjectId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             stale = request.Action != ReplicaConflictResolutionAction.Defer &&
                 await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false);
         }
@@ -319,7 +333,7 @@ internal sealed partial class ReplicaConflictResolutionService
             ReplicaConflictApplyResult applyResult;
             try
             {
-                applyResult = await ApplyResolutionWriteAsync(claimed, plan, cancellationToken)
+                applyResult = await ApplyResolutionWriteAsync(claimed, plan, expectedStateToken, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -619,7 +633,11 @@ internal sealed partial class ReplicaConflictResolutionService
             existing = existing with { ResolvedAt = takenOverAt };
 
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
-            var reapplied = await ApplyResolutionWriteAsync(existing, plan, cancellationToken)
+            var resumeToken = existing.StorageLayerId is { } resumeLayerId
+                ? await _applier!.CaptureStateTokenAsync(resumeLayerId, existing.ObjectId, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+            var reapplied = await ApplyResolutionWriteAsync(existing, plan, resumeToken, cancellationToken)
                 .ConfigureAwait(false);
             if (reapplied.PreconditionFailed)
             {
@@ -889,6 +907,7 @@ internal sealed partial class ReplicaConflictResolutionService
     private Task<ReplicaConflictApplyResult> ApplyResolutionWriteAsync(
         ReplicaConflictRecord conflict,
         ReplicaConflictResolutionPlan plan,
+        string? expectedStateToken,
         CancellationToken cancellationToken)
         => _applier!.ApplyAsync(
             new ReplicaConflictResolutionCommand(
@@ -897,7 +916,8 @@ internal sealed partial class ReplicaConflictResolutionService
                 conflict.ObjectId,
                 plan.Effect,
                 plan.FeatureStateJson,
-                conflict.StorageLayerId),
+                conflict.StorageLayerId,
+                expectedStateToken),
             cancellationToken);
 
     /// <summary>

@@ -176,12 +176,13 @@ public static class ReplicaConflictResolutionPlanner
         }
 
         // A partial resolution only writes what the operator named and inherits the rest from whichever
-        // side is currently committed. With an indeterminate upload outcome that side is unknown, so the
-        // merge would silently restore the other side's unmentioned attributes and geometry. The
-        // whole-state actions stay available and are idempotent either way (#2430).
-        if (conflict.ClientEditOutcomeUnknown)
+        // side is currently committed. Neither captured envelope describes that side when the upload
+        // outcome is indeterminate, nor when this edit was superseded by a later one from the same
+        // upload whose state was never captured — the merge would silently revert every unmentioned
+        // field and the geometry. The whole-state actions stay available (#2430).
+        if (conflict.ClientEditOutcomeUnknown || conflict.ClientEditSuperseded)
         {
-            return NotApplicable("The storage layer could not confirm whether this conflict's uploaded edit committed, so which side is currently in the row is unknown. A partial resolution would carry the unmentioned attributes and geometry from a side that may not be current; choose acceptClient or keepServer, which write a complete known state.");
+            return NotApplicable("Which state this feature currently holds is not described by either captured side of this conflict: its uploaded edit either has an unconfirmed commit outcome or was superseded by a later edit in the same upload. A partial resolution would carry the unmentioned attributes and geometry from a side that is not current; choose acceptClient or keepServer, which write a complete known state.");
         }
 
         // Merge onto the currently committed state where it is known, so unmentioned fields keep their
@@ -225,11 +226,12 @@ public static class ReplicaConflictResolutionPlanner
                 "A geometry choice does not apply to a delete conflict: choose acceptClient or keepServer instead.");
         }
 
-        // Same as a field merge: the attributes come from whichever side is currently committed, and an
-        // indeterminate upload outcome means that side is unknown (#2430).
-        if (conflict.ClientEditOutcomeUnknown)
+        // Same as a field merge: the attributes come from whichever side is currently committed, and
+        // neither an indeterminate outcome nor a superseded edit leaves a captured envelope that
+        // describes it (#2430).
+        if (conflict.ClientEditOutcomeUnknown || conflict.ClientEditSuperseded)
         {
-            return NotApplicable("The storage layer could not confirm whether this conflict's uploaded edit committed, so which side is currently in the row is unknown. A partial resolution would carry the unmentioned attributes and geometry from a side that may not be current; choose acceptClient or keepServer, which write a complete known state.");
+            return NotApplicable("Which state this feature currently holds is not described by either captured side of this conflict: its uploaded edit either has an unconfirmed commit outcome or was superseded by a later edit in the same upload. A partial resolution would carry the unmentioned attributes and geometry from a side that is not current; choose acceptClient or keepServer, which write a complete known state.");
         }
 
         var chosenEnvelope = source == GeometrySourceClient ? conflict.ClientStateJson : conflict.ServerStateJson;
