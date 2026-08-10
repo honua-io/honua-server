@@ -11,7 +11,8 @@ query(
   $reviewsCursor: String,
   $commentsCursor: String,
   $threadsCursor: String,
-  $checksCursor: String
+  $checksCursor: String,
+  $includeChecks: Boolean!
 ) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -38,7 +39,7 @@ query(
         }
         pageInfo { hasNextPage endCursor }
       }
-      commits(last: 1) {
+      commits(last: 1) @include(if: $includeChecks) {
         nodes {
           commit {
             statusCheckRollup {
@@ -158,7 +159,7 @@ async function collectPullRequestSnapshot(fetchPage) {
 async function fetchPullRequestSnapshot(github, owner, repo, number) {
   return collectPullRequestSnapshot(cursors => github.graphql(
     QUERY,
-    { owner, repo, number, ...cursors },
+    { owner, repo, number, includeChecks: false, ...cursors },
   ));
 }
 
@@ -209,6 +210,8 @@ function ghGraphqlPage(owner, repo, number, cursors) {
     `repo=${repo}`,
     '-F',
     `number=${number}`,
+    '-F',
+    'includeChecks=true',
   ];
   for (const [name, value] of Object.entries(cursors)) {
     if (value) args.push('-f', `${name}=${value}`);
