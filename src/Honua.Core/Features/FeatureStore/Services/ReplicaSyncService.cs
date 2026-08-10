@@ -240,6 +240,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var preBatchGeneration = layerConflictCount > 0
                 ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
                 : 0L;
+            var withheldBaseGeneration = preBatchGeneration;
 
             // Snapshot the server side of every conflicting feature HERE: after detection, before the
             // uploaded edits apply. Capturing earlier let a server edit landing in between be flagged
@@ -263,6 +264,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 {
                     serverStates[entry.Key] = entry.Value;
                 }
+
+                // Watermark for the conflicts whose edit is WITHHELD. Nothing of theirs is applied, so
+                // their base must describe the snapshot just taken rather than the pre-capture cursor:
+                // an edit landing between the two is inside the envelope, and pairing it with the older
+                // cursor made every later staleness probe rediscover that same edit and answer Stale
+                // forever. An edit arriving between the capture and this read is the reverse case, and
+                // is caught by the state-token precondition the resolution write carries (#2430).
+                withheldBaseGeneration = await _changeTracker
+                    .GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
             }
 
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
@@ -363,7 +373,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         layerConflictIds,
                         applyResult,
                         baseGenerations,
-                        preBatchGeneration,
+                        withheldBaseGeneration,
                         canRecordConflicts,
                         CancellationToken.None)
                     .ConfigureAwait(false);
@@ -464,7 +474,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
         IReadOnlyDictionary<string, long> baseGenerations,
-        long preBatchGeneration,
+        long withheldBaseGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
@@ -585,7 +595,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ClientEditSuperseded: superseded.Contains(conflictId) ? true : null,
                             ResolutionBaseGeneration: baseGenerations.TryGetValue(conflictId, out var generation)
                                 ? generation
-                                : preBatchGeneration),
+                                : withheldBaseGeneration),
                         cancellationToken)
                     .ConfigureAwait(false);
             }

@@ -278,6 +278,35 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_BasesAWithheldConflictOnThePostCaptureCursor()
+    {
+        // A withheld conflict applies nothing, so its base must describe the snapshot that was just
+        // captured rather than the pre-capture cursor: an edit landing between the two is inside the
+        // envelope, and pairing it with the older cursor made every later staleness probe rediscover
+        // that same edit and answer Stale forever.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42))
+        {
+            Generations = new Queue<long>([50L, 60L]),
+        };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
+            serverStateCapturer: new TokenCapturer());
+
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(
+                60, "the cursor read after the capture, not the one before it");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_WithholdsRepeatedTargetsForOneObject()
     {
         // The writer revalidates the token before each mutation, so one token shared by two operations
