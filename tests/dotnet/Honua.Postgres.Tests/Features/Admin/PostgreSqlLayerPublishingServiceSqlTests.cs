@@ -110,6 +110,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
                     PublicationIds = ["pub-beta-101"]
                 }
             ],
@@ -218,9 +219,9 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Title = "Authored service title",
                 UpdatedAt = DateTimeOffset.Parse("2025-03-04T05:06:07Z", CultureInfo.InvariantCulture)
             },
-            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
             Route = "/custom/authored/route",
-            Protocols = [ServiceProtocols.OgcFeatures]
+            Protocols = [ServiceProtocols.FeatureServer]
         };
         var graph = new MetadataV2Graph
         {
@@ -277,7 +278,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             [
                 new MetadataV2Service
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
                 }
             ],
             Resources =
@@ -351,6 +353,102 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
         exception.LayerId.Should().Be(101);
         exception.Message.Should().Contain("multiple legacy storage bindings");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithProtocolSpecificNameCollision_SelectsFeatureServer()
+    {
+        var ogcService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-ogc", Name = "beta" },
+            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Route = "/ogc/features"
+        };
+        var featureService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "beta" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = "/custom/beta/FeatureServer"
+        };
+        var graph = new MetadataV2Graph
+        {
+            Services = [ogcService, featureService],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101
+                }
+            ]
+        };
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Parcels",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        updated.Should().NotBeNull();
+        updated!.Services.Single(service => service.Metadata.Id == "service-ogc")
+            .Should().BeSameAs(ogcService);
+        var updatedFeatureService = updated.Services.Single(service => service.Metadata.Id == "service-feature");
+        updatedFeatureService.Route.Should().Be("/custom/beta/FeatureServer");
+        updatedFeatureService.PublicationIds.Should().ContainSingle();
+        updated.Publications.Should().ContainSingle().Which.ServiceId.Should().Be("service-feature");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithAmbiguousFeatureServerName_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-feature-a", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-feature-b", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101
+                }
+            ]
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Parcels",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
     private static MetadataV2Publication CreatePublication(

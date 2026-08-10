@@ -211,10 +211,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var service = graph.Services.FirstOrDefault(candidate =>
+        var matchingServices = graph.Services
+            .Where(candidate =>
                 string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal)) ??
-            BuildPublishedService(graph, serviceName, srid, now);
+                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal))
+            .ToArray();
+        var matchingFeatureServices = matchingServices
+            .Where(candidate => candidate.ServiceType == MetadataV2ServiceType.EsriFeatureService)
+            .ToArray();
+        var service = matchingFeatureServices.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
+        service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
+        if (service is null && matchingServices.Length > 0)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Service '{serviceName}' does not resolve to one unique Esri FeatureServer service.",
+                layerId);
+        }
+
+        service ??= BuildPublishedService(graph, serviceName, srid, now);
         var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
