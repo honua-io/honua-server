@@ -200,7 +200,7 @@ internal sealed partial class ReplicaConflictResolutionService
         plan = ReplicaConflictResolutionPlanner.Plan(claimed, request.Action, request.Inputs);
         if (!plan.IsAccepted)
         {
-            await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
             var replanStatus = plan.Rejection == ReplicaConflictResolutionRejection.InvalidRequest
                 ? ReplicaConflictResolutionStatus.InvalidRequest
                 : ReplicaConflictResolutionStatus.NotApplicable;
@@ -210,7 +210,7 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None && _applier is null)
         {
-            await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
             Log.ResolutionWriteUnsupported(_logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId);
             return Failure(
                 ReplicaConflictResolutionStatus.WriteUnsupported,
@@ -239,7 +239,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // apply — a cancelled request, a transport fault, a provider exception — must not
                 // leave the conflict permanently reported as resolved. Release with a fresh token:
                 // the request's own token is typically the thing that was cancelled.
-                await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+                await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionWriteFailed(
                     _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -253,7 +253,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 // The cleanup uses a fresh token, not the request's: a write can fail precisely
                 // because the request was cancelled, and releasing on the cancelled token would throw
                 // out of the cleanup and leave the conflict claimed with nothing written.
-                await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+                await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionWriteFailed(
                     _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
                 activity?.SetStatus(ActivityStatusCode.Error, applyResult.FailureMessage);
@@ -307,6 +307,13 @@ internal sealed partial class ReplicaConflictResolutionService
     /// release is logged rather than thrown — including cancellation — since the caller is already
     /// reporting the write failure and masking that with a second error would lose the real cause.
     /// </summary>
+    /// <param name="conflict">
+    /// The record returned by the atomic claim, never the pre-claim read. Detection post-processing
+    /// can promote <c>ClientEditApplied</c> or attach state envelopes between the two, and releasing
+    /// from the stale snapshot would erase those and make the next resolution plan against incorrect
+    /// state (#2430).
+    /// </param>
+    /// <param name="cancellationToken">Fresh token; see the summary.</param>
     private async Task ReleaseClaimAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
     {
         try

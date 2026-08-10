@@ -1066,23 +1066,19 @@ internal static partial class FeatureServerEndpoints
                     RollbackOnFailure: rollbackOnFailure);
 
                 var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
-                if (!report.Success)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Uploaded replica edits failed to apply.");
-                }
 
-                appliedAdds = report.AppliedAdds;
-                appliedUpdates = report.AppliedUpdates;
-                appliedDeletes = report.AppliedDeletes;
                 conflicts = MapSyncConflicts(report.Conflicts);
-                uploadServerGen = report.ServerGeneration;
-                didUpload = true;
 
                 // Attach the client (uploaded) and pre-apply server state snapshots to the durable
                 // conflict records the sync service wrote, so the operator conflict-review API can
                 // render the field/geometry comparison (#1287).
+                //
+                // This runs BEFORE the batch-failure return (#2430). With rollbackOnFailure=false an
+                // unrelated row can fail while a conflicting edit commits, and under manualReview the
+                // conflicting edit is withheld deliberately — in both cases report.Success can be false
+                // while durable conflicts exist. Returning first left those records with no envelopes,
+                // so every later acceptClient/keepServer resolved to NotApplicable and the recorded
+                // client intent became unresolvable.
                 if (!report.Conflicts.IsDefaultOrEmpty)
                 {
                     var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
@@ -1100,6 +1096,19 @@ internal static partial class FeatureServerEndpoints
                         }
                     }
                 }
+
+                if (!report.Success)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Uploaded replica edits failed to apply.");
+                }
+
+                appliedAdds = report.AppliedAdds;
+                appliedUpdates = report.AppliedUpdates;
+                appliedDeletes = report.AppliedDeletes;
+                uploadServerGen = report.ServerGeneration;
+                didUpload = true;
             }
         }
 
