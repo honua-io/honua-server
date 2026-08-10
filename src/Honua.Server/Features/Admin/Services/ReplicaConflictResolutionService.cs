@@ -113,8 +113,10 @@ internal sealed partial class ReplicaConflictResolutionService
     private static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(2);
 
     /// <summary>
-    /// How long after detection a conflict that still carries no resolution-base generation is treated
-    /// as being recorded by an in-flight sync rather than as a legacy record (#2430).
+    /// How long after detection an incomplete conflict is still plausibly being recorded by an
+    /// in-flight sync. Used only to word the rejection: inside the window a retry may well succeed,
+    /// past it the originating sync did not finish and the operator needs to re-run it. Completeness,
+    /// not age, decides whether the conflict is resolvable (#2430).
     /// </summary>
     private static readonly TimeSpan DetectionSettleWindow = TimeSpan.FromMinutes(2);
 
@@ -448,11 +450,11 @@ internal sealed partial class ReplicaConflictResolutionService
     /// that lacks it and was detected moments ago is still in flight and must not be resolved yet.
     /// </summary>
     /// <remarks>
-    /// The age test is what separates an in-flight record from a legacy one: conflicts recorded before
-    /// the base generation existed also lack it, and blocking those forever would make them
-    /// permanently unresolvable. Anything older than the detection window is treated as legacy and
-    /// resolvable (with the staleness precondition skipped, as documented on
-    /// <see cref="HasPostConflictEditAsync"/>).
+    /// A record's storage-layer id is what separates a current record from a legacy one: every current
+    /// sync stamps it at insert, and conflicts recorded before that state existed will never gain it.
+    /// Legacy records are therefore treated as settled and stay resolvable (with the staleness
+    /// precondition skipped, as documented on <see cref="HasPostConflictEditAsync"/>), while a current
+    /// record is judged on whether it actually carries the state a resolution reads.
     /// </remarks>
     private static bool IsDetectionInFlight(ReplicaConflictRecord conflict)
     {
@@ -465,14 +467,11 @@ internal sealed partial class ReplicaConflictResolutionService
             return false;
         }
 
-        if (DateTimeOffset.UtcNow - conflict.DetectedAt >= DetectionSettleWindow &&
-            !IsDetectionIncomplete(conflict))
-        {
-            // Recorded by a current sync, past the settle window, and complete: settled.
-            return false;
-        }
-
-        return true;
+        // Recorded by a current sync: completeness itself is the signal, so a record that already has
+        // everything a resolution reads is settled immediately, and one that does not stays blocked no
+        // matter how old it is. Ageing an incomplete record out is what skipped the staleness
+        // precondition and let a resolution overwrite edits made after an aborted sync (#2430).
+        return IsDetectionIncomplete(conflict);
     }
 
     /// <summary>
@@ -493,9 +492,33 @@ internal sealed partial class ReplicaConflictResolutionService
     /// </para>
     /// </remarks>
     private static bool IsDetectionIncomplete(ReplicaConflictRecord conflict)
-        => conflict.ResolutionBaseGeneration is null
-            || string.IsNullOrWhiteSpace(conflict.ClientStateJson)
-            || string.IsNullOrWhiteSpace(conflict.ServerStateJson);
+    {
+        if (conflict.ResolutionBaseGeneration is null)
+        {
+            return true;
+        }
+
+        // Which envelopes are OWED depends on the conflict, because a structural conflict legitimately
+        // has only one side: a client delete carries no client feature state, and a feature the server
+        // already deleted has no server state to capture. Demanding both universally would leave every
+        // delete conflict blocked forever, even though the planner supports accepting a withheld client
+        // delete and keeping a server deletion.
+        var clientOwed = conflict.ConflictType is not ReplicaConflictType.DeleteUpdate;
+        var serverOwed = conflict.ConflictType is not ReplicaConflictType.UpdateDelete;
+
+        // Conflicts outside the feature-state taxonomy carry no comparable envelopes at all; the base
+        // generation is the only completion signal they have.
+        if (conflict.ConflictType is ReplicaConflictType.DuplicateInsert
+            or ReplicaConflictType.Attachment
+            or ReplicaConflictType.Relationship)
+        {
+            clientOwed = false;
+            serverOwed = false;
+        }
+
+        return (clientOwed && string.IsNullOrWhiteSpace(conflict.ClientStateJson))
+            || (serverOwed && string.IsNullOrWhiteSpace(conflict.ServerStateJson));
+    }
 
     /// <summary>
     /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely

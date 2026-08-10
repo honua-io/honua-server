@@ -486,6 +486,30 @@ public sealed class ReplicaConflictResolutionServiceTests
         applier.Calls.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(ReplicaConflictType.DeleteUpdate)]
+    [InlineData(ReplicaConflictType.UpdateDelete)]
+    public async Task ResolveAsync_StructuralDeleteConflictMissingItsAbsentSide_IsStillResolvable(
+        ReplicaConflictType conflictType)
+    {
+        // A client delete carries no client feature state, and a feature the server already deleted has
+        // no server state to capture. Demanding both envelopes universally left every delete conflict
+        // blocked forever.
+        var structural = Conflict(clientEditApplied: false) with
+        {
+            ConflictType = conflictType,
+            ClientStateJson = conflictType == ReplicaConflictType.DeleteUpdate ? null : """{"attributes":{"objectid":42}}""",
+            ServerStateJson = conflictType == ReplicaConflictType.UpdateDelete ? null : """{"attributes":{"objectid":42}}""",
+            DetectedAt = DateTimeOffset.UtcNow,
+        };
+        var repository = new FakeConflictRepository(structural);
+        var service = CreateService(repository, new RecordingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().NotBe(ReplicaConflictResolutionStatus.DetectionInFlight);
+    }
+
     [UnitTest]
     public async Task ResolveAsync_LegacyRecordWithoutDetectionState_StaysResolvable()
     {
