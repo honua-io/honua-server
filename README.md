@@ -12,7 +12,7 @@
 
 ## Status
 
-Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked on the [public roadmap](ROADMAP.md) under the v1.0 (GA) milestone — upvote what you want next. Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
+Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked on the [public roadmap](https://github.com/orgs/honua-io/projects/3) under the v1.0 (GA) milestone — upvote what you want next. Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
 
 ## Quick start
 
@@ -190,7 +190,7 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 GitHub Issues are the primary feedback loop. Please use the forms so reports include enough detail for triage:
 
 - [Report a bug](https://github.com/honua-io/honua-server/issues/new?template=bug.yml) (include screenshots and repro steps)
-- [Request a feature](https://github.com/honua-io/honua-server/issues/new?template=feature.yml) — or upvote existing [roadmap items](ROADMAP.md)
+- [Request a feature](https://github.com/honua-io/honua-server/issues/new?template=feature.yml) — or upvote existing [roadmap items](https://github.com/honua-io/honua-server/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
 - New ideas start in [Discussions → Ideas](https://github.com/honua-io/honua-server/discussions/categories/ideas); popular ideas graduate to roadmap issues
 
 ## Security
