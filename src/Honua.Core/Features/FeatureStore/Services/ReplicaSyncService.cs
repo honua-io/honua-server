@@ -302,19 +302,30 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
-        var committed = applyResult.CommittedObjectIds.IsDefaultOrEmpty
-            ? []
-            : new HashSet<long>(applyResult.CommittedObjectIds);
+        // Counted per occurrence, not collapsed to a set of ids: one payload can carry several
+        // update/delete operations for the same object, and with rollbackOnFailure=false a failed first
+        // operation alongside a successful second must promote only ONE of that object's conflicts.
+        // Collapsing to a set promoted both and left a later resolution planning against a state that
+        // was never committed (#2430).
+        var remainingCommits = new Dictionary<long, int>();
+        if (!applyResult.CommittedObjectIds.IsDefaultOrEmpty)
+        {
+            foreach (var objectId in applyResult.CommittedObjectIds)
+            {
+                remainingCommits[objectId] = remainingCommits.GetValueOrDefault(objectId) + 1;
+            }
+        }
 
         var promoted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var index in layerConflictIndexes)
         {
             var conflict = conflicts[index];
-            if (!committed.Contains(conflict.ObjectId))
+            if (remainingCommits.GetValueOrDefault(conflict.ObjectId) <= 0)
             {
                 continue;
             }
 
+            remainingCommits[conflict.ObjectId]--;
             conflicts[index] = conflict with { Applied = true };
 
             if (conflict.ConflictId is { Length: > 0 } promotedId)

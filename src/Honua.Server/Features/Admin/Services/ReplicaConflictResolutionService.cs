@@ -283,7 +283,12 @@ internal sealed partial class ReplicaConflictResolutionService
                 "Another server edit landed while this conflict was being recorded, so the captured server state may not include it. Re-review the conflict against the current server state.");
         }
 
-        if (plan.Effect != ReplicaConflictResolutionEffect.None &&
+        // Applies to no-write plans too, not just write-producing ones: an acceptClient whose edit
+        // last-write-wins already committed, or a keepServer over an untouched server state, both
+        // ASSERT that the conflict-time state is what the row still holds. If a later ordinary edit
+        // superseded it, finalizing that assertion records a decision that is no longer true. Only
+        // `defer` is exempt — it deliberately asserts nothing about the state (#2430).
+        if (request.Action != ReplicaConflictResolutionAction.Defer &&
             await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false))
         {
             // The feature moved after this conflict was recorded, so the captured conflict-time state

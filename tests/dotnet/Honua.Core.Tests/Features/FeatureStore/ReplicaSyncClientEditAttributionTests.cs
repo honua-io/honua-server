@@ -125,6 +125,31 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Should().NotContain(u => u.ClientEditApplied == true);
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_RepeatedEditsForOneObject_PromotesOnlyAsManyConflictsAsCommitted()
+    {
+        // One payload can carry several operations for the same object. With rollbackOnFailure=false a
+        // failed first operation alongside a successful second must promote exactly one of that
+        // object's conflicts — collapsing the committed ids to a set promoted both, and a later
+        // resolution then planned against a state that was never committed.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var applier = new PartialFailureEditApplier(committedObjectIds: [42], failed: true);
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            applier);
+
+        report.Conflicts.Should().HaveCount(2, "both operations conflicted with the same server edit");
+        report.Conflicts.Count(c => c.Applied).Should().Be(
+            1, "only one of the two operations for object 42 committed");
+        repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
+    }
+
     private static FeatureChange ServerChange(long objectId) => new()
     {
         ChangeId = objectId,

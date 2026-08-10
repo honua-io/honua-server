@@ -484,6 +484,41 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.Current.FinalizationPending.Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenANoWriteResolutionsAssertionIsSuperseded_ReturnsStale()
+    {
+        // acceptClient over an edit that last-write-wins already committed plans no write, but it still
+        // ASSERTS the row holds the client state. A later ordinary edit invalidates that assertion, so
+        // finalizing it would record a decision that is no longer true.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(Change(generation: 90));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.AcceptClient));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_Defer_IsExemptFromTheStalenessAssertion()
+    {
+        // Deferral deliberately asserts nothing about the committed state, so a later edit must not
+        // stop an operator from parking the conflict for review.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(Change(generation: 90));
+        var service = CreateService(repository, new RecordingApplier(), tracker);
+
+        var result = await service.ResolveAsync(
+            Request(ReplicaConflictResolutionAction.Defer) with { ActionName = "defer" });
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Deferred);
+    }
+
     private static FeatureChange Change(long generation) => new()
     {
         ChangeId = generation,
