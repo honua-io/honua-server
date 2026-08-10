@@ -39,6 +39,33 @@ public readonly record struct ReplicaConflictResolutionOutcome(
     bool Applied);
 
 /// <summary>
+/// A detection-time correction to an already-recorded conflict: the refined classification, the
+/// captured client/server state envelopes, and whether the client edit committed. Applied only while
+/// the conflict is still pending (#2430).
+/// </summary>
+/// <remarks>
+/// Detection-time post-processing (state capture, classification refinement, and the client-edit
+/// outcome) can still be running when an operator resolves the freshly listed conflict. A read-then-
+/// write of the whole record would race that resolution and silently reopen it — writing back the
+/// stale <c>Pending</c> status and clearing the resolution evidence. This update therefore touches
+/// only the detection-owned columns and is guarded on the pending status, so a resolved conflict is
+/// left alone.
+/// </remarks>
+/// <param name="ConflictId">Conflict to correct.</param>
+/// <param name="ConflictType">Refined classification, or null to leave it unchanged.</param>
+/// <param name="ClientStateJson">Captured client state, or null to leave it unchanged.</param>
+/// <param name="ServerStateJson">Captured pre-apply server state, or null to leave it unchanged.</param>
+/// <param name="ClientEditApplied">
+/// Whether the conflicting client edit committed, or null to leave it unchanged.
+/// </param>
+public readonly record struct ReplicaConflictDetectionUpdate(
+    string ConflictId,
+    ReplicaConflictType? ConflictType,
+    string? ClientStateJson,
+    string? ServerStateJson,
+    bool? ClientEditApplied);
+
+/// <summary>
 /// Persistent storage for durable disconnected-sync conflict records (#1167). Conflict records are
 /// written when a replica upload cannot be applied cleanly and are reviewed/resolved through the
 /// operator-facing admin API after the synchronize response has returned.
@@ -74,6 +101,16 @@ public interface IReplicaConflictRepository
     /// Retrieves a single conflict record by id, or null when not found.
     /// </summary>
     Task<ReplicaConflictRecord?> GetAsync(string conflictId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies a detection-time correction to a still-pending conflict, touching only the
+    /// detection-owned columns. Returns true when a pending conflict was updated; false when the
+    /// conflict is missing or has already been resolved or deferred, in which case the caller must
+    /// leave it alone rather than rewriting it from a stale read (#2430).
+    /// </summary>
+    Task<bool> TryUpdateDetectionStateAsync(
+        ReplicaConflictDetectionUpdate update,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Applies a resolution to a pending or deferred conflict, transitioning it to a terminal status

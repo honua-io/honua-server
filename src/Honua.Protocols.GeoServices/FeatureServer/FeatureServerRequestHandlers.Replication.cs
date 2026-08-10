@@ -1364,13 +1364,16 @@ internal static partial class FeatureServerEndpoints
                 refinedTypes[key] = refinedType;
             }
 
-            await conflictRepository.UpsertAsync(
-                existing with
-                {
-                    ConflictType = refinedType,
-                    ClientStateJson = clientState,
-                    ServerStateJson = serverState,
-                },
+            // Guarded, column-scoped update rather than a whole-record upsert: an operator can resolve
+            // this conflict the moment it is listed, while this post-processing is still running, and
+            // writing the record back from the read above would reopen that resolution (#2430).
+            await conflictRepository.TryUpdateDetectionStateAsync(
+                new ReplicaConflictDetectionUpdate(
+                    conflictId,
+                    refinedType,
+                    clientState,
+                    serverState,
+                    ClientEditApplied: null),
                 cancellationToken).ConfigureAwait(false);
         }
 

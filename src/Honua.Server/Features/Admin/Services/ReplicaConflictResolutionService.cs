@@ -223,7 +223,10 @@ internal sealed partial class ReplicaConflictResolutionService
             {
                 // Release the claim so the conflict stays reviewable: recording a resolution for a
                 // state that never committed is exactly the dishonesty this path exists to remove.
-                await ReleaseClaimAsync(conflict, cancellationToken).ConfigureAwait(false);
+                // The cleanup uses a fresh token, not the request's: a write can fail precisely
+                // because the request was cancelled, and releasing on the cancelled token would throw
+                // out of the cleanup and leave the conflict claimed with nothing written.
+                await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionWriteFailed(
                     _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
                 activity?.SetStatus(ActivityStatusCode.Error, applyResult.FailureMessage);
@@ -266,8 +269,10 @@ internal sealed partial class ReplicaConflictResolutionService
     /// <summary>
     /// Returns a claimed conflict to the pending, reviewable state after its feature write failed to
     /// commit, so the failed attempt does not leave a terminal resolution recorded against a state
-    /// that never landed. A failure to release is logged rather than thrown: the caller is already
-    /// reporting the write failure, and masking that with a second error would lose the real cause.
+    /// that never landed. Always invoked with a fresh cancellation token by its callers, because the
+    /// write it is cleaning up after may itself have failed due to cancellation. Any failure to
+    /// release is logged rather than thrown — including cancellation — since the caller is already
+    /// reporting the write failure and masking that with a second error would lose the real cause.
     /// </summary>
     private async Task ReleaseClaimAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
     {
@@ -284,7 +289,7 @@ internal sealed partial class ReplicaConflictResolutionService
                 },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             Log.ResolutionClaimReleaseFailed(_logger, conflict.ConflictId, ex);
         }

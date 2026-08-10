@@ -130,13 +130,22 @@ public readonly record struct ReplicaSyncConflict(
 /// <param name="AppliedDeletes">Number of delete operations applied.</param>
 /// <param name="Failed">True when any non-conflict edit failed to apply.</param>
 /// <param name="FailureMessage">Sanitized failure message when <paramref name="Failed"/> is true.</param>
+/// <param name="CommittedObjectIds">
+/// Object ids of the update/delete edits this batch actually committed. Required because
+/// <paramref name="Failed"/> is layer-wide: with <c>rollbackOnFailure=false</c> the shared edit
+/// pipeline commits rows independently, so one conflicting edit can land while an unrelated sibling
+/// fails. Callers that must know whether a <em>specific</em> uploaded edit landed — notably the
+/// conflict recorder deciding whether the client overwrite is committed — have to read this rather
+/// than the layer-wide flag (#2430). Empty when the adapter cannot attribute per-row outcomes.
+/// </param>
 public readonly record struct ReplicaLayerApplyResult(
     int PublicLayerId,
     int AppliedAdds,
     int AppliedUpdates,
     int AppliedDeletes,
     bool Failed,
-    string? FailureMessage);
+    string? FailureMessage,
+    ImmutableArray<long> CommittedObjectIds = default);
 
 /// <summary>
 /// Report produced by a replica upload/synchronize. Summarizes the applied edits, any detected

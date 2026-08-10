@@ -110,7 +110,54 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             appliedUpdates,
             appliedDeletes,
             Failed: failed,
-            FailureMessage: failed ? "Uploaded replica edits failed to apply." : null);
+            FailureMessage: failed ? "Uploaded replica edits failed to apply." : null,
+            CommittedObjectIds: CollectCommittedObjectIds(response, deletes));
+    }
+
+    /// <summary>
+    /// Collects the object ids of the update/delete rows that actually committed. With
+    /// <c>rollbackOnFailure=false</c> the shared pipeline commits rows independently, so the
+    /// layer-wide failed flag cannot tell a caller whether a <em>particular</em> uploaded edit landed;
+    /// the conflict recorder needs exactly that (#2430).
+    /// </summary>
+    /// <remarks>
+    /// Update results carry their own target object id. Delete results may not, so they fall back to
+    /// the dispatched id at the same index — result arrays are index-aligned with the request arrays
+    /// (Esri applyEdits semantics). Adds are excluded: they mint new server-assigned ids and can never
+    /// be the target of an upload conflict.
+    /// </remarks>
+    private static ImmutableArray<long> CollectCommittedObjectIds(
+        ApplyEditsResponse response,
+        List<object> deletes)
+    {
+        var committed = ImmutableArray.CreateBuilder<long>();
+        AppendCommitted(response.UpdateResults, static (_, _) => null);
+        AppendCommitted(
+            response.DeleteResults,
+            (dispatched, index) => index < dispatched.Count && dispatched[index] is long id ? id : null);
+
+        return committed.ToImmutable();
+
+        void AppendCommitted(EditResult[]? results, Func<List<object>, int, long?> fallbackObjectId)
+        {
+            if (results is null)
+            {
+                return;
+            }
+
+            for (var index = 0; index < results.Length; index++)
+            {
+                if (!results[index].Success)
+                {
+                    continue;
+                }
+
+                if ((results[index].ObjectId ?? fallbackObjectId(deletes, index)) is { } value)
+                {
+                    committed.Add(value);
+                }
+            }
+        }
     }
 
     private static int CountSuccessful(EditResult[]? results)

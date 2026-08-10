@@ -130,6 +130,36 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         return Map(reader);
     }
 
+    public async Task<bool> TryUpdateDetectionStateAsync(
+        ReplicaConflictDetectionUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        // Only the detection-owned columns are touched, and only while the conflict is still pending:
+        // detection post-processing can still be running when an operator resolves the freshly listed
+        // conflict, and a full-record rewrite from a stale read would reopen that resolution (#2430).
+        // COALESCE leaves a column unchanged when the caller passes null for it.
+        var sql = $"""
+            UPDATE honua.replica_conflicts
+            SET conflict_type = COALESCE($2, conflict_type),
+                client_state_json = COALESCE($3, client_state_json),
+                server_state_json = COALESCE($4, server_state_json),
+                client_edit_applied = COALESCE($5, client_edit_applied)
+            WHERE conflict_id = $1
+              AND status = {(short)ReplicaConflictStatus.Pending}
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, update.ConflictId);
+        command.Parameters.Add(NullableSmallint((short?)update.ConflictType));
+        command.Parameters.Add(NullableJsonb(update.ClientStateJson));
+        command.Parameters.Add(NullableJsonb(update.ServerStateJson));
+        command.Parameters.Add(NullableBoolean(update.ClientEditApplied));
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     public async Task<ReplicaConflictResolutionOutcome> ResolveAsync(
         ReplicaConflictResolution resolution,
         CancellationToken cancellationToken = default)
@@ -213,6 +243,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
 
     private static NpgsqlParameter NullableBigint(long? value) =>
         new() { NpgsqlDbType = NpgsqlDbType.Bigint, Value = (object?)value ?? DBNull.Value };
+
+    private static NpgsqlParameter NullableBoolean(bool? value) =>
+        new() { NpgsqlDbType = NpgsqlDbType.Boolean, Value = (object?)value ?? DBNull.Value };
 
     private static NpgsqlParameter NullableTimestampTz(DateTimeOffset? value) =>
         new() { NpgsqlDbType = NpgsqlDbType.TimestampTz, Value = (object?)value ?? DBNull.Value };

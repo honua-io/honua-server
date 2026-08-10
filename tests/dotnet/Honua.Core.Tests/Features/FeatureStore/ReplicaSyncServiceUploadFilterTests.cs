@@ -164,7 +164,11 @@ public sealed class ReplicaSyncServiceUploadFilterTests
                 AppliedUpdates: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Update),
                 AppliedDeletes: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Delete),
                 Failed: false,
-                FailureMessage: null);
+                FailureMessage: null,
+                CommittedObjectIds: edits
+                    .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
+                    .Select(edit => edit.ObjectId!.Value)
+                    .ToImmutableArray());
             return Task.FromResult(result);
         }
     }
@@ -188,6 +192,11 @@ public sealed class ReplicaSyncServiceUploadFilterTests
 
         public Task<ReplicaConflictRecord?> GetAsync(string conflictId, CancellationToken cancellationToken = default)
             => Task.FromResult<ReplicaConflictRecord?>(null);
+
+        public Task<bool> TryUpdateDetectionStateAsync(
+            ReplicaConflictDetectionUpdate update,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
             ReplicaConflictResolution resolution,

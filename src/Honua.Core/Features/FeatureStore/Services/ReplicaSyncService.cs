@@ -192,9 +192,10 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 firstFailure ??= applyResult.FailureMessage;
             }
 
-            if (!applyResult.Failed && layerConflictIndexes.Count > 0)
+            if (layerConflictIndexes.Count > 0)
             {
-                await MarkConflictsAppliedAsync(conflicts, layerConflictIndexes, canRecordConflicts, cancellationToken)
+                await MarkConflictsAppliedAsync(
+                        conflicts, layerConflictIndexes, applyResult, canRecordConflicts, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -244,21 +245,49 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         };
 
     /// <summary>
-    /// Promotes the conflicts of a layer whose last-write-wins batch committed cleanly to
-    /// "the client edit landed", both on the transient report and on the durable record. Recorded
-    /// after the fact so the flag describes what actually committed rather than the requested
-    /// conflict policy (#2430); a failed batch simply leaves the conservative <c>false</c> in place,
-    /// which makes a later accept-client resolution a real write instead of a no-op.
+    /// Promotes each conflict whose own uploaded edit committed to "the client edit landed", on both
+    /// the transient report and the durable record. Recorded after the fact so the flag describes what
+    /// actually committed rather than the requested conflict policy (#2430).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Attribution is <b>per edit</b>, not per layer. With <c>rollbackOnFailure=false</c> the shared
+    /// edit pipeline commits rows independently, so one conflicting edit can land while an unrelated
+    /// sibling in the same batch fails and marks the whole layer failed. Promoting off the layer flag
+    /// would leave a committed client overwrite recorded as not-applied, and a later keep-server
+    /// resolution would then plan a no-op and mark the conflict resolved with the overwrite still in
+    /// place. Only ids the applier reports as committed are promoted; a conflict the applier cannot
+    /// attribute keeps the conservative <c>false</c>, which makes a later accept-client a real write.
+    /// </para>
+    /// <para>
+    /// The durable write is the guarded detection-state update, never a whole-record upsert: an
+    /// operator can resolve a freshly listed conflict while this post-processing is still running, and
+    /// rewriting the record from a stale read would reopen that resolution.
+    /// </para>
+    /// </remarks>
     private async Task MarkConflictsAppliedAsync(
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
+        ReplicaLayerApplyResult applyResult,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
+        var committed = applyResult.CommittedObjectIds.IsDefaultOrEmpty
+            ? []
+            : new HashSet<long>(applyResult.CommittedObjectIds);
+        if (committed.Count == 0)
+        {
+            return;
+        }
+
         foreach (var index in layerConflictIndexes)
         {
             var conflict = conflicts[index];
+            if (!committed.Contains(conflict.ObjectId))
+            {
+                continue;
+            }
+
             conflicts[index] = conflict with { Applied = true };
 
             if (!canRecordConflicts || conflict.ConflictId is not { Length: > 0 } conflictId)
@@ -268,13 +297,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
             try
             {
-                var record = await _conflictRepository.GetAsync(conflictId, cancellationToken).ConfigureAwait(false);
-                if (record is { } existing)
-                {
-                    await _conflictRepository
-                        .UpsertAsync(existing with { ClientEditApplied = true }, cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                await _conflictRepository.TryUpdateDetectionStateAsync(
+                        new ReplicaConflictDetectionUpdate(
+                            conflictId,
+                            ConflictType: null,
+                            ClientStateJson: null,
+                            ServerStateJson: null,
+                            ClientEditApplied: true),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
