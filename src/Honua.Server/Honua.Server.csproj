@@ -38,7 +38,6 @@
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
-    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <!--
       The heavyweight GDAL worker (src/Honua.Worker.Gdal) reuses the internal
       durable job-execution substrate (JobExecutionService, RedisJobQueue, the
