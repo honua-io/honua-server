@@ -50,8 +50,27 @@ public interface IReplicaConflictResolutionApplier
     /// <param name="storageLayerId">Storage-layer id of the conflicting feature.</param>
     /// <param name="objectId">Stable object id of the conflicting feature.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<string?> CaptureStateTokenAsync(
+    Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
         int storageLayerId,
         long objectId,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// What the applier saw when it read the conflicting row: its concurrency token and state envelope, or
+/// the fact that the row was absent. Absence is a first-class outcome, not a missing token: a
+/// resolution that observed no row must not later delete one that was reinserted in the meantime
+/// (#2430).
+/// </summary>
+/// <param name="Exists">Whether the row existed when it was read.</param>
+/// <param name="StateToken">
+/// Optimistic-concurrency token for the row, or null when it did not exist.
+/// </param>
+/// <param name="StateJson">
+/// The row's state envelope, in the same shape the conflict record stores, or null when it did not
+/// exist. Used to re-baseline a conflict whose resolution can no longer be attributed.
+/// </param>
+public readonly record struct ReplicaConflictRowSnapshot(
+    bool Exists,
+    string? StateToken,
+    string? StateJson);

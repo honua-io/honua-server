@@ -993,6 +993,80 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenTheRowIsObservedAbsent_TellsTheApplierSoItDoesNotDeleteAReinsert()
+    {
+        // A delete dispatched against a row observed absent would remove one reinserted with the same
+        // object id in the meantime, and the shared pipeline cannot express "only if still absent".
+        var deleteConflict = Conflict(clientEditApplied: false) with
+        {
+            ConflictType = ReplicaConflictType.DeleteUpdate,
+            ClientStateJson = null,
+        };
+        var repository = new FakeConflictRepository(deleteConflict);
+        var applier = new AbsentRowApplier();
+        var service = CreateService(repository, applier);
+
+        await service.ResolveAsync(Request(ReplicaConflictResolutionAction.AcceptClient));
+
+        applier.LastCommand!.Value.Effect.Should().Be(ReplicaConflictResolutionEffect.DeleteFeature);
+        applier.LastCommand!.Value.ExpectedRowAbsent.Should().BeTrue();
+        applier.LastCommand!.Value.ExpectedStateToken.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenARecoveredWriteCannotBeAttributed_RebaselinesTheConflict()
+    {
+        // Releasing alone would strand it: if the earlier write did land, every later attempt's
+        // staleness probe trips over this resolution's own change and answers Stale forever.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var service = CreateService(repository, new PreconditionFailingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(
+                FakeChangeTracker.Generation, "the conflict is re-pointed at the state that is there now");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_NoWriteTakeover_RerunsTheStalenessProbe()
+    {
+        // The takeover says nothing about whether the attempt it replaced finished its probe, and a
+        // no-write resume goes straight to audit and finalization.
+        var expired = Conflict(clientEditApplied: false) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(Change(generation: 60));
+        var audit = new NoOpAuditLog();
+        var service = CreateService(repository, new RecordingApplier(), changeTracker: tracker, auditLog: audit);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        audit.Records.Should().Be(0, "a post-conflict edit must not be finalized as resolved by a retry");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_RecoveryWithoutARetainedToken_RefusesToReapply()
     {
         // The claim's pre-write phase never became durable, so there is no snapshot to bind the
@@ -1195,11 +1269,11 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Order of seam calls, so the token capture can be asserted to precede the probe.</summary>
         public List<string> Trace { get; } = [];
 
-        public Task<string?> CaptureStateTokenAsync(
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
             int storageLayerId, long objectId, CancellationToken cancellationToken = default)
         {
             Trace.Add("capture");
-            return Task.FromResult<string?>("token-1");
+            return Task.FromResult(new ReplicaConflictRowSnapshot(true, "token-1", "{\"attributes\":{}}"));
         }
 
         public Task<ReplicaConflictApplyResult> ApplyAsync(
@@ -1215,9 +1289,9 @@ public sealed class ReplicaConflictResolutionServiceTests
 
     private sealed class FailingApplier : IReplicaConflictResolutionApplier
     {
-        public Task<string?> CaptureStateTokenAsync(
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
             int storageLayerId, long objectId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>("token-1");
+            => Task.FromResult(new ReplicaConflictRowSnapshot(true, "token-1", "{\"attributes\":{}}"));
 
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
@@ -1225,12 +1299,30 @@ public sealed class ReplicaConflictResolutionServiceTests
             => Task.FromResult(new ReplicaConflictApplyResult(Applied: false, FailureMessage: "write rejected"));
     }
 
+    /// <summary>Applier that observes no row, as a resolution targeting an already-deleted feature does.</summary>
+    private sealed class AbsentRowApplier : IReplicaConflictResolutionApplier
+    {
+        public ReplicaConflictResolutionCommand? LastCommand { get; private set; }
+
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ReplicaConflictRowSnapshot(false, null, null));
+
+        public Task<ReplicaConflictApplyResult> ApplyAsync(
+            ReplicaConflictResolutionCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            LastCommand = command;
+            return Task.FromResult(new ReplicaConflictApplyResult(Applied: true, FailureMessage: null));
+        }
+    }
+
     /// <summary>Applier whose precondition caught an edit arriving just before the write transaction.</summary>
     private sealed class PreconditionFailingApplier : IReplicaConflictResolutionApplier
     {
-        public Task<string?> CaptureStateTokenAsync(
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
             int storageLayerId, long objectId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>("token-1");
+            => Task.FromResult(new ReplicaConflictRowSnapshot(true, "token-1", "{\"attributes\":{}}"));
 
         public int Calls { get; private set; }
 
@@ -1247,9 +1339,9 @@ public sealed class ReplicaConflictResolutionServiceTests
     /// <summary>Applier whose write may or may not have committed, as a lost commit ack reports.</summary>
     private sealed class IndeterminateApplier : IReplicaConflictResolutionApplier
     {
-        public Task<string?> CaptureStateTokenAsync(
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
             int storageLayerId, long objectId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>("token-1");
+            => Task.FromResult(new ReplicaConflictRowSnapshot(true, "token-1", "{\"attributes\":{}}"));
 
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
@@ -1260,9 +1352,9 @@ public sealed class ReplicaConflictResolutionServiceTests
 
     private sealed class ThrowingApplier : IReplicaConflictResolutionApplier
     {
-        public Task<string?> CaptureStateTokenAsync(
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
             int storageLayerId, long objectId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>("token-1");
+            => Task.FromResult(new ReplicaConflictRowSnapshot(true, "token-1", "{\"attributes\":{}}"));
 
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
@@ -1321,10 +1413,27 @@ public sealed class ReplicaConflictResolutionServiceTests
             => Task.FromResult<ReplicaConflictRecord?>(
                 string.Equals(conflictId, Current.ConflictId, StringComparison.Ordinal) ? Current : null);
 
+        /// <summary>Detection-state corrections applied after the record was written.</summary>
+        public List<ReplicaConflictDetectionUpdate> DetectionUpdates { get; } = [];
+
         public Task<bool> TryUpdateDetectionStateAsync(
             ReplicaConflictDetectionUpdate update,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        {
+            // Mirror the real guard: detection corrections only apply while the conflict is pending.
+            if (Current.Status != ReplicaConflictStatus.Pending)
+            {
+                return Task.FromResult(false);
+            }
+
+            DetectionUpdates.Add(update);
+            Current = Current with
+            {
+                ServerStateJson = update.ServerStateJson ?? Current.ServerStateJson,
+                ResolutionBaseGeneration = update.ResolutionBaseGeneration ?? Current.ResolutionBaseGeneration,
+            };
+            return Task.FromResult(true);
+        }
 
         public Task<bool> TryTakeOverClaimAsync(
             string conflictId,

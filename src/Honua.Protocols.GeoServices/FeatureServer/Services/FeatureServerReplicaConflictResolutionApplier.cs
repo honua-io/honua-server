@@ -101,6 +101,21 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                 return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
 
+        // The caller observed no row. A delete then has nothing to remove and MUST NOT be dispatched:
+        // the object id could have been reinserted between that observation and now, and the shared
+        // pipeline has no way to express "only if still absent", so issuing the delete would remove
+        // that new row. Re-read instead: still absent means the target state already holds, present
+        // means a reinsert the resolution must not act on (#2430).
+        if (command.ExpectedRowAbsent && command.Effect == ReplicaConflictResolutionEffect.DeleteFeature)
+        {
+            var reinserted = command.StorageLayerId is { } absentLayerId
+                && await _featureReader.GetAsync(absentLayerId, command.ObjectId, cancellationToken)
+                    .ConfigureAwait(false) is not null;
+            return reinserted
+                ? new ReplicaConflictApplyResult(Applied: false, FailureMessage, PreconditionFailed: true)
+                : new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
+        }
+
         // Optimistic-concurrency precondition over the snapshot the caller evaluated its staleness
         // check against, captured through CaptureStateTokenAsync before that check ran. The writer
         // re-computes the token from the locked row inside the write transaction, so any edit arriving
@@ -151,7 +166,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     }
 
     /// <inheritdoc />
-    public async Task<string?> CaptureStateTokenAsync(
+    public async Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
         int storageLayerId,
         long objectId,
         CancellationToken cancellationToken = default)
@@ -159,7 +174,12 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         var current = await _featureReader
             .GetAsync(storageLayerId, objectId, cancellationToken)
             .ConfigureAwait(false);
-        return current is { } row ? FeatureStateToken.Compute(row) : null;
+        return current is { } row
+            ? new ReplicaConflictRowSnapshot(
+                Exists: true,
+                FeatureStateToken.Compute(row),
+                FeatureServerEndpoints.CaptureStateEnvelope(row))
+            : new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
     }
 
     /// <summary>

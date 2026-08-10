@@ -106,6 +106,11 @@ public readonly record struct ReplicaConflictResolutionPlan(
 /// <param name="StorageLayerId">
 /// Storage-layer id of the conflicting feature, when the conflict recorded one.
 /// </param>
+/// <param name="ExpectedRowAbsent">
+/// True when the row was observed to NOT exist at the moment the staleness precondition was evaluated.
+/// A delete must then not be dispatched: the target state already holds, and issuing one would remove a
+/// row reinserted with the same object id in the meantime (#2430).
+/// </param>
 /// <param name="ExpectedStateToken">
 /// Optimistic-concurrency token for the row as it was when the staleness precondition was evaluated,
 /// carried into the write transaction so the two checks describe the same snapshot. Null when the
@@ -119,7 +124,8 @@ public readonly record struct ReplicaConflictResolutionCommand(
     ReplicaConflictResolutionEffect Effect,
     string? FeatureStateJson,
     int? StorageLayerId = null,
-    string? ExpectedStateToken = null);
+    string? ExpectedStateToken = null,
+    bool ExpectedRowAbsent = false);
 
 /// <summary>
 /// Outcome of applying a planned conflict resolution through the shared edit pipeline.

@@ -287,6 +287,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // accept the very change the probe exists to reject; binding both to one snapshot makes them a
         // single decision (#2430).
         string? expectedStateToken = null;
+        var expectedRowAbsent = false;
         var tokenPersisted = true;
         bool stale;
         try
@@ -295,9 +296,11 @@ internal sealed partial class ReplicaConflictResolutionService
                 plan.Effect != ReplicaConflictResolutionEffect.None &&
                 claimed.StorageLayerId is { } tokenLayerId)
             {
-                expectedStateToken = await _applier
+                var snapshot = await _applier
                     .CaptureStateTokenAsync(tokenLayerId, claimed.ObjectId, cancellationToken)
                     .ConfigureAwait(false);
+                expectedStateToken = snapshot.StateToken;
+                expectedRowAbsent = !snapshot.Exists;
 
                 // Durable IMMEDIATELY, before the probe runs. Capture plus probe can outlast the lease,
                 // and a recovery that took the claim over in that window would re-apply against a still
@@ -365,7 +368,8 @@ internal sealed partial class ReplicaConflictResolutionService
             ReplicaConflictApplyResult applyResult;
             try
             {
-                applyResult = await ApplyResolutionWriteAsync(claimed, plan, expectedStateToken, cancellationToken)
+                applyResult = await ApplyResolutionWriteAsync(
+                        claimed, plan, expectedStateToken, expectedRowAbsent, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -683,16 +687,20 @@ internal sealed partial class ReplicaConflictResolutionService
             // would describe whatever is in the row at this moment — including a normal edit that landed
             // during the lease — and the precondition would then happily overwrite it (#2430).
             var reapplied = await ApplyResolutionWriteAsync(
-                    existing, plan, existing.PreWriteStateToken, cancellationToken)
+                    existing, plan, existing.PreWriteStateToken, expectedRowAbsent: false, cancellationToken)
                 .ConfigureAwait(false);
             if (reapplied.PreconditionFailed)
             {
                 // The row is no longer what it was when this resolution was claimed. That is either this
                 // resolution's own write (its marker never landed) or a foreign edit during the lease,
                 // and the collapsed change log cannot tell them apart. Refusing to write is the only
-                // answer that cannot destroy data: the claim is released so the conflict is reviewable
-                // against the state that is actually there (#2430).
+                // answer that cannot destroy data — but simply releasing would strand the conflict: if
+                // the write DID land, every later attempt's staleness probe trips over this resolution's
+                // own change and returns Stale forever. So the conflict is re-baselined onto the state
+                // that is actually there before being released, and the operator re-reviews against it
+                // (#2430).
                 await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                await RebaselineAsync(existing, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionStale(
                     _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
                 return Failure(ReplicaConflictResolutionStatus.Stale, "This feature was edited after the conflict was recorded, so applying the conflict-time resolution would overwrite that newer edit. Re-review the conflict against the current server state.");
@@ -762,6 +770,21 @@ internal sealed partial class ReplicaConflictResolutionService
             }
 
             existing = existing with { ResolvedAt = noWriteTakeoverAt };
+
+            // The takeover says nothing about whether the attempt being replaced had finished its
+            // staleness probe, and a no-write resume goes straight to audit and finalization. Re-run the
+            // probe under the new ownership so a post-conflict edit cannot be recorded as resolved by a
+            // retry while the original was about to report it stale (#2430).
+            if (request.Action != ReplicaConflictResolutionAction.Defer &&
+                await HasPostConflictEditAsync(existing, cancellationToken).ConfigureAwait(false))
+            {
+                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                Log.ResolutionStale(
+                    _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
+                return Failure(
+                    ReplicaConflictResolutionStatus.Stale,
+                    "This feature was edited after the conflict was recorded, so applying the conflict-time resolution would overwrite that newer edit. Re-review the conflict against the current server state.");
+            }
         }
 
         Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
@@ -890,6 +913,50 @@ internal sealed partial class ReplicaConflictResolutionService
     }
 
     /// <summary>
+    /// Re-points a conflict at the state the feature actually holds now: refreshes the captured server
+    /// envelope and moves the resolution base generation to the current cursor.
+    /// </summary>
+    /// <remarks>
+    /// Used when a resolution's own write can no longer be attributed, where releasing alone would
+    /// strand the conflict — a later attempt's staleness probe would trip over this resolution's own
+    /// change and answer Stale forever. Re-baselining makes the conflict reviewable against reality
+    /// instead. Runs AFTER the claim is released, because the detection-state update is guarded on the
+    /// conflict being pending — the same guard that stops detection post-processing from reopening a
+    /// resolved conflict. Best-effort: a failure here leaves the conflict as it was (#2430).
+    /// </remarks>
+    private async Task RebaselineAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
+    {
+        if (_applier is null || conflict.StorageLayerId is not { } storageLayerId)
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = await _applier
+                .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
+                .ConfigureAwait(false);
+            var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            await _conflictRepository.TryUpdateDetectionStateAsync(
+                    new ReplicaConflictDetectionUpdate(
+                        conflict.ConflictId,
+                        ConflictType: null,
+                        ClientStateJson: null,
+                        ServerStateJson: snapshot.StateJson,
+                        ClientEditApplied: null,
+                        ResolutionBaseGeneration: generation),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ResolutionRebaselineFailed(_logger, conflict.ConflictId, ex);
+        }
+    }
+
+    /// <summary>
     /// Back-dates a retained claim past its lease so the operator's own retry can resume it at once.
     /// Used only for an indeterminate write, where the attempt has finished but cannot say whether it
     /// committed: the claim must stay (releasing it strands the conflict as permanently stale if the
@@ -957,6 +1024,7 @@ internal sealed partial class ReplicaConflictResolutionService
         ReplicaConflictRecord conflict,
         ReplicaConflictResolutionPlan plan,
         string? expectedStateToken,
+        bool expectedRowAbsent,
         CancellationToken cancellationToken)
         => _applier!.ApplyAsync(
             new ReplicaConflictResolutionCommand(
@@ -966,7 +1034,8 @@ internal sealed partial class ReplicaConflictResolutionService
                 plan.Effect,
                 plan.FeatureStateJson,
                 conflict.StorageLayerId,
-                expectedStateToken),
+                expectedStateToken,
+                expectedRowAbsent),
             cancellationToken);
 
     /// <summary>
@@ -1087,6 +1156,10 @@ internal sealed partial class ReplicaConflictResolutionService
             long objectId,
             ReplicaConflictResolutionAction action,
             ReplicaConflictResolutionEffect effect);
+
+        [LoggerMessage(EventId = 7758, Level = LogLevel.Warning,
+            Message = "Replica conflict {ConflictId} could not be re-baselined onto the current server state")]
+        public static partial void ResolutionRebaselineFailed(ILogger logger, string conflictId, Exception exception);
 
         [LoggerMessage(EventId = 7757, Level = LogLevel.Error,
             Message = "Replica conflict {ConflictId} for service {ServiceId} layer {LayerId} objectId {ObjectId} stays claimed: the storage layer did not acknowledge the resolution write, so it may or may not have committed")]
