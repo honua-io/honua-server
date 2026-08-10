@@ -268,25 +268,32 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
             if (boundObjectIds && editsToApply.Count > 0)
             {
-                // A target that was ABSENT at capture time has no token, and absence cannot be expressed
-                // as a precondition — so such an edit is withheld rather than dispatched. Dispatching it
-                // unguarded would update or delete a row inserted under the same object id between the
-                // capture and the write, which is exactly what this mode forbids (#2430).
-                var unguarded = editsToApply
-                    .Where(edit => edit.ObjectId is { } id && !preconditionTokens.ContainsKey(id))
-                    .Select(edit => edit.ObjectId!.Value)
-                    .Distinct()
-                    .ToArray();
-                if (unguarded.Length > 0)
+                // Two kinds of edit cannot be bound to a single detection snapshot, and manual review
+                // withholds rather than dispatching either unguarded (#2430):
+                //   * a target that was ABSENT at capture time — absence is not expressible as a
+                //     precondition, and an unguarded write would hit a row reinserted under the same
+                //     object id between the capture and the write;
+                //   * REPEATED targets — the writer revalidates the token before each mutation, so the
+                //     first operation invalidates it for the rest, failing edits that are perfectly
+                //     valid (or rolling the whole batch back).
+                var dispatchCountByObject = editsToApply
+                    .Where(edit => edit.ObjectId is not null)
+                    .GroupBy(edit => edit.ObjectId!.Value)
+                    .ToDictionary(group => group.Key, group => group.Count());
+                var unguardable = dispatchCountByObject
+                    .Where(entry => entry.Value > 1 || !preconditionTokens.ContainsKey(entry.Key))
+                    .Select(entry => entry.Key)
+                    .ToHashSet();
+                if (unguardable.Count > 0)
                 {
                     var guarded = editsToApply
-                        .Where(edit => edit.ObjectId is not { } id || preconditionTokens.ContainsKey(id))
+                        .Where(edit => edit.ObjectId is not { } id || !unguardable.Contains(id))
                         .ToImmutableArray();
                     editsToApply.Clear();
                     editsToApply.AddRange(guarded);
                     anyFailure = true;
                     firstFailure ??=
-                        "Some uploaded edits target features that no longer exist on the server and could not be applied under manual conflict review. Re-synchronize to have them recorded as conflicts.";
+                        "Some uploaded edits could not be applied under manual conflict review because they could not be bound to the state conflict detection observed: their target no longer exists, or the upload carries several operations for the same feature. Re-synchronize to have them detected again.";
                 }
 
                 preconditions = editsToApply
@@ -294,6 +301,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     .Select(edit => edit.ObjectId!.Value)
                     .Distinct()
                     .Where(preconditionTokens.ContainsKey)
+                    // Exactly one dispatched edit per object at this point, so one token per object is
+                    // validated exactly once by the writer.
                     .Select(objectId => new FeatureEditPrecondition
                     {
                         ObjectId = objectId,

@@ -278,6 +278,35 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_WithholdsRepeatedTargetsForOneObject()
+    {
+        // The writer revalidates the token before each mutation, so one token shared by two operations
+        // on the same object fails the second - or rolls the whole batch back - even though both edits
+        // are valid. They cannot be bound to a single detection snapshot, so they are withheld.
+        var tracker = new RecordingChangeTracker();
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [], failed: false);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 7, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Delete, ObjectId: 7, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 8, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            applier,
+            serverStateCapturer: new TokenCapturer());
+
+        applier.DispatchedEdits.Should().ContainSingle()
+            .Which.ObjectId.Should().Be(8, "only the singly-targeted object can be bound to one snapshot");
+        applier.Preconditions.Should().ContainSingle().Which.ObjectId.Should().Be(8);
+        report.Success.Should().BeFalse("the client is told to re-synchronize the withheld edits");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_LastWriteWins_DoesNotBindEditsToAPrecondition()
     {
         // Last-write-wins exists so the client edit wins over concurrent server state; failing it on a
