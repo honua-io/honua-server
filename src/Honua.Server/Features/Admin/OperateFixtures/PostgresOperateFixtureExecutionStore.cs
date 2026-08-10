@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
 internal sealed partial class PostgresOperateFixtureExecutionStore(

@@ -41,7 +41,7 @@ public sealed class MigrationScriptDbUpSafetyTests
     private static readonly string[] _migrationDirectories =
     {
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Migrations"),
-        ArchitectureTestHelpers.CombinePath("src", "Honua.Postgres", "Migrations"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Db", "Postgres", "Migrations"),
     };
 
     // A named dollar-quote tag: a single '$' (not preceded by another '$', so the

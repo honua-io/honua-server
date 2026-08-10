@@ -117,8 +117,8 @@ def analyze_dependencies(file_path: str, content: str) -> List[str]:
 
     # Check if Core project depends on Infrastructure
     if "Honua.Core" in file_path:
-        if "using Honua.Postgres" in content:
-            violations.append(f"❌ BLOCKING: Core depends on Infrastructure (Honua.Postgres)")
+        if "using Honua.Db.Postgres" in content or "using Honua.Postgres" in content:
+            violations.append(f"❌ BLOCKING: Core depends on Infrastructure (Honua.Db.Postgres)")
         if "using Honua.Server" in content:
             violations.append(f"❌ BLOCKING: Core depends on Server")
 

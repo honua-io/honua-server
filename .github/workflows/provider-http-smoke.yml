@@ -120,17 +120,17 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj
 
       - name: Build
-        run: dotnet build tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj --no-restore --configuration Release
+        run: dotnet build tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj --no-restore --configuration Release
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
       - name: Run Oracle real-database lane (gvenzl/oracle-free via Testcontainers)
         run: |
-          dotnet test tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \

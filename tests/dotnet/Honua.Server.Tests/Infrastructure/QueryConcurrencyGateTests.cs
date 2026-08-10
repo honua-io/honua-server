@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

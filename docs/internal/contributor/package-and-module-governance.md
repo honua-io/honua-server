@@ -38,8 +38,8 @@ the policy intentionally changes.
 The base runtime is the smallest package graph needed to host shared canonical behavior and the default deployment shape:
 
 - `Honua.Core`: domain models, canonical requests/responses, protocol-neutral abstractions, validators, shared format/query/edit/raster/process contracts, and cross-cutting policy contracts
-- `Honua.Postgres`: default PostgreSQL/PostGIS provider implementation behind Core abstractions
-- `Honua.DuckDB`: embedded read-only provider implementation behind Core abstractions
+- `Honua.Db.Postgres`: default PostgreSQL/PostGIS provider implementation behind Core abstractions
+- `Honua.Db.DuckDB`: embedded read-only provider implementation behind Core abstractions
 - `Honua.Server`: ASP.NET Core host, protocol adapters, composition root, shared endpoint registration, and base runtime services
 
 Protocol adapters in `Honua.Server` may parse wire formats and map to canonical pipelines, but optional provider or cloud-specific SDKs should not become new ambient dependencies of the base server unless the capability is part of the default runtime contract.

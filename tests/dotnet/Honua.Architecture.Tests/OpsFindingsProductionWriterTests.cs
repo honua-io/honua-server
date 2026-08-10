@@ -23,8 +23,8 @@ public sealed class OpsFindingsProductionWriterTests
 {
     private const string AdmissionGateSignalTypeName = "Honua.Infrastructure.Monitoring.AdmissionGateDatabasePressureSignal";
     private const string PressureSignalInterfaceName = "Honua.Infrastructure.Monitoring.IOpsDatabasePressureSignal";
-    private const string GateTypeName = "Honua.Postgres.Features.Infrastructure.QueryConcurrencyGate";
-    private const string ConnectionProviderTypeName = "Honua.Postgres.Features.Infrastructure.Caching.CachingDatabaseConnectionProvider";
+    private const string GateTypeName = "Honua.Db.Postgres.Features.Infrastructure.QueryConcurrencyGate";
+    private const string ConnectionProviderTypeName = "Honua.Db.Postgres.Features.Infrastructure.Caching.CachingDatabaseConnectionProvider";
 
     [Fact]
     public void DatabasePressureFinding_SignalIsBackedByTheAdmissionGateWriter()

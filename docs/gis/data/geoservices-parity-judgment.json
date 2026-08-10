@@ -2525,8 +2525,8 @@
           "src/Honua.Protocols.GeoServices/VersionManagementServer/VersionManagementServerEndpoints.cs",
           "src/Honua.Protocols.GeoServices/VersionManagementServer/VersionManagementAuthorization.cs",
           "src/Honua.Protocols.GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
-          "src/Honua.Postgres/Features/FeatureStore/Services/PostgresVersionManager.cs",
-          "src/Honua.Postgres/Features/FeatureStore/Services/PostgresVersionManager.ReconcilePost.cs",
+          "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.cs",
+          "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.ReconcilePost.cs",
           "src/Honua.Core/Features/FeatureStore/ReadOnlyProviders/NoOpVersionManager.cs"
         ],
         "tests": [

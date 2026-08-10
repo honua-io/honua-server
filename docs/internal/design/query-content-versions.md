@@ -25,7 +25,7 @@ saved-query store, its versioned domain model, and most of its admin endpoints:
   **`SavedQueryContent`** payload (`NaturalLanguageQuery`, `LayerId`, `ServiceName`, `FilterPlan`,
   `OutFields`, `OutputSrid`, `PreviewLimit`, `OutputFormat`, `Units`, `Metadata`). Versions carry a stable
   `ContentHash`, `BasedOnVersionId`, and provenance (`CreatedFromJobId` / `CreatedFromArtifactIds`).
-- A Postgres store (`src/Honua.Postgres/Features/AnalysisContent/PostgresAnalysisContentStore.cs`) and an
+- A Postgres store (`src/Honua.Db/Postgres/Features/AnalysisContent/PostgresAnalysisContentStore.cs`) and an
   in-memory store (`src/Honua.Ai/Features/AnalysisContent/InMemoryAnalysisContentStore.cs`).
 - A mapped admin endpoint group (`src/Honua.Ai/Features/AnalysisContent/AnalysisContentEndpoints.cs`)
   under `/api/v{version}/analysis/content`, `RequireAdminAuthorization()`, that already serves create-item,
@@ -209,7 +209,7 @@ Response (`SavedQueryVersionDiffResponse`):
    the `SavedQueryContent` field deltas), map `GET …/versions/diff`, add `SavedQueryVersionDiffResponse` to
    the JSON context + `EndpointRegistry.cs`.
 4. **Tests.** Mirror `tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs`
-   and `tests/dotnet/Honua.Postgres.Tests/Features/AnalysisContent/PostgresAnalysisContentStoreTests.cs`:
+   and `tests/dotnet/Honua.Db.Postgres.Tests/Features/AnalysisContent/PostgresAnalysisContentStoreTests.cs`:
    list-empty, list-after-N-saves (ascending order, `currentVersion` correct), 404 unknown item; diff
    default range, explicit range, 400 unknown version.
 

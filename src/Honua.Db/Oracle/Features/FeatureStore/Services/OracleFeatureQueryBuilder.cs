@@ -1,0 +1,613 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
+
+namespace Honua.Db.Oracle.Features.FeatureStore.Services;
+
+/// <summary>
+/// Translates a <see cref="FeatureQuery"/> into parameterized Oracle SQL for the Oracle
+/// spatial provider. All identifiers are validated and double-quoted; all literal values
+/// flow through named bind parameters (<c>:p0</c>, <c>:p1</c>, …) with
+/// <c>BindByName = true</c>.
+/// </summary>
+/// <remarks>
+/// Oracle 12c+ is assumed for <c>OFFSET … FETCH NEXT</c> pagination. Spatial functions used:
+/// <list type="bullet">
+///   <item><c>SDO_UTIL.TO_WKBGEOMETRY</c> (Oracle Spatial 10g R2+) for OGC WKB output.</item>
+///   <item><c>SDO_UTIL.FROM_WKBGEOMETRY</c> (Oracle Spatial 11g R1+) for filter geometries.</item>
+///   <item><c>SDO_RELATE</c> + <c>SDO_AGGR_MBR</c> for spatial filtering and extents.</item>
+/// </list>
+/// </remarks>
+internal static partial class OracleFeatureQueryBuilder
+{
+    /// <summary>
+    /// Builds a SELECT that returns the primary key, the geometry as WKB (or NULL when no
+    /// geometry column is configured), and any requested attribute columns.
+    /// </summary>
+    public static ParameterizedQuery BuildSelectQuery(OracleLayerMapping mapping, FeatureQuery query, IReadOnlyList<string> attributeColumns)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        ArgumentNullException.ThrowIfNull(attributeColumns);
+        GuardUnsupportedTemporalFilter(query);
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+
+        sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
+
+        sb.Append(", ").Append(BuildGeometryWkbExpression(mapping)).Append(" AS \"__geometry\"");
+
+        AppendAttributeColumns(sb, mapping, query, attributeColumns);
+
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE 1=1");
+
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+        AppendOrderByClause(sb, query, resolveColumnName);
+        AppendPagination(sb, mapping, query, parameters);
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
+    /// </summary>
+    public static ParameterizedQuery BuildCountQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+
+        sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE 1=1");
+
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Builds a SELECT that returns the primary key for matching rows. Used for object-id
+    /// listings when only identifiers are needed.
+    /// </summary>
+    public static ParameterizedQuery BuildObjectIdsQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns = null)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+
+        sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE 1=1");
+
+        AppendWhereClause(sb, query, parameters, resolveColumnName);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+        AppendOrderByClause(sb, query, resolveColumnName);
+        AppendPagination(sb, mapping, query, parameters);
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Builds an extent query using <c>SDO_AGGR_MBR</c>. The aggregate returns a rectangle
+    /// SDO_GEOMETRY whose <c>SDO_ORDINATES</c> varray contains <c>(minX, minY, maxX, maxY)</c>
+    /// in the source CRS.
+    /// </summary>
+    public static ParameterizedQuery BuildExtentQuery(
+        OracleLayerMapping mapping,
+        FeatureQuery? query,
+        IReadOnlyList<string>? attributeColumns = null)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+
+        if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            throw new InvalidOperationException(
+                $"Layer {mapping.LayerId} has no geometry column configured; extent is not available.");
+        }
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+        var geometryColumn = mapping.QuotedGeometryColumn!;
+
+        sb.Append("SELECT ");
+        sb.Append("t.mbb.SDO_ORDINATES(1) AS \"min_x\", ");
+        sb.Append("t.mbb.SDO_ORDINATES(2) AS \"min_y\", ");
+        sb.Append("t.mbb.SDO_ORDINATES(3) AS \"max_x\", ");
+        sb.Append("t.mbb.SDO_ORDINATES(4) AS \"max_y\" ");
+        sb.Append("FROM (SELECT SDO_AGGR_MBR(").Append(geometryColumn).Append(") AS mbb FROM ");
+        sb.Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
+
+        var effective = query ?? new FeatureQuery();
+        GuardUnsupportedTemporalFilter(effective);
+        AppendWhereClause(sb, effective, parameters, resolveColumnName);
+        AppendObjectIdsFilter(sb, mapping, effective, parameters);
+        AppendSpatialFilter(sb, mapping, effective, parameters);
+
+        sb.Append(") t");
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    /// <summary>
+    /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Oracle provider cannot translate.
+    /// Temporal filters arrive on <see cref="FeatureQuery"/> from OGC API Features (<c>datetime</c>),
+    /// STAC search, and OData time-window queries. The provider does not yet emit Oracle temporal
+    /// predicates, so the filter is surfaced as an eager <see cref="NotSupportedException"/> —
+    /// never silently dropped, which would return rows outside the requested window (a
+    /// correctness/data-leak bug). Mirrors the fail-loud contract of the MySQL/Redshift/Databricks
+    /// providers (temporal GA hardening, #2429).
+    /// </summary>
+    private static void GuardUnsupportedTemporalFilter(FeatureQuery query)
+    {
+        if (query.TemporalFilter.HasValue)
+        {
+            throw new NotSupportedException(
+                "Temporal filters are not supported by the Oracle provider in this slice. " +
+                "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
+    }
+
+    private static string BuildGeometryWkbExpression(OracleLayerMapping mapping)
+    {
+        if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            return "CAST(NULL AS BLOB)";
+        }
+
+        // SDO_UTIL.TO_WKBGEOMETRY emits 2D OGC WKB; any Z/M ordinates on the source geometry
+        // are dropped (documented limitation matching other providers).
+        return $"SDO_UTIL.TO_WKBGEOMETRY({mapping.QuotedGeometryColumn})";
+    }
+
+    private static void AppendAttributeColumns(
+        StringBuilder sb,
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string> attributeColumns)
+    {
+        if (query.ExcludeAttributes || attributeColumns.Count == 0)
+        {
+            return;
+        }
+
+        IEnumerable<string> columns = attributeColumns;
+        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        {
+            var resolveColumnName = CreateColumnNameResolver(
+                mapping,
+                attributeColumns,
+                rejectAmbiguousMatch: true);
+            var requested = new HashSet<string>(
+                query.OutFields.Value.Select(resolveColumnName),
+                StringComparer.Ordinal);
+            columns = attributeColumns.Where(c => requested.Contains(c));
+        }
+
+        foreach (var column in columns)
+        {
+            OracleIdentifier.EnsureValid(column, "attribute column");
+            sb.Append(", ").Append(OracleIdentifier.Quote(column));
+        }
+    }
+
+    private static Func<string, string> CreateColumnNameResolver(
+        OracleLayerMapping mapping,
+        IReadOnlyList<string>? attributeColumns,
+        bool rejectAmbiguousMatch = false)
+    {
+        // Oracle folds unquoted DDL identifiers to upper-case, whereas protocol requests
+        // commonly use lower-case field names. We always quote identifiers to keep the
+        // configured physical name exact (including legitimately quoted mixed-case names),
+        // so resolve request fields against the catalog's physical names before quoting.
+        // Without this step `where=name` becomes `"name"`, which cannot address an
+        // unquoted Oracle NAME column and fails with ORA-00904.
+        var physicalNames = new List<string>
+        {
+            mapping.PrimaryKeyColumn
+        };
+
+        if (!string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            physicalNames.Add(mapping.GeometryColumn);
+        }
+
+        if (attributeColumns is not null)
+        {
+            physicalNames.AddRange(attributeColumns);
+        }
+
+        return requested =>
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(requested);
+            var exactMatch = physicalNames.FirstOrDefault(name =>
+                string.Equals(name, requested, StringComparison.Ordinal));
+            if (exactMatch is not null)
+            {
+                return exactMatch;
+            }
+
+            string? foldedMatch = null;
+            foreach (var physicalName in physicalNames)
+            {
+                if (!string.Equals(physicalName, requested, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (foldedMatch is not null &&
+                    !string.Equals(foldedMatch, physicalName, StringComparison.Ordinal))
+                {
+                    // Quoted Oracle identifiers may legitimately differ only by case. An
+                    // inexact request cannot choose between them without targeting the wrong
+                    // physical column. Projection must reject the ambiguity before it can
+                    // silently omit both attributes; WHERE leaves the name unresolved so Oracle
+                    // still fails closed instead of targeting either physical column.
+                    if (rejectAmbiguousMatch)
+                    {
+                        throw new ArgumentException(
+                            $"Oracle field name '{requested}' ambiguously matches case-distinct columns.",
+                            nameof(requested));
+                    }
+
+                    return requested;
+                }
+
+                foldedMatch = physicalName;
+            }
+
+            return foldedMatch ?? requested;
+        };
+    }
+
+    private static void AppendWhereClause(
+        StringBuilder sb,
+        FeatureQuery query,
+        List<object> parameters,
+        Func<string, string> resolveColumnName)
+    {
+        // Only the canonical Where text is consumed here. The shared ISqlFilterTranslator
+        // pipeline registers a PostgreSQL translator (FeatureQuery.SqlFilter is therefore
+        // Postgres-flavored: JSONB ->> operators, ::casts, ST_* calls). Pasting that through
+        // to Oracle would produce invalid SQL, so a translated SqlFilter without a canonical
+        // Where is rejected up front rather than masked as an opaque ORA-* failure.
+        if (!string.IsNullOrWhiteSpace(query.Where))
+        {
+            var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters, resolveColumnName);
+            sb.Append(" AND (").Append(parameterized).Append(')');
+            return;
+        }
+
+        if (query.SqlFilter is not null)
+        {
+            throw new NotSupportedException(
+                "Translated FeatureQuery.SqlFilter fragments are not executable against the Oracle provider in this slice. " +
+                "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL, which is not valid Oracle SQL. " +
+                "Route the request through a protocol path that populates the canonical Where text (FeatureServer 'where'), " +
+                "or restrict CQL2/FES/OData $filter usage to providers that register their own ISqlFilterTranslator.");
+        }
+    }
+
+    private static void AppendObjectIdsFilter(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
+    {
+        if (!query.ObjectIds.HasValue || query.ObjectIds.Value.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var ids = query.ObjectIds.Value;
+        var placeholders = new string[ids.Length];
+        for (var i = 0; i < ids.Length; i++)
+        {
+            placeholders[i] = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+            parameters.Add(ids[i]);
+        }
+
+        sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn).Append(" IN (").Append(string.Join(", ", placeholders)).Append(')');
+    }
+
+    private static void AppendSpatialFilter(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
+    {
+        if (!query.SpatialFilter.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(mapping.GeometryColumn))
+        {
+            throw new InvalidOperationException(
+                $"Layer {mapping.LayerId} has no geometry column configured; spatial filters are not supported.");
+        }
+
+        var filter = query.SpatialFilter.Value;
+
+        // Reject cross-SRID filters: SDO_UTIL.FROM_WKBGEOMETRY has no SRID injection point here
+        // and Oracle would silently treat the filter coordinates as if they were in the layer CRS,
+        // producing wrong (usually empty or ORA-13xxx) results. Requiring matching SRIDs is
+        // consistent with the MySQL provider (which throws) and safer than silent misinterpretation.
+        if (filter.Srid.HasValue && mapping.Srid.HasValue && filter.Srid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Oracle provider cannot apply a spatial filter in SRID {filter.Srid.Value} against " +
+                $"layer {mapping.LayerId} stored in SRID {mapping.Srid.Value}. " +
+                "Reproject the filter geometry to the layer CRS before querying.");
+        }
+
+        var geomCol = mapping.QuotedGeometryColumn!;
+        var wkbParam = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+        parameters.Add(filter.Geometry);
+
+        // SDO_UTIL.FROM_WKBGEOMETRY produces a 2D SDO_GEOMETRY; Oracle applies the SRID from
+        // the spatial index/metadata. Both SRIDs are either matching or unspecified at this point.
+        var filterExpr = $"SDO_UTIL.FROM_WKBGEOMETRY({wkbParam})";
+
+        var clause = filter.SpatialRelationship switch
+        {
+            SpatialRelationship.Intersects =>
+                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
+            SpatialRelationship.EnvelopeIntersects =>
+                $"SDO_RELATE(SDO_GEOM.SDO_MBR({geomCol}), {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
+            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
+            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
+            // filter geometry to match the canonical PostGIS reference (#2068). SDO_RELATE masks
+            // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
+            // the filter geometry must be the first operand. Reversing inverts the relationship and
+            // returns the wrong (typically empty) result set.
+            SpatialRelationship.Within =>
+                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=INSIDE+COVEREDBY') = 'TRUE'",
+            SpatialRelationship.Contains =>
+                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=CONTAINS+COVERS') = 'TRUE'",
+            SpatialRelationship.Disjoint =>
+                $"NOT (SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE')",
+            _ => throw new NotSupportedException(
+                $"Spatial relationship '{filter.SpatialRelationship}' is not supported by the Oracle provider in this slice.")
+        };
+
+        sb.Append(" AND ").Append(clause);
+    }
+
+    private static void AppendOrderByClause(StringBuilder sb, FeatureQuery query, Func<string, string> resolveColumnName)
+    {
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        var clauses = new List<string>(query.OrderBy.Value.Length);
+        foreach (var orderBy in query.OrderBy.Value)
+        {
+            var column = resolveColumnName(orderBy.Field);
+            OracleIdentifier.EnsureValid(column, "order-by column");
+            var direction = orderBy.Ascending ? "ASC" : "DESC";
+            clauses.Add($"{OracleIdentifier.Quote(column)} {direction}");
+        }
+
+        sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
+    }
+
+    private static void AppendPagination(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
+    {
+        if (!query.Limit.HasValue && (!query.Offset.HasValue || query.Offset.Value <= 0))
+        {
+            return;
+        }
+
+        // Oracle 12c+ OFFSET / FETCH NEXT requires a deterministic ORDER BY for stable paging.
+        // Fall back to the primary key when the caller did not supply one.
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
+        }
+
+        var offset = query.Offset.GetValueOrDefault(0);
+        sb.Append(" OFFSET :p").Append(parameters.Count.ToString(CultureInfo.InvariantCulture)).Append(" ROWS");
+        parameters.Add(offset);
+
+        if (query.Limit.HasValue)
+        {
+            sb.Append(" FETCH NEXT :p").Append(parameters.Count.ToString(CultureInfo.InvariantCulture)).Append(" ROWS ONLY");
+            parameters.Add(query.Limit.Value);
+        }
+    }
+
+    private static string ParseAndParameterizeWhereClause(
+        string whereClause,
+        List<object> parameters,
+        Func<string, string> resolveColumnName)
+    {
+        var expressions = SplitOnAnd(whereClause);
+        if (expressions.Count == 0)
+        {
+            throw new ArgumentException("WHERE clause format not supported.");
+        }
+
+        var rendered = new List<string>(expressions.Count);
+        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
+        // throw, mutate the shared `parameters` accumulator, and `continue` early per
+        // branch -- not a pure map of one iteration variable to another.
+        foreach (var trimmed in (expressions).Select(raw => raw.Trim()))
+        {
+            if (trimmed.Length == 0)
+            {
+                throw new ArgumentException("WHERE clause format not supported.");
+            }
+
+            if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
+                trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            {
+                rendered.Add("1=1");
+                continue;
+            }
+
+            var nullMatch = NullCheckRegex().Match(trimmed);
+            if (nullMatch.Success)
+            {
+                var field = resolveColumnName(nullMatch.Groups["field"].Value);
+                OracleIdentifier.EnsureValid(field, "WHERE column");
+                var notToken = nullMatch.Groups["not"].Value;
+                var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
+                rendered.Add($"{OracleIdentifier.Quote(field)} IS {notClause}NULL");
+                continue;
+            }
+
+            var inMatch = InExpressionRegex().Match(trimmed);
+            if (inMatch.Success)
+            {
+                var field = resolveColumnName(inMatch.Groups["field"].Value);
+                OracleIdentifier.EnsureValid(field, "WHERE column");
+                var placeholders = new List<string>();
+                foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
+                {
+                    placeholders.Add(":p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
+                    parameters.Add(ParseValueToken(valueMatch.Value));
+                }
+                rendered.Add($"{OracleIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+                continue;
+            }
+
+            var compMatch = ComparisonRegex().Match(trimmed);
+            if (compMatch.Success)
+            {
+                var field = resolveColumnName(compMatch.Groups["field"].Value);
+                OracleIdentifier.EnsureValid(field, "WHERE column");
+                var op = NormalizeOperator(compMatch.Groups["op"].Value);
+                var value = ParseValueToken(compMatch.Groups["value"].Value);
+
+                var paramName = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                parameters.Add(value);
+                rendered.Add($"{OracleIdentifier.Quote(field)} {op} {paramName}");
+                continue;
+            }
+
+            throw new ArgumentException("WHERE clause format not supported.");
+        }
+
+        return string.Join(" AND ", rendered);
+    }
+
+    private static List<string> SplitOnAnd(string whereClause)
+    {
+        var parts = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < whereClause.Length; i++)
+        {
+            var c = whereClause[i];
+            if (!inQuotes && c == '\'')
+            {
+                inQuotes = true;
+                current.Append(c);
+            }
+            else if (inQuotes && c == '\'')
+            {
+                if (i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
+                {
+                    current.Append("''");
+                    i++;
+                }
+                else
+                {
+                    inQuotes = false;
+                    current.Append(c);
+                }
+            }
+            else if (!inQuotes && i + 3 <= whereClause.Length &&
+                     whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
+                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
+                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                i += 2;
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+
+        if (current.Length > 0)
+        {
+            parts.Add(current.ToString());
+        }
+
+        return parts;
+    }
+
+    // Treat underscore as an identifier character so that column names like "start_and_end"
+    // are not split at the embedded "and" token. Mirrors MySqlFeatureQueryBuilder.IsIdentifierChar.
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
+    {
+        "NOT LIKE" => "NOT LIKE",
+        "LIKE" => "LIKE",
+        ">=" => ">=",
+        "<=" => "<=",
+        "!=" or "<>" => "<>",
+        "=" => "=",
+        ">" => ">",
+        "<" => "<",
+        _ => throw new ArgumentException($"Unsupported operator: {op}")
+    };
+
+    private static object ParseValueToken(string valueToken)
+    {
+        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
+        {
+            return valueToken[1..^1].Replace("''", "'", StringComparison.Ordinal);
+        }
+
+        if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
+        {
+            return num;
+        }
+
+        // Defense-in-depth: ComparisonRegex constrains the 'value' group to a quoted string or
+        // numeric literal, so this branch is currently unreachable. Throw explicitly so any
+        // future code path that calls this function with an unexpected token fails loudly rather
+        // than silently returning a raw string that could produce unparameterized SQL.
+        throw new ArgumentException($"Unrecognized value token: {valueToken}");
+    }
+
+    [GeneratedRegex(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ComparisonRegex();
+
+    [GeneratedRegex(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NullCheckRegex();
+
+    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InExpressionRegex();
+
+    [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
+    private static partial Regex InValueRegex();
+}

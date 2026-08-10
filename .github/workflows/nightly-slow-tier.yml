@@ -45,7 +45,7 @@ jobs:
           - project: Honua.Server.Tests
             csproj: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
           - project: Honua.Postgres.Tests
-            csproj: tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+            csproj: tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
           - project: Honua.Core.Tests
             csproj: tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
     services:

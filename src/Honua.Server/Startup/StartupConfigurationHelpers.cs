@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
-using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -339,8 +339,8 @@ internal static class StartupConfigurationHelpers
     {
         var resolvers = new List<ILicenseContentSecretResolver>(capacity: 2);
 #if !HONUA_EXCLUDE_AWS
-        resolvers.Add(new Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver(
-            loggerFactory.CreateLogger<Honua.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver>()));
+        resolvers.Add(new Honua.Cloud.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver(
+            loggerFactory.CreateLogger<Honua.Cloud.Aws.Features.Licensing.AwsSecretsManagerLicenseContentResolver>()));
 #endif
 #if !HONUA_EXCLUDE_AZURE
         resolvers.Add(new Honua.Licensing.AzureKeyVaultLicenseContentResolver(

@@ -1186,6 +1186,15 @@ js="$(train_build_js_test_pattern "${fqns}")"
 assert_contains "surgical(js): jest -t pattern uses leaf names" "${js}" "Parses_Nested"
 py="$(train_build_py_test_pattern "${fqns}")"
 assert_contains "surgical(py): pytest -k uses ' or ' join" "${py}" " or "
+# Relocated providers keep their historical project/assembly filenames inside
+# namespace-aligned directories. The default mapper must discover the csproj
+# without requiring the directory leaf and project filename to be identical.
+mkdir -p "${WORK}/tests/dotnet/Honua.Db.Postgres.Tests"
+: >"${WORK}/tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj"
+provider_project="$(train_surgical_test_projects 'Honua.Db.Postgres.Tests.Features.QueryTests.ReturnsRows')"
+assert_eq "surgical: relocated provider directory maps preserved project filename" \
+  "${provider_project}" \
+  "${WORK}/tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj"
 # Surgical rerun honors the test-runner seam and reports pass/fail per project.
 export TRAIN_TEST_PROJECT_FOR=__test_proj
 __test_proj() { printf 'tests/dotnet/Fake.Tests/Fake.Tests.csproj\n'; }
@@ -1498,8 +1507,10 @@ git checkout -q origin/trunk 2>/dev/null || true
 
 echo
 echo "== Single merge authority static guard =="
-node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
-  && ok "review gate: active/dismissed/unresolved evidence fixtures" \
+node --test \
+  "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
+  "${REAL_ROOT}/scripts/ci/review-gate-snapshot.test.js" \
+  && ok "review gate: evidence and pagination fixtures" \
   || bad "review gate: evidence fixtures failed"
 assert_not_contains "review gate: reaction permission removed with reaction evidence" \
   "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \

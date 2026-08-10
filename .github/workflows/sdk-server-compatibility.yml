@@ -121,7 +121,7 @@ jobs:
           set -euo pipefail
           cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
           cp compatibility-source/tests/seed/portal-compat.yaml "$RUNNER_TEMP/portal-compat.yaml"
-          cp compatibility-source/tests/dotnet/Honua.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json \
+          cp compatibility-source/tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json \
             "$RUNNER_TEMP/geoserver-catalog-apply-slice.json"
           chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
 

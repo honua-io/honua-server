@@ -111,7 +111,7 @@ proportionate fix.
    `DbConnection` / `DbTransaction`. Introducing an
    `IDatabaseSession` abstraction that replaces the leaky surface (per
    the structural audit, memory: `structural-audit-2026-05` C3) requires
-   migrating ~125 call sites across `Honua.Postgres`, `Honua.MySql`, and
+   migrating ~125 call sites across `Honua.Db.Postgres`, `Honua.Db.MySql`, and
    `Honua.Server`, and retaining compatibility for secure-mode callers
    that pass an already-opened `DbConnection` through to provider code.
    This refactor is orthogonal to the assembly extraction and is tracked
