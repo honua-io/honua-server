@@ -38,6 +38,75 @@ internal static partial class FeatureServerEndpoints
             "GeoServices offline sync");
 
     /// <summary>
+    /// Validates a replica upload against the shared edit limits before the sync pipeline runs.
+    /// Returns the client-facing message when a limit is exceeded, or <c>null</c> when the upload is
+    /// within limits.
+    /// </summary>
+    /// <remarks>
+    /// The whole upload must be checked here because under manual review the conflicting rows never
+    /// reach <c>FeatureServerEditsHandler</c> — and if every row conflicts it is not called at all —
+    /// so its own limit checks would let an oversized payload through while still persisting one
+    /// durable conflict per edit. The per-operation counting mirrors
+    /// <c>FeatureServerEditsHandler.ValidateEditLimits</c>, which applies <c>MaxFeaturesPerEdit</c>
+    /// separately to adds/updates/deletes; a combined per-layer count would reject uploads the shared
+    /// pipeline accepts (#2430).
+    /// </remarks>
+    internal static string? ValidateUploadEditLimits(
+        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
+        EditLimits editLimits)
+    {
+        var uploadedEditCount = 0;
+        foreach (var layer in layerEdits)
+        {
+            if (!layer.Edits.IsDefault)
+            {
+                uploadedEditCount += layer.Edits.Length;
+            }
+        }
+
+        if (uploadedEditCount > editLimits.MaxEditsPerTransaction)
+        {
+            return $"Uploaded replica edits exceed the maximum of {editLimits.MaxEditsPerTransaction} edits per transaction.";
+        }
+
+        foreach (var layer in layerEdits)
+        {
+            if (layer.Edits.IsDefault)
+            {
+                continue;
+            }
+
+            var adds = 0;
+            var updates = 0;
+            var deletes = 0;
+            foreach (var edit in layer.Edits)
+            {
+                switch (edit.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        adds++;
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updates++;
+                        break;
+                    default:
+                        deletes++;
+                        break;
+                }
+            }
+
+            if (adds > editLimits.MaxFeaturesPerEdit ||
+                updates > editLimits.MaxFeaturesPerEdit ||
+                deletes > editLimits.MaxFeaturesPerEdit)
+            {
+                return $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per operation.";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Rejects replica write operations (createReplica / synchronizeReplica / unRegisterReplica) on
     /// backends that cannot durably persist replicas — read-only providers (DuckDB, MySQL/MariaDB)
     /// whose <see cref="IReplicaRepository"/> is a no-op. Returns a conformant Esri-shaped
@@ -1040,27 +1109,13 @@ internal static partial class FeatureServerEndpoints
 
             if (!layerEdits.IsDefaultOrEmpty)
             {
-                // Validate the WHOLE upload against the edit limits before the sync pipeline runs.
-                // Under manualReview the conflicting rows never reach FeatureServerEditsHandler — and
-                // if every row conflicts it is not called at all — so its own limit checks would let an
-                // oversized payload through while still persisting one durable conflict per edit
-                // (#2430).
-                var uploadedEditCount = layerEdits.Sum(l => l.Edits.IsDefault ? 0 : l.Edits.Length);
                 var editLimits = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
                     .Value.Edits;
-                if (uploadedEditCount > editLimits.MaxEditsPerTransaction)
+                var limitError = ValidateUploadEditLimits(layerEdits, editLimits);
+                if (limitError is not null)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"Uploaded replica edits exceed the maximum of {editLimits.MaxEditsPerTransaction} edits per transaction.");
-                }
-
-                if (layerEdits.Any(l => !l.Edits.IsDefault && l.Edits.Length > editLimits.MaxFeaturesPerEdit))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per layer edit.");
+                    return StandardErrorHelpers.CreateBadRequest(context, limitError);
                 }
 
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();

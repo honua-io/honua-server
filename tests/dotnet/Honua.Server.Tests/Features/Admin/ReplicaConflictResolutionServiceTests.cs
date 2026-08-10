@@ -655,6 +655,62 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_ResumeIgnoresFieldNameCasing()
+    {
+        // The planner matches operator-supplied field names to schema fields case-insensitively, so
+        // `status` and `STATUS` request the identical state. Hashing them differently made the retry
+        // look like a new request and left the committed write's finalization and audit unfinished.
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.MergeFields,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = true,
+        };
+        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
+        var service = CreateService(repository, new RecordingApplier());
+
+        // Capture the hash the way the original lower-cased request recorded it.
+        repository.Replace(claimed with
+        {
+            ResolutionInputHash = ComputeMergeFieldsHashViaService("name"),
+        });
+
+        var result = await service.ResolveAsync(MergeFieldsRequest("NAME"));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        repository.Current.FinalizationPending.Should().BeFalse("the resumed resolution is complete");
+    }
+
+    private static ReplicaConflictResolutionServiceRequest MergeFieldsRequest(string fieldName)
+        => Request(ReplicaConflictResolutionAction.MergeFields) with
+        {
+            ActionName = "mergeFields",
+            Inputs = new ReplicaConflictResolutionInputs(
+                new Dictionary<string, JsonElement>
+                {
+                    [fieldName] = JsonDocument.Parse("\"merged\"").RootElement.Clone(),
+                },
+                GeometrySource: null),
+        };
+
+    /// <summary>
+    /// Drives the service once to capture the hash it records for a mergeFields claim naming
+    /// <paramref name="fieldName"/>, so the test asserts against the real normalization rather than a
+    /// duplicate of it.
+    /// </summary>
+    private static string? ComputeMergeFieldsHashViaService(string fieldName)
+    {
+        var probeRepository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        CreateService(probeRepository, new RecordingApplier())
+            .ResolveAsync(MergeFieldsRequest(fieldName))
+            .GetAwaiter().GetResult();
+        return probeRepository.Current.ResolutionInputHash;
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenAnotherRecoveryWinsTheTakeover_DoesNotReapplyTheWrite()
     {
         // Recovery re-dispatches the write, so it has to be single-winner in its own right: two

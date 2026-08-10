@@ -642,10 +642,18 @@ internal sealed partial class ReplicaConflictResolutionService
         if (request.Action == ReplicaConflictResolutionAction.MergeFields &&
             request.Inputs.FieldValues is { Count: > 0 } fieldValues)
         {
-            // Ordered so an equivalent request hashes equally regardless of payload key order.
-            foreach (var field in fieldValues.OrderBy(field => field.Key, StringComparer.Ordinal))
+            // Field names are lowered and the pairs ordered, so a request that produces an identical
+            // planned edit hashes identically: the planner matches operator-supplied names to schema
+            // fields case-insensitively, and a payload's key order is not meaningful. Without both,
+            // retrying `status` as `STATUS` looked like a different request and stranded the claim's
+            // finalization (#2430). Value text is the secondary sort so two keys differing only by
+            // case stay order-independent too.
+            foreach (var field in fieldValues
+                .Select(field => (Key: field.Key.ToLowerInvariant(), Value: field.Value.GetRawText()))
+                .OrderBy(field => field.Key, StringComparer.Ordinal)
+                .ThenBy(field => field.Value, StringComparer.Ordinal))
             {
-                builder.Append(field.Key).Append('=').Append(field.Value.GetRawText()).Append('\u001e');
+                builder.Append(field.Key).Append('=').Append(field.Value).Append('\u001e');
             }
         }
 
