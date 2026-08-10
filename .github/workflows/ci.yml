@@ -936,14 +936,14 @@ jobs:
         run: |
           set -euo pipefail
           projects=(
-            Honua.DuckDB
-            Honua.Plugins
-            Honua.ArcGisRest
-            Honua.Oracle
-            Honua.Worker.Gdal
+            tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj
+            tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj
+            tests/dotnet/Honua.ArcGisRest.Tests/Honua.ArcGisRest.Tests.csproj
+            tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj
+            tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
           )
-          for project in "${projects[@]}"; do
-            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
+          for csproj in "${projects[@]}"; do
+            project="$(basename "${csproj}" .Tests.csproj)"
             echo "::group::${project}.Tests"
             dotnet build "${csproj}" --no-restore --configuration Release
             dotnet test "${csproj}" \
@@ -1044,13 +1044,13 @@ jobs:
         run: |
           set -euo pipefail
           projects=(
-            Honua.SqlServer
-            Honua.Snowflake
-            Honua.Redshift
-            Honua.Databricks
+            tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj
+            tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj
+            tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj
+            tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj
           )
-          for project in "${projects[@]}"; do
-            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
+          for csproj in "${projects[@]}"; do
+            project="$(basename "${csproj}" .Tests.csproj)"
             echo "::group::${project}.Tests (units — integration excluded)"
             dotnet build "${csproj}" --no-restore --configuration Release
             dotnet test "${csproj}" \

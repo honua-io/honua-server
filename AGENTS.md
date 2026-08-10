@@ -360,7 +360,7 @@ using Honua.Db.Postgres;        // BLOCKING - Core cannot depend on Infrastructu
 using Honua.Server;          // BLOCKING - Core cannot depend on Server
 
 // CORRECT: Infrastructure depending on Core
-// File: src/Honua.Db.Postgres/SomeFile.cs
+// File: src/Honua.Db/Postgres/SomeFile.cs
 using Honua.Core.Features.Abstractions;  // OK - Infrastructure can use Core abstractions
 ```
 
@@ -539,16 +539,17 @@ Planning and phase tracking live in GitHub issues and PRs. Do not implement feat
 src/
 ├── Honua.Server/          # Main host (Minimal APIs)
 ├── Honua.Core/            # Domain models, abstractions
-├── Honua.Db.Postgres/        # PostgreSQL implementation
-├── Honua.Db.DuckDB/          # DuckDB read-only provider
-└── Honua.Db.MySql/           # MySQL/MariaDB read/query-only provider
+└── Honua.Db/
+    ├── Postgres/          # PostgreSQL implementation
+    ├── DuckDB/            # DuckDB read-only provider
+    └── MySql/             # MySQL/MariaDB read/query-only provider
 
-tests/
+tests/dotnet/
 ├── Honua.TestKit/         # Shared test infrastructure
 ├── Honua.Core.Tests/      # Unit tests
 ├── Honua.Server.Tests/    # Integration tests
-├── Honua.Db.DuckDB.Tests/    # DuckDB provider tests
-├── Honua.Db.MySql.Tests/     # MySQL/MariaDB provider tests (Testcontainers gated)
+├── Honua.Db.DuckDB.Tests/ # DuckDB provider tests
+├── Honua.Db.MySql.Tests/  # MySQL/MariaDB provider tests (Testcontainers gated)
 └── Honua.Architecture.Tests/  # Architecture enforcement
 ```
 
