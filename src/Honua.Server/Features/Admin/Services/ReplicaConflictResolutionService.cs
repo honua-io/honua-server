@@ -161,11 +161,14 @@ internal sealed partial class ReplicaConflictResolutionService
             return Failure(ReplicaConflictResolutionStatus.NotFound, message: null);
         }
 
-        if (conflict.Status == ReplicaConflictStatus.Resolved)
+        if (conflict.Status == ReplicaConflictStatus.Resolved || conflict.FinalizationPending)
         {
             // Already claimed. That is only terminal if the resolution actually finished — an
             // interrupted one is resumed here rather than reported as already-resolved, which is what
             // stops a post-write failure from stranding the generation and audit evidence (#2430).
+            //
+            // Deferred-and-unfinalized records route here too: a defer whose audit failed is still
+            // owed its evidence, and letting a later action supersede it would lose that permanently.
             return await ResumeOrRejectAsync(conflict, request, activity, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -263,6 +266,22 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
+
+        if (RestoresCapturedServerState(request.Action, plan) &&
+            await HasUncapturedServerEditAsync(claimed, cancellationToken).ConfigureAwait(false))
+        {
+            // The pre-apply server snapshot is taken before conflict detection runs, so a server edit
+            // landing in that window is detected as the conflict yet missing from ServerStateJson.
+            // Writing the snapshot back would silently discard that edit, so the restoration is
+            // refused and the operator re-reviews against current state instead (#2430).
+            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+            Log.ResolutionServerSnapshotUntrusted(
+                _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
+            activity?.SetStatus(ActivityStatusCode.Error, "server-snapshot-untrusted");
+            return Failure(
+                ReplicaConflictResolutionStatus.Stale,
+                "Another server edit landed while this conflict was being recorded, so the captured server state may not include it. Re-review the conflict against the current server state.");
+        }
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None &&
             await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false))
@@ -376,8 +395,21 @@ internal sealed partial class ReplicaConflictResolutionService
     /// <see cref="HasPostConflictEditAsync"/>).
     /// </remarks>
     private static bool IsDetectionInFlight(ReplicaConflictRecord conflict)
-        => conflict.ResolutionBaseGeneration is null
-            && DateTimeOffset.UtcNow - conflict.DetectedAt < DetectionSettleWindow;
+    {
+        if (DateTimeOffset.UtcNow - conflict.DetectedAt >= DetectionSettleWindow)
+        {
+            // Old enough that whatever state it has is all it will ever have; treat it as settled so
+            // legacy records, and records whose enrichment failed outright, stay resolvable.
+            return false;
+        }
+
+        // The base generation alone is NOT the completion signal: the sync service stamps it before
+        // the protocol adapter attaches the client/server envelopes, so a record can look settled while
+        // the states a resolution actually reads are still missing (#2430). Detection counts as settled
+        // only once both are durable.
+        return conflict.ResolutionBaseGeneration is null
+            || string.IsNullOrWhiteSpace(conflict.ClientStateJson) && string.IsNullOrWhiteSpace(conflict.ServerStateJson);
+    }
 
     /// <summary>
     /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely
@@ -534,6 +566,46 @@ internal sealed partial class ReplicaConflictResolutionService
     }
 
     /// <summary>
+    /// Whether this resolution writes the captured <em>server</em> snapshot back to the feature, which
+    /// is the only case that depends on that snapshot being complete.
+    /// </summary>
+    private static bool RestoresCapturedServerState(
+        ReplicaConflictResolutionAction action,
+        ReplicaConflictResolutionPlan plan)
+        => plan.Effect == ReplicaConflictResolutionEffect.WriteFeatureState
+            && action is ReplicaConflictResolutionAction.KeepServer
+                or ReplicaConflictResolutionAction.RejectClient
+                or ReplicaConflictResolutionAction.ChooseGeometry;
+
+    /// <summary>
+    /// Whether a server edit may have landed after the pre-apply snapshot was taken but before the
+    /// conflict was detected, leaving the captured server state incomplete.
+    /// </summary>
+    /// <remarks>
+    /// The sync batch contributes exactly one change to the conflicting feature (its own applied edit,
+    /// or none at all under manual review). More than one change to that feature between the replica's
+    /// base generation and the conflict's own generation therefore means a foreign server edit
+    /// interleaved, and the snapshot cannot be trusted to contain it. Conflicts lacking either cursor
+    /// cannot be checked and are allowed through, consistent with the other precondition.
+    /// </remarks>
+    private async Task<bool> HasUncapturedServerEditAsync(
+        ReplicaConflictRecord conflict,
+        CancellationToken cancellationToken)
+    {
+        if (conflict.StorageLayerId is not { } storageLayerId ||
+            conflict.ResolutionBaseGeneration is not { } baseGeneration)
+        {
+            return false;
+        }
+
+        var changes = await _changeTracker
+            .GetChangesSinceAsync(conflict.ServerGeneration, [storageLayerId], new HashSet<long> { conflict.ObjectId }, cancellationToken)
+            .ConfigureAwait(false);
+
+        return changes.Count(change => change.ObjectId == conflict.ObjectId && change.Generation <= baseGeneration) > 1;
+    }
+
+    /// <summary>
     /// Whether the conflicting feature has been edited since the generation the conflict's captured
     /// states describe. That is the precondition a late resolution must satisfy: without it a
     /// keep-server, field merge, geometry choice, or accepted delete reviewed long after detection
@@ -675,6 +747,11 @@ internal sealed partial class ReplicaConflictResolutionService
         [LoggerMessage(EventId = 7752, Level = LogLevel.Information,
             Message = "Replica conflict {ConflictId} is claimed by an attempt that is still within the lease window; reporting already-resolved rather than resuming or releasing it")]
         public static partial void ResolutionClaimStillLive(ILogger logger, string conflictId);
+
+        [LoggerMessage(EventId = 7754, Level = LogLevel.Warning,
+            Message = "Refused to restore the captured server state for replica conflict {ConflictId} (service {ServiceId} layer {LayerId} objectId {ObjectId}): another server edit landed while the conflict was being recorded, so the snapshot may be incomplete")]
+        public static partial void ResolutionServerSnapshotUntrusted(
+            ILogger logger, string conflictId, string serviceId, int layerId, long objectId);
 
         [LoggerMessage(EventId = 7753, Level = LogLevel.Information,
             Message = "Refused to resolve replica conflict {ConflictId}: the synchronization that produced it is still recording its detection state")]

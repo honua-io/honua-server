@@ -400,6 +400,100 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.Current.Status.Should().Be(ReplicaConflictStatus.Resolved);
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenAServerEditLandedWhileTheConflictWasRecorded_RefusesToRestoreTheSnapshot()
+    {
+        // The pre-apply server snapshot is taken before conflict detection, so an edit landing in that
+        // window is detected as the conflict yet missing from ServerStateJson. Restoring the snapshot
+        // would discard that edit, so the restoration is refused.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        // Two changes to the feature between the replica base (5) and the conflict generation (40):
+        // the sync batch contributes one, so the second is a foreign server edit.
+        tracker.ChangesSinceBase.Add(Change(generation: 20));
+        tracker.ChangesSinceBase.Add(Change(generation: 35));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        applier.Calls.Should().Be(0, "the captured server state may not contain the interleaved edit");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenOnlyTheSyncBatchTouchedTheFeature_RestoresNormally()
+    {
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(Change(generation: 20));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenEnvelopesAreNotYetAttached_TreatsDetectionAsStillInFlight()
+    {
+        // The base generation is stamped before the adapter attaches the client/server envelopes, so it
+        // is not on its own a completion signal: without the states a resolution reads, the record is
+        // still in flight.
+        var partial = Conflict(clientEditApplied: false) with
+        {
+            ClientStateJson = null,
+            ServerStateJson = null,
+            DetectedAt = DateTimeOffset.UtcNow,
+        };
+        var repository = new FakeConflictRepository(partial);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.DetectionInFlight);
+        applier.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenADeferredClaimNeverFinalized_ResumesItRatherThanSupersedingIt()
+    {
+        // A defer whose audit failed is still owed its evidence; letting a later action supersede it
+        // would lose that permanently.
+        var deferred = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Deferred,
+            ResolutionAction = ReplicaConflictResolutionAction.Defer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+        };
+        var repository = new FakeConflictRepository(deferred);
+        var audit = new NoOpAuditLog();
+        var service = CreateService(repository, new RecordingApplier(), auditLog: audit);
+
+        var result = await service.ResolveAsync(
+            Request(ReplicaConflictResolutionAction.Defer) with { ActionName = "defer" });
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        audit.Records.Should().Be(1, "the deferral's audit evidence is finally written");
+        repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    private static FeatureChange Change(long generation) => new()
+    {
+        ChangeId = generation,
+        Generation = generation,
+        LayerId = 10,
+        ObjectId = 42,
+        Operation = FeatureChangeOperation.Update,
+        ChangedAt = DateTimeOffset.UtcNow,
+    };
+
     private static ReplicaConflictResolutionService CreateService(
         FakeConflictRepository repository,
         IReplicaConflictResolutionApplier applier,
@@ -461,10 +555,13 @@ public sealed class ReplicaConflictResolutionServiceTests
             int[] layerIds,
             IReadOnlySet<long>? objectIds,
             CancellationToken cancellationToken = default)
+            // Honour sinceGeneration as the real tracker does: the resolution preconditions probe
+            // different windows and would otherwise see each other's changes.
             => Task.FromResult<IReadOnlyList<FeatureChange>>(
-                objectIds is null
-                    ? ChangesSinceBase
-                    : ChangesSinceBase.Where(c => objectIds.Contains(c.ObjectId)).ToList());
+                ChangesSinceBase
+                    .Where(c => c.Generation > sinceGeneration)
+                    .Where(c => objectIds is null || objectIds.Contains(c.ObjectId))
+                    .ToList());
     }
 
     private sealed class NoOpAuditLog : IAuditLog
