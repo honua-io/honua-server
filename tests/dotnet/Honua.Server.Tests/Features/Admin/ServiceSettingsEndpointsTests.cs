@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -302,17 +303,14 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
             Protocols = [ServiceProtocols.OgcFeatures],
             PublicationIds = [ogcPublication.Metadata.Id]
         };
-        using (var scope = _fixture.Services.CreateScope())
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
         {
-            var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-            await store.SaveAsync(snapshot.Graph with
-            {
-                Revision = snapshot.Graph.Revision + 1,
-                Services = snapshot.Graph.Services.Append(ogcService).ToArray(),
-                Resources = snapshot.Graph.Resources.Append(ogcResource).ToArray(),
-                Publications = snapshot.Graph.Publications.Append(ogcPublication).ToArray()
-            }, expectedEtag: null);
-        }
+            Revision = snapshot.Graph.Revision + 1,
+            Services = snapshot.Graph.Services.Append(ogcService).ToArray(),
+            Resources = snapshot.Graph.Resources.Append(ogcResource).ToArray(),
+            Publications = snapshot.Graph.Publications.Append(ogcPublication).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
 
         using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
@@ -523,7 +521,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         }
     }
 
-    private async Task SetLayerGovernanceMetadataAsync(
+    private Task SetLayerGovernanceMetadataAsync(
         int layerId,
         string license,
         IReadOnlyList<MetadataV2Link> links)
@@ -546,13 +544,13 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
                 : resource)
             .ToArray();
 
-        using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-        await store.SaveAsync(snapshot.Graph with
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Resources = resources
-        }, expectedEtag: null);
+        }, schema: _fixture.MetadataGraphSchema);
+        return Task.CompletedTask;
     }
 
     private MetadataV2ObjectMetadata GetLayerMetadata(int layerId)
