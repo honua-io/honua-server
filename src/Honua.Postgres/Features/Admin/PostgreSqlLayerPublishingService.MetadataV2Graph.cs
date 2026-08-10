@@ -187,7 +187,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int srid,
         DateTimeOffset now)
     {
-        var binding = graph.StorageBindings.FirstOrDefault(candidate => candidate.StorageLayerId == layerId);
+        var storageLayerBindings = graph.StorageBindings
+            .Where(candidate => candidate.StorageLayerId == layerId)
+            .ToArray();
+        var canonicalBindingId = BuildStorageBindingId(layerId);
+        var binding = storageLayerBindings.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, canonicalBindingId, StringComparison.Ordinal));
+        if (binding is null && storageLayerBindings.Length > 1)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Layer {layerId} has multiple legacy storage bindings and no canonical '{canonicalBindingId}' binding.",
+                layerId);
+        }
+
+        binding ??= storageLayerBindings.SingleOrDefault();
         var resource = binding is null
             ? null
             : graph.Resources.FirstOrDefault(candidate =>
@@ -197,7 +211,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var service = BuildPublishedService(graph, serviceName, srid, now);
+        var service = graph.Services.FirstOrDefault(candidate =>
+                string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal)) ??
+            BuildPublishedService(graph, serviceName, srid, now);
         var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
@@ -213,7 +230,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
                 publication.LayerIndex == layerId &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+                (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
+                 !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
             if (collidingFeaturePublication is not null)
             {
                 throw new LayerPublishingException(

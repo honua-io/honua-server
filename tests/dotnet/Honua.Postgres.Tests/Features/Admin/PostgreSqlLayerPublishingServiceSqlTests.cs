@@ -165,7 +165,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     "resource-beta",
                     "binding-beta",
                     101,
-                    MetadataV2PublicationType.EsriFeatureLayer)
+                    MetadataV2PublicationType.OgcCollection)
             ]
         };
 
@@ -209,16 +209,23 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             TitleOverride = "Authored override",
             IsPrimary = false
         };
+        var authoredService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "service-beta",
+                Name = "beta",
+                Title = "Authored service title",
+                UpdatedAt = DateTimeOffset.Parse("2025-03-04T05:06:07Z", CultureInfo.InvariantCulture)
+            },
+            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Route = "/custom/authored/route",
+            Protocols = [ServiceProtocols.OgcFeatures]
+        };
         var graph = new MetadataV2Graph
         {
             Revision = 7,
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
-                }
-            ],
+            Services = [authoredService],
             Resources =
             [
                 new MetadataV2Resource
@@ -252,8 +259,98 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updated!.Revision.Should().Be(8);
         updated.GeneratedAt.Should().Be(now);
         updated.Publications.Should().ContainSingle().Which.Should().BeSameAs(existingPublication);
-        updated.Services.Should().ContainSingle().Which.PublicationIds
-            .Should().Equal("legacy-imported-parcels");
+        var updatedService = updated.Services.Should().ContainSingle().Which;
+        updatedService.Metadata.Should().BeSameAs(authoredService.Metadata);
+        updatedService.ServiceType.Should().Be(authoredService.ServiceType);
+        updatedService.Route.Should().Be(authoredService.Route);
+        updatedService.Protocols.Should().Equal(authoredService.Protocols);
+        updatedService.Status.Should().BeSameAs(authoredService.Status);
+        updatedService.PublicationIds.Should().Equal("legacy-imported-parcels");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithDuplicateStorageHandles_PrefersCanonicalBindingIdentity()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-wrong" } },
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-canonical" } }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "legacy-binding" },
+                    ResourceId = "resource-wrong",
+                    StorageLayerId = 101
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-canonical",
+                    StorageLayerId = 101
+                }
+            ]
+        };
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Canonical layer",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        updated.Should().NotBeNull();
+        var publication = updated!.Publications.Should().ContainSingle().Which;
+        publication.ResourceId.Should().Be("resource-canonical");
+        publication.StorageBindingId.Should().Be("binding-layer-101");
+        publication.LayerIndex.Should().Be(101);
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithAmbiguousLegacyStorageHandles_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "legacy-binding-a" },
+                    ResourceId = "resource-a",
+                    StorageLayerId = 101
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "legacy-binding-b" },
+                    ResourceId = "resource-b",
+                    StorageLayerId = 101
+                }
+            ]
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Ambiguous layer",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("multiple legacy storage bindings");
     }
 
     private static MetadataV2Publication CreatePublication(
