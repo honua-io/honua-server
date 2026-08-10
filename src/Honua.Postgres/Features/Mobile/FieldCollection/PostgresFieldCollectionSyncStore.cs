@@ -573,25 +573,16 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
 
         if (current.IsDeleted)
         {
-            // The row is already tombstoned. Two cases have to be told apart, and previously were not
-            // (#2430): a retry of THIS client's own delete — its base version is the pre-delete version,
-            // so the tombstone sits exactly one version ahead (or the client already observed the
-            // tombstone) — is idempotently applied and must not bump the version again; anything else
-            // means a concurrent actor deleted the feature at a version this client never saw, which is
-            // the delete-vs-delete conflict the wire contract has always declared and never produced.
-            var isOwnDeleteRetry = current.Version == request.BaseVersion.Value ||
-                current.Version == request.BaseVersion.Value + 1;
-            if (isOwnDeleteRetry)
-            {
-                return new FieldCollectionPushResult
-                {
-                    ChangeId = request.ChangeId,
-                    Outcome = FieldCollectionPushOutcome.Applied,
-                    ServerGeneration = 0,
-                    Version = current.Version,
-                };
-            }
-
+            // Someone else already deleted the feature. This is the delete-vs-delete conflict the wire
+            // contract has always declared and never produced (#2430): it was previously reported as an
+            // idempotently-applied delete, hiding the divergence from the field client.
+            //
+            // A genuine retry of the client's OWN delete never reaches here — replays are served from
+            // the (client_id, change_id) idempotency record before conflict resolution runs — so there
+            // is deliberately no version-adjacency heuristic here. Guessing "the tombstone is one
+            // version ahead, so it must be my own delete" would silently swallow the ordinary case of
+            // two clients deleting from the same base version, which is exactly the conflict an
+            // operator needs to see.
             return new FieldCollectionPushResult
             {
                 ChangeId = request.ChangeId,

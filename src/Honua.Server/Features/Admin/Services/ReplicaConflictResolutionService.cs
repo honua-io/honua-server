@@ -156,17 +156,45 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
 
+        if (plan.Effect != ReplicaConflictResolutionEffect.None && _applier is null)
+        {
+            Log.ResolutionWriteUnsupported(_logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId);
+            return Failure(
+                ReplicaConflictResolutionStatus.WriteUnsupported,
+                "Applying this resolution requires committing the resolved feature state, which this deployment cannot do: no replica-capable edit pipeline is registered.");
+        }
+
+        // Claim the conflict BEFORE writing feature state. The repository's guarded status transition
+        // is the only single-winner primitive available, so it doubles as the claim: two operators
+        // resolving the same conflict concurrently would otherwise both pass the pending check and both
+        // dispatch an edit, letting the loser's write land last while the durable resolution and audit
+        // evidence named the winner. The claim carries no resolved generation yet — that is stamped
+        // below, once the write it describes has actually committed.
+        var resolution = new ReplicaConflictResolution(
+            request.ConflictId,
+            request.Action,
+            request.Actor,
+            DateTimeOffset.UtcNow,
+            ResolvedServerGeneration: null);
+
+        var outcome = await _conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
+        if (outcome.Record is null)
+        {
+            return Failure(ReplicaConflictResolutionStatus.NotFound, message: null);
+        }
+
+        if (!outcome.Applied)
+        {
+            // A concurrent operator won the guarded claim; do not write, report success, or emit a
+            // success audit event for this losing request.
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
+
+        var claimed = outcome.Record.Value;
+
         if (plan.Effect != ReplicaConflictResolutionEffect.None)
         {
-            if (_applier is null)
-            {
-                Log.ResolutionWriteUnsupported(_logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId);
-                return Failure(
-                    ReplicaConflictResolutionStatus.WriteUnsupported,
-                    "Applying this resolution requires committing the resolved feature state, which this deployment cannot do: no replica-capable edit pipeline is registered.");
-            }
-
-            var applyResult = await _applier.ApplyAsync(
+            var applyResult = await _applier!.ApplyAsync(
                 new ReplicaConflictResolutionCommand(
                     conflict.ServiceId,
                     conflict.LayerId,
@@ -177,8 +205,9 @@ internal sealed partial class ReplicaConflictResolutionService
 
             if (!applyResult.Applied)
             {
-                // Leave the conflict pending: recording a resolution for a state that never committed
-                // is exactly the dishonesty this path exists to remove.
+                // Release the claim so the conflict stays reviewable: recording a resolution for a
+                // state that never committed is exactly the dishonesty this path exists to remove.
+                await ReleaseClaimAsync(conflict, cancellationToken).ConfigureAwait(false);
                 Log.ResolutionWriteFailed(
                     _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
                 activity?.SetStatus(ActivityStatusCode.Error, applyResult.FailureMessage);
@@ -190,28 +219,13 @@ internal sealed partial class ReplicaConflictResolutionService
 
         // The generation cursor is read AFTER the write so it names the generation the resolution
         // actually produced, not the one that happened to be current when the request arrived.
-        long? resolvedGeneration = plan.CommittedNewServerState
-            ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
-            : null;
-
-        var resolution = new ReplicaConflictResolution(
-            request.ConflictId,
-            request.Action,
-            request.Actor,
-            DateTimeOffset.UtcNow,
-            resolvedGeneration);
-
-        var outcome = await _conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
-        if (outcome.Record is null)
+        if (plan.CommittedNewServerState)
         {
-            return Failure(ReplicaConflictResolutionStatus.NotFound, message: null);
-        }
-
-        if (!outcome.Applied)
-        {
-            // A concurrent operator won the guarded update; do not report this losing request as a
-            // success or emit a success audit event.
-            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            var resolvedGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                .ConfigureAwait(false);
+            resolution = resolution with { ResolvedServerGeneration = resolvedGeneration };
+            claimed = claimed with { ResolvedServerGeneration = resolvedGeneration };
+            await _conflictRepository.UpsertAsync(claimed, cancellationToken).ConfigureAwait(false);
         }
 
         await RecordAuditAsync(request, conflict, plan, resolution, cancellationToken).ConfigureAwait(false);
@@ -227,10 +241,37 @@ internal sealed partial class ReplicaConflictResolutionService
 
         return new ReplicaConflictResolutionResult(
             ReplicaConflictResolutionStatus.Applied,
-            outcome.Record,
+            claimed,
             plan.CommittedNewServerState,
             plan.Effect,
             Message: null);
+    }
+
+    /// <summary>
+    /// Returns a claimed conflict to the pending, reviewable state after its feature write failed to
+    /// commit, so the failed attempt does not leave a terminal resolution recorded against a state
+    /// that never landed. A failure to release is logged rather than thrown: the caller is already
+    /// reporting the write failure, and masking that with a second error would lose the real cause.
+    /// </summary>
+    private async Task ReleaseClaimAsync(ReplicaConflictRecord conflict, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _conflictRepository.UpsertAsync(
+                conflict with
+                {
+                    Status = ReplicaConflictStatus.Pending,
+                    ResolutionAction = null,
+                    ResolvedBy = null,
+                    ResolvedAt = null,
+                    ResolvedServerGeneration = null,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ResolutionClaimReleaseFailed(_logger, conflict.ConflictId, ex);
+        }
     }
 
     private async Task RecordAuditAsync(
@@ -295,6 +336,10 @@ internal sealed partial class ReplicaConflictResolutionService
             Message = "Replica conflict {ConflictId} for service {ServiceId} layer {LayerId} needs a feature write but no replica conflict-resolution applier is registered")]
         public static partial void ResolutionWriteUnsupported(
             ILogger logger, string conflictId, string serviceId, int layerId);
+
+        [LoggerMessage(EventId = 7748, Level = LogLevel.Error,
+            Message = "Replica conflict {ConflictId} could not be returned to the pending state after its resolved feature state failed to commit; it may remain recorded as resolved")]
+        public static partial void ResolutionClaimReleaseFailed(ILogger logger, string conflictId, Exception exception);
     }
 }
 

@@ -304,10 +304,12 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/fieldcollection/changes")]
-    public async Task Push_RetriedDeleteOfOwnDelete_StaysIdempotent()
+    public async Task Push_ReplayedDeleteChangeId_StaysIdempotentWithoutConflict()
     {
-        // A retry of the client's OWN delete must remain idempotently applied and must not bump the
-        // version again — the delete-vs-delete conflict is for a concurrent actor's tombstone only.
+        // A genuine retry of the client's own delete is served from the (client_id, change_id)
+        // idempotency record and must NOT surface as a delete-vs-delete conflict. Replaying the same
+        // change id is the only safe idempotency signal: a new change id at the same base version is
+        // indistinguishable from a second client deleting concurrently, and is reported as a conflict.
         var featureId = $"feat-{Guid.NewGuid():N}";
         const int layerId = 138;
 
@@ -319,6 +321,54 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             operation = "insert",
             timestamp = DateTimeOffset.UtcNow,
             feature = NewFeaturePayload(longitude: 13.5, latitude: 42.9),
+        });
+        insertResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var insertJson = JsonDocument.Parse(await insertResponse.Content.ReadAsStringAsync());
+        var insertedVersion = insertJson.RootElement.GetProperty("version").GetInt64();
+
+        var deleteChangeId = Guid.NewGuid().ToString("N");
+        var deletePayload = new
+        {
+            changeId = deleteChangeId,
+            featureId,
+            layerId,
+            operation = "delete",
+            baseVersion = insertedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+        };
+
+        var firstDelete = await _client.PostAsJsonAsync(ChangesPath, deletePayload);
+        firstDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstDeleteJson = JsonDocument.Parse(await firstDelete.Content.ReadAsStringAsync());
+        firstDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        var deletedVersion = firstDeleteJson.RootElement.GetProperty("version").GetInt64();
+
+        var replay = await _client.PostAsJsonAsync(ChangesPath, deletePayload);
+        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var replayJson = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        replayJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        replayJson.RootElement.GetProperty("version").GetInt64().Should().Be(
+            deletedVersion, "a replayed delete must return the stored outcome, not advance the version");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_SecondDeleteFromSameBaseVersion_ReturnsDeleteDeleteConflict()
+    {
+        // Two clients holding the same base version both delete. The second must be reported as a
+        // delete-vs-delete conflict rather than silently applied: a distinct change id at the same
+        // base version is a different logical edit, not a retry.
+        var featureId = $"feat-{Guid.NewGuid():N}";
+        const int layerId = 139;
+
+        var insertResponse = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 14.5, latitude: 43.9),
         });
         insertResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var insertJson = JsonDocument.Parse(await insertResponse.Content.ReadAsStringAsync());
@@ -336,10 +386,8 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         firstDelete.StatusCode.Should().Be(HttpStatusCode.OK);
         using var firstDeleteJson = JsonDocument.Parse(await firstDelete.Content.ReadAsStringAsync());
         firstDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
-        var deletedVersion = firstDeleteJson.RootElement.GetProperty("version").GetInt64();
 
-        // Same logical delete, new change id (a client that lost the response and retried).
-        var retry = await _client.PostAsJsonAsync(ChangesPath, new
+        var secondDelete = await _client.PostAsJsonAsync(ChangesPath, new
         {
             changeId = Guid.NewGuid().ToString("N"),
             featureId,
@@ -348,11 +396,10 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
             baseVersion = insertedVersion,
             timestamp = DateTimeOffset.UtcNow,
         });
-        retry.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var retryJson = JsonDocument.Parse(await retry.Content.ReadAsStringAsync());
-        retryJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
-        retryJson.RootElement.GetProperty("version").GetInt64().Should().Be(
-            deletedVersion, "an idempotent delete retry must not advance the feature version");
+        secondDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var secondDeleteJson = JsonDocument.Parse(await secondDelete.Content.ReadAsStringAsync());
+        secondDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("conflict");
+        secondDeleteJson.RootElement.GetProperty("conflictType").GetString().Should().Be("delete-delete");
     }
 
     [IntegrationTest]

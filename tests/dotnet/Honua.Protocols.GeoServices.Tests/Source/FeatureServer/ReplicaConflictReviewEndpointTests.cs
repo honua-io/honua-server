@@ -503,6 +503,38 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ResolveReplicaConflict)]
     [Endpoint("POST /api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
+    public async Task ResolveConflict_MergeFieldsCannotRetargetAnotherFeature()
+    {
+        // The resolved write is pinned to the conflict's own object id. An operator-supplied objectid
+        // in fieldValues must not redirect one conflict's resolution onto a different feature.
+        var replicaId = await CreateReplicaAsync("ResolveMergePinningReplica");
+        var seeded = await SeedConflictAsync(replicaId, clientEditApplied: true);
+        var bystanderObjectId = await AddFeatureAsync("bystander");
+
+        var response = await _fixture.Client.PostAsync(
+            ResolvePath(WebAppFixture.TestServiceId, replicaId, seeded.ConflictId),
+            JsonContent.Create(new ReplicaConflictResolutionRequest
+            {
+                Action = "mergeFields",
+                FieldValues = new Dictionary<string, JsonElement>
+                {
+                    ["name"] = JsonDocument.Parse("\"hijacked\"").RootElement.Clone(),
+                    ["objectid"] = JsonDocument.Parse(
+                        bystanderObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                        .RootElement.Clone(),
+                },
+            }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await ReadFeatureNameAsync(bystanderObjectId)).Should().Be(
+            "bystander", "a conflict resolution must never write to a feature other than its own");
+        (await ReadFeatureNameAsync(seeded.ObjectId)).Should().Be("hijacked");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ResolveReplicaConflict)]
+    [Endpoint("POST /api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
     public async Task ResolveConflict_MergeFieldsWithoutFieldValues_ReturnsBadRequest()
     {
         var replicaId = await CreateReplicaAsync("ResolveMergeNoValuesReplica");

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -27,18 +28,28 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 /// resolution is a single-feature decision and a partial commit would leave the recorded resolution
 /// disagreeing with the committed state.
 /// </remarks>
+/// <remarks>
+/// The update target is pinned to <see cref="ReplicaConflictResolutionCommand.ObjectId"/> rather than
+/// trusted from the envelope. The envelope's attribute keys come from the storage schema (or from the
+/// client's upload), so on a layer whose public object-id field is not literally <c>objectid</c> the
+/// shared update handler would fail to find an id, and an operator-supplied <c>fieldValues</c> entry
+/// could otherwise redirect one conflict's resolution onto a different feature.
+/// </remarks>
 internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaConflictResolutionApplier
 {
     private const string FailureMessage = "The resolved conflict state could not be committed.";
 
     private readonly FeatureServerEditsHandler _editsHandler;
+    private readonly IResourceValidator _resourceValidator;
     private readonly EditLimits _editLimits;
 
     public FeatureServerReplicaConflictResolutionApplier(
         FeatureServerEditsHandler editsHandler,
+        IResourceValidator resourceValidator,
         IOptions<LimitsOptions> limits)
     {
         _editsHandler = editsHandler ?? throw new ArgumentNullException(nameof(editsHandler));
+        _resourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         _editLimits = (limits ?? throw new ArgumentNullException(nameof(limits))).Value.Edits;
     }
 
@@ -67,9 +78,16 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                     return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
                 }
 
+                var objectIdField = await ResolveObjectIdFieldNameAsync(command.PublicLayerId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (objectIdField is null)
+                {
+                    return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
+                }
+
                 request = new ApplyEditsRequest
                 {
-                    Updates = [feature],
+                    Updates = [PinToConflictFeature(feature, objectIdField, command.ObjectId)],
                     RollbackOnFailure = true,
                     RollbackOnFailureExplicitlySet = true,
                 };
@@ -96,6 +114,59 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
 
         return new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
     }
+
+    /// <summary>
+    /// Resolves the layer's configured object-id field name, or null when the layer cannot be
+    /// resolved (the resolution is then reported as an uncommitted failure rather than dispatched
+    /// against a guessed field).
+    /// </summary>
+    private async Task<string?> ResolveObjectIdFieldNameAsync(int publicLayerId, CancellationToken cancellationToken)
+    {
+        var layer = await _resourceValidator.ValidateLayerV2Async(publicLayerId, cancellationToken)
+            .ConfigureAwait(false);
+        return layer is { IsValid: true, Resource: { } resource }
+            ? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
+            : null;
+    }
+
+    /// <summary>
+    /// Rewrites the resolved feature so its identity is the conflict's own feature: every
+    /// object-id-shaped attribute carried by the captured envelope (or supplied by an operator field
+    /// merge) is dropped and replaced with the layer's configured object-id field set to the
+    /// conflict's object id. Without this the update would target whatever id the envelope happened to
+    /// carry, which the operator can influence through <c>fieldValues</c>.
+    /// </summary>
+    private static GeoServicesFeature PinToConflictFeature(
+        GeoServicesFeature feature,
+        string objectIdFieldName,
+        long objectId)
+    {
+        var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var entry in feature.Attributes.Where(entry => !IsObjectIdKey(entry.Key, objectIdFieldName)))
+        {
+            attributes[entry.Key] = entry.Value;
+        }
+
+        attributes[objectIdFieldName] = objectId;
+
+        return new GeoServicesFeature
+        {
+            Attributes = attributes,
+            Geometry = feature.Geometry,
+            Centroid = feature.Centroid,
+            IncludeGeometry = feature.IncludeGeometry,
+        };
+    }
+
+    /// <summary>
+    /// Whether an attribute key names the feature's identity: the layer's configured object-id field,
+    /// or one of the conventional aliases a captured storage/client envelope may carry under a
+    /// different casing or name than the layer's public field.
+    /// </summary>
+    private static bool IsObjectIdKey(string key, string objectIdFieldName)
+        => key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)
+            || key.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("fid", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryDeserializeFeature(string? featureStateJson, out GeoServicesFeature feature)
     {
