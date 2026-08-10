@@ -184,7 +184,7 @@ callers that need the absolute total should use `CountAsync`.
 
 ## Observability
 
-- Activity source: `Honua.Db.SqlServer.FeatureStore` — emits spans named
+- Activity source: `Honua.SqlServer.FeatureStore` — emits spans named
   `sqlserver.feature.select`, `sqlserver.feature.count`, and `sqlserver.feature.extent`,
   each tagged with `layer.id`.
 - Logging: source-generated structured events (`SqlServerFeatureLog`) emitted under the

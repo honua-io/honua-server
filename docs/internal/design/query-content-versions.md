@@ -25,7 +25,7 @@ saved-query store, its versioned domain model, and most of its admin endpoints:
   **`SavedQueryContent`** payload (`NaturalLanguageQuery`, `LayerId`, `ServiceName`, `FilterPlan`,
   `OutFields`, `OutputSrid`, `PreviewLimit`, `OutputFormat`, `Units`, `Metadata`). Versions carry a stable
   `ContentHash`, `BasedOnVersionId`, and provenance (`CreatedFromJobId` / `CreatedFromArtifactIds`).
-- A Postgres store (`src/Honua.Db.Postgres/Features/AnalysisContent/PostgresAnalysisContentStore.cs`) and an
+- A Postgres store (`src/Honua.Db/Postgres/Features/AnalysisContent/PostgresAnalysisContentStore.cs`) and an
   in-memory store (`src/Honua.Ai/Features/AnalysisContent/InMemoryAnalysisContentStore.cs`).
 - A mapped admin endpoint group (`src/Honua.Ai/Features/AnalysisContent/AnalysisContentEndpoints.cs`)
   under `/api/v{version}/analysis/content`, `RequireAdminAuthorization()`, that already serves create-item,

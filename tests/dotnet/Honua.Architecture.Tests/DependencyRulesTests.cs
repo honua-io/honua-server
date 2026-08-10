@@ -23,10 +23,10 @@ public sealed class DependencyRulesTests
 
         var result = Types.InAssembly(coreAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny("Honua.Server", "Honua.Postgres")
+            .HaveDependencyOnAny("Honua.Server", "Honua.Postgres", "Honua.Db.Postgres")
             .GetResult();
 
-        result.IsSuccessful.Should().BeTrue("Core must not depend on Server or Postgres");
+        result.IsSuccessful.Should().BeTrue("Core must not depend on Server or Postgres provider namespaces");
     }
 
     [ArchitectureTest]

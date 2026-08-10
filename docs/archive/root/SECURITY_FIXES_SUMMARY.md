@@ -26,7 +26,7 @@ This document summarizes the 4 critical security vulnerabilities that were ident
 
 ## 2. SQL Injection Prevention (HIGH RISK) - FIXED
 
-**Location:** `src/Honua.Db.Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Where.cs:197-208`
+**Location:** `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Where.cs:197-208`
 
 **Issue:** `DatabaseSchema.BuildJsonPath(fieldName)` may not properly escape complex field names
 

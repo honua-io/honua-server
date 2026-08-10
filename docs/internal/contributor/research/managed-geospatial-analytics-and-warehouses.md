@@ -87,7 +87,7 @@ Snowflake, and Databricks each follow exactly this layout under `src/Honua.<X>/`
 
 ### Amazon Redshift — already shipped (keep)
 
-Read-only provider delivered under #1712 (`src/Honua.Db.Redshift/`,
+Read-only provider delivered under #1712 (`src/Honua.Db/Redshift/`,
 `docs/reference/configuration/data-sources/redshift.md`).
 `FeatureProviderCapabilities.ReadOnlyMySql`: query/count/extent/object-ids,
 `Intersects/Within/Contains/Disjoint/EnvelopeIntersects`, narrow `Where`
@@ -260,7 +260,7 @@ Official docs reviewed (issue #950 source seeds):
 Codebase grounding: ADR-0025 (multi-provider operation architecture),
 ADR-0035 (provider-ready data source binding); provider seam under
 `src/Honua.Core(.Abstractions)/Features/FeatureStore/`; shipped warehouse
-providers `src/Honua.Db.Redshift/`, `src/Honua.Snowflake/`, `src/Honua.Db.Databricks/`
+providers `src/Honua.Db/Redshift/`, `src/Honua.Snowflake/`, `src/Honua.Db/Databricks/`
 and their docs under `docs/reference/configuration/data-sources/`.
 </content>
 </invoke>

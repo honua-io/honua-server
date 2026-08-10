@@ -181,7 +181,7 @@ returned page only; callers that need the absolute total should use `CountAsync`
 
 ## Observability
 
-- Activity source: `Honua.Db.Redshift.FeatureStore` — emits spans named `redshift.feature.select`,
+- Activity source: `Honua.Redshift.FeatureStore` — emits spans named `redshift.feature.select`,
   `redshift.feature.count`, `redshift.feature.extent`, and `redshift.feature.objectids`, each
   tagged with `layer.id`.
 - Logging: source-generated structured events (`RedshiftFeatureLog`) emitted under the

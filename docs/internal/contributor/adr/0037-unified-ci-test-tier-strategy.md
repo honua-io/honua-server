@@ -143,8 +143,8 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   models/config/exceptions in `src/Honua.Core/` (`Queries/`, `Models/`,
   `Configuration/`, `Exceptions/`, `Features/Infrastructure/`,
   `Features/Shared/`, `Honua.Core.csproj`), the Postgres connection/migration
-  layer (`src/Honua.Db.Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,
-  `ServiceCollectionExtensions.cs`, `Honua.Db.Postgres.csproj`),
+  layer (`src/Honua.Db/Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,
+  `ServiceCollectionExtensions.cs`, `Honua.Postgres.csproj`),
   `src/Honua.ServiceDefaults/`, the cross-cutting server hosting/middleware/
   monitoring infrastructure (`src/Honua.Server/Features/Infrastructure/{Hosting,
   Middleware,Services,Monitoring}/`, `src/Honua.Server/Startup/`), and

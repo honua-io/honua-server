@@ -230,7 +230,7 @@ reflects the size of the returned page only; callers that need the absolute tota
 
 ## Observability
 
-- Activity source: `Honua.Db.Oracle.FeatureStore` — emits spans named
+- Activity source: `Honua.Oracle.FeatureStore` — emits spans named
   `oracle.feature.select`, `oracle.feature.count`, `oracle.feature.extent`, and
   `oracle.feature.objectids`, each tagged with `db.system=oracle`, `db.operation=<op>`,
   and `layer.id=<id>`.
@@ -269,7 +269,7 @@ fast-unit-only step) stays fast and never starts Docker.
 # NOT the "slim" variant, which excludes the Oracle Spatial component this lane
 # needs) and takes several
 # minutes to start.
-HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Db.Oracle.Tests/Honua.Db.Oracle.Tests.csproj \
+HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj \
     --filter "Category=Oracle"
 ```
 
