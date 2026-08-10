@@ -203,19 +203,37 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
             publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
-        var targetLayerIndex = existingFeaturePublication?.LayerIndex ??
-            AllocateServiceLayerIndex(graph.Publications, service.Metadata.Id, layerId);
-        var targetLayerIdText = targetLayerIndex.ToString(CultureInfo.InvariantCulture);
-        var featurePublication = BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            targetLayerIdText,
-            layerName,
-            MetadataV2PublicationType.EsriFeatureLayer,
-            isPrimary: true,
-            idPrefix: "pub",
-            now);
+        MetadataV2Publication featurePublication;
+        if (existingFeaturePublication is not null)
+        {
+            featurePublication = existingFeaturePublication;
+        }
+        else
+        {
+            var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
+                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+                publication.LayerIndex == layerId &&
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            if (collidingFeaturePublication is not null)
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Conflict,
+                    $"Service '{serviceName}' already publishes FeatureServer layer {layerId} from another storage binding.",
+                    layerId);
+            }
+
+            var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+            featurePublication = BuildPublishedPublication(
+                service,
+                resource,
+                binding,
+                layerIdText,
+                layerName,
+                MetadataV2PublicationType.EsriFeatureLayer,
+                isPrimary: true,
+                idPrefix: "pub",
+                now);
+        }
         service = service with
         {
             PublicationIds = service.PublicationIds
@@ -231,36 +249,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Publications = UpsertPublication(graph.Publications, featurePublication)
         };
-    }
-
-    private static int AllocateServiceLayerIndex(
-        IReadOnlyList<MetadataV2Publication> publications,
-        string serviceId,
-        int preferredLayerIndex)
-    {
-        var usedLayerIndexes = publications
-            .Where(publication => string.Equals(publication.ServiceId, serviceId, StringComparison.Ordinal))
-            .Select(publication => publication.LayerIndex)
-            .Where(layerIndex => layerIndex.HasValue)
-            .Select(layerIndex => layerIndex!.Value)
-            .ToHashSet();
-        if (!usedLayerIndexes.Contains(preferredLayerIndex))
-        {
-            return preferredLayerIndex;
-        }
-
-        var candidate = 0;
-        while (usedLayerIndexes.Contains(candidate))
-        {
-            if (candidate == int.MaxValue)
-            {
-                throw new InvalidOperationException($"Service '{serviceId}' has no available numeric layer identifiers.");
-            }
-
-            candidate++;
-        }
-
-        return candidate;
     }
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB

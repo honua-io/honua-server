@@ -86,7 +86,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void BuildLinkedLayerMetadataV2Graph_WithTargetIndexCollision_PreservesRoutesAndGlobalStacIdentity()
+    public void BuildLinkedLayerMetadataV2Graph_WithTargetIndexCollision_RejectsAmbiguousStorageRoute()
     {
         var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);
         var governedMetadata = new MetadataV2ObjectMetadata
@@ -169,7 +169,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ]
         };
 
-        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
             graph,
             "beta",
             101,
@@ -177,29 +177,83 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             4326,
             now);
 
-        updated.Should().NotBeNull();
-        updated!.Revision.Should().Be(5);
-        updated.GeneratedAt.Should().Be(now);
-        updated.Resources.Single(resource => resource.Metadata.Id == "resource-alpha")
-            .Metadata.Should().BeSameAs(governedMetadata);
-        var targetService = updated.Services.Single(service => service.Metadata.Name == "beta");
-        var targetPublications = updated.Publications
-            .Where(publication => publication.ServiceId == targetService.Metadata.Id)
-            .ToArray();
-        targetPublications.Should().HaveCount(2);
-        targetPublications.Single(publication => publication.ResourceId == "resource-beta")
-            .Metadata.Id.Should().Be("pub-beta-101");
-        var linkedPublication = targetPublications.Single(publication => publication.ResourceId == "resource-alpha");
-        linkedPublication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
-        linkedPublication.LayerIndex.Should().Be(0);
-        linkedPublication.StorageBindingId.Should().Be("binding-alpha");
-        targetService.PublicationIds.Should().BeEquivalentTo(
-            targetPublications.Select(publication => publication.Metadata.Id));
-        updated.Publications.Where(publication =>
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("already publishes FeatureServer layer 101");
+        graph.Publications.Where(publication =>
                 publication.PublicationType == MetadataV2PublicationType.StacCollection)
             .Should().ContainSingle().Which.Metadata.Id.Should().Be("pub-stac-alpha-101");
-        PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(updated, "beta")
-            .Should().Contain(new KeyValuePair<int, MetadataV2ObjectMetadata>(101, governedMetadata));
+        graph.Publications.Single(publication => publication.Metadata.Id == "pub-beta-101")
+            .ResourceId.Should().Be("resource-beta");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithExistingPublication_PreservesAuthoredIdentityAndSettings()
+    {
+        var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);
+        var existingPublication = CreatePublication(
+            "legacy-imported-parcels",
+            "service-beta",
+            "resource-alpha",
+            "binding-alpha",
+            101,
+            MetadataV2PublicationType.EsriFeatureLayer) with
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "legacy-imported-parcels",
+                Name = "legacy-parcels",
+                Title = "Authored parcels title"
+            },
+            TitleOverride = "Authored override",
+            IsPrimary = false
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" },
+                    PrimaryStorageBindingId = "binding-alpha",
+                    StorageBindingIds = ["binding-alpha"]
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-alpha" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101
+                }
+            ],
+            Publications = [existingPublication]
+        };
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Replacement title must not overwrite authored settings",
+            4326,
+            now);
+
+        updated.Should().NotBeNull();
+        updated!.Revision.Should().Be(8);
+        updated.GeneratedAt.Should().Be(now);
+        updated.Publications.Should().ContainSingle().Which.Should().BeSameAs(existingPublication);
+        updated.Services.Should().ContainSingle().Which.PublicationIds
+            .Should().Equal("legacy-imported-parcels");
     }
 
     private static MetadataV2Publication CreatePublication(
