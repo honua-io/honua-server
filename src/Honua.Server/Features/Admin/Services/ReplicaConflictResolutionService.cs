@@ -287,6 +287,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // accept the very change the probe exists to reject; binding both to one snapshot makes them a
         // single decision (#2430).
         string? expectedStateToken = null;
+        var tokenPersisted = true;
         bool stale;
         try
         {
@@ -297,6 +298,27 @@ internal sealed partial class ReplicaConflictResolutionService
                 expectedStateToken = await _applier
                     .CaptureStateTokenAsync(tokenLayerId, claimed.ObjectId, cancellationToken)
                     .ConfigureAwait(false);
+
+                // Durable IMMEDIATELY, before the probe runs. Capture plus probe can outlast the lease,
+                // and a recovery that took the claim over in that window would re-apply against a still
+                // null persisted token — i.e. with no precondition at all — and overwrite whatever
+                // arrived meanwhile (#2430).
+                if (expectedStateToken is { Length: > 0 })
+                {
+                    tokenPersisted = await _conflictRepository.TryUpdateFinalizationStateAsync(
+                            new ReplicaConflictFinalizationUpdate(
+                                claimed.ConflictId,
+                                request.Actor,
+                                request.Action,
+                                claimed.ResolvedAt ?? default,
+                                WriteCommitted: null,
+                                ResolvedServerGeneration: null,
+                                Finalized: null,
+                                PreWriteStateToken: expectedStateToken),
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    claimed = claimed with { PreWriteStateToken = expectedStateToken };
+                }
             }
 
             stale = request.Action != ReplicaConflictResolutionAction.Defer &&
@@ -315,23 +337,14 @@ internal sealed partial class ReplicaConflictResolutionService
             throw;
         }
 
-        // Persist it on the claim: a recovery must re-apply against the row as it was when the
-        // resolution was claimed, not against whatever a retry-time read would return (#2430).
-        if (expectedStateToken is { Length: > 0 })
+        if (!tokenPersisted)
         {
-            await _conflictRepository.TryUpdateFinalizationStateAsync(
-                    new ReplicaConflictFinalizationUpdate(
-                        claimed.ConflictId,
-                        request.Actor,
-                        request.Action,
-                        claimed.ResolvedAt ?? default,
-                        WriteCommitted: null,
-                        ResolvedServerGeneration: null,
-                        Finalized: null,
-                        PreWriteStateToken: expectedStateToken),
-                    CancellationToken.None)
-                .ConfigureAwait(false);
-            claimed = claimed with { PreWriteStateToken = expectedStateToken };
+            // The guarded update matched nothing, so this request no longer owns the claim: a retry
+            // took it over while the capture or probe was running. Continuing would write under an
+            // ownership another attempt now holds (#2430).
+            Log.ResolutionClaimLost(_logger, claimed.ConflictId);
+            activity?.SetStatus(ActivityStatusCode.Error, "claim-lost");
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
         }
 
         if (stale)
@@ -652,6 +665,19 @@ internal sealed partial class ReplicaConflictResolutionService
             existing = existing with { ResolvedAt = takenOverAt };
 
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
+            if (existing.StorageLayerId is not null && existing.PreWriteStateToken is null)
+            {
+                // The claim's pre-write phase never became durable, so there is no snapshot to bind the
+                // recovered write to — and recovery skips the staleness probe by design. Writing with no
+                // precondition would overwrite whatever is in the row now (#2430).
+                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                Log.ResolutionStale(
+                    _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
+                return Failure(
+                    ReplicaConflictResolutionStatus.Stale,
+                    "The interrupted resolution did not record the feature state it was claimed against, so it cannot be safely re-applied. Re-review the conflict against the current server state.");
+            }
+
             // The RETAINED token, never one derived now. Recovery skips the staleness probe on purpose
             // (the change it would trip over may be this resolution's own write), so a retry-time token
             // would describe whatever is in the row at this moment — including a normal edit that landed

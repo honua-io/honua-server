@@ -295,6 +295,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow,
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(live) { ClaimSucceeds = false };
         var applier = new RecordingApplier();
@@ -322,6 +323,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(claimed);
         var applier = new RecordingApplier();
@@ -346,6 +348,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             FinalizationPending = true,
             WriteCommitted = false,
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(claimed);
         var service = CreateService(repository, new FailingApplier());
@@ -411,6 +414,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
         var service = CreateService(repository, new RecordingApplier());
@@ -787,6 +791,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow,
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(live) { ClaimSucceeds = false };
         var audit = new NoOpAuditLog();
@@ -951,6 +956,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(expired)
         {
@@ -965,6 +971,51 @@ public sealed class ReplicaConflictResolutionServiceTests
         result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
         audit.Records.Should().Be(0, "a request that lost its claim must not write success evidence");
         repository.Current.FinalizationPending.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenThePreWriteTokenCannotBePersisted_StopsBeforeWriting()
+    {
+        // Capture plus staleness probe can outlast the lease. If a retry took the claim over in that
+        // window this guarded update matches nothing, and continuing would write under an ownership
+        // another attempt now holds.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true))
+        {
+            LoseClaimOnTokenPersist = true,
+        };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        applier.Calls.Should().Be(0, "no write may run once ownership is lost");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_RecoveryWithoutARetainedToken_RefusesToReapply()
+    {
+        // The claim's pre-write phase never became durable, so there is no snapshot to bind the
+        // recovered write to - and recovery skips the staleness probe by design.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+            PreWriteStateToken = null,
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        applier.Calls.Should().Be(0, "an unbindable write must not run");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
     }
 
     [UnitTest]
@@ -1019,6 +1070,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             FinalizationPending = true,
             WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
         };
         var repository = new FakeConflictRepository(expired) { TakeoverLoses = true };
         var applier = new RecordingApplier();
@@ -1242,6 +1294,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Simulates a retry taking the claim over while a re-applied write is running.</summary>
         public bool LoseClaimOnWriteMarker { get; init; }
 
+        /// <summary>Simulates a retry taking the claim over during the capture/probe phase.</summary>
+        public bool LoseClaimOnTokenPersist { get; init; }
+
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
@@ -1344,6 +1399,11 @@ public sealed class ReplicaConflictResolutionServiceTests
             }
 
             if (LoseClaimOnWriteMarker && update.WriteCommitted == true)
+            {
+                return Task.FromResult(false);
+            }
+
+            if (LoseClaimOnTokenPersist && update.PreWriteStateToken is not null)
             {
                 return Task.FromResult(false);
             }
