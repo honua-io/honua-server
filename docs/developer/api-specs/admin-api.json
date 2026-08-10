@@ -24607,26 +24607,31 @@
         "properties": {
           "license": {
             "type": "string",
+            "nullable": true,
             "maxLength": 256,
             "description": "SPDX license expression or proprietary; null preserves and an empty string clears"
           },
           "attribution": {
             "type": "string",
+            "nullable": true,
             "maxLength": 512,
             "description": "Attribution text; null preserves and an empty string clears"
           },
           "publisher": {
             "type": "string",
+            "nullable": true,
             "maxLength": 256,
             "description": "Publisher text; null preserves and an empty string clears"
           },
           "licenseUrl": {
             "type": "string",
+            "nullable": true,
             "maxLength": 2048,
             "description": "License documentation HTTP(S) URL; null preserves and an empty string clears"
           },
           "sourceUrl": {
             "type": "string",
+            "nullable": true,
             "maxLength": 2048,
             "description": "Source documentation HTTP(S) URL; null preserves and an empty string clears"
           },

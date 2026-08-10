@@ -197,33 +197,29 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
         var service = BuildPublishedService(graph, serviceName, srid, now);
+        var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
+            string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+            string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+            string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        var targetLayerIndex = existingFeaturePublication?.LayerIndex ??
+            AllocateServiceLayerIndex(graph.Publications, service.Metadata.Id, layerId);
+        var targetLayerIdText = targetLayerIndex.ToString(CultureInfo.InvariantCulture);
         var featurePublication = BuildPublishedPublication(
             service,
             resource,
             binding,
-            layerIdText,
+            targetLayerIdText,
             layerName,
             MetadataV2PublicationType.EsriFeatureLayer,
             isPrimary: true,
             idPrefix: "pub",
             now);
-        var stacPublication = BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            layerIdText,
-            layerName,
-            MetadataV2PublicationType.StacCollection,
-            isPrimary: false,
-            idPrefix: "pub-stac",
-            now);
         service = service with
         {
             PublicationIds = service.PublicationIds
                 .Append(featurePublication.Metadata.Id)
-                .Append(stacPublication.Metadata.Id)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
         };
@@ -233,10 +229,38 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
-            Publications = UpsertPublication(
-                UpsertPublication(graph.Publications, featurePublication),
-                stacPublication)
+            Publications = UpsertPublication(graph.Publications, featurePublication)
         };
+    }
+
+    private static int AllocateServiceLayerIndex(
+        IReadOnlyList<MetadataV2Publication> publications,
+        string serviceId,
+        int preferredLayerIndex)
+    {
+        var usedLayerIndexes = publications
+            .Where(publication => string.Equals(publication.ServiceId, serviceId, StringComparison.Ordinal))
+            .Select(publication => publication.LayerIndex)
+            .Where(layerIndex => layerIndex.HasValue)
+            .Select(layerIndex => layerIndex!.Value)
+            .ToHashSet();
+        if (!usedLayerIndexes.Contains(preferredLayerIndex))
+        {
+            return preferredLayerIndex;
+        }
+
+        var candidate = 0;
+        while (usedLayerIndexes.Contains(candidate))
+        {
+            if (candidate == int.MaxValue)
+            {
+                throw new InvalidOperationException($"Service '{serviceId}' has no available numeric layer identifiers.");
+            }
+
+            candidate++;
+        }
+
+        return candidate;
     }
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB

@@ -86,7 +86,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void BuildLinkedLayerMetadataV2Graph_WithGovernedStorage_AddsTargetServicePublications()
+    public void BuildLinkedLayerMetadataV2Graph_WithTargetIndexCollision_PreservesRoutesAndGlobalStacIdentity()
     {
         var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);
         var governedMetadata = new MetadataV2ObjectMetadata
@@ -104,7 +104,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             [
                 new MetadataV2Service
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" },
+                    PublicationIds = ["pub-alpha-101", "pub-stac-alpha-101"]
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    PublicationIds = ["pub-beta-101"]
                 }
             ],
             Resources =
@@ -114,6 +120,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = governedMetadata,
                     PrimaryStorageBindingId = "binding-alpha",
                     StorageBindingIds = ["binding-alpha"]
+                },
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-beta", License = "MIT" },
+                    PrimaryStorageBindingId = "binding-beta",
+                    StorageBindingIds = ["binding-beta"]
                 }
             ],
             StorageBindings =
@@ -123,7 +135,37 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-alpha" },
                     ResourceId = "resource-alpha",
                     StorageLayerId = 101
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-beta" },
+                    ResourceId = "resource-beta",
+                    StorageLayerId = 202
                 }
+            ],
+            Publications =
+            [
+                CreatePublication(
+                    "pub-alpha-101",
+                    "service-alpha",
+                    "resource-alpha",
+                    "binding-alpha",
+                    101,
+                    MetadataV2PublicationType.EsriFeatureLayer),
+                CreatePublication(
+                    "pub-stac-alpha-101",
+                    "service-alpha",
+                    "resource-alpha",
+                    "binding-alpha",
+                    101,
+                    MetadataV2PublicationType.StacCollection),
+                CreatePublication(
+                    "pub-beta-101",
+                    "service-beta",
+                    "resource-beta",
+                    "binding-beta",
+                    101,
+                    MetadataV2PublicationType.EsriFeatureLayer)
             ]
         };
 
@@ -138,23 +180,48 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updated.Should().NotBeNull();
         updated!.Revision.Should().Be(5);
         updated.GeneratedAt.Should().Be(now);
-        updated.Resources.Should().ContainSingle().Which.Metadata.Should().BeSameAs(governedMetadata);
+        updated.Resources.Single(resource => resource.Metadata.Id == "resource-alpha")
+            .Metadata.Should().BeSameAs(governedMetadata);
         var targetService = updated.Services.Single(service => service.Metadata.Name == "beta");
         var targetPublications = updated.Publications
             .Where(publication => publication.ServiceId == targetService.Metadata.Id)
             .ToArray();
         targetPublications.Should().HaveCount(2);
-        targetPublications.Select(publication => publication.PublicationType).Should().BeEquivalentTo(
-            [MetadataV2PublicationType.EsriFeatureLayer, MetadataV2PublicationType.StacCollection]);
-        targetPublications.Should().OnlyContain(publication =>
-            publication.ResourceId == "resource-alpha" &&
-            publication.StorageBindingId == "binding-alpha");
+        targetPublications.Single(publication => publication.ResourceId == "resource-beta")
+            .Metadata.Id.Should().Be("pub-beta-101");
+        var linkedPublication = targetPublications.Single(publication => publication.ResourceId == "resource-alpha");
+        linkedPublication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        linkedPublication.LayerIndex.Should().Be(0);
+        linkedPublication.StorageBindingId.Should().Be("binding-alpha");
         targetService.PublicationIds.Should().BeEquivalentTo(
             targetPublications.Select(publication => publication.Metadata.Id));
+        updated.Publications.Where(publication =>
+                publication.PublicationType == MetadataV2PublicationType.StacCollection)
+            .Should().ContainSingle().Which.Metadata.Id.Should().Be("pub-stac-alpha-101");
         PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(updated, "beta")
-            .Should().ContainSingle().Which.Should().Be(
-                new KeyValuePair<int, MetadataV2ObjectMetadata>(101, governedMetadata));
+            .Should().Contain(new KeyValuePair<int, MetadataV2ObjectMetadata>(101, governedMetadata));
     }
+
+    private static MetadataV2Publication CreatePublication(
+        string id,
+        string serviceId,
+        string resourceId,
+        string bindingId,
+        int layerIndex,
+        MetadataV2PublicationType publicationType)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = layerIndex.ToString(CultureInfo.InvariantCulture) },
+            ServiceId = serviceId,
+            ResourceId = resourceId,
+            StorageBindingId = bindingId,
+            PublicationType = publicationType,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIndex.ToString(CultureInfo.InvariantCulture),
+                IsNumeric = true
+            }
+        };
 
     [Fact]
     public void BuildAttributesExpression_WithWideTables_ChunksJsonbBuildObjectCalls()
