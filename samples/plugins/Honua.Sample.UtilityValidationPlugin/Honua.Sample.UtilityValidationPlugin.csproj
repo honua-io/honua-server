@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <RootNamespace>Honua.Sample.UtilityValidationPlugin</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Example Honua server plugin (issue #347). A plugin author references only the public
+      Honua.Plugins.Abstractions contract surface. This sample is compiled into the host at
+      build time (compile-time static, AOT-safe) — there is no runtime assembly loading.
+    -->
+    <ProjectReference Include="..\..\..\src\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
