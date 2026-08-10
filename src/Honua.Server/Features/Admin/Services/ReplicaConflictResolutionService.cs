@@ -270,8 +270,26 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
 
-        if (request.Action != ReplicaConflictResolutionAction.Defer &&
-            await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false))
+        bool stale;
+        try
+        {
+            stale = request.Action != ReplicaConflictResolutionAction.Defer &&
+                await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The claim already moved the record out of the reviewable state, but nothing has been
+            // written and — crucially — the staleness question is still unanswered. Leaving the claim
+            // would let a retry resume straight to finalization (no-write plans) or take the claim over
+            // with the check explicitly skipped, either way accepting or overwriting a post-conflict
+            // edit this probe was about to detect. Release with a fresh token: the request's own token
+            // is typically the thing that was cancelled (#2430).
+            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+
+        if (stale)
         {
             // The feature moved after this conflict was recorded, so the captured conflict-time state
             // is no longer a safe thing to write: applying it would silently clobber that newer edit.

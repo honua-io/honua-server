@@ -655,6 +655,26 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenTheStalenessProbeFaults_ReleasesTheClaim()
+    {
+        // The claim has already moved the record out of the reviewable state, but nothing was written
+        // and the staleness question is still unanswered. Holding the claim would let a retry resume
+        // straight to finalization, or take it over with the check skipped, and either path can accept
+        // or overwrite the post-conflict edit the aborted probe was about to detect.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var applier = new RecordingApplier();
+        var tracker = new FakeChangeTracker { ThrowOnProbe = true };
+        var service = CreateService(repository, applier, changeTracker: tracker);
+
+        var act = () => service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        applier.Calls.Should().Be(0, "the write must not run when staleness is unknown");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending, "the claim is released");
+        repository.Current.FinalizationPending.Should().BeFalse("a released row is not mid-flight");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_ResumeIgnoresFieldNameCasing()
     {
         // The planner matches operator-supplied field names to schema fields case-insensitively, so
@@ -793,6 +813,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Changes the tracker reports for the staleness probe.</summary>
         public List<FeatureChange> ChangesSinceBase { get; } = [];
 
+        /// <summary>Makes the staleness probe fault, as a cancelled request or provider error would.</summary>
+        public bool ThrowOnProbe { get; init; }
+
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(Generation);
 
@@ -809,7 +832,9 @@ public sealed class ReplicaConflictResolutionServiceTests
             CancellationToken cancellationToken = default)
             // Honour sinceGeneration as the real tracker does: the resolution preconditions probe
             // different windows and would otherwise see each other's changes.
-            => Task.FromResult<IReadOnlyList<FeatureChange>>(
+            => ThrowOnProbe
+            ? Task.FromException<IReadOnlyList<FeatureChange>>(new OperationCanceledException())
+            : Task.FromResult<IReadOnlyList<FeatureChange>>(
                 ChangesSinceBase
                     .Where(c => c.Generation > sinceGeneration)
                     .Where(c => objectIds is null || objectIds.Contains(c.ObjectId))

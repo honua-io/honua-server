@@ -249,8 +249,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // produced — and a staleness check starting after it would never see it (#2430). Clamping
             // to this watermark keeps any change recorded after the batch outside every conflict's
             // base, and can only lower a base, never raise it past our own committed edit.
+            // Uncancellable for the same reason the detection-state writes below are: the batch has
+            // already committed, and a client disconnect here would skip straight past the base
+            // generation and applied-state updates, leaving a last-write-wins conflict recorded as
+            // not-applied with no base — which lets a later keepServer finalize as a no-op while the
+            // committed client overwrite is still in place (#2430).
             var postBatchGeneration = layerConflictCount > 0
-                ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
+                ? await _changeTracker.GetCurrentGenerationAsync(CancellationToken.None).ConfigureAwait(false)
                 : 0L;
 
             totalAdds += applyResult.AppliedAdds;
