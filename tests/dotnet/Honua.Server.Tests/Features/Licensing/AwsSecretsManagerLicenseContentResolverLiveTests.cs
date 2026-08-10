@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Aws.Features.Licensing;
+using Honua.Cloud.Aws.Features.Licensing;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Attributes;

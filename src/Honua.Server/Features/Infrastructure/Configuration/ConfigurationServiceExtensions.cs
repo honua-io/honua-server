@@ -7,7 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

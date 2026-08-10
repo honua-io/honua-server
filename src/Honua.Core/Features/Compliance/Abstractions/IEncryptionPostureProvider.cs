@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Compliance.Abstractions;
 /// versions) and advances the auditor-facing key-version counter when a rotation
 /// is requested. This abstraction is the source of truth for evidence rows that
 /// auditors review; it does not own actual cipher key material — that lives in
-/// <c>Honua.Postgres.Features.Security.IConnectionEncryptionService</c>.
+/// <c>Honua.Db.Postgres.Features.Security.IConnectionEncryptionService</c>.
 /// </summary>
 public interface IEncryptionPostureProvider
 {

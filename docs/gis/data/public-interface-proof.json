@@ -405,7 +405,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Hosting/Features/Authentication/RowLevelSecurityFilterSource.cs",
-            "src/Honua.Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
+            "src/Honua.Db/Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -499,8 +499,8 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Hosting/Features/Authentication/FieldMaskSource.cs",
-            "src/Honua.Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
-            "src/Honua.Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.SelectClauses.cs",
+            "src/Honua.Db/Postgres/Features/FeatureStore/PostgresFeatureStore.cs",
+            "src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.SelectClauses.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/FieldMaskPolicyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -767,7 +767,7 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Admin/ObservabilityEventEndpointsTests.cs",
-            "tests/dotnet/Honua.Postgres.Tests/Features/AuditLog/PostgresAuditLogChainTests.cs"
+            "tests/dotnet/Honua.Db.Postgres.Tests/Features/AuditLog/PostgresAuditLogChainTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -934,7 +934,7 @@
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationServiceTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationPrimitivesTests.cs",
-            "tests/dotnet/Honua.Postgres.Tests/Features/Publishing/PostgresContentPublicationStoreTests.cs",
+            "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/PostgresContentPublicationStoreTests.cs",
             "src/Honua.Core/Features/Publishing/Content/Domain/ContentPublicationJsonContext.cs"
           ],
           "ownerRepo": "honua-server",
@@ -1023,7 +1023,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.cs",
-            "tests/dotnet/Honua.Postgres.Tests/Features/Studio/PostgresStudioPackageStoreTests.cs",
+            "tests/dotnet/Honua.Db.Postgres.Tests/Features/Studio/PostgresStudioPackageStoreTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",

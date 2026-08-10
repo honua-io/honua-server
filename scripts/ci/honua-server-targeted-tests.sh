@@ -28,7 +28,7 @@
 #   4. Otherwise, walk every changed file, match it against shard `paths`
 #      prefixes, and union the shard names that claim it.
 #   5. When the diff touches a path under `unmapped_source_run_all_prefixes`
-#      (src/Honua.Server/, src/Honua.DuckDB/, tests/dotnet/Honua.Server.Tests/)
+#      (src/Honua.Server/, src/Honua.Db/DuckDB/, tests/dotnet/Honua.Server.Tests/)
 #      that no shard's `paths` claims AND that is not claimed by a
 #      `targeted_override_prefixes` entry, emit
 #      {"run_all": true, "reason": "unmapped_source_change"} so a new feature

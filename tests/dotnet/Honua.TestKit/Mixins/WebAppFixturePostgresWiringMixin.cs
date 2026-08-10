@@ -177,7 +177,7 @@ internal static class WebAppFixturePostgresWiringMixin
 
     /// <summary>
     /// Builds the minimal in-memory <see cref="IConfiguration"/> that
-    /// <c>Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices</c> reads to
+    /// <c>Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices</c> reads to
     /// re-register the PostgreSQL-backed services. The optional
     /// <paramref name="extraSettings"/> let the shared bootstrap layer in its
     /// schema-header flag without duplicating the common entries.
@@ -271,7 +271,7 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
-        Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
@@ -309,7 +309,7 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
-        Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 

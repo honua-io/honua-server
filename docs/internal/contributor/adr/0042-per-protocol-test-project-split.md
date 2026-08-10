@@ -33,7 +33,7 @@ tests/dotnet/Honua.Protocols.<X>.Tests/Honua.Protocols.<X>.Tests.csproj
 ```
 
 referencing `Honua.Protocols.<X>` + `Honua.TestKit` (and `Honua.Core` /
-`Honua.Postgres` if the moved tests need real-DB fixtures).
+`Honua.Db.Postgres` if the moved tests need real-DB fixtures).
 
 Move:
 

@@ -26,7 +26,7 @@ This document summarizes the P0 critical fixes implemented to address security v
 
 **Issue**: Cache stampede prevention logic had race conditions that could allow multiple concurrent operations to bypass cache coordination.
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
 
 **Fix**:
 - Implemented atomic check-and-create pattern for TaskCompletionSource coordination
@@ -34,7 +34,7 @@ This document summarizes the P0 critical fixes implemented to address security v
 - Eliminated GetOrAdd + TryGetValue race conditions
 
 **Files Modified**:
-- `src/Honua.Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
+- `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
 
 **Impact**: Prevents cache inconsistencies and ensures proper coordination of expensive database operations.
 
@@ -83,7 +83,7 @@ The audit identified potential SQL injection in schema name interpolation. Analy
 - SQL interpolation uses properly validated and quoted identifiers
 - No user input reaches SQL construction without validation
 
-**Location**: `src/Honua.Postgres/Features/Infrastructure/SchemaSearchPath.cs`
+**Location**: `src/Honua.Db/Postgres/Features/Infrastructure/SchemaSearchPath.cs`
 
 ## Service Registration
 

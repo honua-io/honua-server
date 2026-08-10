@@ -360,15 +360,15 @@ if (Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfr
 // connection create/test endpoints build and probe MySQL / SQL Server / Oracle / PostgreSQL with the correct
 // ADO.NET provider instead of always speaking Npgsql. Registered unconditionally — independent of the primary
 // data-source provider — because any of these engines can be an external secured connection.
-Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
-Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
-Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
-Honua.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
+Honua.Db.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
+Honua.Db.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
+Honua.Db.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+Honua.Db.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
 #if !HONUA_SKIP_ORACLE
 // The Native AOT publish (HonuaSkipOracleForAotVerification) drops the Honua.Oracle
 // ProjectReference and defines HONUA_SKIP_ORACLE, so this registration is compiled out
 // (Oracle.ManagedDataAccess is not single-file/AOT safe — see Honua.Server.csproj).
-Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+Honua.Db.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
 #endif
 #if !HONUA_SKIP_SNOWFLAKE
 // The Native AOT publish (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake
@@ -799,24 +799,24 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     replicaProvider != DataProviderNames.MySql)
 {
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
-        new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaConflictRepository>(sp =>
-        new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
-        new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
     // providers keep the no-op store (history unsupported), matching the no-op change tracker.
     builder.Services.AddScoped<Honua.Core.Features.Temporal.Abstractions.ITemporalHistoryStore>(sp =>
-        new Honua.Postgres.Features.FeatureStore.Services.PostgresTemporalHistoryStore(
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresTemporalHistoryStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
     // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
-        new Honua.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>(),
             schemaName: null,
             versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));

@@ -304,9 +304,9 @@ public sealed class ServingImageBoundaryTests
         functionsDockerfile.Should().Contain("ARG AOT_PUBLISH_MAX_ATTEMPTS=3");
         foreach (var project in new[]
                  {
-                     "Honua.Redshift",
+                     "Honua.Db/Redshift",
                      "Honua.Snowflake",
-                     "Honua.Databricks",
+                     "Honua.Db/Databricks",
                      "Honua.Protocols.SensorThings"
                  })
         {

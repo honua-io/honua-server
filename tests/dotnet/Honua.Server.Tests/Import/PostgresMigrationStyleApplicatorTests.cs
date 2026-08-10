@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.Migration;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Import;

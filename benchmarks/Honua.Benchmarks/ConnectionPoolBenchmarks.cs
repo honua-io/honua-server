@@ -3,7 +3,7 @@
 
 using BenchmarkDotNet.Attributes;
 using Honua.Core.Configuration;
-using Honua.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Benchmarks;
 

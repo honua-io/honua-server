@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Honua.Cloud.Azure is the carved-out Azure SDK surface (Identity, Storage.Blobs,
+      Messaging.EventGrid, Messaging.EventHubs) extracted from Honua.Server so
+      that cloud-neutral consumers do not pull the heavy Azure.* surface
+      transitively. Namespaces preserved (Honua.Server.Features.*) so cross-
+      module references in the Server orchestration layer keep compiling
+      without a using-clause sweep.
+
+      NoWarn is intentionally limited to the IL trim/AOT analyzer codes that the
+      Azure.* SDKs (Identity, Storage.Blobs, Messaging.EventGrid/EventHubs) emit
+      because those packages are not annotated trim/AOT-safe. Code-quality codes
+      (CS1591, IDE00xx, CA*) are not suppressed: every type here is internal so
+      CS1591 cannot fire, and the source builds clean under the analyzers, so the
+      suppression is unnecessary. The IL codes are retained because the upstream
+      Azure SDK surface is not annotated for trimming/AOT.
+    -->
+    <NoWarn>$(NoWarn);IL2104;IL2026;IL3002;IL3050;IL2075</NoWarn>
+    <RootNamespace>Honua.Cloud.Azure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\..\Honua.Jobs\Honua.Jobs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Azure SDK packages carved from Honua.Server.csproj. -->
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Azure.Messaging.EventGrid" />
+    <PackageReference Include="Azure.Messaging.EventHubs" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

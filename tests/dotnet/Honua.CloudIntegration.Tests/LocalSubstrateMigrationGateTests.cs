@@ -6,7 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
-using Honua.Postgres.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;

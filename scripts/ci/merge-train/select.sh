@@ -190,9 +190,8 @@ train_pr_admission_snapshot() {
     "${TRAIN_ADMISSION_JSON_FOR_PR}" "${pr}"
     return
   fi
-  gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number state isDraft headRefOid labels(first:100){nodes{name} pageInfo{hasNextPage}} reviews(first:100){nodes{author{login} body submittedAt updatedAt state commit{oid}} pageInfo{hasNextPage}} comments(first:100){nodes{author{login} body createdAt updatedAt includesCreatedEdit} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login} commit{oid}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}} pageInfo{hasNextPage}}}}}}}}}' \
-    -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="${pr}" \
-    --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviews:.reviews.nodes,reviewsTruncated:.reviews.pageInfo.hasNextPage,cleanComments:.comments.nodes,commentsTruncated:.comments.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
+  node "${TRAIN_REVIEW_GATE_SNAPSHOT_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-snapshot.js}" \
+    --repo "${GITHUB_REPOSITORY}" --pr "${pr}"
 }
 
 train_publish_review_gate_status() {

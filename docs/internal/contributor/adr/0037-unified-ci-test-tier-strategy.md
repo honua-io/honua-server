@@ -143,7 +143,7 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   models/config/exceptions in `src/Honua.Core/` (`Queries/`, `Models/`,
   `Configuration/`, `Exceptions/`, `Features/Infrastructure/`,
   `Features/Shared/`, `Honua.Core.csproj`), the Postgres connection/migration
-  layer (`src/Honua.Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,
+  layer (`src/Honua.Db/Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,
   `ServiceCollectionExtensions.cs`, `Honua.Postgres.csproj`),
   `src/Honua.ServiceDefaults/`, the cross-cutting server hosting/middleware/
   monitoring infrastructure (`src/Honua.Server/Features/Infrastructure/{Hosting,
@@ -157,16 +157,16 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   primary driver of full-suite-per-PR. A sln-only diff (no other signal) now
   routes to the smoke shard via `default_shards_when_no_match` (reason
   `no_path_match`); the actual added project's source still routes to its
-  owning shard(s) on its own. Likewise `src/Honua.Aws/` / `src/Honua.Azure/`
+  owning shard(s) on its own. Likewise `src/Honua.Cloud.Aws/` / `src/Honua.Cloud.Azure/`
   moved out of `infrastructure_paths` (they are not exercised by every shard)
   into the `unmapped_source_run_all_prefixes` safety net.
 - If the diff touches a **watched source prefix** (`unmapped_source_run_all_prefixes`)
   but the changed path is **not** matched by any shard's `paths`, the script
   emits `{"run_all": true, "reason": "unmapped_source_change"}`. Post-#1897 this
   set is the safety net for two cases: (a) genuinely cross-cutting source with
-  no single owning shard — the shared `Honua.Core`/`Honua.Postgres`/`Honua.Server`
+  no single owning shard — the shared `Honua.Core`/`Honua.Db.Postgres`/`Honua.Server`
   runtime, `Honua.Geometry`, `Honua.Jobs`, `Honua.Routing`, `Honua.Hosting`,
-  and the cloud providers `Honua.Aws`/`Honua.Azure`; and (b) a brand-new,
+  and the cloud providers `Honua.Cloud.Aws`/`Honua.Cloud.Azure`; and (b) a brand-new,
   not-yet-mapped TOP-LEVEL source area (e.g. a future
   `src/Honua.Protocols.SensorThings/` landing before its shard is added). The
   alternative would be to silently fall back to the Core shard whose filter

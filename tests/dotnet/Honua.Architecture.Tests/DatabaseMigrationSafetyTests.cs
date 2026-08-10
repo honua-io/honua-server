@@ -112,7 +112,7 @@ public sealed class DatabaseMigrationSafetyTests
         var migrationDirectories = new[]
         {
             ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Migrations"),
-            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Postgres", "Migrations")
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Db", "Postgres", "Migrations")
         };
 
         return migrationDirectories

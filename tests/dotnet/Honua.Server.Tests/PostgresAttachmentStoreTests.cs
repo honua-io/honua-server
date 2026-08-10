@@ -5,7 +5,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Postgres.Features.Attachments;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.FileStorage;
 using Honua.Server.Tests.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
