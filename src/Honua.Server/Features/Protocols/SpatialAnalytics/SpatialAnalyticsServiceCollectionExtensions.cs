@@ -17,7 +17,7 @@ internal static class SpatialAnalyticsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Reader is registered in Honua.Postgres.Features.FeatureStore.ServiceCollectionExtensions.
+        // Reader is registered in Honua.Db.Postgres.Features.FeatureStore.ServiceCollectionExtensions.
         // This hook is kept so AddServerFeatures can include analytics alongside the rest of
         // the server feature slices and so future server-side additions (metrics, caches) have
         // a single place to land without touching the composition root.

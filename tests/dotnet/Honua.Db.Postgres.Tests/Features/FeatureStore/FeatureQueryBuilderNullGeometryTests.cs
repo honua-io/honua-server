@@ -4,7 +4,7 @@
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
-using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
+using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 

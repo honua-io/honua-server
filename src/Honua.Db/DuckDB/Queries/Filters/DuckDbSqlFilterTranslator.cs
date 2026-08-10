@@ -113,7 +113,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
         // ellipsoidal intersects semantics so long edges and antimeridian-crossing geometries
         // resolve correctly. DuckDB's spatial extension has no geography/ellipsoidal intersects
         // equivalent to PostGIS's geography cast, so reject rather than silently downgrade to
-        // planar-in-degree ST_Intersects (see Honua.Postgres.Queries.Filters.
+        // planar-in-degree ST_Intersects (see Honua.Db.Postgres.Queries.Filters.
         // PostgresSqlFilterTranslator.TranslateSpatial for the geography-backed implementation
         // this provider does not have).
         if (spatial.Geodesic)

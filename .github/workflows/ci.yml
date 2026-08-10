@@ -981,8 +981,8 @@ jobs:
         timeout-minutes: 10
         continue-on-error: true
         run: |
-          dotnet build tests/dotnet/Honua.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj --no-restore --configuration Release
-          dotnet test tests/dotnet/Honua.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj \
+          dotnet build tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj \
             --no-build \
             --configuration Release \
             --logger "trx;LogFileName=postgres-security-tests.trx" \
@@ -1009,8 +1009,8 @@ jobs:
         env:
           HONUA_TEST_MYSQL: '1'
         run: |
-          dotnet build tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj --no-restore --configuration Release
-          dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+          dotnet build tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
             --no-build \
             --configuration Release \
             --logger "trx;LogFileName=mysql-tests.trx" \
@@ -2062,7 +2062,7 @@ jobs:
         # Postgres-compat only runs Honua.Postgres.Tests; restoring the full
         # solution was unnecessary work that scaled with every project added
         # to the repo. dotnet auto-restores transitive ProjectReferences.
-        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
 
       - name: Build
         # Same scoping rationale as the restore above — dotnet builds
@@ -2071,7 +2071,7 @@ jobs:
         # and Honua.TestKit all build as needed; unrelated projects
         # (Server, DuckDB, SqlServer, MySql, Worker.Gdal, samples,
         # benchmarks, sibling test projects) stay out of the build graph.
-        run: dotnet build tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --no-restore
+        run: dotnet build tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --no-restore
 
       - name: Run Postgres compatibility tests
         env:
@@ -2080,7 +2080,7 @@ jobs:
           COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
         run: |
           test_args=(
-            dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+            dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
             --configuration Release
             --no-build
             --logger "console;verbosity=detailed"

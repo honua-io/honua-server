@@ -34,8 +34,8 @@
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
   </ItemGroup>
 

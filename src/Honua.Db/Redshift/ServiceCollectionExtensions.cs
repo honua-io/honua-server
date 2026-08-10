@@ -50,7 +50,7 @@ public static class ServiceCollectionExtensions
         // startup for Redshift-only deployments. Registered with TryAdd so PostgreSQL's
         // true-capability provider wins when both providers are active.
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
-            Honua.Redshift.Features.Infrastructure.Events.Outbox.RedshiftOutboxCapabilityProvider>();
+            Honua.Db.Redshift.Features.Infrastructure.Events.Outbox.RedshiftOutboxCapabilityProvider>();
 
         return services;
     }

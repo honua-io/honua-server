@@ -34,13 +34,13 @@ public sealed class CustomBuildProfileTests
             .ToList();
 
         projectReferences.Should().Contain(reference =>
-            reference.Include == @"..\Honua.Aws\Honua.Aws.csproj" &&
+            reference.Include == @"..\Honua.Cloud\Aws\Honua.Aws.csproj" &&
             reference.Condition == "'$(HonuaIncludeAws)' == 'true'");
         projectReferences.Should().Contain(reference =>
-            reference.Include == @"..\Honua.Azure\Honua.Azure.csproj" &&
+            reference.Include == @"..\Honua.Cloud\Azure\Honua.Azure.csproj" &&
             reference.Condition == "'$(HonuaIncludeAzure)' == 'true'");
         projectReferences.Should().Contain(reference =>
-            reference.Include == @"..\Honua.Oracle\Honua.Oracle.csproj" &&
+            reference.Include == @"..\Honua.Db\Oracle\Honua.Oracle.csproj" &&
             reference.Condition == "'$(HonuaIncludeOracle)' == 'true'");
     }
 

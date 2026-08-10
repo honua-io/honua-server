@@ -52,7 +52,7 @@ public static class ServiceCollectionExtensions
         // server skips dispatcher startup for SQL-Server-only deployments. Registered with
         // TryAdd so PostgreSQL's true-capability provider wins when both providers are active.
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
-            Honua.SqlServer.Features.Infrastructure.Events.Outbox.SqlServerOutboxCapabilityProvider>();
+            Honua.Db.SqlServer.Features.Infrastructure.Events.Outbox.SqlServerOutboxCapabilityProvider>();
 
         return services;
     }

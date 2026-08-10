@@ -15,7 +15,7 @@
       <_Parameter1>Honua.Server.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Honua.Db.DuckDB.Tests</_Parameter1>
+      <_Parameter1>Honua.DuckDB.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Honua.Architecture.Tests</_Parameter1>
@@ -36,7 +36,7 @@
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 
 </Project>

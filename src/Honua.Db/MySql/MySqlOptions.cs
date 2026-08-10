@@ -19,7 +19,7 @@ public sealed class MySqlOptions
     /// WKB-natural order. Accepted values: <c>Mysql</c> (default) and <c>MariaDb</c>
     /// (case-insensitive).
     /// </summary>
-    public string EngineFlavor { get; set; } = nameof(Honua.MySql.MySqlEngineFlavor.Mysql);
+    public string EngineFlavor { get; set; } = nameof(Honua.Db.MySql.MySqlEngineFlavor.Mysql);
 
     /// <summary>Configured layer definitions.</summary>
     public MySqlLayerOptions[] Layers { get; set; } = [];

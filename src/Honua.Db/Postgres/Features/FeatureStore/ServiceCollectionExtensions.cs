@@ -78,7 +78,7 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IOptions<LimitsOptions>>(),
                 provider.GetService<IPerformanceMonitor>(),
                 schemaName,
-                provider.GetService<Honua.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>());
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>());
 
             return new FeatureDataAccess(dependencies);
         });
@@ -128,13 +128,13 @@ internal static class ServiceCollectionExtensions
         // mutation-capable provider so it owns the outbox repository implementation and
         // reports SupportsTransactionalOutbox = true. Both registrations are scoped to
         // match the connection-provider lifetime used by the data access layer.
-        services.AddScoped<Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>();
+        services.AddScoped<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>();
         services.AddScoped<Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository>(
-            provider => provider.GetRequiredService<Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
-        services.AddScoped<Honua.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>(
-            provider => provider.GetRequiredService<Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
+            provider => provider.GetRequiredService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
+        services.AddScoped<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>(
+            provider => provider.GetRequiredService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
-            Honua.Postgres.Features.Infrastructure.Events.Outbox.PostgresOutboxCapabilityProvider>();
+            Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresOutboxCapabilityProvider>();
 
         return services;
     }

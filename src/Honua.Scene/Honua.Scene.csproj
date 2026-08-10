@@ -49,8 +49,8 @@
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

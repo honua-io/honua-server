@@ -8,7 +8,7 @@ using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Logging;
 
 // NOTE: namespace deliberately omits the "Azure" segment (it uses Honua.Licensing, not
-// Honua.Azure.Features.Licensing) to match the existing Honua.Azure convention (Honua.Alerts,
+// Honua.Cloud.Azure.Features.Licensing) to match the existing Honua.Azure convention (Honua.Alerts,
 // Honua.FileStorage, Honua.ControlPlane). A Honua.Azure namespace would shadow the global Azure
 // SDK namespace for callers that reference Azure.* by its fully-qualified name.
 namespace Honua.Licensing;

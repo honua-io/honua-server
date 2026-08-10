@@ -30,8 +30,8 @@
     <InternalsVisibleTo Include="Honua.Core" />
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Hosting" />
-    <InternalsVisibleTo Include="Honua.Cloud.Aws" />
-    <InternalsVisibleTo Include="Honua.Cloud.Azure" />
+    <InternalsVisibleTo Include="Honua.Aws" />
+    <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="Honua.Io" />
     <InternalsVisibleTo Include="Honua.Plugins" />
     <InternalsVisibleTo Include="Honua.ArcGisRest" />
@@ -42,13 +42,13 @@
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres" />
-    <InternalsVisibleTo Include="Honua.Db.Postgres.Tests" />
-    <InternalsVisibleTo Include="Honua.Db.DuckDB" />
-    <InternalsVisibleTo Include="Honua.Db.MySql" />
-    <InternalsVisibleTo Include="Honua.Db.MySql.Tests" />
-    <InternalsVisibleTo Include="Honua.Db.SqlServer" />
-    <InternalsVisibleTo Include="Honua.Db.SqlServer.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.DuckDB" />
+    <InternalsVisibleTo Include="Honua.MySql" />
+    <InternalsVisibleTo Include="Honua.MySql.Tests" />
+    <InternalsVisibleTo Include="Honua.SqlServer" />
+    <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
   </ItemGroup>
 

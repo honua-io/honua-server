@@ -45,13 +45,13 @@ internal static class InfrastructureCompositionRoot
         {
             case DataProviderNames.Postgis:
             case DataProviderNames.PostgreSql:
-                Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+                Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
                 break;
             case DataProviderNames.DuckDb:
-                Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
+                Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
                 break;
             case DataProviderNames.MySql:
-                Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
+                Honua.Db.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
                 break;
             default:
                 throw new InvalidOperationException($"Unsupported data source provider '{configuredProvider}'.");
@@ -79,7 +79,7 @@ internal static class InfrastructureCompositionRoot
         // through the shared FeatureProviderQueryRouter. Disabled when SqlServer:Enabled is explicitly false.
         if (configuration.GetValue("SqlServer:Enabled", true))
         {
-            Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
+            Honua.Db.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
         }
 
         // Register the Amazon Redshift spatial provider as an additional read-only feature backend (#1712).
@@ -94,7 +94,7 @@ internal static class InfrastructureCompositionRoot
         {
             if (configuration.GetValue("Redshift:Enabled", true))
             {
-                Honua.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
+                Honua.Db.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
             }
         }
         else if (redshiftExplicitlyEnabled)
@@ -126,7 +126,7 @@ internal static class InfrastructureCompositionRoot
 #if !HONUA_SKIP_ORACLE
         if (configuration.GetValue("Oracle:Enabled", true))
         {
-            Honua.Oracle.ServiceCollectionExtensions.AddOracleFeatureProvider(services, configuration);
+            Honua.Db.Oracle.ServiceCollectionExtensions.AddOracleFeatureProvider(services, configuration);
         }
 #endif
 
@@ -168,7 +168,7 @@ internal static class InfrastructureCompositionRoot
         // Databricks:Enabled is explicitly false.
         if (configuration.GetValue("Databricks:Enabled", true))
         {
-            Honua.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
+            Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
         }
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>

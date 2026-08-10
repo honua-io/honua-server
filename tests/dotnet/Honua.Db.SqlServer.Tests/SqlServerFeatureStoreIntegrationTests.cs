@@ -29,7 +29,7 @@ namespace Honua.Db.SqlServer.Tests;
 /// <para>Manual run example:</para>
 /// <code>
 ///   export HONUA_SQLSERVER_TEST_CONNECTION="Server=localhost,1433;Database=tempdb;User Id=sa;Password=Strong!Pass;TrustServerCertificate=True"
-///   dotnet test tests/dotnet/Honua.SqlServer.Tests --filter Category=SqlServerIntegration
+///   dotnet test tests/dotnet/Honua.Db.SqlServer.Tests --filter Category=SqlServerIntegration
 /// </code>
 /// </remarks>
 [Trait("Category", "SqlServerIntegration")]

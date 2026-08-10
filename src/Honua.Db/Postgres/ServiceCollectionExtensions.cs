@@ -189,7 +189,7 @@ internal static class ServiceCollectionExtensions
 
         // OGC SensorThings API observations store (#1747)
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
-            serviceProvider => new Honua.Postgres.Features.SensorThings.PostgresObservationStore(
+            serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Console Operate read APIs (#1168)
@@ -411,7 +411,7 @@ internal static class ServiceCollectionExtensions
 
         // Register anomaly detection
         services.AddScoped<Core.Features.AnomalyDetection.Abstractions.IAnomalyAnalyzer,
-            Honua.Postgres.Features.AnomalyDetection.PostgresAnomalyAnalyzer>();
+            Honua.Db.Postgres.Features.AnomalyDetection.PostgresAnomalyAnalyzer>();
 
         // Register geometry operation service for buffer/simplify/project
         services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
@@ -480,7 +480,7 @@ internal static class ServiceCollectionExtensions
         {
             // Use the no-op implementation here; distributed leader election is only enabled
             // when the Server composition root supplies a real coordinator.
-            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
+            return new Honua.Db.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
                 "honua:leader:crs-warmup");
         });
 
@@ -784,7 +784,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
             Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
-            Honua.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
+            Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
         services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
         {

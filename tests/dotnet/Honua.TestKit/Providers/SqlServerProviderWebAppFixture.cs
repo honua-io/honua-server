@@ -88,7 +88,7 @@ public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime
             // exactly where AddSqlServerFeatureProvider normally gets called in production.
             // WebAppFixturePostgresWiringMixin only re-registers the Postgres primary, so
             // SQL Server must be registered explicitly here (honua-server#2947).
-            Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(
+            Honua.Db.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(
                 services, new ConfigurationBuilder().Build());
         });
 

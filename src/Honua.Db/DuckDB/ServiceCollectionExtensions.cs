@@ -193,7 +193,7 @@ internal static class ServiceCollectionExtensions
         // retry queue path. Registered via TryAdd so the Postgres provider wins when both
         // backends are configured.
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
-            Honua.DuckDB.Features.Infrastructure.Events.Outbox.DuckDbOutboxCapabilityProvider>();
+            Honua.Db.DuckDB.Features.Infrastructure.Events.Outbox.DuckDbOutboxCapabilityProvider>();
 
         return services;
     }

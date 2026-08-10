@@ -56,14 +56,14 @@
     <!-- Postgres reference for AOT assembly inclusion only -->
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
-    <ProjectReference Include="..\Honua.Db.Postgres\Honua.Db.Postgres.csproj" />
-    <ProjectReference Include="..\Honua.Db.DuckDB\Honua.Db.DuckDB.csproj" />
-    <ProjectReference Include="..\Honua.Db.SqlServer\Honua.Db.SqlServer.csproj" />
-    <ProjectReference Include="..\Honua.Db.MySql\Honua.Db.MySql.csproj" />
-    <ProjectReference Include="..\Honua.Db.Redshift\Honua.Db.Redshift.csproj" />
+    <ProjectReference Include="..\Honua.Db\Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.Db\DuckDB\Honua.DuckDB.csproj" />
+    <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" />
+    <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" />
+    <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" />
     <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
-    <ProjectReference Include="..\Honua.Db.Databricks\Honua.Db.Databricks.csproj" />
-    <ProjectReference Include="..\Honua.Db.Oracle\Honua.Db.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
+    <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" />
+    <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
     <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
@@ -71,8 +71,8 @@
     <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
     <ProjectReference Include="..\Honua.Geocoding\Honua.Geocoding.csproj" />
 
-    <ProjectReference Include="..\Honua.Cloud.Aws\Honua.Cloud.Aws.csproj" Condition="'$(HonuaIncludeAws)' == 'true'" />
-    <ProjectReference Include="..\Honua.Cloud.Azure\Honua.Cloud.Azure.csproj" Condition="'$(HonuaIncludeAzure)' == 'true'" />
+    <ProjectReference Include="..\Honua.Cloud\Aws\Honua.Aws.csproj" Condition="'$(HonuaIncludeAws)' == 'true'" />
+    <ProjectReference Include="..\Honua.Cloud\Azure\Honua.Azure.csproj" Condition="'$(HonuaIncludeAzure)' == 'true'" />
 
     <ProjectReference Include="..\Honua.Ai\Honua.Ai.csproj" />
 

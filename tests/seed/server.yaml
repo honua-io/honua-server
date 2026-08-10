@@ -373,7 +373,7 @@ sql:
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
   # Layer-level (mosaic) band statistics persisted by PostgresRasterStore (#1639).
-  # Keep in sync with src/Honua.Postgres/Migrations/003_CreateRasterLayerStatistics.sql.
+  # Keep in sync with src/Honua.Db/Postgres/Migrations/003_CreateRasterLayerStatistics.sql.
   - |
       CREATE TABLE IF NOT EXISTS honua.raster_layer_statistics (
           layer_id INTEGER NOT NULL,

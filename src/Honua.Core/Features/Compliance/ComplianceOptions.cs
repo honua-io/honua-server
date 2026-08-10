@@ -66,7 +66,7 @@ public sealed class ComplianceEncryptionOptions
 {
     /// <summary>
     /// Algorithms in use, for the report. Defaults to the algorithm set used by
-    /// <c>Honua.Postgres.Features.Security.ConnectionEncryptionService</c> so the
+    /// <c>Honua.Db.Postgres.Features.Security.ConnectionEncryptionService</c> so the
     /// dashboard agrees with the actual encryption code path out of the box.
     /// </summary>
     public List<string> Algorithms { get; set; } = new()

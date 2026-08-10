@@ -234,7 +234,7 @@ run_security_agent() {
             "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~Authentication|FullyQualifiedName~ApiKey' --logger \"trx;LogFileName=server-security.trx\"" || return $?
 
         run_check "security" "1" "postgres-security-tests" "required" \
-            "dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~ConnectionEncryption|FullyQualifiedName~SecureConnection' --logger \"trx;LogFileName=postgres-security.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~ConnectionEncryption|FullyQualifiedName~SecureConnection' --logger \"trx;LogFileName=postgres-security.trx\"" || return $?
 
         run_check "security" "1" "input-validation-tests" "required" \
             "dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Validation|FullyQualifiedName~FilterExpression' --logger \"trx;LogFileName=core-validation.trx\"" || return $?
@@ -248,7 +248,7 @@ run_geodesy_agent() {
 
     if phase_selected "1"; then
         run_check "geodesy" "1" "postgres-crs-transform-tests" "required" \
-            "dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Crs|FullyQualifiedName~SpatialReference|FullyQualifiedName~Wkt|FullyQualifiedName~Wkb|FullyQualifiedName~Transform' --logger \"trx;LogFileName=geodesy-postgres.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Crs|FullyQualifiedName~SpatialReference|FullyQualifiedName~Wkt|FullyQualifiedName~Wkb|FullyQualifiedName~Transform' --logger \"trx;LogFileName=geodesy-postgres.trx\"" || return $?
 
         # Run against the solution so the filter also covers OGC/MVT/CRS tests that the
         # protocol seam split relocated out of Honua.Server.Tests into the protocol test

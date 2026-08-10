@@ -14,7 +14,7 @@
       <_Parameter1>Honua.Server.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>Honua.Db.SqlServer.Tests</_Parameter1>
+      <_Parameter1>Honua.SqlServer.Tests</_Parameter1>
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Honua.Architecture.Tests</_Parameter1>
@@ -31,8 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\Honua.Geometry\Honua.Geometry.csproj" />
   </ItemGroup>
 
 </Project>
