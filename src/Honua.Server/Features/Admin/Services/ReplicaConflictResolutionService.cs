@@ -933,14 +933,16 @@ internal sealed partial class ReplicaConflictResolutionService
 
         try
         {
-            // Generation first, then the state, then a re-read to prove the state did not move between
-            // them. Sampling the generation last would let an edit landing in between be inside the new
-            // base while absent from the refreshed envelope, so a later resolution would find nothing
-            // post-base and overwrite that edit with the stale snapshot (#2430).
-            var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
-                .ConfigureAwait(false);
+            // State, then generation, then a re-read that proves the state did not move across BOTH
+            // intervals. The generation must not be older than the envelope it is paired with — a base
+            // behind the refreshed state makes every later probe find the very edit the envelope
+            // describes and answer Stale forever — and it must not be newer either, which would hide a
+            // real edit from the probe. Reading it between the two state reads gives both, because the
+            // confirmation covers the whole span (#2430).
             var snapshot = await _applier
                 .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
+                .ConfigureAwait(false);
+            var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
                 .ConfigureAwait(false);
             var confirmation = await _applier
                 .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
