@@ -78,6 +78,12 @@ public static class ReplicaConflictResolutionPlanner
 
     private static ReplicaConflictResolutionPlan PlanAcceptClient(ReplicaConflictRecord conflict)
     {
+        if (conflict.ConflictType == ReplicaConflictType.DeleteDelete)
+        {
+            // Both sides deleted the feature, so the client's intent is already the committed state.
+            return NoEffect(committedNewServerState: false);
+        }
+
         if (conflict.ConflictType == ReplicaConflictType.UpdateDelete)
         {
             // The server deleted the feature; there is no row to update and re-creating it would mint a
@@ -116,6 +122,12 @@ public static class ReplicaConflictResolutionPlanner
 
     private static ReplicaConflictResolutionPlan PlanKeepServer(ReplicaConflictRecord conflict)
     {
+        if (conflict.ConflictType == ReplicaConflictType.DeleteDelete)
+        {
+            // The server deletion stands and the client asked for the same thing; nothing to restore.
+            return NoEffect(committedNewServerState: false);
+        }
+
         if (!conflict.ClientEditApplied && !conflict.ClientEditOutcomeUnknown && !conflict.ClientEditSuperseded)
         {
             // Manual review skipped the client edit, so the server state was never overwritten.
@@ -169,7 +181,9 @@ public static class ReplicaConflictResolutionPlanner
                 $"'fieldValues' names field '{duplicate.Key}' more than once (field names are case-insensitive); supply a single value per field.");
         }
 
-        if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate or ReplicaConflictType.UpdateDelete)
+        if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate
+            or ReplicaConflictType.UpdateDelete
+            or ReplicaConflictType.DeleteDelete)
         {
             return NotApplicable(
                 "A field merge does not apply to a delete conflict: choose acceptClient or keepServer instead.");
@@ -220,7 +234,9 @@ public static class ReplicaConflictResolutionPlanner
             return Invalid("A geometry choice requires 'geometry' to be either 'client' or 'server'.");
         }
 
-        if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate or ReplicaConflictType.UpdateDelete)
+        if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate
+            or ReplicaConflictType.UpdateDelete
+            or ReplicaConflictType.DeleteDelete)
         {
             return NotApplicable(
                 "A geometry choice does not apply to a delete conflict: choose acceptClient or keepServer instead.");

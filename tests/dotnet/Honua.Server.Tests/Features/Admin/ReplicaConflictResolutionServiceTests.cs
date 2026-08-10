@@ -1048,6 +1048,47 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_RebaselineOntoADeletedRow_ClearsTheServerEnvelope()
+    {
+        // null means "leave unchanged" for every other detection field, so without an explicit clear the
+        // record kept advertising a server state the feature no longer has, and keepServer would then
+        // report success against it.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var service = CreateService(repository, new AbsentRowPreconditionFailingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        repository.Current.ServerStateJson.Should().BeNull("the row is gone, so there is no server state");
+        repository.Current.ConflictType.Should().Be(
+            ReplicaConflictType.UpdateDelete, "a client edit against a server deletion owes no server envelope");
+    }
+
+    /// <summary>Applier whose precondition fails and whose row has since been deleted.</summary>
+    private sealed class AbsentRowPreconditionFailingApplier : IReplicaConflictResolutionApplier
+    {
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ReplicaConflictRowSnapshot(false, null, null));
+
+        public Task<ReplicaConflictApplyResult> ApplyAsync(
+            ReplicaConflictResolutionCommand command,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ReplicaConflictApplyResult(
+                Applied: false, FailureMessage: "precondition failed", PreconditionFailed: true));
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_NoWriteTakeover_RerunsTheStalenessProbe()
     {
         // The takeover says nothing about whether the attempt it replaced finished its probe, and a
@@ -1436,7 +1477,10 @@ public sealed class ReplicaConflictResolutionServiceTests
             DetectionUpdates.Add(update);
             Current = Current with
             {
-                ServerStateJson = update.ServerStateJson ?? Current.ServerStateJson,
+                ConflictType = update.ConflictType ?? Current.ConflictType,
+                ServerStateJson = update.ClearServerState
+                    ? null
+                    : update.ServerStateJson ?? Current.ServerStateJson,
                 ResolutionBaseGeneration = update.ResolutionBaseGeneration ?? Current.ResolutionBaseGeneration,
                 ClientEditApplied = update.ClientEditApplied ?? Current.ClientEditApplied,
                 ClientEditOutcomeUnknown = update.ClientEditOutcomeUnknown ?? Current.ClientEditOutcomeUnknown,

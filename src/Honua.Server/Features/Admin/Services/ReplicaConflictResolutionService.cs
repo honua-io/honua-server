@@ -573,7 +573,8 @@ internal sealed partial class ReplicaConflictResolutionService
         // generation is the only completion signal they have.
         if (conflict.ConflictType is ReplicaConflictType.DuplicateInsert
             or ReplicaConflictType.Attachment
-            or ReplicaConflictType.Relationship)
+            or ReplicaConflictType.Relationship
+            or ReplicaConflictType.DeleteDelete)
         {
             clientOwed = false;
             serverOwed = false;
@@ -960,7 +961,10 @@ internal sealed partial class ReplicaConflictResolutionService
             await _conflictRepository.TryUpdateDetectionStateAsync(
                     new ReplicaConflictDetectionUpdate(
                         conflict.ConflictId,
-                        ConflictType: null,
+                        // A row that is gone makes this a client edit against a server deletion, and that
+                        // classification is what stops the record from owing a server envelope it can
+                        // never have.
+                        ConflictType: snapshot.Exists ? null : ReplicaConflictType.UpdateDelete,
                         ClientStateJson: null,
                         ServerStateJson: snapshot.StateJson,
                         // The refreshed envelope IS the current server side, so the attribution flags
@@ -970,7 +974,11 @@ internal sealed partial class ReplicaConflictResolutionService
                         ClientEditApplied: false,
                         ResolutionBaseGeneration: generation,
                         ClientEditOutcomeUnknown: false,
-                        ClientEditSuperseded: false),
+                        ClientEditSuperseded: false,
+                        // Explicit, because null means "leave unchanged": a re-baseline onto a deleted
+                        // row would otherwise keep advertising the old server envelope, and keepServer
+                        // would report success against a state the feature no longer has.
+                        ClearServerState: !snapshot.Exists),
                     cancellationToken)
                 .ConfigureAwait(false);
         }

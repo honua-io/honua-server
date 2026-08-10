@@ -30,6 +30,13 @@ public enum ReplicaConflictType
 
     /// <summary>Conflicting related-record edit that cannot be applied independently.</summary>
     Relationship = 6,
+
+    /// <summary>
+    /// Client and server both deleted the same feature. Neither side has a feature state to capture —
+    /// a delete carries no client payload and the row is already gone — so such a conflict is advisory
+    /// evidence rather than something a resolution can write (#2430).
+    /// </summary>
+    DeleteDelete = 7,
 }
 
 /// <summary>

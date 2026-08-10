@@ -163,7 +163,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
             UPDATE honua.replica_conflicts
             SET conflict_type = COALESCE($2, conflict_type),
                 client_state_json = COALESCE($3, client_state_json),
-                server_state_json = COALESCE($4, server_state_json),
+                server_state_json = CASE WHEN $9 THEN NULL ELSE COALESCE($4, server_state_json) END,
                 client_edit_applied = COALESCE($5, client_edit_applied),
                 client_edit_outcome_unknown = COALESCE($7, client_edit_outcome_unknown),
                 client_edit_superseded = COALESCE($8, client_edit_superseded),
@@ -182,6 +182,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableBigint(update.ResolutionBaseGeneration));
         command.Parameters.Add(NullableBoolean(update.ClientEditOutcomeUnknown));
         command.Parameters.Add(NullableBoolean(update.ClientEditSuperseded));
+        command.Parameters.AddWithValue(NpgsqlDbType.Boolean, update.ClearServerState);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;

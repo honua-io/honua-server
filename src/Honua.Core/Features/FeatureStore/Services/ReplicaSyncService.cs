@@ -333,6 +333,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         FeatureChangeOperation serverOperation)
         => (clientKind, serverOperation) switch
         {
+            (FeatureEditOperationKind.Delete, FeatureChangeOperation.Delete) => ReplicaConflictType.DeleteDelete,
             (FeatureEditOperationKind.Delete, FeatureChangeOperation.Update) => ReplicaConflictType.DeleteUpdate,
             (FeatureEditOperationKind.Update, FeatureChangeOperation.Delete) => ReplicaConflictType.UpdateDelete,
             // Update vs concurrent server insert/update: the coarse attribute classification. The sync

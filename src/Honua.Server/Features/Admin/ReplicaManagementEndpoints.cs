@@ -605,6 +605,7 @@ internal static class ReplicaManagementEndpoints
         ReplicaConflictType.DuplicateInsert => "duplicateInsert",
         ReplicaConflictType.Attachment => "attachment",
         ReplicaConflictType.Relationship => "relationship",
+        ReplicaConflictType.DeleteDelete => "deleteDelete",
         _ => type.ToString().ToLowerInvariant(),
     };
 

@@ -206,6 +206,28 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
     }
 
+    [Theory]
+    [InlineData(ReplicaConflictResolutionAction.AcceptClient)]
+    [InlineData(ReplicaConflictResolutionAction.KeepServer)]
+    public void Plan_DeleteDeleteConflict_IsResolvableAsANoOp(ReplicaConflictResolutionAction action)
+    {
+        // Both sides deleted the feature: neither has a state to capture, and both decisions describe
+        // the committed state. Classifying it as an attribute conflict left it owing two envelopes it
+        // can never have, so it could never leave detection.
+        var conflict = Conflict(clientEditApplied: false) with
+        {
+            ConflictType = ReplicaConflictType.DeleteDelete,
+            ClientStateJson = null,
+            ServerStateJson = null,
+        };
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(conflict, action, NoInputs);
+
+        plan.IsAccepted.Should().BeTrue();
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
+        plan.CommittedNewServerState.Should().BeFalse();
+    }
+
     [Fact]
     public void Plan_KeepServerOnASupersededClientEdit_RestoresTheServerStateInsteadOfNoOp()
     {

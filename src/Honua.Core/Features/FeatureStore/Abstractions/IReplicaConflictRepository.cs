@@ -76,6 +76,11 @@ public readonly record struct ReplicaConflictResolutionOutcome(
 /// Whether this edit committed but was superseded by a later edit in the same upload, or null to leave
 /// it unchanged.
 /// </param>
+/// <param name="ClearServerState">
+/// Explicitly removes the captured server envelope. Null means "leave unchanged" for every other field,
+/// so a re-baseline onto a row that no longer exists needs this to stop the record from advertising a
+/// server state the feature no longer has.
+/// </param>
 public readonly record struct ReplicaConflictDetectionUpdate(
     string ConflictId,
     ReplicaConflictType? ConflictType,
@@ -84,7 +89,8 @@ public readonly record struct ReplicaConflictDetectionUpdate(
     bool? ClientEditApplied,
     long? ResolutionBaseGeneration = null,
     bool? ClientEditOutcomeUnknown = null,
-    bool? ClientEditSuperseded = null);
+    bool? ClientEditSuperseded = null,
+    bool ClearServerState = false);
 
 /// <summary>
 /// A progress marker for an in-flight resolution: whether its feature write has committed, the

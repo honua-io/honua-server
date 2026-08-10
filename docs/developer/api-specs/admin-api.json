@@ -38915,7 +38915,8 @@
               "updateDelete",
               "duplicateInsert",
               "attachment",
-              "relationship"
+              "relationship",
+              "deleteDelete"
             ]
           },
           "status": {
@@ -39002,7 +39003,8 @@
               "updateDelete",
               "duplicateInsert",
               "attachment",
-              "relationship"
+              "relationship",
+              "deleteDelete"
             ]
           },
           "status": {
