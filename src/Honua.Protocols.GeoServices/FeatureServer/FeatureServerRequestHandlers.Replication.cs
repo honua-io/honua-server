@@ -1040,6 +1040,29 @@ internal static partial class FeatureServerEndpoints
 
             if (!layerEdits.IsDefaultOrEmpty)
             {
+                // Validate the WHOLE upload against the edit limits before the sync pipeline runs.
+                // Under manualReview the conflicting rows never reach FeatureServerEditsHandler — and
+                // if every row conflicts it is not called at all — so its own limit checks would let an
+                // oversized payload through while still persisting one durable conflict per edit
+                // (#2430).
+                var uploadedEditCount = layerEdits.Sum(l => l.Edits.IsDefault ? 0 : l.Edits.Length);
+                var editLimits = context.RequestServices
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
+                    .Value.Edits;
+                if (uploadedEditCount > editLimits.MaxEditsPerTransaction)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Uploaded replica edits exceed the maximum of {editLimits.MaxEditsPerTransaction} edits per transaction.");
+                }
+
+                if (layerEdits.Any(l => !l.Edits.IsDefault && l.Edits.Length > editLimits.MaxFeaturesPerEdit))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per layer edit.");
+                }
+
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
@@ -1284,14 +1307,19 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Serializes a stored feature into the conflict-review state envelope, matching the Z/M handling
-    /// the rest of the GeoServices surface emits so the captured server geometry is directly comparable
-    /// to the uploaded client geometry (#1287).
+    /// Serializes a stored feature into the conflict-review state envelope so the captured server
+    /// geometry is directly comparable to the uploaded client geometry (#1287).
     /// </summary>
+    /// <remarks>
+    /// Z and M are preserved deliberately. This snapshot is not display output: a keep-server, field
+    /// merge, or server-side geometry choice writes it back as an update payload, so dropping the
+    /// ordinates would flatten a 3D or measured feature to 2D and lose those values permanently
+    /// (#2430).
+    /// </remarks>
     internal static string CaptureStateEnvelope(Honua.Core.Features.FeatureStore.Domain.Feature feature)
     {
         var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-            feature.Geometry, srid: null, geometryLimits: null, includeZ: false, includeM: false);
+            feature.Geometry, srid: null, geometryLimits: null, includeZ: true, includeM: true);
         return SerializeStateEnvelope(feature.Attributes, geometry);
     }
 

@@ -325,7 +325,10 @@ internal sealed partial class ReplicaConflictResolutionService
             // to apply it a second time. The marker is not atomic with the edit — the shared edit
             // pipeline owns that transaction — so the resume path additionally re-derives the fact from
             // the change log rather than trusting this flag alone (see ResumeOrRejectAsync).
-            await _conflictRepository.TryUpdateFinalizationStateAsync(
+            // The guarded update returns false when the row no longer carries this claim — a slow write
+            // outlived the lease and the claim was released or replaced. Reporting success then would
+            // describe a resolution this request no longer owns, so it stops here (#2430).
+            var markedCommitted = await _conflictRepository.TryUpdateFinalizationStateAsync(
                     new ReplicaConflictFinalizationUpdate(
                         claimed.ConflictId,
                         request.Actor,
@@ -336,6 +339,13 @@ internal sealed partial class ReplicaConflictResolutionService
                         Finalized: null),
                     CancellationToken.None)
                 .ConfigureAwait(false);
+            if (!markedCommitted)
+            {
+                Log.ResolutionClaimLost(_logger, claimed.ConflictId);
+                activity?.SetStatus(ActivityStatusCode.Error, "claim-lost");
+                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            }
+
             claimed = claimed with { WriteCommitted = true };
         }
 
@@ -345,7 +355,14 @@ internal sealed partial class ReplicaConflictResolutionService
         // retries answered with AlreadyResolved. Finalization therefore runs on an uncancellable token.
         var finalizationToken = CancellationToken.None;
 
-        claimed = await FinalizeAsync(claimed, request, plan, resolution, finalizationToken).ConfigureAwait(false);
+        var finalized = await FinalizeAsync(claimed, request, plan, resolution, finalizationToken)
+            .ConfigureAwait(false);
+        if (finalized is not { } completed)
+        {
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
+
+        claimed = completed;
 
         Log.ResolutionApplied(
             _logger,
@@ -491,10 +508,14 @@ internal sealed partial class ReplicaConflictResolutionService
 
         var finalized = await FinalizeAsync(existing, request, plan, resumedResolution, CancellationToken.None)
             .ConfigureAwait(false);
+        if (finalized is not { } completed)
+        {
+            return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+        }
 
         return new ReplicaConflictResolutionResult(
             ReplicaConflictResolutionStatus.Applied,
-            finalized,
+            completed,
             plan.CommittedNewServerState,
             plan.Effect,
             Message: null);
@@ -505,7 +526,8 @@ internal sealed partial class ReplicaConflictResolutionService
     /// audit evidence, and marks the resolution finalized. Idempotent — a resume re-runs it without
     /// re-applying the feature write, and an already-stamped generation is reused rather than replaced.
     /// </summary>
-    private async Task<ReplicaConflictRecord> FinalizeAsync(
+    /// <returns>The finalized record, or null when ownership of the claim was lost mid-finalization.</returns>
+    private async Task<ReplicaConflictRecord?> FinalizeAsync(
         ReplicaConflictRecord claimed,
         ReplicaConflictResolutionServiceRequest request,
         ReplicaConflictResolutionPlan plan,
@@ -528,7 +550,7 @@ internal sealed partial class ReplicaConflictResolutionService
         // evidence is durable. Marking it finalized before the audit would make an audit-sink failure
         // permanent: the retry would see a complete resolution and answer already-resolved, and the
         // required evidence would never be written (#2430).
-        await _conflictRepository.TryUpdateFinalizationStateAsync(
+        var stampedGeneration = await _conflictRepository.TryUpdateFinalizationStateAsync(
                 new ReplicaConflictFinalizationUpdate(
                     claimed.ConflictId,
                     request.Actor,
@@ -539,6 +561,13 @@ internal sealed partial class ReplicaConflictResolutionService
                     Finalized: null),
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!stampedGeneration)
+        {
+            // Ownership was lost between the write and finalization; the row now belongs to another
+            // claim, so this request must not write its audit evidence or report success over it.
+            Log.ResolutionClaimLost(_logger, claimed.ConflictId);
+            return null;
+        }
 
         // A resumed finalization can re-emit this event; a duplicated audit record is strictly better
         // than an absent one, and the resolution id makes the duplicate identifiable.
@@ -557,6 +586,7 @@ internal sealed partial class ReplicaConflictResolutionService
             .ConfigureAwait(false);
 
         claimed = claimed with { FinalizationPending = false };
+
 
         Log.ResolutionApplied(
             _logger,
@@ -759,6 +789,10 @@ internal sealed partial class ReplicaConflictResolutionService
         [LoggerMessage(EventId = 7755, Level = LogLevel.Warning,
             Message = "Re-applying the resolution write for replica conflict {ConflictId}: a previous attempt left no committed-write marker, and the write is idempotent")]
         public static partial void ResolutionWriteReapplied(ILogger logger, string conflictId);
+
+        [LoggerMessage(EventId = 7756, Level = LogLevel.Warning,
+            Message = "Replica conflict {ConflictId} no longer carries this request's claim; abandoning the resolution rather than reporting it applied")]
+        public static partial void ResolutionClaimLost(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7753, Level = LogLevel.Information,
             Message = "Refused to resolve replica conflict {ConflictId}: the synchronization that produced it is still recording its detection state")]

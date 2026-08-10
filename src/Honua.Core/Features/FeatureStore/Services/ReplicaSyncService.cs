@@ -205,6 +205,14 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 editsToApply.Add(edit);
             }
 
+            // Watermark taken BEFORE the snapshot and the batch. Sampling it after the capture would
+            // place an edit that landed in between inside the window while leaving it out of the
+            // snapshot, and the staleness probe — which starts from this generation — would then see
+            // nothing newer and let a resolution overwrite that edit (#2430).
+            var preBatchGeneration = layerConflictCount > 0
+                ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
+                : 0L;
+
             // Snapshot the server side of every conflicting feature HERE: after detection, before the
             // uploaded edits apply. Capturing earlier let a server edit landing in between be flagged
             // as the conflict yet be missing from the snapshot, so a later keep-server resolution
@@ -228,13 +236,6 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     serverStates[entry.Key] = entry.Value;
                 }
             }
-
-            // Watermark taken BEFORE the batch, so the per-conflict base generation below can be derived
-            // from changes this batch actually produced rather than from a post-hoc global watermark
-            // that may already include a concurrent edit to the same feature (#2430).
-            var preBatchGeneration = layerConflictCount > 0
-                ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
-                : 0L;
 
             var applyResult = editsToApply.Count == 0
                 ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)

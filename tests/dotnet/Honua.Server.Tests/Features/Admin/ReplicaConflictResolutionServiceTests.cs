@@ -561,6 +561,26 @@ public sealed class ReplicaConflictResolutionServiceTests
             "the earlier write must not be finalized under a different request's description");
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenTheClaimIsLostMidFinalization_DoesNotReportApplied()
+    {
+        // A slow write can outlive the lease and have its claim released or replaced. The guarded
+        // finalization update then matches nothing, and reporting success would describe a resolution
+        // this request no longer owns.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true))
+        {
+            LoseClaimAfterWrite = true,
+        };
+        var applier = new RecordingApplier();
+        var audit = new NoOpAuditLog();
+        var service = CreateService(repository, applier, auditLog: audit);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        audit.Records.Should().Be(0, "a request that lost its claim must not write success evidence");
+    }
+
     private static FeatureChange Change(long generation) => new()
     {
         ChangeId = generation,
@@ -700,6 +720,9 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public bool FinalizationThrows { get; set; }
 
+        /// <summary>Simulates the claim being released or replaced while the write is in flight.</summary>
+        public bool LoseClaimAfterWrite { get; init; }
+
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
@@ -765,6 +788,11 @@ public sealed class ReplicaConflictResolutionServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             FinalizationUpdates.Add(update);
+
+            if (LoseClaimAfterWrite && update.WriteCommitted != true)
+            {
+                return Task.FromResult(false);
+            }
 
             // Mirror the real guard: progress only applies to the claim that produced it.
             if (!string.Equals(update.ResolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
