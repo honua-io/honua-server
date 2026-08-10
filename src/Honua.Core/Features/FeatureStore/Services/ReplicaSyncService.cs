@@ -187,6 +187,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 editsToApply.Add(edit);
             }
 
+            // Watermark taken BEFORE the batch, so the per-conflict base generation below can be derived
+            // from changes this batch actually produced rather than from a post-hoc global watermark
+            // that may already include a concurrent edit to the same feature (#2430).
+            var preBatchGeneration = layerConflictCount > 0
+                ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
+                : 0L;
+
             var applyResult = editsToApply.Count == 0
                 ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)
                 : await editApplier
@@ -204,17 +211,16 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
             if (layerConflictCount > 0)
             {
-                // Everything this sync did to the layer is at or below this cursor, so a later change
-                // to one of its conflicting features is unambiguously a post-conflict edit. Stamping
-                // it here is what lets a resolution reject a stale overwrite (#2430).
-                var layerGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                var baseGenerations = await ResolveConflictBaseGenerationsAsync(
+                        layer, conflicts, layerConflictIndexes, preBatchGeneration, cancellationToken)
                     .ConfigureAwait(false);
                 await MarkConflictsAppliedAsync(
                         conflicts,
                         layerConflictIndexes,
                         layerConflictIds,
                         applyResult,
-                        layerGeneration,
+                        baseGenerations,
+                        preBatchGeneration,
                         canRecordConflicts,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -291,7 +297,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         List<int> layerConflictIndexes,
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
-        long layerGeneration,
+        IReadOnlyDictionary<string, long> baseGenerations,
+        long preBatchGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
@@ -334,7 +341,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ClientStateJson: null,
                             ServerStateJson: null,
                             ClientEditApplied: promoted.Contains(conflictId) ? true : null,
-                            ResolutionBaseGeneration: layerGeneration),
+                            ResolutionBaseGeneration: baseGenerations.TryGetValue(conflictId, out var generation)
+                                ? generation
+                                : preBatchGeneration),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -350,6 +359,71 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// Derives, per conflict, the generation its own edit produced: the highest change generation this
+    /// batch recorded for that specific feature. Conflicts whose edit was withheld (manual review) or
+    /// never committed fall back to the pre-batch watermark, which is correct — nothing of theirs
+    /// landed, so any later change to the feature is genuinely post-conflict.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately object-scoped rather than a global post-batch watermark: sampling the watermark
+    /// after the batch can capture a concurrent edit to the same feature and bake it into the conflict
+    /// snapshot, which would let a later resolution overwrite that edit (#2430). Scoping the probe to
+    /// the conflicting object ids means unrelated churn on the layer cannot move any conflict's base.
+    /// </remarks>
+    private async Task<IReadOnlyDictionary<string, long>> ResolveConflictBaseGenerationsAsync(
+        ReplicaUploadLayerEdits layer,
+        ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
+        List<int> layerConflictIndexes,
+        long preBatchGeneration,
+        CancellationToken cancellationToken)
+    {
+        var byObjectId = new Dictionary<long, List<string>>();
+        foreach (var index in layerConflictIndexes)
+        {
+            var conflict = conflicts[index];
+            if (conflict.ConflictId is not { Length: > 0 } conflictId)
+            {
+                continue;
+            }
+
+            if (!byObjectId.TryGetValue(conflict.ObjectId, out var ids))
+            {
+                byObjectId[conflict.ObjectId] = ids = [];
+            }
+
+            ids.Add(conflictId);
+        }
+
+        var generations = new Dictionary<string, long>(StringComparer.Ordinal);
+        if (byObjectId.Count == 0)
+        {
+            return generations;
+        }
+
+        var changes = await _changeTracker
+            .GetChangesSinceAsync(preBatchGeneration, [layer.StorageLayerId], new HashSet<long>(byObjectId.Keys), cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var change in changes)
+        {
+            if (!byObjectId.TryGetValue(change.ObjectId, out var ids))
+            {
+                continue;
+            }
+
+            foreach (var conflictId in ids)
+            {
+                if (!generations.TryGetValue(conflictId, out var current) || change.Generation > current)
+                {
+                    generations[conflictId] = change.Generation;
+                }
+            }
+        }
+
+        return generations;
     }
 
     // mustRecord: manual review skips the conflicting edit, so the record is the only carrier of the

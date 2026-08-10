@@ -290,10 +290,17 @@ internal sealed partial class ReplicaConflictResolutionService
             }
 
             // Record that the write landed BEFORE finalization begins, so a resumed attempt knows not
-            // to apply it a second time.
+            // to apply it a second time. The marker is not atomic with the edit — the shared edit
+            // pipeline owns that transaction — so the resume path additionally re-derives the fact from
+            // the change log rather than trusting this flag alone (see ResumeOrRejectAsync).
             await _conflictRepository.TryUpdateFinalizationStateAsync(
                     new ReplicaConflictFinalizationUpdate(
-                        claimed.ConflictId, WriteCommitted: true, ResolvedServerGeneration: null, Finalized: null),
+                        claimed.ConflictId,
+                        request.Actor,
+                        request.Action,
+                        WriteCommitted: true,
+                        ResolvedServerGeneration: null,
+                        Finalized: null),
                     CancellationToken.None)
                 .ConfigureAwait(false);
             claimed = claimed with { WriteCommitted = true };
@@ -356,12 +363,24 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None && !existing.WriteCommitted)
         {
-            // Claimed, but the write never landed. Release rather than resume: resuming would report a
-            // committed resolution for a state that does not exist.
-            await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
-            return Failure(
-                ReplicaConflictResolutionStatus.WriteFailed,
-                "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
+            // The marker is written after the edit commits, not inside its transaction, so a crash in
+            // that window leaves it false even though the write landed. Re-derive the fact from the
+            // change log instead of trusting the flag: a change to the conflicting feature after the
+            // conflict's own base generation means the write did commit, and resuming (rather than
+            // releasing) is what stops a retry from applying the edit a second time (#2430).
+            if (await HasPostConflictEditAsync(existing, cancellationToken).ConfigureAwait(false))
+            {
+                Log.ResolutionWriteMarkerRecovered(_logger, existing.ConflictId);
+            }
+            else
+            {
+                // Nothing landed. Release rather than resume: resuming would report a committed
+                // resolution for a state that does not exist.
+                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                return Failure(
+                    ReplicaConflictResolutionStatus.WriteFailed,
+                    "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
+            }
         }
 
         Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
@@ -407,18 +426,39 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         resolution = resolution with { ResolvedServerGeneration = resolvedGeneration };
-        claimed = claimed with { ResolvedServerGeneration = resolvedGeneration, FinalizationPending = false };
+        claimed = claimed with { ResolvedServerGeneration = resolvedGeneration };
+
+        // Persist the produced generation first, but leave the resolution PENDING until the audit
+        // evidence is durable. Marking it finalized before the audit would make an audit-sink failure
+        // permanent: the retry would see a complete resolution and answer already-resolved, and the
+        // required evidence would never be written (#2430).
+        await _conflictRepository.TryUpdateFinalizationStateAsync(
+                new ReplicaConflictFinalizationUpdate(
+                    claimed.ConflictId,
+                    request.Actor,
+                    request.Action,
+                    WriteCommitted: null,
+                    ResolvedServerGeneration: resolvedGeneration,
+                    Finalized: null),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // A resumed finalization can re-emit this event; a duplicated audit record is strictly better
+        // than an absent one, and the resolution id makes the duplicate identifiable.
+        await RecordAuditAsync(request, claimed, plan, resolution, cancellationToken).ConfigureAwait(false);
 
         await _conflictRepository.TryUpdateFinalizationStateAsync(
                 new ReplicaConflictFinalizationUpdate(
                     claimed.ConflictId,
+                    request.Actor,
+                    request.Action,
                     WriteCommitted: null,
-                    ResolvedServerGeneration: resolvedGeneration,
+                    ResolvedServerGeneration: null,
                     Finalized: true),
                 cancellationToken)
             .ConfigureAwait(false);
 
-        await RecordAuditAsync(request, claimed, plan, resolution, cancellationToken).ConfigureAwait(false);
+        claimed = claimed with { FinalizationPending = false };
 
         Log.ResolutionApplied(
             _logger,
@@ -570,6 +610,10 @@ internal sealed partial class ReplicaConflictResolutionService
             Message = "Resuming finalization of replica conflict {ConflictId} for service {ServiceId} layer {LayerId} after an interrupted resolution")]
         public static partial void ResolutionResumed(
             ILogger logger, string conflictId, string serviceId, int layerId);
+
+        [LoggerMessage(EventId = 7752, Level = LogLevel.Warning,
+            Message = "Replica conflict {ConflictId} had no committed-write marker but its feature has changed since the conflict generation; treating the write as committed and resuming finalization")]
+        public static partial void ResolutionWriteMarkerRecovered(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7751, Level = LogLevel.Debug,
             Message = "Replica conflict {ConflictId} carries no storage layer / resolution-base generation, so the post-conflict-edit precondition was skipped")]

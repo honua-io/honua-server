@@ -78,6 +78,15 @@ public readonly record struct ReplicaConflictDetectionUpdate(
 /// generation or audit evidence missing (#2430).
 /// </summary>
 /// <param name="ConflictId">Conflict being resolved.</param>
+/// <param name="ResolvedBy">
+/// Operator whose claim this progress belongs to. The update only applies when the row still carries
+/// this claim, so a superseded resolution's late finalizer cannot stamp a newer one.
+/// </param>
+/// <param name="Action">
+/// Action of the claim this progress belongs to, matched for the same reason as
+/// <paramref name="ResolvedBy"/> — a deferral that is later superseded by a real resolution must not
+/// finalize it.
+/// </param>
 /// <param name="WriteCommitted">
 /// Whether the resolution's feature write has committed, or null to leave it unchanged.
 /// </param>
@@ -89,6 +98,8 @@ public readonly record struct ReplicaConflictDetectionUpdate(
 /// </param>
 public readonly record struct ReplicaConflictFinalizationUpdate(
     string ConflictId,
+    string ResolvedBy,
+    ReplicaConflictResolutionAction Action,
     bool? WriteCommitted,
     long? ResolvedServerGeneration,
     bool? Finalized);

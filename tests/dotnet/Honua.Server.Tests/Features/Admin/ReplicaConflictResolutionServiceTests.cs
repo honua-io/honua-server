@@ -228,14 +228,98 @@ public sealed class ReplicaConflictResolutionServiceTests
         applier.Calls.Should().Be(0);
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenAuditFails_LeavesTheResolutionResumableRatherThanComplete()
+    {
+        // Marking the resolution finalized before the audit is durable would make an audit-sink outage
+        // permanent: the retry would see a complete resolution and the evidence would never be written.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var audit = new NoOpAuditLog { Throws = true };
+        var service = CreateService(repository, new RecordingApplier(), auditLog: audit);
+
+        var act = async () => await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        repository.Current.FinalizationPending.Should().BeTrue(
+            "the resolution is incomplete until its audit evidence is durable");
+        repository.Current.ResolvedServerGeneration.Should().Be(
+            FakeChangeTracker.Generation, "the produced generation is still persisted");
+
+        // Retry once the sink recovers: finalization resumes and the evidence lands.
+        audit.Throws = false;
+        var resumed = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        resumed.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        audit.Records.Should().Be(1);
+        repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenWriteMarkerWasLostButTheWriteLanded_ResumesInsteadOfReapplying()
+    {
+        // The committed-write marker is not inside the edit transaction, so a crash between the two
+        // leaves it false even though the write landed. Re-deriving the fact from the change log is
+        // what stops a retry from applying the edit a second time.
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(new FeatureChange
+        {
+            ChangeId = 1,
+            Generation = 60,
+            LayerId = 10,
+            ObjectId = 42,
+            Operation = FeatureChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UtcNow,
+        });
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(0, "the write already landed and must not be applied twice");
+        repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenWriteMarkerIsFalseAndNothingLanded_ReleasesTheClaim()
+    {
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.WriteFailed);
+        applier.Calls.Should().Be(0);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+    }
+
     private static ReplicaConflictResolutionService CreateService(
         FakeConflictRepository repository,
         IReplicaConflictResolutionApplier applier,
-        FakeChangeTracker? changeTracker = null)
+        FakeChangeTracker? changeTracker = null,
+        NoOpAuditLog? auditLog = null)
         => new(
             repository,
             changeTracker ?? new FakeChangeTracker(),
-            new NoOpAuditLog(),
+            auditLog ?? new NoOpAuditLog(),
             NullLogger<ReplicaConflictResolutionService>.Instance,
             applier);
 
@@ -296,8 +380,20 @@ public sealed class ReplicaConflictResolutionServiceTests
 
     private sealed class NoOpAuditLog : IAuditLog
     {
+        public bool Throws { get; set; }
+
+        public int Records { get; private set; }
+
         public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            if (Throws)
+            {
+                throw new InvalidOperationException("audit sink unavailable");
+            }
+
+            Records++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingApplier : IReplicaConflictResolutionApplier
@@ -373,6 +469,13 @@ public sealed class ReplicaConflictResolutionServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             FinalizationUpdates.Add(update);
+
+            // Mirror the real guard: progress only applies to the claim that produced it.
+            if (!string.Equals(update.ResolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
+                update.Action != Current.ResolutionAction)
+            {
+                return Task.FromResult(false);
+            }
 
             // Fail only the finalize step, so the write-committed marker still lands: that is the
             // state a post-write finalization failure actually leaves behind.

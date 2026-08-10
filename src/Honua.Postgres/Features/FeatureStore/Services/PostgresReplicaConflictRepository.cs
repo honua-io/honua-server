@@ -177,8 +177,11 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         ReplicaConflictFinalizationUpdate update,
         CancellationToken cancellationToken = default)
     {
-        // Guarded on the conflict having been claimed (it is no longer pending): finalization progress
-        // is only meaningful for a resolution in flight, and a released claim must not be re-marked.
+        // Bound to the claim that produced this progress, not merely to "not pending". A deferral
+        // leaves the row Deferred and can be superseded by a real resolution; without the
+        // resolved_by/resolution_action guard the superseded request's late finalizer could mark the
+        // NEWER resolution complete before its own write and audit finished, making a crash there
+        // non-resumable (#2430).
         var sql = $"""
             UPDATE honua.replica_conflicts
             SET write_committed = COALESCE($2, write_committed),
@@ -186,6 +189,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 finalized = COALESCE($4, finalized)
             WHERE conflict_id = $1
               AND status <> {(short)ReplicaConflictStatus.Pending}
+              AND resolved_by = $5
+              AND resolution_action = $6
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -194,6 +199,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableBoolean(update.WriteCommitted));
         command.Parameters.Add(NullableBigint(update.ResolvedServerGeneration));
         command.Parameters.Add(NullableBoolean(update.Finalized));
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, update.ResolvedBy);
+        command.Parameters.AddWithValue(NpgsqlDbType.Smallint, (short)update.Action);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
