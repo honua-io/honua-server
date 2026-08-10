@@ -155,6 +155,7 @@ public sealed class ReplicaSyncServiceUploadFilterTests
             int publicLayerId,
             ImmutableArray<ReplicaUploadEdit> edits,
             bool rollbackOnFailure,
+            ImmutableArray<FeatureEditPrecondition> preconditions = default,
             CancellationToken cancellationToken = default)
         {
             LastRollbackOnFailure = rollbackOnFailure;

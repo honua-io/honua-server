@@ -246,10 +246,45 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
             }
 
+            // Under manual review the mode's contract is that a conflicting edit is withheld, so an edit
+            // detection judged non-conflicting must not overwrite a server change that committed between
+            // the change-log read and this write. Binding those rows to the state detection saw turns
+            // that race into a failed row the client re-syncs, instead of a silent overwrite. Under
+            // last-write-wins the client edit is meant to win, so no precondition is attached (#2430).
+            var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
+            if (!request.LastWriteWins && serverStateCapturer is not null && editsToApply.Count > 0)
+            {
+                var preconditionTargets = editsToApply
+                    .Where(edit => edit.ObjectId is not null)
+                    .Select(edit => new ReplicaConflictCaptureTarget(
+                        layer.PublicLayerId, layer.StorageLayerId, edit.ObjectId!.Value))
+                    .Distinct()
+                    .ToImmutableArray();
+                if (preconditionTargets.Length > 0)
+                {
+                    var tokens = await serverStateCapturer
+                        .CaptureTokensAsync(preconditionTargets, cancellationToken)
+                        .ConfigureAwait(false);
+                    preconditions = tokens
+                        .Select(entry => new FeatureEditPrecondition
+                        {
+                            ObjectId = entry.Key,
+                            ExpectedStateToken = entry.Value,
+                        })
+                        .ToImmutableArray();
+                }
+            }
+
             var applyResult = editsToApply.Count == 0
                 ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)
                 : await editApplier
-                    .ApplyAsync(request.ServiceId, layer.PublicLayerId, editsToApply.ToImmutable(), request.RollbackOnFailure, cancellationToken)
+                    .ApplyAsync(
+                        request.ServiceId,
+                        layer.PublicLayerId,
+                        editsToApply.ToImmutable(),
+                        request.RollbackOnFailure,
+                        preconditions,
+                        cancellationToken)
                     .ConfigureAwait(false);
 
             // Watermark taken IMMEDIATELY after the batch, before any other await. The collapsed change

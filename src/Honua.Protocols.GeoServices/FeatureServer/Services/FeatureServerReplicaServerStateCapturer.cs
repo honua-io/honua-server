@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -56,5 +57,35 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
         }
 
         return states;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+        ImmutableArray<ReplicaConflictCaptureTarget> targets,
+        CancellationToken cancellationToken = default)
+    {
+        var tokens = new Dictionary<long, string>();
+        if (targets.IsDefaultOrEmpty)
+        {
+            return tokens;
+        }
+
+        foreach (var target in targets)
+        {
+            if (tokens.ContainsKey(target.ObjectId))
+            {
+                continue;
+            }
+
+            var feature = await _featureReader
+                .GetAsync(target.StorageLayerId, target.ObjectId, cancellationToken)
+                .ConfigureAwait(false);
+            if (feature is { } found)
+            {
+                tokens[target.ObjectId] = FeatureStateToken.Compute(found);
+            }
+        }
+
+        return tokens;
     }
 }

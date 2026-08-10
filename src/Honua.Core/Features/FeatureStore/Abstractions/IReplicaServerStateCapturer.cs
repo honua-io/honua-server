@@ -30,6 +30,21 @@ public interface IReplicaServerStateCapturer
     Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the optimistic-concurrency token of each requested feature, keyed by object id. Features
+    /// the server has already deleted yield no entry.
+    /// </summary>
+    /// <remarks>
+    /// Used under manual review to bind the uploaded edits that detection judged non-conflicting to the
+    /// state detection saw: a server edit committing between the change-log read and the write would
+    /// otherwise be overwritten by an edit that mode promises to withhold (#2430).
+    /// </remarks>
+    /// <param name="targets">The features whose tokens should be read.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+        ImmutableArray<ReplicaConflictCaptureTarget> targets,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

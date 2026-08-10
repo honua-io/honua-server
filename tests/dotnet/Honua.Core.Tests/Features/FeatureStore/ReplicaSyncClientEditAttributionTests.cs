@@ -227,6 +227,68 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_BindsNonConflictingEditsToTheStateDetectionSaw()
+    {
+        // Manual review promises to withhold a conflicting edit. A server edit committing between the
+        // change-log read and the write would otherwise be silently overwritten by an edit detection
+        // had judged non-conflicting, so those rows carry the token detection saw and fail instead.
+        var tracker = new RecordingChangeTracker();
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [0], failed: false);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 7, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            applier,
+            serverStateCapturer: new TokenCapturer());
+
+        applier.Preconditions.Should().ContainSingle()
+            .Which.Should().Match<FeatureEditPrecondition>(
+                p => p.ObjectId == 7 && p.ExpectedStateToken == "token-7");
+    }
+
+    [UnitTest]
+    public async Task ApplyUpload_LastWriteWins_DoesNotBindEditsToAPrecondition()
+    {
+        // Last-write-wins exists so the client edit wins over concurrent server state; failing it on a
+        // concurrent server edit would invert the mode's contract.
+        var tracker = new RecordingChangeTracker();
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [0], failed: false);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 7, Payload: null))),
+            applier,
+            serverStateCapturer: new TokenCapturer());
+
+        applier.Preconditions.Should().BeEmpty();
+    }
+
+    /// <summary>Capturer that reports a token per requested feature.</summary>
+    private sealed class TokenCapturer : IReplicaServerStateCapturer
+    {
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
+                new Dictionary<(int, long), string>());
+
+        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<long, string>>(
+                targets.ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}"));
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_PersistsTheClientEnvelopeWithTheConflictRecord()
     {
         // Under manual review the conflicting edit is withheld, so the record is the only copy of the
@@ -389,13 +451,19 @@ public sealed class ReplicaSyncClientEditAttributionTests
         bool failed,
         int[]? indeterminateEditIndexes = null) : IReplicaEditApplier
     {
+        /// <summary>Preconditions the sync service bound the batch to.</summary>
+        public ImmutableArray<FeatureEditPrecondition> Preconditions { get; private set; }
+
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
             int publicLayerId,
             ImmutableArray<ReplicaUploadEdit> edits,
             bool rollbackOnFailure,
+            ImmutableArray<FeatureEditPrecondition> preconditions = default,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(new ReplicaLayerApplyResult(
+        {
+            Preconditions = preconditions;
+            return Task.FromResult(new ReplicaLayerApplyResult(
                 publicLayerId,
                 AppliedAdds: 0,
                 AppliedUpdates: committedEditIndexes?.Length ?? 0,
@@ -408,6 +476,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 IndeterminateEditIndexes: indeterminateEditIndexes is null
                     ? default
                     : [.. indeterminateEditIndexes]));
+        }
     }
 
     private sealed class RecordingConflictRepository : IReplicaConflictRepository

@@ -42,6 +42,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         int publicLayerId,
         ImmutableArray<ReplicaUploadEdit> edits,
         bool rollbackOnFailure,
+        ImmutableArray<FeatureEditPrecondition> preconditions = default,
         CancellationToken cancellationToken = default)
     {
         if (edits.IsDefaultOrEmpty)
@@ -89,6 +90,8 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             Deletes = deletes.Count > 0 ? deletes.ToArray() : null,
             RollbackOnFailure = rollbackOnFailure,
             RollbackOnFailureExplicitlySet = true,
+            // Server-side only: binds the rows detection judged non-conflicting to the state it saw.
+            Preconditions = preconditions,
         };
 
         var editResult = await _editsHandler.HandleApplyEditsAsync(
