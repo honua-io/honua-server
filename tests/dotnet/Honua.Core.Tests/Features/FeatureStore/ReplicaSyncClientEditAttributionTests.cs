@@ -197,6 +197,53 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_DeleteListedBeforeUpdateForOneObject_PromotesTheDelete()
+    {
+        // The shared edit pipeline groups a batch into creates, then updates, then deletes rather than
+        // honouring the listed order, so this upload ends with the row deleted even though the update
+        // occupies the later request slot. Ranking by slot promoted the update, and an acceptClient on
+        // it then finalized as a no-op while the feature was in fact gone.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Delete, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(committedEditIndexes: [0, 1], failed: false));
+
+        report.Conflicts.Should().HaveCount(2);
+        report.Conflicts[0].Applied.Should().BeTrue("deletes execute last, so the delete leaves the row state");
+        report.Conflicts[1].Applied.Should().BeFalse("the update executed before the delete that removed the row");
+        repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ApplyUpload_ForeignEditAfterTheBatch_DoesNotBecomeTheConflictBaseGeneration()
+    {
+        // The change feed collapses to the latest change per object, so a foreign edit landing between
+        // this batch committing and the change-log probe would be read as the generation our own edit
+        // produced. A staleness check starting after it would then never see it, and a later
+        // keepServer would overwrite the foreign state with the older snapshot.
+        var foreignEdit = ServerChange(objectId: 42) with { Generation = 90 };
+        var tracker = new RecordingChangeTracker(foreignEdit) { Generations = new Queue<long>([50L, 60L]) };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(committedEditIndexes: [0], failed: false));
+
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(
+                60, "the base is clamped to the watermark taken immediately after the batch");
+    }
+
     private static FeatureChange ServerChange(long objectId) => new()
     {
         ChangeId = objectId,
@@ -216,8 +263,20 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
     private sealed class RecordingChangeTracker(params FeatureChange[] changes) : IChangeTracker
     {
+        /// <summary>Successive watermark readings; the last value repeats once the queue drains.</summary>
+        public Queue<long>? Generations { get; init; }
+
+        private long _lastGeneration = 99L;
+
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(99L);
+        {
+            if (Generations is { Count: > 0 })
+            {
+                _lastGeneration = Generations.Dequeue();
+            }
+
+            return Task.FromResult(_lastGeneration);
+        }
 
         public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
             long sinceGeneration,

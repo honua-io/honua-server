@@ -243,6 +243,16 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     .ApplyAsync(request.ServiceId, layer.PublicLayerId, editsToApply.ToImmutable(), request.RollbackOnFailure, cancellationToken)
                     .ConfigureAwait(false);
 
+            // Watermark taken IMMEDIATELY after the batch, before any other await. The collapsed change
+            // feed reports only the latest change per object, so a foreign edit landing between our
+            // commit and the change-log probe would otherwise be read as the generation our own edit
+            // produced — and a staleness check starting after it would never see it (#2430). Clamping
+            // to this watermark keeps any change recorded after the batch outside every conflict's
+            // base, and can only lower a base, never raise it past our own committed edit.
+            var postBatchGeneration = layerConflictCount > 0
+                ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
+                : 0L;
+
             totalAdds += applyResult.AppliedAdds;
             totalUpdates += applyResult.AppliedUpdates;
             totalDeletes += applyResult.AppliedDeletes;
@@ -255,7 +265,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             if (layerConflictCount > 0)
             {
                 var baseGenerations = await ResolveConflictBaseGenerationsAsync(
-                        layer, conflicts, layerConflictIndexes, preBatchGeneration, CancellationToken.None)
+                        layer, conflicts, layerConflictIndexes, preBatchGeneration, postBatchGeneration, CancellationToken.None)
                     .ConfigureAwait(false);
                 // The edit batch has already committed at this point, so the detection state that
                 // describes it must not be abandoned if the client disconnects: a record left without
@@ -341,6 +351,19 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     /// rewriting the record from a stale read would reopen that resolution.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Position of an operation kind in the shared edit pipeline's fixed execution order. The pipeline
+    /// groups a batch into creates, then updates, then deletes rather than honouring the order the
+    /// operations were listed in, so this — not the request slot — is what decides which of several
+    /// edits to the same object leaves its state in the row.
+    /// </summary>
+    private static int ExecutionRank(FeatureEditOperationKind kind) => kind switch
+    {
+        FeatureEditOperationKind.Create => 0,
+        FeatureEditOperationKind.Update => 1,
+        _ => 2,
+    };
+
     private async Task MarkConflictsAppliedAsync(
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
@@ -361,11 +384,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             ? []
             : new HashSet<int>(applyResult.CommittedEditIndexes);
 
-        // Only the LAST committed edit for a given object leaves its client state in the row. Promoting
-        // every committed occurrence made accepting an earlier conflict look like a no-op while the
-        // feature actually held the later edit, so acceptClient reported resolved without writing the
-        // state the operator reviewed (#2430).
-        var lastCommittedSlotByObject = new Dictionary<long, int>();
+        // Only the edit that EXECUTES last for a given object leaves its client state in the row.
+        // Ranked by execution order rather than by request slot: the shared edit pipeline groups a
+        // batch into creates, then updates, then deletes, so an upload listing delete(5) before
+        // update(5) still ends with the row deleted. Ranking by slot promoted the update, and an
+        // acceptClient on it then finalized as a no-op while the feature was in fact gone (#2430).
+        var lastCommittedByObject = new Dictionary<long, (int Rank, int Slot)>();
         for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
             var slot = layerConflictSlots[i];
@@ -374,10 +398,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 continue;
             }
 
-            var objectId = conflicts[layerConflictIndexes[i]].ObjectId;
-            if (!lastCommittedSlotByObject.TryGetValue(objectId, out var current) || slot > current)
+            var conflict = conflicts[layerConflictIndexes[i]];
+            var candidate = (Rank: ExecutionRank(conflict.ClientKind), Slot: slot);
+            if (!lastCommittedByObject.TryGetValue(conflict.ObjectId, out var current) ||
+                candidate.Rank > current.Rank ||
+                (candidate.Rank == current.Rank && candidate.Slot > current.Slot))
             {
-                lastCommittedSlotByObject[objectId] = slot;
+                lastCommittedByObject[conflict.ObjectId] = candidate;
             }
         }
 
@@ -386,7 +413,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         {
             var index = layerConflictIndexes[i];
             var conflict = conflicts[index];
-            if (lastCommittedSlotByObject.GetValueOrDefault(conflict.ObjectId, -1) != layerConflictSlots[i])
+            var winner = lastCommittedByObject.GetValueOrDefault(conflict.ObjectId, (Rank: -1, Slot: -1));
+            if (winner.Rank != ExecutionRank(conflict.ClientKind) || winner.Slot != layerConflictSlots[i])
             {
                 continue;
             }
@@ -448,12 +476,21 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     /// after the batch can capture a concurrent edit to the same feature and bake it into the conflict
     /// snapshot, which would let a later resolution overwrite that edit (#2430). Scoping the probe to
     /// the conflicting object ids means unrelated churn on the layer cannot move any conflict's base.
+    /// <para>
+    /// The per-object result is nonetheless clamped to <paramref name="postBatchGeneration"/>, the
+    /// watermark taken immediately after the batch committed. The change feed collapses to the latest
+    /// change per object, so without the clamp a foreign edit to the same feature arriving between the
+    /// commit and this probe would be read as the generation our own edit produced, and a staleness
+    /// check starting after it would never see it. The clamp can only lower a base, never raise it past
+    /// our own committed edit, so it cannot mask a genuine post-conflict edit.
+    /// </para>
     /// </remarks>
     private async Task<IReadOnlyDictionary<string, long>> ResolveConflictBaseGenerationsAsync(
         ReplicaUploadLayerEdits layer,
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
         long preBatchGeneration,
+        long postBatchGeneration,
         CancellationToken cancellationToken)
     {
         var byObjectId = layerConflictIndexes
@@ -472,9 +509,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             .GetChangesSinceAsync(preBatchGeneration, [layer.StorageLayerId], new HashSet<long>(byObjectId.Keys), cancellationToken)
             .ConfigureAwait(false);
 
+        // Clamped to the post-batch watermark: the change feed collapses to the latest change per
+        // object, so a foreign edit that landed after this batch committed would otherwise become the
+        // conflict's base and hide itself from every later staleness check.
         var candidates = changes
             .Where(change => byObjectId.ContainsKey(change.ObjectId))
-            .SelectMany(change => byObjectId[change.ObjectId].Select(conflictId => (conflictId, change.Generation)))
+            .SelectMany(change => byObjectId[change.ObjectId]
+                .Select(conflictId => (conflictId, Generation: Math.Min(change.Generation, postBatchGeneration))))
             .Where(candidate => !generations.TryGetValue(candidate.conflictId, out var current)
                 || candidate.Generation > current);
 
