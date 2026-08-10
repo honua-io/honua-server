@@ -654,6 +654,32 @@ public sealed class ReplicaConflictResolutionServiceTests
         return probeRepository.Current.ResolutionInputHash;
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_WhenAnotherRecoveryWinsTheTakeover_DoesNotReapplyTheWrite()
+    {
+        // Recovery re-dispatches the write, so it has to be single-winner in its own right: two
+        // retries that both judged the same expired claim abandoned would otherwise both re-apply, and
+        // a failure in one would release a claim the other had already committed against.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(expired) { TakeoverLoses = true };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        applier.Calls.Should().Be(0, "the losing recovery must not re-dispatch the write");
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Resolved, "the claim is untouched");
+    }
+
     private static FeatureChange Change(long generation) => new()
     {
         ChangeId = generation,
@@ -796,6 +822,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Simulates the claim being released or replaced while the write is in flight.</summary>
         public bool LoseClaimAfterWrite { get; init; }
 
+        /// <summary>Simulates another recovery winning the takeover first.</summary>
+        public bool TakeoverLoses { get; init; }
+
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
@@ -824,6 +853,29 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictDetectionUpdate update,
             CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+
+        public Task<bool> TryTakeOverClaimAsync(
+            string conflictId,
+            string resolvedBy,
+            ReplicaConflictResolutionAction action,
+            DateTimeOffset expectedResolvedAt,
+            DateTimeOffset newResolvedAt,
+            CancellationToken cancellationToken = default)
+        {
+            // Mirror the real guard: single-winner takeover bound to the claim being replaced.
+            if (TakeoverLoses ||
+                !string.Equals(resolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
+                action != Current.ResolutionAction ||
+                expectedResolvedAt != Current.ResolvedAt ||
+                Current.WriteCommitted ||
+                !Current.FinalizationPending)
+            {
+                return Task.FromResult(false);
+            }
+
+            Current = Current with { ResolvedAt = newResolvedAt };
+            return Task.FromResult(true);
+        }
 
         public Task<bool> TryReleaseClaimAsync(
             string conflictId,

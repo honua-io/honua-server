@@ -471,6 +471,26 @@ internal sealed partial class ReplicaConflictResolutionService
                 return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
             }
 
+            // Take ownership atomically before re-dispatching. Recovery re-applies the write, so two
+            // retries that both judged this claim abandoned would otherwise both re-apply, and a
+            // failure in one would release a claim the other had already committed against (#2430).
+            var takenOverAt = DateTimeOffset.UtcNow;
+            var tookOver = await _conflictRepository.TryTakeOverClaimAsync(
+                    existing.ConflictId,
+                    request.Actor,
+                    request.Action,
+                    existing.ResolvedAt ?? default,
+                    takenOverAt,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (!tookOver)
+            {
+                Log.ResolutionClaimStillLive(_logger, existing.ConflictId);
+                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            }
+
+            existing = existing with { ResolvedAt = takenOverAt };
+
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
             var reapplied = await ApplyResolutionWriteAsync(existing, plan, cancellationToken)
                 .ConfigureAwait(false);

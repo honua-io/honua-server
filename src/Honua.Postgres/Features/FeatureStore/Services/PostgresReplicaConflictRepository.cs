@@ -210,6 +210,41 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         return affected > 0;
     }
 
+    public async Task<bool> TryTakeOverClaimAsync(
+        string conflictId,
+        string resolvedBy,
+        ReplicaConflictResolutionAction action,
+        DateTimeOffset expectedResolvedAt,
+        DateTimeOffset newResolvedAt,
+        CancellationToken cancellationToken = default)
+    {
+        // Single-winner takeover of an expired, write-less claim: bound to the old timestamp, so
+        // exactly one of several concurrent recoveries proceeds and the losers see the row has moved
+        // on. Stamping a new resolved_at also fences the previous holder, whose finalization and
+        // release are both bound to the timestamp being replaced (#2430).
+        const string sql = """
+            UPDATE honua.replica_conflicts
+            SET resolved_at = $5
+            WHERE conflict_id = $1
+              AND resolved_by = $2
+              AND resolution_action = $3
+              AND resolved_at = $4
+              AND NOT write_committed
+              AND NOT finalized
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, conflictId);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, resolvedBy);
+        command.Parameters.AddWithValue(NpgsqlDbType.Smallint, (short)action);
+        command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, expectedResolvedAt);
+        command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, newResolvedAt);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     public async Task<bool> TryReleaseClaimAsync(
         string conflictId,
         string resolvedBy,

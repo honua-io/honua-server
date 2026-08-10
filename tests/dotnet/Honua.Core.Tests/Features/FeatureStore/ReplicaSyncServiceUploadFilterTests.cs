@@ -202,6 +202,15 @@ public sealed class ReplicaSyncServiceUploadFilterTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
+        public Task<bool> TryTakeOverClaimAsync(
+            string conflictId,
+            string resolvedBy,
+            ReplicaConflictResolutionAction action,
+            DateTimeOffset expectedResolvedAt,
+            DateTimeOffset newResolvedAt,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public Task<bool> TryReleaseClaimAsync(
             string conflictId,
             string resolvedBy,

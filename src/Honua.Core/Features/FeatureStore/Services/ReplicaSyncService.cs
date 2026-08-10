@@ -255,8 +255,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             if (layerConflictCount > 0)
             {
                 var baseGenerations = await ResolveConflictBaseGenerationsAsync(
-                        layer, conflicts, layerConflictIndexes, preBatchGeneration, cancellationToken)
+                        layer, conflicts, layerConflictIndexes, preBatchGeneration, CancellationToken.None)
                     .ConfigureAwait(false);
+                // The edit batch has already committed at this point, so the detection state that
+                // describes it must not be abandoned if the client disconnects: a record left without
+                // its applied flag or base generation would, after the settle window, let keepServer
+                // plan a no-op while the client edit is in fact committed (#2430).
                 await MarkConflictsAppliedAsync(
                         conflicts,
                         layerConflictIndexes,
@@ -266,7 +270,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         baseGenerations,
                         preBatchGeneration,
                         canRecordConflicts,
-                        cancellationToken)
+                        CancellationToken.None)
                     .ConfigureAwait(false);
             }
 

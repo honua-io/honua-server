@@ -174,6 +174,25 @@ public interface IReplicaConflictRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Takes over an expired claim, replacing its timestamp with <paramref name="newResolvedAt"/>, but
+    /// only while the row still carries the claim identified by <paramref name="expectedResolvedAt"/>.
+    /// Returns true for the single caller that wins.
+    /// </summary>
+    /// <remarks>
+    /// Recovery of an abandoned claim re-dispatches the resolution write, so it must be single-winner
+    /// in its own right: two retries that both judged the same expired claim abandoned would otherwise
+    /// both re-apply, and a failure in one would release a claim the other had already committed
+    /// against (#2430).
+    /// </remarks>
+    Task<bool> TryTakeOverClaimAsync(
+        string conflictId,
+        string resolvedBy,
+        ReplicaConflictResolutionAction action,
+        DateTimeOffset expectedResolvedAt,
+        DateTimeOffset newResolvedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a claimed conflict to the pending, reviewable state, but only while the row still
     /// carries the exact claim identified by the arguments. Returns true when the claim was released.
     /// </summary>
