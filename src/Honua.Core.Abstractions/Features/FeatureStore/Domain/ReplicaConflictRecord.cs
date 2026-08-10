@@ -181,6 +181,14 @@ public readonly record struct ReplicaConflictRecord
     public string? PreWriteStateToken { get; init; }
 
     /// <summary>
+    /// Whether the conflicting row was absent when this resolution was claimed. True is the durable
+    /// counterpart to a null state token: recovery re-applies an interrupted write with an
+    /// expected-absence precondition rather than treating the claim as unbound. Null means the
+    /// pre-write phase was never persisted or predates this marker (#2430).
+    /// </summary>
+    public bool? PreWriteRowAbsent { get; init; }
+
+    /// <summary>
     /// Whether the resolution has been claimed but not yet finalized — its produced generation not
     /// persisted, or its audit evidence not written. Such a resolution is resumable: a retry completes
     /// the remaining finalization instead of short-circuiting to already-resolved, so an interruption

@@ -125,6 +125,11 @@ public readonly record struct ReplicaConflictDetectionUpdate(
 /// leave it unchanged. A recovery re-applies the write against this token rather than one derived at
 /// retry time.
 /// </param>
+/// <param name="PreWriteRowAbsent">
+/// True when the row was absent when the resolution was claimed, false when it existed, or null to
+/// leave the durable marker unchanged. Recovery uses true as the expected-absence precondition when
+/// there is intentionally no state token.
+/// </param>
 /// <param name="Finalized">
 /// Whether finalization is complete, or null to leave it unchanged.
 /// </param>
@@ -136,7 +141,8 @@ public readonly record struct ReplicaConflictFinalizationUpdate(
     bool? WriteCommitted,
     long? ResolvedServerGeneration,
     bool? Finalized,
-    string? PreWriteStateToken = null);
+    string? PreWriteStateToken = null,
+    bool? PreWriteRowAbsent = null);
 
 /// <summary>
 /// Persistent storage for durable disconnected-sync conflict records (#1167). Conflict records are

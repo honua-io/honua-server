@@ -306,22 +306,24 @@ internal sealed partial class ReplicaConflictResolutionService
                 // and a recovery that took the claim over in that window would re-apply against a still
                 // null persisted token — i.e. with no precondition at all — and overwrite whatever
                 // arrived meanwhile (#2430).
-                if (expectedStateToken is { Length: > 0 })
+                tokenPersisted = await _conflictRepository.TryUpdateFinalizationStateAsync(
+                        new ReplicaConflictFinalizationUpdate(
+                            claimed.ConflictId,
+                            request.Actor,
+                            request.Action,
+                            claimed.ResolvedAt ?? default,
+                            WriteCommitted: null,
+                            ResolvedServerGeneration: null,
+                            Finalized: null,
+                            PreWriteStateToken: expectedStateToken,
+                            PreWriteRowAbsent: expectedRowAbsent),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                claimed = claimed with
                 {
-                    tokenPersisted = await _conflictRepository.TryUpdateFinalizationStateAsync(
-                            new ReplicaConflictFinalizationUpdate(
-                                claimed.ConflictId,
-                                request.Actor,
-                                request.Action,
-                                claimed.ResolvedAt ?? default,
-                                WriteCommitted: null,
-                                ResolvedServerGeneration: null,
-                                Finalized: null,
-                                PreWriteStateToken: expectedStateToken),
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                    claimed = claimed with { PreWriteStateToken = expectedStateToken };
-                }
+                    PreWriteStateToken = expectedStateToken,
+                    PreWriteRowAbsent = expectedRowAbsent,
+                };
             }
 
             stale = request.Action != ReplicaConflictResolutionAction.Defer &&
@@ -670,7 +672,9 @@ internal sealed partial class ReplicaConflictResolutionService
             existing = existing with { ResolvedAt = takenOverAt };
 
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
-            if (existing.StorageLayerId is not null && existing.PreWriteStateToken is null)
+            if (existing.StorageLayerId is not null &&
+                existing.PreWriteStateToken is null &&
+                existing.PreWriteRowAbsent != true)
             {
                 // The claim's pre-write phase never became durable, so there is no snapshot to bind the
                 // recovered write to — and recovery skips the staleness probe by design. Writing with no
@@ -688,7 +692,11 @@ internal sealed partial class ReplicaConflictResolutionService
             // would describe whatever is in the row at this moment — including a normal edit that landed
             // during the lease — and the precondition would then happily overwrite it (#2430).
             var reapplied = await ApplyResolutionWriteAsync(
-                    existing, plan, existing.PreWriteStateToken, expectedRowAbsent: false, cancellationToken)
+                    existing,
+                    plan,
+                    existing.PreWriteStateToken,
+                    expectedRowAbsent: existing.PreWriteRowAbsent == true,
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (reapplied.PreconditionFailed)
             {

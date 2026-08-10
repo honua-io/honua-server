@@ -1011,6 +1011,30 @@ public sealed class ReplicaConflictResolutionServiceTests
         applier.LastCommand!.Value.Effect.Should().Be(ReplicaConflictResolutionEffect.DeleteFeature);
         applier.LastCommand!.Value.ExpectedRowAbsent.Should().BeTrue();
         applier.LastCommand!.Value.ExpectedStateToken.Should().BeNull();
+        repository.Current.PreWriteRowAbsent.Should().BeTrue(
+            "the absent snapshot must survive if this write later needs recovery");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_AbsentRowUnknownCommitRetryReusesDurableAbsence()
+    {
+        // A null token is the correct snapshot for an absent row, not a missing pre-write phase. If
+        // the first transaction loses its acknowledgement, the same-request retry must re-apply with
+        // expected absence instead of rejecting the durable claim as unbound.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var applier = new AbsentRowIndeterminateThenAppliedApplier();
+        var service = CreateService(repository, applier);
+
+        var first = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        var retry = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        first.Status.Should().Be(ReplicaConflictResolutionStatus.WriteOutcomeUnknown);
+        retry.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        repository.Current.PreWriteRowAbsent.Should().BeTrue();
+        applier.Commands.Should().HaveCount(2);
+        applier.Commands[1].ExpectedStateToken.Should().BeNull();
+        applier.Commands[1].ExpectedRowAbsent.Should().BeTrue(
+            "recovery must restore the claim-time absence precondition");
     }
 
     [UnitTest]
@@ -1176,6 +1200,7 @@ public sealed class ReplicaConflictResolutionServiceTests
         await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
 
         repository.Current.PreWriteStateToken.Should().Be("token-1");
+        repository.Current.PreWriteRowAbsent.Should().BeFalse();
     }
 
     [UnitTest]
@@ -1365,6 +1390,29 @@ public sealed class ReplicaConflictResolutionServiceTests
         }
     }
 
+    /// <summary>Absent-row applier whose first write loses its transaction acknowledgement.</summary>
+    private sealed class AbsentRowIndeterminateThenAppliedApplier : IReplicaConflictResolutionApplier
+    {
+        public List<ReplicaConflictResolutionCommand> Commands { get; } = [];
+
+        public Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
+            int storageLayerId, long objectId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ReplicaConflictRowSnapshot(false, null, null));
+
+        public Task<ReplicaConflictApplyResult> ApplyAsync(
+            ReplicaConflictResolutionCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command);
+            return Task.FromResult(Commands.Count == 1
+                ? new ReplicaConflictApplyResult(
+                    Applied: false,
+                    FailureMessage: "commit outcome unknown",
+                    CommitOutcomeUnknown: true)
+                : new ReplicaConflictApplyResult(Applied: true, FailureMessage: null));
+        }
+    }
+
     /// <summary>Applier whose precondition caught an edit arriving just before the write transaction.</summary>
     private sealed class PreconditionFailingApplier : IReplicaConflictResolutionApplier
     {
@@ -1537,6 +1585,8 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedServerGeneration = null,
                 ResolutionInputHash = null,
                 WriteCommitted = false,
+                PreWriteStateToken = null,
+                PreWriteRowAbsent = null,
                 FinalizationPending = false,
             };
             return Task.FromResult(true);
@@ -1566,7 +1616,8 @@ public sealed class ReplicaConflictResolutionServiceTests
                 return Task.FromResult(false);
             }
 
-            if (LoseClaimOnTokenPersist && update.PreWriteStateToken is not null)
+            if (LoseClaimOnTokenPersist &&
+                (update.PreWriteStateToken is not null || update.PreWriteRowAbsent is not null))
             {
                 return Task.FromResult(false);
             }
@@ -1592,6 +1643,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedServerGeneration = update.ResolvedServerGeneration ?? Current.ResolvedServerGeneration,
                 FinalizationPending = update.Finalized is { } f ? !f : Current.FinalizationPending,
                 PreWriteStateToken = update.PreWriteStateToken ?? Current.PreWriteStateToken,
+                PreWriteRowAbsent = update.PreWriteRowAbsent ?? Current.PreWriteRowAbsent,
             };
             return Task.FromResult(true);
         }
@@ -1617,6 +1669,8 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedServerGeneration = resolution.ResolvedServerGeneration,
                 ResolutionInputHash = resolution.ResolutionInputHash,
                 WriteCommitted = false,
+                PreWriteStateToken = null,
+                PreWriteRowAbsent = null,
                 FinalizationPending = true,
             };
             return Task.FromResult(new ReplicaConflictResolutionOutcome(Current, Applied: true));
