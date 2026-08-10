@@ -198,6 +198,15 @@ public readonly record struct ReplicaConflictRecord
     public bool ClientEditOutcomeUnknown { get; init; }
 
     /// <summary>
+    /// Whether this conflict's own client edit committed but was then superseded by a later edit in the
+    /// same upload to the same feature. <see cref="ClientEditApplied"/> is false for such a record
+    /// because the row does not hold THIS edit's state — but it does not hold the captured pre-conflict
+    /// server state either, so keeping the server has to perform a real restore rather than take the
+    /// withheld-edit no-op shortcut (#2430).
+    /// </summary>
+    public bool ClientEditSuperseded { get; init; }
+
+    /// <summary>
     /// Pre-serialized JSON for the base (common-ancestor) feature state, when known.
     /// </summary>
     /// <remarks>

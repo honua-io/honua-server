@@ -103,12 +103,18 @@ public readonly record struct ReplicaConflictResolutionPlan(
 /// Resolved feature-state envelope to write for
 /// <see cref="ReplicaConflictResolutionEffect.WriteFeatureState"/>.
 /// </param>
+/// <param name="StorageLayerId">
+/// Storage-layer id of the conflicting feature, when the conflict recorded one. Lets the applier read
+/// the row it is about to overwrite so it can carry an optimistic-concurrency precondition into the
+/// write transaction (#2430).
+/// </param>
 public readonly record struct ReplicaConflictResolutionCommand(
     string ServiceId,
     int PublicLayerId,
     long ObjectId,
     ReplicaConflictResolutionEffect Effect,
-    string? FeatureStateJson);
+    string? FeatureStateJson,
+    int? StorageLayerId = null);
 
 /// <summary>
 /// Outcome of applying a planned conflict resolution through the shared edit pipeline.
@@ -116,6 +122,11 @@ public readonly record struct ReplicaConflictResolutionCommand(
 /// <param name="Applied">True when the resolved state was committed.</param>
 /// <param name="FailureMessage">
 /// Sanitized failure message when the write did not commit. Never carries provider internals.
+/// </param>
+/// <param name="PreconditionFailed">
+/// True when the write was rejected because the feature changed between the resolution's staleness
+/// check and the write transaction. The resolution's own precondition caught a post-conflict edit that
+/// arrived inside that window, so this is a stale resolution rather than a failure (#2430).
 /// </param>
 /// <param name="CommitOutcomeUnknown">
 /// True when the pipeline could not determine whether the write committed — a lost commit
@@ -127,4 +138,5 @@ public readonly record struct ReplicaConflictResolutionCommand(
 public readonly record struct ReplicaConflictApplyResult(
     bool Applied,
     string? FailureMessage,
-    bool CommitOutcomeUnknown = false);
+    bool CommitOutcomeUnknown = false,
+    bool PreconditionFailed = false);

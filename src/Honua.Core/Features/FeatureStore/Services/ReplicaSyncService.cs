@@ -441,6 +441,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
         var promoted = new HashSet<string>(StringComparer.Ordinal);
         var indeterminate = new HashSet<string>(StringComparer.Ordinal);
+        var superseded = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
             var index = layerConflictIndexes[i];
@@ -454,6 +455,16 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var winner = lastCommittedByObject.GetValueOrDefault(conflict.ObjectId, (Rank: -1, Slot: -1));
             if (winner.Rank != ExecutionRank(conflict.ClientKind) || winner.Slot != layerConflictSlots[i])
             {
+                // A committed edit that is NOT the final writer for its object was overwritten by a
+                // later one from the same upload. Leaving it at ClientEditApplied=false alone made the
+                // planner read it as a withheld manual-review edit, so keepServer finalized a no-op
+                // while the row actually held the later client update (#2430).
+                if (committedSlots.Contains(layerConflictSlots[i]) &&
+                    conflict.ConflictId is { Length: > 0 } supersededId)
+                {
+                    superseded.Add(supersededId);
+                }
+
                 continue;
             }
 
@@ -499,6 +510,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ServerStateJson: null,
                             ClientEditApplied: promoted.Contains(conflictId) ? true : null,
                             ClientEditOutcomeUnknown: indeterminate.Contains(conflictId) ? true : null,
+                            ClientEditSuperseded: superseded.Contains(conflictId) ? true : null,
                             ResolutionBaseGeneration: baseGenerations.TryGetValue(conflictId, out var generation)
                                 ? generation
                                 : preBatchGeneration),

@@ -20,7 +20,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         base_state_json, client_state_json, server_state_json, detected_at,
         resolution_action, resolved_by, resolved_at, resolved_server_generation,
         client_edit_applied, storage_layer_id, resolution_base_generation,
-        write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown
+        write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown,
+        client_edit_superseded
         """;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -41,9 +42,10 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 base_state_json, client_state_json, server_state_json, detected_at,
                 resolution_action, resolved_by, resolved_at, resolved_server_generation,
                 client_edit_applied, storage_layer_id, resolution_base_generation,
-                write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown)
+                write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown,
+                client_edit_superseded)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                    $21, $22, $23, $24, $25, $26)
+                    $21, $22, $23, $24, $25, $26, $27)
             ON CONFLICT (conflict_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 conflict_type = EXCLUDED.conflict_type,
@@ -60,7 +62,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 write_committed = EXCLUDED.write_committed,
                 finalized = EXCLUDED.finalized,
                 resolution_input_hash = EXCLUDED.resolution_input_hash,
-                client_edit_outcome_unknown = EXCLUDED.client_edit_outcome_unknown
+                client_edit_outcome_unknown = EXCLUDED.client_edit_outcome_unknown,
+                client_edit_superseded = EXCLUDED.client_edit_superseded
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -92,6 +95,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.AddWithValue(NpgsqlDbType.Boolean, !record.FinalizationPending);
         command.Parameters.Add(NullableText(record.ResolutionInputHash));
         command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.ClientEditOutcomeUnknown);
+        command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.ClientEditSuperseded);
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -160,6 +164,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 server_state_json = COALESCE($4, server_state_json),
                 client_edit_applied = COALESCE($5, client_edit_applied),
                 client_edit_outcome_unknown = COALESCE($7, client_edit_outcome_unknown),
+                client_edit_superseded = COALESCE($8, client_edit_superseded),
                 resolution_base_generation = COALESCE($6, resolution_base_generation)
             WHERE conflict_id = $1
               AND status = {(short)ReplicaConflictStatus.Pending}
@@ -174,6 +179,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableBoolean(update.ClientEditApplied));
         command.Parameters.Add(NullableBigint(update.ResolutionBaseGeneration));
         command.Parameters.Add(NullableBoolean(update.ClientEditOutcomeUnknown));
+        command.Parameters.Add(NullableBoolean(update.ClientEditSuperseded));
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
@@ -377,6 +383,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         FinalizationPending = !reader.GetBoolean(23),
         ResolutionInputHash = reader.IsDBNull(24) ? null : reader.GetString(24),
         ClientEditOutcomeUnknown = reader.GetBoolean(25),
+        ClientEditSuperseded = reader.GetBoolean(26),
     };
 
     private static NpgsqlParameter NullableText(string? value) =>

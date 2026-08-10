@@ -827,6 +827,15 @@ internal sealed class FeatureServerEditsHandler(
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
 
+        // Server-side optimistic-concurrency preconditions, when the caller supplied them. The writer
+        // re-checks each token against the locked row inside the write transaction, so a concurrent
+        // edit between the caller's check and this write fails the operation instead of being
+        // overwritten (#2430). Absent for ordinary wire requests, which leaves the batch unchanged.
+        if (!request.Preconditions.IsDefaultOrEmpty)
+        {
+            editBatch = editBatch with { Preconditions = request.Preconditions };
+        }
+
         // Thread the resolved branch version onto the canonical edit batch. A null/DEFAULT context
         // leaves the byte-identical non-versioned write path unchanged (#1272, ADR-0051).
         if (versionContext is { IsDefault: false })

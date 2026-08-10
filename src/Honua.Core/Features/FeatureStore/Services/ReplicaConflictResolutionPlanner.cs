@@ -116,12 +116,13 @@ public static class ReplicaConflictResolutionPlanner
 
     private static ReplicaConflictResolutionPlan PlanKeepServer(ReplicaConflictRecord conflict)
     {
-        if (!conflict.ClientEditApplied && !conflict.ClientEditOutcomeUnknown)
+        if (!conflict.ClientEditApplied && !conflict.ClientEditOutcomeUnknown && !conflict.ClientEditSuperseded)
         {
             // Manual review skipped the client edit, so the server state was never overwritten.
-            // Skipped when the outcome is unknown: the shortcut asserts the row still holds the server
-            // state, and if the ambiguous write did land this would report the server state kept while
-            // the client overwrite remained. Restoring it is idempotent either way (#2430).
+            // Skipped when the outcome is unknown, and when this edit committed but was superseded by a
+            // later one from the same upload: in both cases the shortcut's assertion that the row still
+            // holds the server state is wrong, and it would report the server state kept while a client
+            // overwrite remained. Restoring it is idempotent either way (#2430).
             return NoEffect(committedNewServerState: false);
         }
 

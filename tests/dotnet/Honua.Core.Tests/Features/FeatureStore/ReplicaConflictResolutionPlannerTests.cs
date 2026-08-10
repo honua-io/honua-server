@@ -187,6 +187,27 @@ public sealed class ReplicaConflictResolutionPlannerTests
     }
 
     [Fact]
+    public void Plan_KeepServerOnASupersededClientEdit_RestoresTheServerStateInsteadOfNoOp()
+    {
+        // The edit committed and was then overwritten by a later one from the same upload, so
+        // ClientEditApplied is false - but the row holds the later client update, not the captured
+        // server state. Taking the withheld-edit shortcut reported the server state kept while the
+        // client overwrite was still in place.
+        var conflict = Conflict(
+            clientEditApplied: false,
+            serverState: """{"attributes":{"objectid":1,"NAME":"server"}}""") with
+        {
+            ClientEditSuperseded = true,
+        };
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(
+            conflict, ReplicaConflictResolutionAction.KeepServer, NoInputs);
+
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.WriteFeatureState);
+        plan.CommittedNewServerState.Should().BeTrue();
+    }
+
+    [Fact]
     public void Plan_KeepServerWithUnknownCommitOutcome_RestoresTheServerStateInsteadOfNoOp()
     {
         // The no-op shortcut asserts the row still holds the server state. When the writer could not

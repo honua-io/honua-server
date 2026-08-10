@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -41,15 +42,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
 
     private readonly FeatureServerEditsHandler _editsHandler;
     private readonly IResourceValidator _resourceValidator;
+    private readonly IFeatureReader _featureReader;
     private readonly EditLimits _editLimits;
 
     public FeatureServerReplicaConflictResolutionApplier(
         FeatureServerEditsHandler editsHandler,
         IResourceValidator resourceValidator,
+        IFeatureReader featureReader,
         IOptions<LimitsOptions> limits)
     {
         _editsHandler = editsHandler ?? throw new ArgumentNullException(nameof(editsHandler));
         _resourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
+        _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _editLimits = (limits ?? throw new ArgumentNullException(nameof(limits))).Value.Edits;
     }
 
@@ -97,6 +101,26 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                 return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
         }
 
+        // Optimistic-concurrency precondition over the row as it is right now. The writer re-computes
+        // the token from the locked row inside the write transaction, so an edit arriving between the
+        // resolution's staleness check and this write fails the operation instead of being silently
+        // overwritten (#2430). Skipped when the conflict predates the stored storage-layer id or the
+        // row is already gone, where there is no snapshot to bind to.
+        if (command.StorageLayerId is { } storageLayerId)
+        {
+            var current = await _featureReader
+                .GetAsync(storageLayerId, command.ObjectId, cancellationToken)
+                .ConfigureAwait(false);
+            if (current is { } row)
+            {
+                request.Preconditions = ImmutableArray.Create(new FeatureEditPrecondition
+                {
+                    ObjectId = command.ObjectId,
+                    ExpectedStateToken = FeatureStateToken.Compute(row),
+                });
+            }
+        }
+
         var result = await _editsHandler
             .HandleApplyEditsAsync(command.ServiceId, command.PublicLayerId, request, _editLimits, cancellationToken)
             .ConfigureAwait(false);
@@ -128,7 +152,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         return new ReplicaConflictApplyResult(
             Applied: false,
             FailureMessage,
-            CommitOutcomeUnknown: CommitOutcomeUnknown(effectResults));
+            CommitOutcomeUnknown: CommitOutcomeUnknown(effectResults),
+            PreconditionFailed: PreconditionFailed(effectResults));
     }
 
     /// <summary>
@@ -251,6 +276,10 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     private static bool Succeeded(EditResult[]? results, ReplicaConflictResolutionEffect effect)
         => results is { Length: > 0 }
             && Array.TrueForAll(results, r => r.Success || IsAlreadyAbsent(r, effect));
+
+    private static bool PreconditionFailed(EditResult[]? results)
+        => results is { Length: > 0 }
+            && Array.Exists(results, r => r.Error?.Code == GeoServicesEditErrorCodes.UpdateConflict);
 
     private static bool CommitOutcomeUnknown(EditResult[]? results)
         => results is { Length: > 0 }

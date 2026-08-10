@@ -335,6 +335,19 @@ internal sealed partial class ReplicaConflictResolutionService
                 throw;
             }
 
+            if (applyResult.PreconditionFailed)
+            {
+                // The write's own precondition caught an edit that arrived between the staleness probe
+                // and the write transaction, which is the window the probe alone cannot cover. Nothing
+                // was written, so the claim is released and the conflict goes back to reviewable with
+                // the same answer the probe would have given (#2430).
+                await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+                Log.ResolutionStale(
+                    _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
+                activity?.SetStatus(ActivityStatusCode.Error, "stale");
+                return Failure(ReplicaConflictResolutionStatus.Stale, "This feature was edited after the conflict was recorded, so applying the conflict-time resolution would overwrite that newer edit. Re-review the conflict against the current server state.");
+            }
+
             if (applyResult.CommitOutcomeUnknown)
             {
                 // Deliberately NOT released. The pipeline is saying the write may have landed, so the
@@ -608,6 +621,16 @@ internal sealed partial class ReplicaConflictResolutionService
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
             var reapplied = await ApplyResolutionWriteAsync(existing, plan, cancellationToken)
                 .ConfigureAwait(false);
+            if (reapplied.PreconditionFailed)
+            {
+                // A resumed re-apply is bound to the same conflict-time state, so the same window
+                // applies. Release and report stale rather than retrying into the newer edit.
+                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                Log.ResolutionStale(
+                    _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
+                return Failure(ReplicaConflictResolutionStatus.Stale, "This feature was edited after the conflict was recorded, so applying the conflict-time resolution would overwrite that newer edit. Re-review the conflict against the current server state.");
+            }
+
             if (reapplied.CommitOutcomeUnknown)
             {
                 // Same reasoning as the first attempt: keep the claim so the next retry resumes.
@@ -873,7 +896,8 @@ internal sealed partial class ReplicaConflictResolutionService
                 conflict.LayerId,
                 conflict.ObjectId,
                 plan.Effect,
-                plan.FeatureStateJson),
+                plan.FeatureStateJson,
+                conflict.StorageLayerId),
             cancellationToken);
 
     /// <summary>

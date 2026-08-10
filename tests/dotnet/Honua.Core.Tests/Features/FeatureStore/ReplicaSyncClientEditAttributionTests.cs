@@ -195,6 +195,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
         report.Conflicts[0].Applied.Should().BeFalse("the first update was superseded by the second");
         report.Conflicts[1].Applied.Should().BeTrue("only the last committed edit remains in the row");
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
+
+        // The superseded edit is marked as such: it is NOT a withheld manual-review edit, and reading it
+        // as one made keepServer finalize a no-op while the row held the later client update.
+        repository.DetectionUpdates.Count(u => u.ClientEditSuperseded == true).Should().Be(1);
     }
 
     [UnitTest]

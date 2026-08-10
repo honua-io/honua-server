@@ -72,6 +72,10 @@ public readonly record struct ReplicaConflictResolutionOutcome(
 /// Whether the storage layer could not say if the conflicting client edit committed, or null to leave
 /// it unchanged.
 /// </param>
+/// <param name="ClientEditSuperseded">
+/// Whether this edit committed but was superseded by a later edit in the same upload, or null to leave
+/// it unchanged.
+/// </param>
 public readonly record struct ReplicaConflictDetectionUpdate(
     string ConflictId,
     ReplicaConflictType? ConflictType,
@@ -79,7 +83,8 @@ public readonly record struct ReplicaConflictDetectionUpdate(
     string? ServerStateJson,
     bool? ClientEditApplied,
     long? ResolutionBaseGeneration = null,
-    bool? ClientEditOutcomeUnknown = null);
+    bool? ClientEditOutcomeUnknown = null,
+    bool? ClientEditSuperseded = null);
 
 /// <summary>
 /// A progress marker for an in-flight resolution: whether its feature write has committed, the

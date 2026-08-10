@@ -800,6 +800,39 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenTheWritePreconditionFails_ReportsStaleAndReleasesTheClaim()
+    {
+        // The staleness probe covers detection-to-now; the write's own precondition covers now-to-write.
+        // An edit arriving inside that second window used to be overwritten unconditionally even though
+        // the service promises to reject post-conflict changes.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var applier = new PreconditionFailingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        applier.Calls.Should().Be(1);
+        repository.Current.Status.Should().Be(
+            ReplicaConflictStatus.Pending, "nothing was written, so the conflict is reviewable again");
+        repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_PassesTheStorageLayerIdSoTheWriteCanCarryAPrecondition()
+    {
+        // The applier needs it to read the row it is about to overwrite; without it there is no
+        // snapshot to bind the precondition to.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        applier.LastCommand!.Value.StorageLayerId.Should().Be(10);
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenTheWriteOutcomeIsUnknown_KeepsTheClaimResumable()
     {
         // An indeterminate write is not a failure. Releasing the claim here means that if the write DID
@@ -1064,11 +1097,14 @@ public sealed class ReplicaConflictResolutionServiceTests
     {
         public int Calls { get; private set; }
 
+        public ReplicaConflictResolutionCommand? LastCommand { get; private set; }
+
         public Task<ReplicaConflictApplyResult> ApplyAsync(
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastCommand = command;
             return Task.FromResult(new ReplicaConflictApplyResult(Applied: true, FailureMessage: null));
         }
     }
@@ -1079,6 +1115,21 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
             => Task.FromResult(new ReplicaConflictApplyResult(Applied: false, FailureMessage: "write rejected"));
+    }
+
+    /// <summary>Applier whose precondition caught an edit arriving just before the write transaction.</summary>
+    private sealed class PreconditionFailingApplier : IReplicaConflictResolutionApplier
+    {
+        public int Calls { get; private set; }
+
+        public Task<ReplicaConflictApplyResult> ApplyAsync(
+            ReplicaConflictResolutionCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(new ReplicaConflictApplyResult(
+                Applied: false, FailureMessage: "precondition failed", PreconditionFailed: true));
+        }
     }
 
     /// <summary>Applier whose write may or may not have committed, as a lost commit ack reports.</summary>

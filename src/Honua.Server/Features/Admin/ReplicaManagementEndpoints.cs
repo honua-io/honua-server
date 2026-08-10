@@ -490,6 +490,7 @@ internal static class ReplicaManagementEndpoints
         ServerGeneration = record.ServerGeneration,
         ClientEditApplied = record.ClientEditApplied,
         ClientEditOutcomeUnknown = record.ClientEditOutcomeUnknown,
+        ClientEditSuperseded = record.ClientEditSuperseded,
         DetectedAt = record.DetectedAt,
     };
 
@@ -515,6 +516,7 @@ internal static class ReplicaManagementEndpoints
             ServerGeneration = record.ServerGeneration,
             ClientEditApplied = record.ClientEditApplied,
             ClientEditOutcomeUnknown = record.ClientEditOutcomeUnknown,
+            ClientEditSuperseded = record.ClientEditSuperseded,
             BaseState = baseState,
             ClientState = clientState,
             ServerState = serverState,

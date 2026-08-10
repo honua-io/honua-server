@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -41,6 +43,15 @@ public sealed class ApplyEditsRequest
     /// </summary>
     [JsonIgnore]
     public bool RollbackOnFailureExplicitlySet { get; set; }
+
+    /// <summary>
+    /// Optimistic-concurrency preconditions to carry into the write transaction. Not part of the
+    /// GeoServices wire contract: it exists so a server-side caller that already validated the state it
+    /// is editing against can have the writer re-verify that state inside the transaction, closing the
+    /// gap between its check and the write (#2430).
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableArray<FeatureEditPrecondition> Preconditions { get; set; }
 
     /// <summary>
     /// Whether to use global IDs

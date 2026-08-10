@@ -48,6 +48,14 @@ public sealed class ReplicaConflictSummary
     /// </summary>
     public bool ClientEditOutcomeUnknown { get; init; }
 
+    /// <summary>
+    /// Whether this conflict's own client edit committed but was superseded by a later edit in the same
+    /// upload to the same feature. <see cref="ClientEditApplied"/> is false for such a record, but the
+    /// row holds neither this edit's state nor the captured server state, so <c>keepServer</c> performs
+    /// a real restore rather than a no-op (#2430).
+    /// </summary>
+    public bool ClientEditSuperseded { get; init; }
+
     /// <summary>Timestamp (UTC) when the conflict was first recorded.</summary>
     public required DateTimeOffset DetectedAt { get; init; }
 }
@@ -106,6 +114,14 @@ public sealed class ReplicaConflictDetail
     /// matches the operator's decision whichever way the ambiguous write went (#2430).
     /// </summary>
     public bool ClientEditOutcomeUnknown { get; init; }
+
+    /// <summary>
+    /// Whether this conflict's own client edit committed but was superseded by a later edit in the same
+    /// upload to the same feature. <see cref="ClientEditApplied"/> is false for such a record, but the
+    /// row holds neither this edit's state nor the captured server state, so <c>keepServer</c> performs
+    /// a real restore rather than a no-op (#2430).
+    /// </summary>
+    public bool ClientEditSuperseded { get; init; }
 
     /// <summary>Base/common-ancestor feature state, when known. Opaque feature object.</summary>
     public System.Text.Json.JsonElement? BaseState { get; init; }
