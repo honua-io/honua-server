@@ -192,6 +192,33 @@ internal sealed partial class ReplicaConflictResolutionService
 
         var claimed = outcome.Record.Value;
 
+        // Re-plan from the record the atomic claim returned, not the pre-claim read. Detection
+        // post-processing for the originating sync can promote ClientEditApplied between the two, and
+        // planning from the stale snapshot would then record a keep-server resolution as a no-op while
+        // the client overwrite had in fact landed (#2430). The pre-claim plan above still runs first so
+        // a malformed or inapplicable request is rejected before anything is claimed.
+        plan = ReplicaConflictResolutionPlanner.Plan(claimed, request.Action, request.Inputs);
+        if (!plan.IsAccepted)
+        {
+            await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+            var replanStatus = plan.Rejection == ReplicaConflictResolutionRejection.InvalidRequest
+                ? ReplicaConflictResolutionStatus.InvalidRequest
+                : ReplicaConflictResolutionStatus.NotApplicable;
+            activity?.SetStatus(ActivityStatusCode.Error, plan.RejectionMessage);
+            return Failure(replanStatus, plan.RejectionMessage);
+        }
+
+        if (plan.Effect != ReplicaConflictResolutionEffect.None && _applier is null)
+        {
+            await ReleaseClaimAsync(conflict, CancellationToken.None).ConfigureAwait(false);
+            Log.ResolutionWriteUnsupported(_logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId);
+            return Failure(
+                ReplicaConflictResolutionStatus.WriteUnsupported,
+                "Applying this resolution requires committing the resolved feature state, which this deployment cannot do: no replica-capable edit pipeline is registered.");
+        }
+
+        activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
+
         if (plan.Effect != ReplicaConflictResolutionEffect.None)
         {
             ReplicaConflictApplyResult applyResult;
@@ -236,18 +263,24 @@ internal sealed partial class ReplicaConflictResolutionService
             }
         }
 
+        // Past this point the feature write has committed, so finalization must not be abandoned
+        // half-done: a cancelled request token here would throw with the conflict already transitioned
+        // to Resolved, leaving the produced generation unpersisted, the audit event unwritten, and
+        // retries answered with AlreadyResolved. Finalization therefore runs on an uncancellable token.
+        var finalizationToken = CancellationToken.None;
+
         // The generation cursor is read AFTER the write so it names the generation the resolution
         // actually produced, not the one that happened to be current when the request arrived.
         if (plan.CommittedNewServerState)
         {
-            var resolvedGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+            var resolvedGeneration = await _changeTracker.GetCurrentGenerationAsync(finalizationToken)
                 .ConfigureAwait(false);
             resolution = resolution with { ResolvedServerGeneration = resolvedGeneration };
             claimed = claimed with { ResolvedServerGeneration = resolvedGeneration };
-            await _conflictRepository.UpsertAsync(claimed, cancellationToken).ConfigureAwait(false);
+            await _conflictRepository.UpsertAsync(claimed, finalizationToken).ConfigureAwait(false);
         }
 
-        await RecordAuditAsync(request, conflict, plan, resolution, cancellationToken).ConfigureAwait(false);
+        await RecordAuditAsync(request, conflict, plan, resolution, finalizationToken).ConfigureAwait(false);
 
         Log.ResolutionApplied(
             _logger,

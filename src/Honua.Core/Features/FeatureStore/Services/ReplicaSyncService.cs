@@ -309,9 +309,14 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // The conservative false stands: an operator resolving this conflict will be offered a
-                // real accept-client write rather than a no-op, which is the safe direction to fail.
+                // Do NOT swallow this. The edit committed, so leaving the record saying otherwise is
+                // not a safe conservative state: a later keep-server resolution would plan a no-op and
+                // mark itself resolved while the client overwrite is still in place. Failing the sync
+                // loudly makes the divergence visible and lets the replica retry, which is the honest
+                // outcome until the promotion is made durably retryable (a transactional outbox for
+                // detection state is follow-up work, not something this path can fake).
                 Log.ConflictAppliedFlagFailed(_logger, conflictId, ex);
+                throw;
             }
         }
     }
