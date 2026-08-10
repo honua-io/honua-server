@@ -273,8 +273,15 @@ internal sealed partial class FeatureDataAccess
 
         if (editBatch.RollbackOnFailure)
         {
-            // Use RepeatableRead isolation level for feature edits to prevent phantom reads during batch operations
-            var (txConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
+            // Expected absence uses a key-level advisory reservation shared with INSERTs. Read
+            // Committed is intentional for that case: if the reservation waits for an inserting
+            // transaction, the following SELECT must observe the inserter's commit. Ordinary feature
+            // batches retain RepeatableRead to prevent phantom reads during batch operations.
+            var isolationLevel = editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
+                ? IsolationLevel.ReadCommitted
+                : IsolationLevel.RepeatableRead;
+            var (txConnection, dbTransaction) = await _connectionProvider
+                .OpenTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
             dbConnection = txConnection;
             transaction = (NpgsqlTransaction)dbTransaction;
         }
@@ -486,6 +493,24 @@ internal sealed partial class FeatureDataAccess
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
+        if (precondition.ExpectedRowAbsent)
+        {
+            // SELECT ... FOR UPDATE cannot lock a missing row. Reserve the logical feature key
+            // instead; every shared-pipeline INSERT takes the same transaction-scoped advisory lock
+            // before its statement can commit. A reinsert therefore either finishes before this
+            // check (and is observed below) or is serialized after this resolution commits.
+            await using var lockCommand = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2::text, 0))",
+                connection)
+            {
+                Transaction = transaction,
+            };
+            ApplyCommandTimeout(lockCommand, _queryTimeoutSeconds);
+            lockCommand.Parameters.AddWithValue(layerId);
+            lockCommand.Parameters.AddWithValue(objectId);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
         var sql = $@"
@@ -875,9 +900,15 @@ internal sealed partial class FeatureDataAccess
 
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
         var sql = $@"
-            INSERT INTO {_tableName} (layer_id, geometry, attributes)
-            VALUES ($1, {geometryValueExpression}, $3)
-            RETURNING objectid, {geometrySelect}, attributes";
+            WITH inserted AS (
+                INSERT INTO {_tableName} (layer_id, geometry, attributes)
+                VALUES ($1, {geometryValueExpression}, $3)
+                RETURNING objectid, {geometrySelect}, attributes
+            )
+            SELECT objectid, geometry, attributes,
+                   pg_advisory_xact_lock(
+                       hashtextextended($1::text || ':' || objectid::text, 0)) AS feature_lock
+            FROM inserted";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
@@ -1279,7 +1310,9 @@ internal sealed partial class FeatureDataAccess
                 SELECT objectid, ROW_NUMBER() OVER () AS rn
                 FROM inserted
             )
-            SELECT objectid
+            SELECT objectid,
+                   pg_advisory_xact_lock(
+                       hashtextextended($1::text || ':' || objectid::text, 0)) AS feature_lock
             FROM numbered
             ORDER BY rn";
 

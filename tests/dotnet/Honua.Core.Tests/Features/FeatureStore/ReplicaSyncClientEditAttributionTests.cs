@@ -475,9 +475,13 @@ public sealed class ReplicaSyncClientEditAttributionTests
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         var record = repository.Upserts.Should().ContainSingle().Subject;
-        repository.RecordFor(record.ConflictId).ServerStateJson.Should().Be(
+        var persisted = repository.RecordFor(record.ConflictId);
+        persisted.ServerStateJson.Should().Be(
             "server-envelope-42",
             "capture is persisted before the later generation read can abort the sync");
+        persisted.ResolutionBaseGeneration.Should().Be(
+            99,
+            "the same early update leaves a conservative completion marker for recovery");
     }
 
     /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>

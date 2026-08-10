@@ -266,14 +266,16 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     serverStates[entry.Key] = entry.Value;
                 }
 
-                // The conflict record already exists, so make each captured envelope durable before
-                // the next cancellable operation. Leaving this solely to the protocol handler after
-                // ApplyUploadAsync returned meant a cancellation during the generation/token checks
-                // below stranded an otherwise valid conflict without its server side forever (#2430).
+                // The conflict record already exists, so make each captured envelope and a safe
+                // pre-capture base durable before the next cancellable operation. A successful layer
+                // later advances that base to the cursor its final state describes. If work aborts
+                // below, the conservative earlier base keeps later edits visible without leaving the
+                // record permanently incomplete (#2430).
                 await PersistCapturedServerStatesAsync(
                         conflicts,
                         layerConflictStartIndex,
                         serverStates,
+                        preBatchGeneration,
                         canRecordConflicts,
                         CancellationToken.None)
                     .ConfigureAwait(false);
@@ -505,6 +507,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         int layerConflictStartIndex,
         Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
+        long safeBaseGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
@@ -530,7 +533,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ConflictType: null,
                             ClientStateJson: null,
                             ServerStateJson: serverStateJson,
-                            ClientEditApplied: null),
+                            ClientEditApplied: null,
+                            ResolutionBaseGeneration: safeBaseGeneration),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
