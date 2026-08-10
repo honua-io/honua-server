@@ -130,13 +130,13 @@ public readonly record struct ReplicaSyncConflict(
 /// <param name="AppliedDeletes">Number of delete operations applied.</param>
 /// <param name="Failed">True when any non-conflict edit failed to apply.</param>
 /// <param name="FailureMessage">Sanitized failure message when <paramref name="Failed"/> is true.</param>
-/// <param name="CommittedObjectIds">
-/// Object ids of the update/delete edits this batch actually committed. Required because
-/// <paramref name="Failed"/> is layer-wide: with <c>rollbackOnFailure=false</c> the shared edit
-/// pipeline commits rows independently, so one conflicting edit can land while an unrelated sibling
-/// fails. Callers that must know whether a <em>specific</em> uploaded edit landed — notably the
-/// conflict recorder deciding whether the client overwrite is committed — have to read this rather
-/// than the layer-wide flag (#2430). Empty when the adapter cannot attribute per-row outcomes.
+/// <param name="CommittedEditIndexes">
+/// Positions, within the edit array handed to the applier, of the edits this batch actually committed.
+/// Required because <paramref name="Failed"/> is layer-wide: with <c>rollbackOnFailure=false</c> the
+/// shared edit pipeline commits rows independently, so one conflicting edit can land while a sibling
+/// fails. Identified by request slot rather than by object id because a single payload may carry
+/// several operations for the same object — an update and a delete, say — and object identity cannot
+/// say which of them landed (#2430). Empty when the adapter cannot attribute per-row outcomes.
 /// </param>
 public readonly record struct ReplicaLayerApplyResult(
     int PublicLayerId,
@@ -145,7 +145,7 @@ public readonly record struct ReplicaLayerApplyResult(
     int AppliedDeletes,
     bool Failed,
     string? FailureMessage,
-    ImmutableArray<long> CommittedObjectIds = default);
+    ImmutableArray<int> CommittedEditIndexes = default);
 
 /// <summary>
 /// Report produced by a replica upload/synchronize. Summarizes the applied edits, any detected
@@ -163,6 +163,10 @@ public readonly record struct ReplicaLayerApplyResult(
 /// <param name="LayerResults">Per-layer apply results.</param>
 /// <param name="ServerGeneration">Server generation after the upload applied.</param>
 /// <param name="FailureMessage">Sanitized failure message when <paramref name="Success"/> is false.</param>
+/// <param name="ServerStates">
+/// Server state of each conflicting feature, captured after detection and before the uploaded edits
+/// applied, keyed by service-local layer id and object id. Empty when no capturer was supplied (#2430).
+/// </param>
 public readonly record struct ReplicaSyncUploadReport(
     bool Success,
     int AppliedAdds,
@@ -171,4 +175,5 @@ public readonly record struct ReplicaSyncUploadReport(
     ImmutableArray<ReplicaSyncConflict> Conflicts,
     ImmutableArray<ReplicaLayerApplyResult> LayerResults,
     long ServerGeneration,
-    string? FailureMessage);
+    string? FailureMessage,
+    IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>? ServerStates = null);

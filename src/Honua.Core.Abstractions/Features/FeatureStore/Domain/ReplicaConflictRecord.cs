@@ -157,6 +157,14 @@ public readonly record struct ReplicaConflictRecord
     public bool WriteCommitted { get; init; }
 
     /// <summary>
+    /// Hash of the resolution inputs the claim was taken with — the action plus any operator-supplied
+    /// field values or geometry side. A resume must match it, so a retry carrying different inputs
+    /// cannot finalize the earlier write while reporting the new selection (#2430). Null on claims
+    /// taken before the hash existed, which fall back to the operator/action check.
+    /// </summary>
+    public string? ResolutionInputHash { get; init; }
+
+    /// <summary>
     /// Whether the resolution has been claimed but not yet finalized — its produced generation not
     /// persisted, or its audit evidence not written. Such a resolution is resumable: a retry completes
     /// the remaining finalization instead of short-circuiting to already-resolved, so an interruption

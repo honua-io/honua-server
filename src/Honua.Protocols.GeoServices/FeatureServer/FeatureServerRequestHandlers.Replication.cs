@@ -1046,12 +1046,13 @@ internal static partial class FeatureServerEndpoints
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
-                // Snapshot the pre-apply server state of every uploaded update/delete target so durable
-                // conflict records can carry the server side of the comparison for the review API
-                // (#1287). Captured before apply because last-write-wins overwrites the conflicting row.
+                // The server side of each conflict is snapshotted by the canonical sync service through
+                // the capturer below — after detection, before the edits apply. Capturing here, ahead of
+                // the whole pipeline, meant a server edit landing in between was flagged as the conflict
+                // yet missing from the snapshot, so a later keep-server resolution silently discarded it
+                // (#2430).
                 var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-                var serverConflictStates = await CaptureServerConflictStatesAsync(
-                    featureReader, layerEdits, cancellationToken);
+                var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(featureReader);
 
                 var syncRequest = new ReplicaSyncRequest(
                     ReplicaId: replicaId,
@@ -1065,7 +1066,10 @@ internal static partial class FeatureServerEndpoints
                     SyncOperationId: context.TraceIdentifier,
                     RollbackOnFailure: rollbackOnFailure);
 
-                var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
+                var report = await syncService.ApplyUploadAsync(
+                    syncRequest, applier, serverStateCapturer, cancellationToken);
+                var serverConflictStates = report.ServerStates
+                    ?? new Dictionary<(int PublicLayerId, long ObjectId), string>();
 
                 conflicts = MapSyncConflicts(report.Conflicts);
 
@@ -1280,49 +1284,15 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Reads the current server state of every uploaded update/delete target, keyed by
-    /// (public layer id, object id), as a <c>{"attributes": {...}, "geometry": ...}</c> envelope. Must
-    /// run before the edits are applied so the captured server side is the pre-conflict state, not the
-    /// just-applied client value (#1287). The geometry is converted to GeoServices (Esri) JSON so it is
-    /// comparable to the uploaded client geometry. A target the server has already deleted yields no entry.
+    /// Serializes a stored feature into the conflict-review state envelope, matching the Z/M handling
+    /// the rest of the GeoServices surface emits so the captured server geometry is directly comparable
+    /// to the uploaded client geometry (#1287).
     /// </summary>
-    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), string>> CaptureServerConflictStatesAsync(
-        IFeatureReader featureReader,
-        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
-        CancellationToken cancellationToken)
+    internal static string CaptureStateEnvelope(Honua.Core.Features.FeatureStore.Domain.Feature feature)
     {
-        var states = new Dictionary<(int, long), string>();
-        foreach (var layer in layerEdits)
-        {
-            var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
-            foreach (var edit in edits)
-            {
-                if (edit.Kind == FeatureEditOperationKind.Create || edit.ObjectId is not { } objectId)
-                {
-                    continue;
-                }
-
-                var key = (layer.PublicLayerId, objectId);
-                if (states.ContainsKey(key))
-                {
-                    continue;
-                }
-
-                var feature = await featureReader
-                    .GetAsync(layer.StorageLayerId, objectId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (feature is { } found)
-                {
-                    // Match the Z/M handling ConvertFeatureToGeoServices uses elsewhere so the captured
-                    // server geometry is the same shape the rest of the GeoServices surface emits.
-                    var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                        found.Geometry, srid: null, geometryLimits: null, includeZ: false, includeM: false);
-                    states[key] = SerializeStateEnvelope(found.Attributes, geometry);
-                }
-            }
-        }
-
-        return states;
+        var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+            feature.Geometry, srid: null, geometryLimits: null, includeZ: false, includeM: false);
+        return SerializeStateEnvelope(feature.Attributes, geometry);
     }
 
     /// <summary>
@@ -1339,7 +1309,7 @@ internal static partial class FeatureServerEndpoints
         IReplicaConflictRepository conflictRepository,
         ImmutableArray<ReplicaSyncConflict> conflicts,
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
-        Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
+        IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string> serverStates,
         CancellationToken cancellationToken)
     {
         var refinedTypes = new Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>();

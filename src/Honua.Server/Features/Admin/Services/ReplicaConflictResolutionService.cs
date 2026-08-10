@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -220,7 +222,8 @@ internal sealed partial class ReplicaConflictResolutionService
             request.Action,
             request.Actor,
             DateTimeOffset.UtcNow,
-            ResolvedServerGeneration: null);
+            ResolvedServerGeneration: null,
+            ResolutionInputHash: ComputeInputHash(request));
 
         var outcome = await _conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
         if (outcome.Record is null)
@@ -267,27 +270,6 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
 
-        if (RestoresCapturedServerState(request.Action, plan, claimed) &&
-            await HasUncapturedServerEditAsync(claimed, cancellationToken).ConfigureAwait(false))
-        {
-            // The pre-apply server snapshot is taken before conflict detection runs, so a server edit
-            // landing in that window is detected as the conflict yet missing from ServerStateJson.
-            // Writing the snapshot back would silently discard that edit, so the restoration is
-            // refused and the operator re-reviews against current state instead (#2430).
-            await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
-            Log.ResolutionServerSnapshotUntrusted(
-                _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
-            activity?.SetStatus(ActivityStatusCode.Error, "server-snapshot-untrusted");
-            return Failure(
-                ReplicaConflictResolutionStatus.Stale,
-                "Another server edit landed while this conflict was being recorded, so the captured server state may not include it. Re-review the conflict against the current server state.");
-        }
-
-        // Applies to no-write plans too, not just write-producing ones: an acceptClient whose edit
-        // last-write-wins already committed, or a keepServer over an untouched server state, both
-        // ASSERT that the conflict-time state is what the row still holds. If a later ordinary edit
-        // superseded it, finalizing that assertion records a decision that is no longer true. Only
-        // `defer` is exempt — it deliberately asserts nothing about the state (#2430).
         if (request.Action != ReplicaConflictResolutionAction.Defer &&
             await HasPostConflictEditAsync(claimed, cancellationToken).ConfigureAwait(false))
         {
@@ -348,6 +330,7 @@ internal sealed partial class ReplicaConflictResolutionService
                         claimed.ConflictId,
                         request.Actor,
                         request.Action,
+                        claimed.ResolvedAt ?? default,
                         WriteCommitted: true,
                         ResolvedServerGeneration: null,
                         Finalized: null),
@@ -427,8 +410,15 @@ internal sealed partial class ReplicaConflictResolutionService
         Activity? activity,
         CancellationToken cancellationToken)
     {
+        // Operator and action alone are not the resolution's identity: a mergeFields carrying different
+        // values, or a chooseGeometry naming the other side, is a DIFFERENT requested state. Matching
+        // only actor and action let such a retry finalize the earlier committed write while the
+        // response and audit described the newly requested state, which never landed (#2430). The hash
+        // is null only on claims taken before it existed, which fall back to the old check.
         var sameResolution = existing.ResolutionAction == request.Action
-            && string.Equals(existing.ResolvedBy, request.Actor, StringComparison.Ordinal);
+            && string.Equals(existing.ResolvedBy, request.Actor, StringComparison.Ordinal)
+            && (existing.ResolutionInputHash is null
+                || string.Equals(existing.ResolutionInputHash, ComputeInputHash(request), StringComparison.Ordinal));
         if (!existing.FinalizationPending || !sameResolution)
         {
             return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
@@ -480,6 +470,7 @@ internal sealed partial class ReplicaConflictResolutionService
                         existing.ConflictId,
                         request.Actor,
                         request.Action,
+                        existing.ResolvedAt ?? default,
                         WriteCommitted: true,
                         ResolvedServerGeneration: null,
                         Finalized: null),
@@ -542,6 +533,7 @@ internal sealed partial class ReplicaConflictResolutionService
                     claimed.ConflictId,
                     request.Actor,
                     request.Action,
+                    claimed.ResolvedAt ?? default,
                     WriteCommitted: null,
                     ResolvedServerGeneration: resolvedGeneration,
                     Finalized: null),
@@ -557,6 +549,7 @@ internal sealed partial class ReplicaConflictResolutionService
                     claimed.ConflictId,
                     request.Actor,
                     request.Action,
+                    claimed.ResolvedAt ?? default,
                     WriteCommitted: null,
                     ResolvedServerGeneration: null,
                     Finalized: true),
@@ -578,6 +571,31 @@ internal sealed partial class ReplicaConflictResolutionService
     }
 
     /// <summary>
+    /// A stable hash of everything that determines which state a resolution writes: the action plus the
+    /// operator-supplied field values and geometry side. Used to prove that a resume is completing the
+    /// same request that was claimed, rather than finalizing an earlier write under a new request's
+    /// description (#2430).
+    /// </summary>
+    private static string ComputeInputHash(ReplicaConflictResolutionServiceRequest request)
+    {
+        var builder = new StringBuilder();
+        builder.Append(request.Action).Append('\u001f');
+        builder.Append(request.Inputs.GeometrySource?.Trim().ToLowerInvariant()).Append('\u001f');
+
+        if (request.Inputs.FieldValues is { Count: > 0 } fieldValues)
+        {
+            // Ordered so an equivalent request hashes equally regardless of payload key order.
+            foreach (var field in fieldValues.OrderBy(field => field.Key, StringComparer.Ordinal))
+            {
+                builder.Append(field.Key).Append('=').Append(field.Value.GetRawText()).Append('\u001e');
+            }
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexStringLower(hash);
+    }
+
+    /// <summary>
     /// Dispatches the planned resolution write through the shared edit pipeline. Idempotent by
     /// construction — it sets a known target state or deletes a known feature — which is what lets an
     /// interrupted attempt simply re-run it rather than having to guess whether it landed.
@@ -594,55 +612,6 @@ internal sealed partial class ReplicaConflictResolutionService
                 plan.Effect,
                 plan.FeatureStateJson),
             cancellationToken);
-
-    /// <summary>
-    /// Whether this resolution writes the captured <em>server</em> snapshot back to the feature, which
-    /// is the only case that depends on that snapshot being complete.
-    /// </summary>
-    private static bool RestoresCapturedServerState(
-        ReplicaConflictResolutionAction action,
-        ReplicaConflictResolutionPlan plan,
-        ReplicaConflictRecord conflict)
-        => plan.Effect == ReplicaConflictResolutionEffect.WriteFeatureState
-            && (action is ReplicaConflictResolutionAction.KeepServer
-                    or ReplicaConflictResolutionAction.RejectClient
-                    or ReplicaConflictResolutionAction.ChooseGeometry
-                // Under manual review the merge builds on the captured SERVER state, so it consumes the
-                // snapshot too; under last-write-wins it builds on the client state and does not.
-                || (action == ReplicaConflictResolutionAction.MergeFields && !conflict.ClientEditApplied));
-
-    /// <summary>
-    /// Whether a server edit may have landed after the pre-apply snapshot was taken but before the
-    /// conflict was detected, leaving the captured server state incomplete.
-    /// </summary>
-    /// <remarks>
-    /// The sync batch contributes exactly one change to the conflicting feature (its own applied edit,
-    /// or none at all under manual review). More than one change to that feature between the replica's
-    /// base generation and the conflict's own generation therefore means a foreign server edit
-    /// interleaved, and the snapshot cannot be trusted to contain it. Conflicts lacking either cursor
-    /// cannot be checked and are allowed through, consistent with the other precondition.
-    /// </remarks>
-    private async Task<bool> HasUncapturedServerEditAsync(
-        ReplicaConflictRecord conflict,
-        CancellationToken cancellationToken)
-    {
-        if (conflict.StorageLayerId is not { } storageLayerId ||
-            conflict.ResolutionBaseGeneration is not { } baseGeneration)
-        {
-            return false;
-        }
-
-        var changes = await _changeTracker
-            .GetChangesSinceAsync(conflict.ServerGeneration, [storageLayerId], new HashSet<long> { conflict.ObjectId }, cancellationToken)
-            .ConfigureAwait(false);
-
-        // Manual review withholds the conflicting edit, so the batch contributes NO change of its own
-        // and a single foreign change is already an uncaptured server edit. Last-write-wins contributes
-        // exactly one, so only a second change is foreign.
-        var ownChanges = conflict.ClientEditApplied ? 1 : 0;
-        return changes.Count(change => change.ObjectId == conflict.ObjectId && change.Generation <= baseGeneration)
-            > ownChanges;
-    }
 
     /// <summary>
     /// Whether the conflicting feature has been edited since the generation the conflict's captured
@@ -790,11 +759,6 @@ internal sealed partial class ReplicaConflictResolutionService
         [LoggerMessage(EventId = 7755, Level = LogLevel.Warning,
             Message = "Re-applying the resolution write for replica conflict {ConflictId}: a previous attempt left no committed-write marker, and the write is idempotent")]
         public static partial void ResolutionWriteReapplied(ILogger logger, string conflictId);
-
-        [LoggerMessage(EventId = 7754, Level = LogLevel.Warning,
-            Message = "Refused to restore the captured server state for replica conflict {ConflictId} (service {ServiceId} layer {LayerId} objectId {ObjectId}): another server edit landed while the conflict was being recorded, so the snapshot may be incomplete")]
-        public static partial void ResolutionServerSnapshotUntrusted(
-            ILogger logger, string conflictId, string serviceId, int layerId, long objectId);
 
         [LoggerMessage(EventId = 7753, Level = LogLevel.Information,
             Message = "Refused to resolve replica conflict {ConflictId}: the synchronization that produced it is still recording its detection state")]

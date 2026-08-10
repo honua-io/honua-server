@@ -52,9 +52,14 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         var adds = new List<GeoServicesFeature>();
         var updates = new List<GeoServicesFeature>();
         var deletes = new List<object>();
+        // Request slot of each dispatched row, so per-row outcomes map back to the exact uploaded edit
+        // rather than to an object id that several edits may share (#2430).
+        var updateSlots = new List<int>();
+        var deleteSlots = new List<int>();
 
-        foreach (var edit in edits)
+        for (var slot = 0; slot < edits.Length; slot++)
         {
+            var edit = edits[slot];
             switch (edit.Kind)
             {
                 case FeatureEditOperationKind.Create when edit.Payload is GeoServicesFeature add:
@@ -62,9 +67,11 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
                     break;
                 case FeatureEditOperationKind.Update when edit.Payload is GeoServicesFeature update:
                     updates.Add(update);
+                    updateSlots.Add(slot);
                     break;
                 case FeatureEditOperationKind.Delete when edit.ObjectId is { } objectId:
                     deletes.Add(objectId);
+                    deleteSlots.Add(slot);
                     break;
                 default:
                     // A payload that does not match its declared kind is a programming error in the
@@ -111,50 +118,43 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             appliedDeletes,
             Failed: failed,
             FailureMessage: failed ? "Uploaded replica edits failed to apply." : null,
-            CommittedObjectIds: CollectCommittedObjectIds(response, deletes));
+            CommittedEditIndexes: CollectCommittedEditIndexes(response, updateSlots, deleteSlots));
     }
 
     /// <summary>
-    /// Collects the object ids of the update/delete rows that actually committed. With
+    /// Collects the request slots of the update/delete rows that actually committed. With
     /// <c>rollbackOnFailure=false</c> the shared pipeline commits rows independently, so the
     /// layer-wide failed flag cannot tell a caller whether a <em>particular</em> uploaded edit landed;
     /// the conflict recorder needs exactly that (#2430).
     /// </summary>
     /// <remarks>
-    /// Update results carry their own target object id. Delete results may not, so they fall back to
-    /// the dispatched id at the same index — result arrays are index-aligned with the request arrays
-    /// (Esri applyEdits semantics). Adds are excluded: they mint new server-assigned ids and can never
-    /// be the target of an upload conflict.
+    /// Result arrays are index-aligned with the request arrays (Esri applyEdits semantics), so each
+    /// result maps back to the slot recorded when the row was dispatched. Adds are excluded: they mint
+    /// new server-assigned ids and can never be the target of an upload conflict.
     /// </remarks>
-    private static ImmutableArray<long> CollectCommittedObjectIds(
+    private static ImmutableArray<int> CollectCommittedEditIndexes(
         ApplyEditsResponse response,
-        List<object> deletes)
+        List<int> updateSlots,
+        List<int> deleteSlots)
     {
-        var committed = ImmutableArray.CreateBuilder<long>();
-        AppendCommitted(response.UpdateResults, static (_, _) => null);
-        AppendCommitted(
-            response.DeleteResults,
-            (dispatched, index) => index < dispatched.Count && dispatched[index] is long id ? id : null);
-
+        var committed = ImmutableArray.CreateBuilder<int>();
+        AppendCommitted(response.UpdateResults, updateSlots);
+        AppendCommitted(response.DeleteResults, deleteSlots);
         return committed.ToImmutable();
 
-        void AppendCommitted(EditResult[]? results, Func<List<object>, int, long?> fallbackObjectId)
+        void AppendCommitted(EditResult[]? results, List<int> slots)
         {
             if (results is null)
             {
                 return;
             }
 
-            for (var index = 0; index < results.Length; index++)
+            var count = Math.Min(results.Length, slots.Count);
+            for (var index = 0; index < count; index++)
             {
-                if (!results[index].Success)
+                if (results[index].Success)
                 {
-                    continue;
-                }
-
-                if ((results[index].ObjectId ?? fallbackObjectId(deletes, index)) is { } value)
-                {
-                    committed.Add(value);
+                    committed.Add(slots[index]);
                 }
             }
         }

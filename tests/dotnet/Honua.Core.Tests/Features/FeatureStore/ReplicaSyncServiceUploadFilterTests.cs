@@ -165,9 +165,8 @@ public sealed class ReplicaSyncServiceUploadFilterTests
                 AppliedDeletes: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Delete),
                 Failed: false,
                 FailureMessage: null,
-                CommittedObjectIds: edits
-                    .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
-                    .Select(edit => edit.ObjectId!.Value)
+                CommittedEditIndexes: Enumerable.Range(0, edits.Length)
+                    .Where(slot => edits[slot].Kind != FeatureEditOperationKind.Create)
                     .ToImmutableArray());
             return Task.FromResult(result);
         }

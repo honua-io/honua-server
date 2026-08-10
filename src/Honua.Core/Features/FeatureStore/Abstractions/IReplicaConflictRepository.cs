@@ -16,12 +16,17 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// Server generation cursor produced by the resolution when a new committed server state was
 /// created, or null when the resolution produced no new server state.
 /// </param>
+/// <param name="ResolutionInputHash">
+/// Hash of the resolution inputs this claim was taken with, so a later resume cannot finalize this
+/// write while reporting a different requested state (#2430).
+/// </param>
 public readonly record struct ReplicaConflictResolution(
     string ConflictId,
     ReplicaConflictResolutionAction Action,
     string ResolvedBy,
     DateTimeOffset ResolvedAt,
-    long? ResolvedServerGeneration);
+    long? ResolvedServerGeneration,
+    string? ResolutionInputHash = null);
 
 /// <summary>
 /// Outcome of a <see cref="IReplicaConflictRepository.ResolveAsync"/> call.
@@ -87,6 +92,12 @@ public readonly record struct ReplicaConflictDetectionUpdate(
 /// <paramref name="ResolvedBy"/> — a deferral that is later superseded by a real resolution must not
 /// finalize it.
 /// </param>
+/// <param name="ResolvedAt">
+/// Timestamp of the claim this progress belongs to. Operator and action are not unique over time: an
+/// expired claim can be released and re-taken by the same operator with the same action, and without
+/// the timestamp a slow original attempt could mark that replacement complete before its own write and
+/// audit finished (#2430).
+/// </param>
 /// <param name="WriteCommitted">
 /// Whether the resolution's feature write has committed, or null to leave it unchanged.
 /// </param>
@@ -100,6 +111,7 @@ public readonly record struct ReplicaConflictFinalizationUpdate(
     string ConflictId,
     string ResolvedBy,
     ReplicaConflictResolutionAction Action,
+    DateTimeOffset ResolvedAt,
     bool? WriteCommitted,
     long? ResolvedServerGeneration,
     bool? Finalized);

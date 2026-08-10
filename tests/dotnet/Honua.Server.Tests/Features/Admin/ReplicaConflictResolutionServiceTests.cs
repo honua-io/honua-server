@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -426,29 +427,7 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_WhenAServerEditLandedWhileTheConflictWasRecorded_RefusesToRestoreTheSnapshot()
-    {
-        // The pre-apply server snapshot is taken before conflict detection, so an edit landing in that
-        // window is detected as the conflict yet missing from ServerStateJson. Restoring the snapshot
-        // would discard that edit, so the restoration is refused.
-        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
-        var tracker = new FakeChangeTracker();
-        // Two changes to the feature between the replica base (5) and the conflict generation (40):
-        // the sync batch contributes one, so the second is a foreign server edit.
-        tracker.ChangesSinceBase.Add(Change(generation: 20));
-        tracker.ChangesSinceBase.Add(Change(generation: 35));
-        var applier = new RecordingApplier();
-        var service = CreateService(repository, applier, tracker);
-
-        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
-
-        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
-        applier.Calls.Should().Be(0, "the captured server state may not contain the interleaved edit");
-        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
-    }
-
-    [UnitTest]
-    public async Task ResolveAsync_WhenOnlyTheSyncBatchTouchedTheFeature_RestoresNormally()
+    public async Task ResolveAsync_WhenTheOnlyChangeIsWithinTheConflictWindow_RestoresNormally()
     {
         var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
         var tracker = new FakeChangeTracker();
@@ -542,6 +521,44 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
         repository.Current.Status.Should().Be(ReplicaConflictStatus.Deferred);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenARetryChangesTheRequestedInputs_DoesNotFinalizeTheEarlierWrite()
+    {
+        // A mergeFields retry naming different values is a DIFFERENT requested state. Matching only
+        // operator and action let it finalize the earlier committed write while the response and audit
+        // described the new selection, which never landed.
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.MergeFields,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = true,
+            ResolutionInputHash = "a-different-request",
+        };
+        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(
+            Request(ReplicaConflictResolutionAction.MergeFields) with
+            {
+                ActionName = "mergeFields",
+                Inputs = new ReplicaConflictResolutionInputs(
+                    new Dictionary<string, JsonElement>
+                    {
+                        ["name"] = JsonDocument.Parse("\"different\"").RootElement.Clone(),
+                    },
+                    GeometrySource: null),
+            });
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        applier.Calls.Should().Be(0);
+        repository.Current.FinalizationPending.Should().BeTrue(
+            "the earlier write must not be finalized under a different request's description");
     }
 
     private static FeatureChange Change(long generation) => new()
@@ -751,7 +768,8 @@ public sealed class ReplicaConflictResolutionServiceTests
 
             // Mirror the real guard: progress only applies to the claim that produced it.
             if (!string.Equals(update.ResolvedBy, Current.ResolvedBy, StringComparison.Ordinal) ||
-                update.Action != Current.ResolutionAction)
+                update.Action != Current.ResolutionAction ||
+                update.ResolvedAt != Current.ResolvedAt)
             {
                 return Task.FromResult(false);
             }
@@ -791,6 +809,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 ResolvedBy = resolution.ResolvedBy,
                 ResolvedAt = resolution.ResolvedAt,
                 ResolvedServerGeneration = resolution.ResolvedServerGeneration,
+                ResolutionInputHash = resolution.ResolutionInputHash,
                 WriteCommitted = false,
                 FinalizationPending = true,
             };

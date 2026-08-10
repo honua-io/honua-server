@@ -34,7 +34,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
         // 42 commits; 43 is rejected by the provider. The applier reports the layer as failed but
         // attributes 42 as committed.
-        var applier = new PartialFailureEditApplier(committedObjectIds: [42], failed: true);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [0], failed: true);
         var report = await service.ApplyUploadAsync(
             CreateRequest(
                 ImmutableArray.Create(
@@ -69,7 +69,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
             CreateRequest(
                 ImmutableArray.Create(
                     new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
-            new PartialFailureEditApplier(committedObjectIds: [], failed: true));
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: true));
 
         repository.Upserts.Should().ContainSingle();
         repository.Upserts.Single().ClientEditApplied.Should().BeFalse();
@@ -93,7 +93,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
             CreateRequest(
                 ImmutableArray.Create(
                     new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
-            new PartialFailureEditApplier(committedObjectIds: [42], failed: false));
+            new PartialFailureEditApplier(committedEditIndexes: [0], failed: false));
 
         repository.Upserts.Should().ContainSingle("only the initial detection record is upserted");
         repository.DetectionUpdates.Should().ContainSingle();
@@ -119,14 +119,14 @@ public sealed class ReplicaSyncClientEditAttributionTests
             CreateRequest(
                 ImmutableArray.Create(
                     new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
-            new PartialFailureEditApplier(committedObjectIds: null, failed: false));
+            new PartialFailureEditApplier(committedEditIndexes: null, failed: false));
 
         report.Conflicts.Single().Applied.Should().BeFalse();
         repository.DetectionUpdates.Should().NotContain(u => u.ClientEditApplied == true);
     }
 
     [UnitTest]
-    public async Task ApplyUpload_RepeatedEditsForOneObject_PromotesOnlyAsManyConflictsAsCommitted()
+    public async Task ApplyUpload_RepeatedEditsForOneObject_PromotesTheCommittedRequestSlot()
     {
         // One payload can carry several operations for the same object. With rollbackOnFailure=false a
         // failed first operation alongside a successful second must promote exactly one of that
@@ -136,17 +136,20 @@ public sealed class ReplicaSyncClientEditAttributionTests
         var repository = new RecordingConflictRepository();
         var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
 
-        var applier = new PartialFailureEditApplier(committedObjectIds: [42], failed: true);
+        // Slot 1 (the second operation) commits; slot 0 fails.
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [1], failed: true);
         var report = await service.ApplyUploadAsync(
             CreateRequest(
                 ImmutableArray.Create(
                     new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
-                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Delete, ObjectId: 42, Payload: null))),
             applier);
 
         report.Conflicts.Should().HaveCount(2, "both operations conflicted with the same server edit");
         report.Conflicts.Count(c => c.Applied).Should().Be(
             1, "only one of the two operations for object 42 committed");
+        report.Conflicts[1].Applied.Should().BeTrue("the committed slot is the second operation");
+        report.Conflicts[0].Applied.Should().BeFalse("the failed slot must not be promoted");
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
@@ -191,7 +194,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
     /// Edit applier that reports a layer-wide failure while still attributing the rows that
     /// committed, mirroring the shared pipeline's best-effort per-row behavior.
     /// </summary>
-    private sealed class PartialFailureEditApplier(long[]? committedObjectIds, bool failed) : IReplicaEditApplier
+    private sealed class PartialFailureEditApplier(int[]? committedEditIndexes, bool failed) : IReplicaEditApplier
     {
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
@@ -202,13 +205,13 @@ public sealed class ReplicaSyncClientEditAttributionTests
             => Task.FromResult(new ReplicaLayerApplyResult(
                 publicLayerId,
                 AppliedAdds: 0,
-                AppliedUpdates: committedObjectIds?.Length ?? 0,
+                AppliedUpdates: committedEditIndexes?.Length ?? 0,
                 AppliedDeletes: 0,
                 Failed: failed,
                 FailureMessage: failed ? "partial failure" : null,
-                CommittedObjectIds: committedObjectIds is null
+                CommittedEditIndexes: committedEditIndexes is null
                     ? default
-                    : [.. committedObjectIds]));
+                    : [.. committedEditIndexes]));
     }
 
     private sealed class RecordingConflictRepository : IReplicaConflictRepository

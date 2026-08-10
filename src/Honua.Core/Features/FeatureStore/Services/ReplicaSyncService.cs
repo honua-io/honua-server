@@ -53,9 +53,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     public async Task<ReplicaSyncUploadReport> ApplyUploadAsync(
         ReplicaSyncRequest request,
         IReplicaEditApplier editApplier,
+        IReplicaServerStateCapturer? serverStateCapturer = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(editApplier);
+        var serverStates = new Dictionary<(int PublicLayerId, long ObjectId), string>();
 
         var layerEdits = request.LayerEdits;
 
@@ -75,7 +77,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 Conflicts: ImmutableArray<ReplicaSyncConflict>.Empty,
                 LayerResults: ImmutableArray<ReplicaLayerApplyResult>.Empty,
                 ServerGeneration: currentGen,
-                FailureMessage: null);
+                FailureMessage: null,
+                ServerStates: serverStates);
         }
 
         // Conflict review is supported only when the provider can durably persist conflicts. When it
@@ -131,7 +134,14 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // apply outcome below. `layerConflictIds` covers every conflict on the layer, including the
             // ones manual review withheld, because all of them need the resolution-base generation.
             var layerConflictIndexes = new List<int>();
+            // Request slot (position in the edit array handed to the applier) of each dispatched
+            // conflicting edit, parallel to layerConflictIndexes, so per-row outcomes map back to the
+            // exact edit rather than to an object id several edits may share (#2430).
+            var layerConflictSlots = new List<int>();
             var layerConflictIds = new List<string>();
+            // Conflicts manual review withheld: they are never dispatched, so they have no request
+            // slot, but their server state still has to be captured for the review surface.
+            var layerWithheldObjectIds = new List<long>();
             var layerConflictCount = 0;
             foreach (var edit in edits)
             {
@@ -165,6 +175,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     if (applyConflicting)
                     {
                         layerConflictIndexes.Add(conflicts.Count);
+                        layerConflictSlots.Add(editsToApply.Count);
+                    }
+                    else
+                    {
+                        layerWithheldObjectIds.Add(objectId);
                     }
 
                     conflicts.Add(new ReplicaSyncConflict(
@@ -185,6 +200,30 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
 
                 editsToApply.Add(edit);
+            }
+
+            // Snapshot the server side of every conflicting feature HERE: after detection, before the
+            // uploaded edits apply. Capturing earlier let a server edit landing in between be flagged
+            // as the conflict yet be missing from the snapshot, so a later keep-server resolution
+            // restored a state that silently discarded it — and the collapsed change log makes that
+            // undetectable after the fact (#2430).
+            if (serverStateCapturer is not null && layerConflictCount > 0)
+            {
+                var targets = layerConflictIndexes
+                    .Select(index => conflicts[index])
+                    .Select(conflict => new ReplicaConflictCaptureTarget(
+                        layer.PublicLayerId, layer.StorageLayerId, conflict.ObjectId))
+                    .Concat(layerWithheldObjectIds.Select(objectId => new ReplicaConflictCaptureTarget(
+                        layer.PublicLayerId, layer.StorageLayerId, objectId)))
+                    .Distinct()
+                    .ToImmutableArray();
+
+                var captured = await serverStateCapturer.CaptureAsync(targets, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var entry in captured)
+                {
+                    serverStates[entry.Key] = entry.Value;
+                }
             }
 
             // Watermark taken BEFORE the batch, so the per-conflict base generation below can be derived
@@ -217,6 +256,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 await MarkConflictsAppliedAsync(
                         conflicts,
                         layerConflictIndexes,
+                        layerConflictSlots,
                         layerConflictIds,
                         applyResult,
                         baseGenerations,
@@ -252,7 +292,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             Conflicts: conflicts.ToImmutable(),
             LayerResults: layerResults.ToImmutable(),
             ServerGeneration: serverGeneration,
-            FailureMessage: firstFailure);
+            FailureMessage: firstFailure,
+            ServerStates: serverStates);
     }
 
     private static ReplicaConflictType ClassifyConflict(
@@ -295,6 +336,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
     private async Task MarkConflictsAppliedAsync(
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
+        List<int> layerConflictSlots,
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
         IReadOnlyDictionary<string, long> baseGenerations,
@@ -302,30 +344,25 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
-        // Counted per occurrence, not collapsed to a set of ids: one payload can carry several
-        // update/delete operations for the same object, and with rollbackOnFailure=false a failed first
-        // operation alongside a successful second must promote only ONE of that object's conflicts.
-        // Collapsing to a set promoted both and left a later resolution planning against a state that
-        // was never committed (#2430).
-        var remainingCommits = new Dictionary<long, int>();
-        if (!applyResult.CommittedObjectIds.IsDefaultOrEmpty)
-        {
-            foreach (var objectId in applyResult.CommittedObjectIds)
-            {
-                remainingCommits[objectId] = remainingCommits.GetValueOrDefault(objectId) + 1;
-            }
-        }
+        // Matched by request slot, not by object id. One payload can carry several operations for the
+        // same object — an update and a delete, say — and with rollbackOnFailure=false one can commit
+        // while the other fails. Object identity cannot say which landed, so attributing by id marked
+        // the wrong conflict applied and a later resolution planned against a state that never
+        // committed (#2430).
+        var committedSlots = applyResult.CommittedEditIndexes.IsDefaultOrEmpty
+            ? []
+            : new HashSet<int>(applyResult.CommittedEditIndexes);
 
         var promoted = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var index in layerConflictIndexes)
+        for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
-            var conflict = conflicts[index];
-            if (remainingCommits.GetValueOrDefault(conflict.ObjectId) <= 0)
+            if (!committedSlots.Contains(layerConflictSlots[i]))
             {
                 continue;
             }
 
-            remainingCommits[conflict.ObjectId]--;
+            var index = layerConflictIndexes[i];
+            var conflict = conflicts[index];
             conflicts[index] = conflict with { Applied = true };
 
             if (conflict.ConflictId is { Length: > 0 } promotedId)
