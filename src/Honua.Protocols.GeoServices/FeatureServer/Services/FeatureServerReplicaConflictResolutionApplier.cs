@@ -78,17 +78,16 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                     return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
                 }
 
-                var objectIdField = await ResolveObjectIdFieldNameAsync(
-                        command.ServiceId, command.PublicLayerId, cancellationToken)
+                var layer = await ResolveLayerAsync(command.ServiceId, command.PublicLayerId, cancellationToken)
                     .ConfigureAwait(false);
-                if (objectIdField is null)
+                if (layer is not { } identity)
                 {
                     return new ReplicaConflictApplyResult(Applied: false, FailureMessage);
                 }
 
                 request = new ApplyEditsRequest
                 {
-                    Updates = [PinToConflictFeature(feature, objectIdField, command.ObjectId)],
+                    Updates = [PinToConflictFeature(feature, identity, command.ObjectId)],
                     RollbackOnFailure = true,
                     RollbackOnFailureExplicitlySet = true,
                 };
@@ -123,13 +122,20 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     }
 
     /// <summary>
-    /// Resolves the object-id field name of the layer as published by this service, or null when the
-    /// pair cannot be resolved (the resolution is then reported as an uncommitted failure rather than
-    /// dispatched against a guessed field). The lookup is service-scoped: service-local layer indexes
-    /// such as <c>0</c> are reused across services, so resolving the index alone can return another
-    /// service's resource and pin the update under the wrong attribute name.
+    /// The layer's configured object-id field plus the names it actually declares, used to decide which
+    /// attributes carry identity and which are business data.
     /// </summary>
-    private async Task<string?> ResolveObjectIdFieldNameAsync(
+    private readonly record struct LayerIdentity(string ObjectIdField, HashSet<string> SchemaFields);
+
+    /// <summary>
+    /// Resolves the object-id field of the layer as published by this service, together with its
+    /// declared field names, or null when the pair cannot be resolved (the resolution is then reported
+    /// as an uncommitted failure rather than dispatched against a guessed field). The lookup is
+    /// service-scoped: service-local layer indexes such as <c>0</c> are reused across services, so
+    /// resolving the index alone can return another service's resource and pin the update under the
+    /// wrong attribute name.
+    /// </summary>
+    private async Task<LayerIdentity?> ResolveLayerAsync(
         string serviceId,
         int publicLayerId,
         CancellationToken cancellationToken)
@@ -137,9 +143,14 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         var layer = await _resourceValidator
             .ValidateServiceLayerV2Async(serviceId, publicLayerId, cancellationToken)
             .ConfigureAwait(false);
-        return layer is { IsValid: true, Resource: { } triple }
-            ? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(triple.Resource)
-            : null;
+        if (layer is not { IsValid: true, Resource: { } triple })
+        {
+            return null;
+        }
+
+        return new LayerIdentity(
+            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(triple.Resource),
+            triple.Resource.SchemaFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -151,16 +162,16 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     /// </summary>
     private static GeoServicesFeature PinToConflictFeature(
         GeoServicesFeature feature,
-        string objectIdFieldName,
+        LayerIdentity identity,
         long objectId)
     {
         var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (var entry in feature.Attributes.Where(entry => !IsObjectIdKey(entry.Key, objectIdFieldName)))
+        foreach (var entry in feature.Attributes.Where(entry => !IsObjectIdKey(entry.Key, identity)))
         {
             attributes[entry.Key] = entry.Value;
         }
 
-        attributes[objectIdFieldName] = objectId;
+        attributes[identity.ObjectIdField] = objectId;
 
         return new GeoServicesFeature
         {
@@ -174,12 +185,20 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     /// <summary>
     /// Whether an attribute key names the feature's identity: the layer's configured object-id field,
     /// or one of the conventional aliases a captured storage/client envelope may carry under a
-    /// different casing or name than the layer's public field.
+    /// different name than the layer's public field.
     /// </summary>
-    private static bool IsObjectIdKey(string key, string objectIdFieldName)
-        => key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)
-            || key.Equals("objectid", StringComparison.OrdinalIgnoreCase)
-            || key.Equals("fid", StringComparison.OrdinalIgnoreCase);
+    /// <remarks>
+    /// An alias only counts as identity when the layer does not actually declare a field by that name.
+    /// A layer whose object-id field is a custom key can legitimately also have a business attribute
+    /// called <c>fid</c> or <c>objectid</c>; dropping it would silently discard the operator's value,
+    /// so a keep-server restoration or field merge targeting it would report success while leaving the
+    /// field unchanged (#2430).
+    /// </remarks>
+    private static bool IsObjectIdKey(string key, LayerIdentity identity)
+        => key.Equals(identity.ObjectIdField, StringComparison.OrdinalIgnoreCase)
+            || ((key.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+                    || key.Equals("fid", StringComparison.OrdinalIgnoreCase))
+                && !identity.SchemaFields.Contains(key));
 
     private static bool TryDeserializeFeature(string? featureStateJson, out GeoServicesFeature feature)
     {

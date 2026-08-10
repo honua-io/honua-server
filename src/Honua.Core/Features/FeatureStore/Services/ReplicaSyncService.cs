@@ -396,15 +396,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             .GetChangesSinceAsync(preBatchGeneration, [layer.StorageLayerId], new HashSet<long>(byObjectId.Keys), cancellationToken)
             .ConfigureAwait(false);
 
-        foreach (var change in changes.Where(change => byObjectId.ContainsKey(change.ObjectId)))
+        var candidates = changes
+            .Where(change => byObjectId.ContainsKey(change.ObjectId))
+            .SelectMany(change => byObjectId[change.ObjectId].Select(conflictId => (conflictId, change.Generation)))
+            .Where(candidate => !generations.TryGetValue(candidate.conflictId, out var current)
+                || candidate.Generation > current);
+
+        foreach (var (conflictId, generation) in candidates)
         {
-            foreach (var conflictId in byObjectId[change.ObjectId])
-            {
-                if (!generations.TryGetValue(conflictId, out var current) || change.Generation > current)
-                {
-                    generations[conflictId] = change.Generation;
-                }
-            }
+            generations[conflictId] = generation;
         }
 
         return generations;
