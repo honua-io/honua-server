@@ -266,6 +266,67 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithProtocolSpecificNameCollision_UpdatesOnlyFeatureServerResource()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var featurePublication = snapshot.Graph.Publications.First(publication =>
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.LayerIndex == 0);
+        var featureService = snapshot.Graph.Services.Single(service =>
+            string.Equals(service.Metadata.Id, featurePublication.ServiceId, StringComparison.Ordinal));
+        var featureResource = snapshot.Graph.Resources.Single(resource =>
+            string.Equals(resource.Metadata.Id, featurePublication.ResourceId, StringComparison.Ordinal));
+        var ogcResource = featureResource with
+        {
+            Metadata = featureResource.Metadata with
+            {
+                Id = "resource-test-ogc-collision",
+                License = "MIT"
+            },
+            StorageBindingIds = [],
+            PrimaryStorageBindingId = null
+        };
+        var ogcPublication = featurePublication with
+        {
+            Metadata = featurePublication.Metadata with { Id = "publication-test-ogc-collision" },
+            ServiceId = "service-test-ogc-collision",
+            ResourceId = ogcResource.Metadata.Id,
+            StorageBindingId = null,
+            PublicationType = MetadataV2PublicationType.OgcCollection,
+            IsPrimary = false
+        };
+        var ogcService = featureService with
+        {
+            Metadata = featureService.Metadata with { Id = "service-test-ogc-collision" },
+            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Protocols = [ServiceProtocols.OgcFeatures],
+            PublicationIds = [ogcPublication.Metadata.Id]
+        };
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+            await store.SaveAsync(snapshot.Graph with
+            {
+                Revision = snapshot.Graph.Revision + 1,
+                Services = snapshot.Graph.Services.Append(ogcService).ToArray(),
+                Resources = snapshot.Graph.Resources.Append(ogcResource).ToArray(),
+                Publications = snapshot.Graph.Publications.Append(ogcPublication).ToArray()
+            }, expectedEtag: null);
+        }
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        updated.Resources.Single(resource => resource.Metadata.Id == featureResource.Metadata.Id)
+            .Metadata.License.Should().Be("CC0-1.0");
+        updated.Resources.Single(resource => resource.Metadata.Id == ogcResource.Metadata.Id)
+            .Metadata.License.Should().Be("MIT");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_GovernancePatch_PreservesUnrelatedLinksAndRefreshesLicenseTitle()
     {
         const string oldLicenseUrl = "https://example.test/licenses/cc-by-4.0";

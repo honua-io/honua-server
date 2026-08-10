@@ -31,17 +31,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Graph graph,
         string serviceName)
     {
-        var serviceIds = graph.Services
-            .Where(service =>
-                string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal))
-            .Select(service => service.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId: null);
+        if (service is null)
+        {
+            return new Dictionary<int, MetadataV2ObjectMetadata>();
+        }
+
         var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
         var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
-                     serviceIds.Contains(publication.ServiceId)))
+                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)))
         {
             if (!resourcesById.TryGetValue(publication.ResourceId, out var resource))
             {

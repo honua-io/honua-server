@@ -20,11 +20,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             [
                 new MetadataV2Service
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
                 },
                 new MetadataV2Service
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" }
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
                 }
             ],
             Resources =
@@ -83,6 +85,58 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         beta.Should().ContainSingle().Which.Should().Be(new KeyValuePair<int, MetadataV2ObjectMetadata>(
             202,
             graph.Resources[1].Metadata));
+    }
+
+    [Fact]
+    public void IndexSourceGovernanceByStorageLayer_WithProtocolSpecificNameCollision_UsesFeatureServerResource()
+    {
+        var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-ogc", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.OgcApiFeatures
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-ogc", License = "MIT" } },
+                new MetadataV2Resource { Metadata = featureMetadata }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-ogc" },
+                    ResourceId = "resource-ogc",
+                    StorageLayerId = 7
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-feature" },
+                    ResourceId = "resource-feature",
+                    StorageLayerId = 7
+                }
+            ],
+            Publications =
+            [
+                CreatePublication("pub-ogc", "service-ogc", "resource-ogc", "binding-ogc", 7, MetadataV2PublicationType.OgcCollection),
+                CreatePublication("pub-feature", "service-feature", "resource-feature", "binding-feature", 7, MetadataV2PublicationType.EsriFeatureLayer)
+            ]
+        };
+
+        var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
+
+        result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, featureMetadata));
     }
 
     [Fact]

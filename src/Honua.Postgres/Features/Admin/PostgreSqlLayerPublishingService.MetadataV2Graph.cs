@@ -211,25 +211,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var matchingServices = graph.Services
-            .Where(candidate =>
-                string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal))
-            .ToArray();
-        var matchingFeatureServices = matchingServices
-            .Where(candidate => candidate.ServiceType == MetadataV2ServiceType.EsriFeatureService)
-            .ToArray();
-        var service = matchingFeatureServices.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
-        service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
-        if (service is null && matchingServices.Length > 0)
-        {
-            throw new LayerPublishingException(
-                LayerPublishingErrorKind.Conflict,
-                $"Service '{serviceName}' does not resolve to one unique Esri FeatureServer service.",
-                layerId);
-        }
-
+        var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
         service ??= BuildPublishedService(graph, serviceName, srid, now);
         var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
@@ -284,6 +266,40 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Publications = UpsertPublication(graph.Publications, featurePublication)
         };
     }
+
+    private static MetadataV2Service? ResolveUniquePublishedFeatureService(
+        MetadataV2Graph graph,
+        string serviceName,
+        int? layerId)
+    {
+        var matchingServices = graph.Services
+            .Where(candidate =>
+                string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal))
+            .ToArray();
+        var matchingFeatureServices = matchingServices
+            .Where(candidate => IsFeatureServerService(graph, candidate))
+            .ToArray();
+        var service = matchingFeatureServices.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
+        service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
+        if (service is null && matchingServices.Length > 0)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Service '{serviceName}' does not resolve to one unique Esri FeatureServer service.",
+                layerId);
+        }
+
+        return service;
+    }
+
+    private static bool IsFeatureServerService(MetadataV2Graph graph, MetadataV2Service service)
+        => service.ServiceType == MetadataV2ServiceType.EsriFeatureService ||
+           service.Protocols.Contains(MetadataV2ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
+           graph.Publications.Any(publication =>
+               string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran

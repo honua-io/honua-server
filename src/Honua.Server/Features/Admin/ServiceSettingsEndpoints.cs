@@ -338,29 +338,40 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
             }
 
-            // Find the publication for this (service, layerId) pair. In V2 layer ids are
-            // resource-local indices on publications; the v1 admin contract was "layer ids
-            // are stable across services of the same name", so we walk every publication
-            // on every matching service and resolve the first numeric LayerIndex match.
-            var serviceIds = services
-                .Select(s => s.Metadata.Id)
-                .ToHashSet(StringComparer.Ordinal);
-            MetadataV2Resource? resource = null;
-            var publications = snapshot.Graph.Publications;
-            for (var publicationIndex = 0; publicationIndex < publications.Count; publicationIndex++)
+            var featureServices = services
+                .Where(service => IsFeatureServerService(snapshot.Graph, service))
+                .ToArray();
+            if (featureServices.Length == 0)
             {
-                var publication = publications[publicationIndex];
-                if (serviceIds.Contains(publication.ServiceId) &&
+                return TypedResults.Problem(
+                    title: "FeatureServer service not found",
+                    detail: $"Service '{serviceName}' does not resolve to a FeatureServer service.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var featureServiceIds = featureServices
+                .Select(service => service.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var targetResourceIds = snapshot.Graph.Publications
+                .Where(publication =>
+                    featureServiceIds.Contains(publication.ServiceId) &&
                     publication.Identifier.IsNumeric &&
                     publication.LayerIndex == layerId)
-                {
-                    resource = snapshot.ResolveResource(publication);
-                    if (resource is not null)
-                    {
-                        break;
-                    }
-                }
+                .Select(publication => publication.ResourceId)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (targetResourceIds.Length > 1)
+            {
+                return TypedResults.Problem(
+                    title: "Ambiguous FeatureServer layer",
+                    detail: $"Layer {layerId} in service '{serviceName}' resolves to multiple resources.",
+                    statusCode: StatusCodes.Status409Conflict);
             }
+
+            var resource = targetResourceIds.Length == 1
+                ? snapshot.Graph.Resources.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Metadata.Id, targetResourceIds[0], StringComparison.Ordinal))
+                : null;
             if (resource is null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
@@ -450,10 +461,9 @@ internal static class ServiceSettingsEndpoints
                 updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
-            await MutateResourcesForLayerAsync(
+            await MutateResourceByIdAsync(
                 graphStore,
-                serviceName,
-                layerId,
+                resource.Metadata.Id,
                 next =>
                 {
                     if (updatedAccessPolicy is not null)
@@ -512,6 +522,13 @@ internal static class ServiceSettingsEndpoints
         services = matches;
         return matches.Length > 0;
     }
+
+    private static bool IsFeatureServerService(MetadataV2Graph graph, MetadataV2Service service)
+        => service.ServiceType == MetadataV2ServiceType.EsriFeatureService ||
+           service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
+           graph.Publications.Any(publication =>
+               string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     private static ServiceSettingsResponse BuildSettingsResponse(
         string serviceName,
@@ -829,49 +846,29 @@ internal static class ServiceSettingsEndpoints
     }
 
     /// <summary>
-    /// Loads the canonical Metadata v2 graph, walks every publication whose service
-    /// matches <paramref name="serviceName"/> and whose <c>LayerIndex</c> equals
-    /// <paramref name="layerId"/>, applies <paramref name="mutate"/> to the backing
-    /// resource(s) once, and persists the result. The v1 contract was "layer ids are
-    /// stable across services of the same name", so the V2 cut-over collapses the same
-    /// way: one logical layer maps to one V2 resource even when it is published through
-    /// multiple V2 services.
+    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to the
+    /// uniquely resolved canonical resource, and persists the result. The immutable
+    /// resource id is carried across optimistic-concurrency retries so same-name protocol
+    /// services cannot redirect a patch to another resource.
     /// </summary>
-    private static async Task MutateResourcesForLayerAsync(
+    private static async Task MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
-        string serviceName,
-        int layerId,
+        string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var matchingServiceIds = snapshot.Graph.Services
-                .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-                .Select(s => s.Metadata.Id)
-                .ToHashSet(StringComparer.Ordinal);
-
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => matchingServiceIds.Contains(p.ServiceId)
-                    && p.Identifier.IsNumeric
-                    && p.LayerIndex == layerId)
-                .Select(p => p.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-
-            if (targetResourceIds.Count == 0)
+            var resources = snapshot.Graph.Resources.ToArray();
+            var resourceIndex = Array.FindIndex(resources, resource =>
+                string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
+            if (resourceIndex < 0)
             {
                 return;
             }
 
-            var resources = snapshot.Graph.Resources.ToArray();
-            for (var i = 0; i < resources.Length; i++)
-            {
-                if (targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    resources[i] = mutate(resources[i]);
-                }
-            }
+            resources[resourceIndex] = mutate(resources[resourceIndex]);
 
             var updated = snapshot.Graph with
             {
