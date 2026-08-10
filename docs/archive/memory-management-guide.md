@@ -15,7 +15,7 @@ The Honua server implements comprehensive memory management strategies across se
 
 ### 1. Enhanced FeatureCacheManager
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureCacheManager.cs`
 
 **Improvements**:
 - Bounded cache sizes with configurable limits (default: 5000 entries)
@@ -37,7 +37,7 @@ services.Configure<MemoryManagementOptions>(options =>
 
 ### 2. Bulk Import Operations
 
-**Location**: `src/Honua.Postgres/Features/Import/BulkImportExtensions.cs`
+**Location**: `src/Honua.Db/Postgres/Features/Import/BulkImportExtensions.cs`
 
 **Improvements**:
 - Array-based bulk inserts for batches > 500 features
@@ -53,7 +53,7 @@ services.Configure<MemoryManagementOptions>(options =>
 
 ### 3. Improved Object Pooling
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/PooledObjectPolicies.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/PooledObjectPolicies.cs`
 
 **StringBuilder Pool Improvements**:
 - Capacity management to prevent LOH allocations (>85KB)
@@ -67,7 +67,7 @@ services.Configure<MemoryManagementOptions>(options =>
 
 ### 4. Memory Monitoring Service
 
-**Location**: `src/Honua.Postgres/Features/Infrastructure/Monitoring/MemoryMonitor.cs`
+**Location**: `src/Honua.Db/Postgres/Features/Infrastructure/Monitoring/MemoryMonitor.cs`
 
 **Features**:
 - Real-time memory usage tracking
@@ -171,7 +171,7 @@ dotnet test tests/dotnet/Honua.Core.Tests/Infrastructure/Monitoring/MemoryManage
    {
      "Logging": {
        "LogLevel": {
-         "Honua.Postgres.Features.Infrastructure.Monitoring.MemoryMonitor": "Information"
+         "Honua.Db.Postgres.Features.Infrastructure.Monitoring.MemoryMonitor": "Information"
        }
      }
    }

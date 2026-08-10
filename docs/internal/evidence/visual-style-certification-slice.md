@@ -290,7 +290,7 @@ a `Cache-Control: no-cache` override.
 
 - **Server-side style generation.** This slice exercises stored
   drawingInfo and stored tileset metadata. The
-  `Honua.Postgres.Features.Styling.PostgresLayerStyleCatalog`
+  `Honua.Db.Postgres.Features.Styling.PostgresLayerStyleCatalog`
   drawingInfo generation gap noted in the design brief is a separate
   ticket and not closed by this slice.
 - **Licensed client lanes.** ArcGIS Pro, Power BI, and Excel remain

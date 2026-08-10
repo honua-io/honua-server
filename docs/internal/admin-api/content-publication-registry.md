@@ -16,7 +16,7 @@ The implementation lives in:
 
 - `Honua.Core.Features.Publishing.Content` for validation, route normalization,
   hashing, immutable-version projection, and the in-memory fallback store.
-- `Honua.Postgres.Features.Publishing` for the durable Postgres store.
+- `Honua.Db.Postgres.Features.Publishing` for the durable Postgres store.
 - `Honua.Server.Features.Console.Publications` for thin HTTP adapters.
 
 JSON contracts are source-generated through `ContentPublicationJsonContext`.

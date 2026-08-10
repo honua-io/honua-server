@@ -118,8 +118,9 @@ train_build_py_test_pattern() {
 # train_surgical_test_projects <fqn-list-newline>: map failing FQNs back to the
 # test PROJECT(s) that own them, so the surgical rerun targets the right csproj.
 # Heuristic: the FQN's leading namespace segments name the test assembly, which
-# (by repo convention) maps to tests/dotnet/<Assembly>/<Assembly>.csproj. We take
-# the longest dotted prefix that matches a real *.csproj under tests/dotnet/.
+# maps to a directory under tests/dotnet/. We take the longest dotted prefix
+# whose directory contains exactly one *.csproj; this also supports provider
+# folders whose assembly/project filenames are intentionally preserved.
 # Test override: TRAIN_TEST_PROJECT_FOR <cmd> is invoked with an FQN and prints
 # the project path (offline fixtures). Emits unique project paths.
 train_surgical_test_projects() {
@@ -135,8 +136,11 @@ train_surgical_test_projects() {
     local prefix="${fqn}" proj=""
     while [[ "${prefix}" == *.* ]]; do
       prefix="${prefix%.*}"
-      local cand="${TRAIN_REPO_ROOT}/tests/dotnet/${prefix}/${prefix}.csproj"
-      if [[ -f "${cand}" ]]; then proj="${cand}"; break; fi
+      local candidates=("${TRAIN_REPO_ROOT}/tests/dotnet/${prefix}/"*.csproj)
+      if [[ ${#candidates[@]} -eq 1 && -f "${candidates[0]}" ]]; then
+        proj="${candidates[0]}"
+        break
+      fi
     done
     [[ -n "${proj}" ]] && printf '%s\n' "${proj}"
   done <<<"$(printf '%s\n' "${fqns}" | sed '/^$/d' | sort -u)" | sort -u

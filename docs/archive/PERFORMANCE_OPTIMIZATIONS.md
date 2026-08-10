@@ -39,7 +39,7 @@ CREATE INDEX CONCURRENTLY idx_features_attr_dates ON features ((attributes ->> '
 
 ### 2. Relationship Query Optimization
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/FeatureDataAccess.Relationships.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureDataAccess.Relationships.cs`
 
 **Problem**: N+1 query pattern where relationship queries executed two separate database calls:
 1. Get foreign key values from origin features
@@ -66,7 +66,7 @@ INNER JOIN features AS dest
 
 ### 3. Spatial Query Performance Optimization
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Spatial.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Spatial.cs`
 
 **Key Optimizations**:
 
@@ -93,7 +93,7 @@ NOT (geometry && $1 AND ST_Intersects(geometry, $1))  -- Uses spatial index
 
 ### 4. Temporal Query Performance
 
-**Location**: `src/Honua.Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Temporal.cs`
+**Location**: `src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Temporal.cs`
 
 **Optimizations**:
 
@@ -115,7 +115,7 @@ attributes IS NOT NULL AND (attributes -> 'date_field' ->> 0)::date BETWEEN $1 A
 
 ### 5. Automatic Performance Index Creation
 
-**Location**: `src/Honua.Postgres/Features/Admin/PostgreSqlLayerPublishingService.cs`
+**Location**: `src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.cs`
 
 **Feature**: Automatic creation of layer-specific performance indexes during publishing:
 
@@ -135,7 +135,7 @@ await CreateLayerPerformanceIndexesAsync(connection, transaction, layerId, schem
 
 ### 6. Performance Monitoring
 
-**Location**: `src/Honua.Postgres/Features/Admin/PerformanceBenchmark.cs`
+**Location**: `src/Honua.Db/Postgres/Features/Admin/PerformanceBenchmark.cs`
 
 **Features**:
 - Automated performance validation for new layers

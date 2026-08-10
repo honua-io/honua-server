@@ -1,0 +1,1077 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Data;
+using System.Diagnostics;
+using System.Text.Json;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Npgsql;
+
+namespace Honua.Db.Postgres.Features.FeatureStore.Services;
+
+internal sealed partial class PostgresVersionManager
+{
+    // Telemetry source name "Honua" matches the registered OTel source so reconcile/post spans are
+    // collected alongside the rest of the platform (#1553).
+    private static readonly ActivitySource VersioningActivitySource = new("Honua", "1.0.0");
+
+    /// <summary>
+    /// Acquires the durable (service, version) maintenance lock so a reconcile, post, or conflicting
+    /// resolve runs exclusively for a version (#1553). Throws <see cref="VersionLockedException"/> when
+    /// the lock is already held by another in-flight reconcile/post, so the caller can surface a clear
+    /// in-progress (409) response or record an async job as lock-contended.
+    /// </summary>
+    private async Task<IVersionLockHandle> AcquireVersionLockAsync(Guid versionId, CancellationToken cancellationToken)
+    {
+        var handle = await _versionLock
+            .TryAcquireAsync(_lockScope, versionId, MaintenanceLockLease, cancellationToken)
+            .ConfigureAwait(false);
+        return handle ?? throw new VersionLockedException(versionId);
+    }
+
+    // Reconcile/post core (#1272 Track B Slice 2, ADR-0051; conflict-resolution layer #371). Reconcile
+    // diffs DEFAULT feature_changes since the version's merge base against the version's tagged overlay
+    // edits. For overlapping (layer_id, objectid) pairs it loads the three-way base/DEFAULT/version
+    // images and:
+    //   * auto-merges disjoint field-level edits (a feature edited in both the branch and DEFAULT but on
+    //     DISJOINT attribute sets is merged into the overlay, not flagged);
+    //   * classifies the rest as genuine conflicts (overlapping fields, geometry-vs-geometry,
+    //     update-vs-delete) and, per #371, either auto-resolves them per the supplied policy
+    //     (last-write-wins / version-wins / default-wins) or persists them as pending conflicts for
+    //     manual review and blocks post.
+    // A clean reconcile (no remaining conflicts) advances common_ancestor_gen. Post (only when
+    // conflict-free) replays the version's net overlay rows onto the live DEFAULT features table in one
+    // transaction and advances the generation through the existing change-tracking trigger.
+    //
+    // ADR-vs-reality note: ADR-0051 says post replays "via the shared IFeatureWriter". IFeatureWriter's
+    // Feature model cannot preserve a branch-created row's explicit objectid (CreateAsync auto-assigns)
+    // and round-trips attributes through a typed dictionary, so branch creates would lose their stable
+    // OID and JSONB fidelity. Post therefore replays the net overlay rows with direct parameterized SQL
+    // against the same base `features` table (and its change-tracking trigger), preserving objectid and
+    // the raw JSONB image, inside a single transaction. Read/edit still flow through the shared pipeline.
+    //
+    // Production hardening (#1553): reconcile/post (and a conflicting resolve) run under a durable
+    // (service, version) lock (IVersionLock) so concurrent maintenance for the same version is
+    // serialized; a contended lock surfaces VersionLockedException for a clear in-progress 409. The
+    // clean-reconcile conflict-clear + common-ancestor advance commit in one transaction so a crash
+    // cannot desync the durable conflict set from the cursor, and a re-run recomputes the same set from
+    // the durable overlay (idempotent/resumable). The synchronous engine here is the fast path; the
+    // canonical async wrapper (IVersionJobRunner) calls these same methods on a durable, pollable job.
+
+    /// <inheritdoc />
+    public async Task<VersionReconcileResult> ReconcileAsync(
+        Guid versionId,
+        VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
+        CancellationToken cancellationToken = default)
+    {
+        // The (service, version) lock serializes reconcile/post/resolve for the version (#1553); a
+        // competing in-flight reconcile/post throws VersionLockedException for a clear in-progress 409.
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+        using var activity = VersioningActivitySource.StartActivity("Version.Reconcile", ActivityKind.Internal);
+        activity?.SetTag("honua.version.id", versionId.ToString());
+        activity?.SetTag("honua.version.service", _lockScope);
+        activity?.SetTag("honua.version.policy", policy.ToString());
+        activity?.SetTag("honua.version.conflict_detection", detection.ToString());
+
+        var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
+
+        await SetVersionStateAsync(versionId, VersionState.Reconciling, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var currentGeneration = await GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+            var analysis = await AnalyzeOverlapsAsync(versionId, version.CommonAncestorGeneration, detection, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Disjoint field-level edits auto-merge into the overlay so post carries both sides.
+            foreach (var merge in analysis.AutoMerges)
+            {
+                await ApplyFieldMergeAsync(versionId, merge, cancellationToken).ConfigureAwait(false);
+            }
+
+            var autoResolved = 0;
+            var unresolved = ImmutableArray.CreateBuilder<VersionReconcileConflict>();
+            foreach (var conflict in analysis.Conflicts)
+            {
+                if (policy != VersionReconcilePolicy.None &&
+                    await TryAutoResolveAsync(versionId, conflict, policy, cancellationToken).ConfigureAwait(false))
+                {
+                    autoResolved++;
+                    continue;
+                }
+
+                unresolved.Add(conflict.ToReport());
+            }
+
+            // Persist the unresolved set and advance the merge base atomically in one transaction so a
+            // crash mid-reconcile cannot leave the durable conflict set and the common-ancestor cursor
+            // disagreeing (#1553). A re-run after a restart recomputes from the durable overlay +
+            // feature_changes and rewrites the same pending set, so reconcile is idempotent/resumable.
+            var canPost = unresolved.Count == 0;
+            await PersistConflictsAndAdvanceAsync(
+                versionId,
+                unresolved,
+                canPost ? currentGeneration : (long?)null,
+                cancellationToken).ConfigureAwait(false);
+
+            activity?.SetTag("honua.version.conflict_count", unresolved.Count);
+            activity?.SetTag("honua.version.auto_resolved_count", autoResolved);
+            activity?.SetTag("honua.version.can_post", canPost);
+            activity?.SetTag("honua.version.outcome", canPost ? "clean" : "conflicts");
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
+            return new VersionReconcileResult(
+                canPost ? ImmutableArray<VersionReconcileConflict>.Empty : unresolved.ToImmutable(),
+                CanPost: canPost,
+                NewCommonAncestorGeneration: canPost ? currentGeneration : version.CommonAncestorGeneration,
+                AutoResolvedCount: autoResolved);
+        }
+        finally
+        {
+            // Restore the state row with CancellationToken.None: when the operation was
+            // cancelled (or the request token timed out), running the reset with the caller's
+            // token would throw immediately on connection open and leave the version wedged
+            // in Reconciling until manual repair.
+            await SetVersionStateAsync(versionId, VersionState.Active, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<VersionReconcileConflict>> GetPendingConflictsAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("""
+            SELECT layer_id, objectid, conflict_type,
+                   base_attributes::text, default_attributes::text, version_attributes::text,
+                   base_geometry_wkt, default_geometry_wkt, version_geometry_wkt, field_diffs::text
+            FROM honua.version_conflicts
+            WHERE version_id = @version AND status = 0
+            ORDER BY layer_id, objectid
+            """, connection);
+        command.Parameters.AddWithValue("version", versionId);
+
+        var results = new List<VersionReconcileConflict>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var fieldDiffsJson = reader.IsDBNull(9) ? null : reader.GetString(9);
+            results.Add(new VersionReconcileConflict(
+                reader.GetInt32(0),
+                reader.GetInt64(1),
+                (ReplicaConflictType)reader.GetInt16(2),
+                BaseAttributesJson: reader.IsDBNull(3) ? null : reader.GetString(3),
+                DefaultAttributesJson: reader.IsDBNull(4) ? null : reader.GetString(4),
+                VersionAttributesJson: reader.IsDBNull(5) ? null : reader.GetString(5),
+                BaseGeometryWkt: reader.IsDBNull(6) ? null : reader.GetString(6),
+                DefaultGeometryWkt: reader.IsDBNull(7) ? null : reader.GetString(7),
+                VersionGeometryWkt: reader.IsDBNull(8) ? null : reader.GetString(8),
+                FieldDiffs: DeserializeFieldDiffs(fieldDiffsJson)));
+        }
+
+        return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<VersionConflictResolutionResult> ResolveConflictsAsync(
+        Guid versionId,
+        IReadOnlyList<VersionConflictResolution> resolutions,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resolutions);
+
+        // A manual resolve rewrites the overlay, so it must not race a reconcile/post for the same
+        // version; it takes the same lock (#1553).
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+        // Not rewritten as .Where(...).Count(): each resolution requires a sequential
+        // awaited DB call, which plain synchronous LINQ cannot express.
+        var resolved = 0;
+        foreach (var resolution in resolutions)
+        {
+            resolved += await ApplyManualResolutionAsync(versionId, resolution, cancellationToken).ConfigureAwait(false) ? 1 : 0;
+        }
+
+        var remaining = await CountPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
+        return new VersionConflictResolutionResult(resolved, remaining, CanPost: remaining == 0);
+    }
+
+    /// <inheritdoc />
+    public async Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
+    {
+        // Post takes the same (service, version) lock as reconcile so a post is serialized against any
+        // concurrent reconcile/post for the version (#1553); contention surfaces as VersionLockedException.
+        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+        using var activity = VersioningActivitySource.StartActivity("Version.Post", ActivityKind.Internal);
+        activity?.SetTag("honua.version.id", versionId.ToString());
+        activity?.SetTag("honua.version.service", _lockScope);
+
+        // Only used to verify the version exists (throws below); the loaded record itself is unused here.
+        _ = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
+
+        // Post is refused while pending (unresolved) conflicts remain for the version; the caller must
+        // reconcile clean, auto-resolve via policy, or manually resolve first.
+        var pending = await CountPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
+        if (pending > 0)
+        {
+            activity?.SetTag("honua.version.conflict_count", pending);
+            activity?.SetTag("honua.version.outcome", "blocked_by_conflicts");
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
+        }
+
+        await SetVersionStateAsync(versionId, VersionState.Posting, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var replay = await ReplayOverlayOntoDefaultAsync(versionId, cancellationToken).ConfigureAwait(false);
+
+            // A clean CountPendingConflictsAsync only reflects the conflict set computed by the LAST
+            // reconcile. The version lock serializes reconcile/post for THIS version but does not block
+            // DEFAULT writers, so a DEFAULT edit committed between that reconcile and this post would be
+            // silently overwritten by the whole-row overlay replay (lost update). ReplayOverlayOntoDefault
+            // re-validates each overlay row's captured base_* image against the LIVE DEFAULT row inside the
+            // post transaction; if any update/delete target diverged, it rolls back and reports the
+            // divergent keys here so the caller must reconcile again instead of clobbering (#2063).
+            if (replay.Conflicted)
+            {
+                activity?.SetTag("honua.version.conflict_count", replay.ConflictingKeys.Count);
+                activity?.SetTag("honua.version.outcome", "blocked_by_default_drift");
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return new VersionPostResult(Posted: false, AppliedChanges: 0, ServerGeneration: 0, BlockedByConflicts: true);
+            }
+
+            await AdvanceCommonAncestorAsync(versionId, replay.ServerGeneration, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.version.applied_changes", replay.Applied);
+            activity?.SetTag("honua.version.server_generation", replay.ServerGeneration);
+            activity?.SetTag("honua.version.outcome", "posted");
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return new VersionPostResult(Posted: true, AppliedChanges: replay.Applied, ServerGeneration: replay.ServerGeneration, BlockedByConflicts: false);
+        }
+        finally
+        {
+            // CancellationToken.None for the same reason as ReconcileAsync: a cancelled
+            // request token must not skip the state reset and leave the version in Posting.
+            await SetVersionStateAsync(versionId, VersionState.Active, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Replays the version's net overlay rows onto the live DEFAULT features table inside a single
+    /// transaction, preserving objectid and the raw JSONB/geometry image, then clears the overlay. The
+    /// DEFAULT change-tracking trigger fires per row (no version GUC set), advancing the generation and
+    /// recording NULL-version DEFAULT changes. Returns the applied row count and the post generation.
+    /// </summary>
+    private async Task<OverlayReplayResult> ReplayOverlayOntoDefaultAsync(
+        Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+
+        var (txConnection, dbTransaction) = await _connectionProvider
+            .OpenTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await using var _ = txConnection;
+        var connection = txConnection.RequireNpgsqlConnection();
+        var transaction = (NpgsqlTransaction)dbTransaction;
+        await using var __ = transaction;
+
+        // Optimistic-concurrency guard (#2063): an update/delete overlay row may only be replayed when the
+        // LIVE DEFAULT row still matches the base image the branch captured on first touch. If DEFAULT was
+        // edited since (committed by a concurrent DEFAULT writer the version lock cannot block), the
+        // whole-row replay would silently discard that committed edit. Detect every diverged
+        // (layer_id, objectid) target BEFORE writing, inside this transaction, and abort the post when any
+        // exists so the operator must reconcile again. IS NOT DISTINCT FROM makes the comparison NULL-safe
+        // (a NULL base must match a NULL live value); geometry is compared by binary identity so any
+        // re-write of the DEFAULT geometry counts as drift, matching the strict lost-update semantics.
+        // Inserts (operation = 1) carry no base image and create a new objectid, so they are not guarded
+        // here. FOR UPDATE on the matched DEFAULT rows pins them for the duration of the transaction so a
+        // DEFAULT writer cannot slip a committed edit between this check and the replay.
+        // Pin the live DEFAULT rows targeted by this version's update/delete overlay rows so a concurrent
+        // DEFAULT writer cannot slip a committed edit between the drift check below and the replay. This is
+        // a separate INNER-JOIN lock because Postgres rejects FOR UPDATE on the nullable side of an outer
+        // join: the drift detection needs a LEFT JOIN (to spot an update target whose DEFAULT row vanished),
+        // but only rows that actually exist in DEFAULT can be — and need to be — locked. Locking these rows
+        // first holds them for the remainder of the transaction, so the subsequent LEFT-JOIN drift query
+        // observes a stable snapshot of every target that still exists.
+        await using (var lockCommand = new NpgsqlCommand(
+            $"""
+            SELECT f.objectid
+            FROM {featuresTable} f
+            JOIN honua.version_edits ve
+              ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            WHERE ve.version_id = @version
+              AND ve.operation IN (2, 3)
+            FOR UPDATE OF f
+            """,
+            connection)
+        { Transaction = transaction })
+        {
+            lockCommand.Parameters.AddWithValue("version", versionId);
+            await using var lockReader = await lockCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await lockReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                // Drain: the lock is the side effect; the rows themselves are re-evaluated below.
+            }
+        }
+
+        var conflictingKeys = new List<(int LayerId, long ObjectId)>();
+        await using (var driftCommand = new NpgsqlCommand(
+            $"""
+            SELECT ve.layer_id, ve.objectid
+            FROM honua.version_edits ve
+            LEFT JOIN {featuresTable} f
+              ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            WHERE ve.version_id = @version
+              AND ve.operation IN (2, 3)
+              -- A branch delete whose DEFAULT row is already gone is a convergent no-op (DEFAULT
+              -- reached the desired end state), not drift — exclude it so it does not spuriously
+              -- block the post. Every other update/delete target must still match its captured base.
+              AND NOT (ve.operation = 3 AND f.objectid IS NULL)
+              AND NOT (
+                    f.geometry IS NOT DISTINCT FROM ve.base_geometry
+                AND f.attributes IS NOT DISTINCT FROM ve.base_attributes
+              )
+            """,
+            connection)
+        { Transaction = transaction })
+        {
+            driftCommand.Parameters.AddWithValue("version", versionId);
+            await using var reader = await driftCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                conflictingKeys.Add((reader.GetInt32(0), reader.GetInt64(1)));
+            }
+        }
+
+        if (conflictingKeys.Count > 0)
+        {
+            // DEFAULT drifted under at least one update/delete target. Roll back so nothing is overwritten;
+            // the caller surfaces a conflict and the operator must re-reconcile against the new DEFAULT.
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new OverlayReplayResult(Applied: 0, ServerGeneration: 0, Conflicted: true, ConflictingKeys: conflictingKeys);
+        }
+
+        var applied = 0;
+
+        // Deletes: remove DEFAULT rows the branch deleted, only while DEFAULT still matches the captured
+        // base image (defense-in-depth alongside the drift pre-check above).
+        await using (var deleteCommand = new NpgsqlCommand(
+            $"DELETE FROM {featuresTable} f USING honua.version_edits ve " +
+            "WHERE ve.version_id = @version AND ve.operation = 3 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
+            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
+            connection)
+        { Transaction = transaction })
+        {
+            deleteCommand.Parameters.AddWithValue("version", versionId);
+            applied += await deleteCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Updates: overwrite DEFAULT geometry/attributes for branch-updated rows, only while DEFAULT still
+        // matches the captured base image.
+        await using (var updateCommand = new NpgsqlCommand(
+            $"UPDATE {featuresTable} f SET geometry = ve.geometry, attributes = ve.attributes " +
+            "FROM honua.version_edits ve " +
+            "WHERE ve.version_id = @version AND ve.operation = 2 AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid " +
+            "AND f.geometry IS NOT DISTINCT FROM ve.base_geometry AND f.attributes IS NOT DISTINCT FROM ve.base_attributes",
+            connection)
+        { Transaction = transaction })
+        {
+            updateCommand.Parameters.AddWithValue("version", versionId);
+            applied += await updateCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Inserts: add branch-created rows, preserving the branch-allocated objectid.
+        await using (var insertCommand = new NpgsqlCommand(
+            $"INSERT INTO {featuresTable} (objectid, layer_id, geometry, attributes) " +
+            "SELECT ve.objectid, ve.layer_id, ve.geometry, ve.attributes FROM honua.version_edits ve " +
+            "WHERE ve.version_id = @version AND ve.operation = 1",
+            connection)
+        { Transaction = transaction })
+        {
+            insertCommand.Parameters.AddWithValue("version", versionId);
+            applied += await insertCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Clear the overlay in the same transaction so a crash cannot leave a posted-but-not-cleared branch.
+        await using (var clearCommand = new NpgsqlCommand(
+            "DELETE FROM honua.version_edits WHERE version_id = @version", connection)
+        { Transaction = transaction })
+        {
+            clearCommand.Parameters.AddWithValue("version", versionId);
+            await clearCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        long serverGeneration;
+        await using (var genCommand = new NpgsqlCommand("SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection) { Transaction = transaction })
+        {
+            var result = await genCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            serverGeneration = result is long gen ? gen : 0;
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return new OverlayReplayResult(applied, serverGeneration, Conflicted: false, ConflictingKeys: conflictingKeys);
+    }
+
+    /// <summary>
+    /// Outcome of replaying a version's overlay onto DEFAULT. <see cref="Conflicted"/> is set (and nothing
+    /// is written) when a concurrent DEFAULT edit diverged from the overlay's captured base image for an
+    /// update/delete target, listing the divergent keys (#2063).
+    /// </summary>
+    private sealed record OverlayReplayResult(
+        int Applied,
+        long ServerGeneration,
+        bool Conflicted,
+        IReadOnlyList<(int LayerId, long ObjectId)> ConflictingKeys);
+
+    private async Task<GdbVersion?> LoadVersionAsync(Guid versionId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("""
+            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            FROM honua.gdb_versions
+            WHERE version_id = @id
+            """, connection);
+        command.Parameters.AddWithValue("id", versionId);
+        return await ReadSingleAsync(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("SELECT last_value FROM honua.sync_generation", connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long gen ? gen : 0;
+    }
+
+    /// <summary>
+    /// Loads the three-way (base/DEFAULT/version) images for every overlay row that shadows an
+    /// (layer_id, objectid) DEFAULT also changed since the merge base, classifies each as a genuine
+    /// conflict or an auto-mergeable disjoint-field edit, and returns both sets.
+    /// </summary>
+    private async Task<OverlapAnalysis> AnalyzeOverlapsAsync(
+        Guid versionId,
+        long commonAncestorGen,
+        VersionConflictDetection detection,
+        CancellationToken cancellationToken)
+    {
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // default_changes: the net DEFAULT operation per (layer_id, objectid) since the merge base.
+        // For each overlapping overlay row, join the live DEFAULT row (NULL when DEFAULT deleted it) and
+        // the branch's captured base image. Geometry is rendered to WKT for display only.
+        await using var command = new NpgsqlCommand($"""
+            WITH default_changes AS (
+                SELECT layer_id, objectid,
+                       (array_agg(operation ORDER BY generation DESC))[1] AS last_op
+                FROM honua.feature_changes
+                WHERE version_id IS NULL AND generation > @ancestor
+                GROUP BY layer_id, objectid
+            )
+            SELECT ve.layer_id, ve.objectid, ve.operation AS branch_op, dc.last_op AS default_op,
+                   ve.base_attributes::text   AS base_attrs,
+                   f.attributes::text         AS default_attrs,
+                   ve.attributes::text        AS version_attrs,
+                   ST_AsText(ve.base_geometry) AS base_geom,
+                   ST_AsText(f.geometry)       AS default_geom,
+                   ST_AsText(ve.geometry)      AS version_geom
+            FROM honua.version_edits ve
+            JOIN default_changes dc ON dc.layer_id = ve.layer_id AND dc.objectid = ve.objectid
+            LEFT JOIN {featuresTable} f ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            WHERE ve.version_id = @version
+            """, connection);
+        command.Parameters.AddWithValue("ancestor", commonAncestorGen);
+        command.Parameters.AddWithValue("version", versionId);
+
+        var conflicts = new List<OverlapConflict>();
+        var merges = new List<FieldMerge>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var layerId = reader.GetInt32(0);
+            var objectId = reader.GetInt64(1);
+            var branchOp = reader.GetInt16(2);
+            var defaultOp = reader.GetInt16(3);
+            var baseAttrs = reader.IsDBNull(4) ? null : reader.GetString(4);
+            var defaultAttrs = reader.IsDBNull(5) ? null : reader.GetString(5);
+            var versionAttrs = reader.IsDBNull(6) ? null : reader.GetString(6);
+            var baseGeom = reader.IsDBNull(7) ? null : reader.GetString(7);
+            var defaultGeom = reader.IsDBNull(8) ? null : reader.GetString(8);
+            var versionGeom = reader.IsDBNull(9) ? null : reader.GetString(9);
+
+            // Delete-vs-update pairs are always genuine conflicts.
+            if (branchOp == 2 && defaultOp == 3)
+            {
+                conflicts.Add(new OverlapConflict(layerId, objectId, ReplicaConflictType.UpdateDelete,
+                    baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, ImmutableArray<VersionConflictFieldDiff>.Empty));
+                continue;
+            }
+
+            if (branchOp == 3 && defaultOp == 2)
+            {
+                conflicts.Add(new OverlapConflict(layerId, objectId, ReplicaConflictType.DeleteUpdate,
+                    baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, ImmutableArray<VersionConflictFieldDiff>.Empty));
+                continue;
+            }
+
+            if (branchOp == 3 && defaultOp == 3)
+            {
+                // Both deleted the same row: a no-op convergence, not a conflict.
+                continue;
+            }
+
+            // Update-vs-update: compute the field-level diffs and decide overlap vs auto-merge.
+            var baseFields = ParseAttributes(baseAttrs);
+            var defaultFields = ParseAttributes(defaultAttrs);
+            var versionFields = ParseAttributes(versionAttrs);
+
+            var defaultChangedFields = ChangedFields(baseFields, defaultFields);
+            var versionChangedFields = ChangedFields(baseFields, versionFields);
+            var overlappingFields = defaultChangedFields.Intersect(versionChangedFields, StringComparer.Ordinal).ToArray();
+
+            var geometryChangedOnBoth = !string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal)
+                && !string.Equals(baseGeom, versionGeom, StringComparison.Ordinal)
+                && !string.Equals(defaultGeom, versionGeom, StringComparison.Ordinal);
+
+            // By-attribute detection auto-merges disjoint edits and only flags genuinely-overlapping
+            // edits (overlapping fields or geometry-vs-geometry). By-object detection flags ANY feature
+            // edited on both sides since the merge base as a conflict, with no field-level auto-merge —
+            // this is the documented Esri esriReconcileByObject behavior (#2135).
+            var autoMergeable = detection == VersionConflictDetection.ByAttribute
+                && overlappingFields.Length == 0
+                && !geometryChangedOnBoth;
+
+            if (autoMergeable)
+            {
+                // Disjoint edits: auto-merge DEFAULT's field changes (and a DEFAULT-only geometry change)
+                // into the overlay so a post carries both sides without a conflict.
+                var defaultOnlyGeometryChanged =
+                    !string.Equals(baseGeom, defaultGeom, StringComparison.Ordinal)
+                    && string.Equals(baseGeom, versionGeom, StringComparison.Ordinal);
+                merges.Add(new FieldMerge(layerId, objectId, defaultChangedFields, defaultFields, defaultOnlyGeometryChanged));
+                continue;
+            }
+
+            // Report the overlapping fields when present; under by-object detection a disjoint edit still
+            // surfaces the union of both sides' changed fields so the conflict carries a useful three-way
+            // diff for the manual-resolution UI.
+            var reportedFields = overlappingFields.Length > 0
+                ? overlappingFields
+                : defaultChangedFields.Union(versionChangedFields, StringComparer.Ordinal).ToArray();
+            var fieldDiffs = BuildFieldDiffs(reportedFields, baseFields, defaultFields, versionFields);
+            var conflictType = reportedFields.Length > 0
+                ? ReplicaConflictType.Attribute
+                : ReplicaConflictType.Geometry;
+            conflicts.Add(new OverlapConflict(layerId, objectId, conflictType,
+                baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, fieldDiffs));
+        }
+
+        return new OverlapAnalysis(conflicts, merges);
+    }
+
+    /// <summary>
+    /// Auto-merges DEFAULT's disjoint field changes (and an optional DEFAULT-only geometry change) into
+    /// the branch overlay row so the subsequent post carries both sides of a non-conflicting edit.
+    /// </summary>
+    private async Task ApplyFieldMergeAsync(Guid versionId, FieldMerge merge, CancellationToken cancellationToken)
+    {
+        if (merge.DefaultChangedFields.Count == 0 && !merge.MergeDefaultGeometry)
+        {
+            return;
+        }
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Build the JSON patch of DEFAULT's changed fields and merge it onto the overlay attributes with
+        // the JSONB concat operator (||) — overlay keys win for any non-changed field, DEFAULT's changed
+        // fields are layered in. A field DEFAULT removed is rendered as a JSON null. A DEFAULT-only
+        // geometry change is copied from the live row.
+        //
+        // Rebase the overlay's captured base image onto the live DEFAULT row in the SAME statement. An
+        // auto-merge accepts DEFAULT's current state (its disjoint field/geometry edits are layered in),
+        // so the merged overlay row's new base MUST be the live DEFAULT — otherwise the post-time drift
+        // guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) still sees the stale common-ancestor base,
+        // treats DEFAULT's now-merged divergence as drift, and blocks the post even though reconcile
+        // reported CanPost. This mirrors the "take version" rebase in ApplyResolutionToOverlayAsync and
+        // keeps reconcile's CanPost consistent with post's drift check (#2135/#2063).
+        var patchJson = BuildMergePatchJson(merge.DefaultChangedFields, merge.DefaultFields);
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        var geometryClause = merge.MergeDefaultGeometry ? ", geometry = f.geometry" : string.Empty;
+
+        await using var command = new NpgsqlCommand(
+            "UPDATE honua.version_edits ve " +
+            "SET attributes = COALESCE(ve.attributes, '{}'::jsonb) || @patch::jsonb, " +
+            "base_attributes = f.attributes, base_geometry = f.geometry, modified_at = now()" +
+            geometryClause + " " +
+            "FROM " + featuresTable + " f " +
+            "WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid " +
+            "AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid",
+            connection);
+        command.Parameters.AddWithValue("patch", patchJson);
+        command.Parameters.AddWithValue("version", versionId);
+        command.Parameters.AddWithValue("layer", merge.LayerId);
+        command.Parameters.AddWithValue("objectid", merge.ObjectId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deterministically resolves a single conflict per the supplied policy by rewriting the overlay row
+    /// to the winning side, so a subsequent post carries the resolved image. Returns false (leaving the
+    /// conflict for manual review) when a policy cannot be applied to the pairing.
+    /// </summary>
+    private async Task<bool> TryAutoResolveAsync(
+        Guid versionId,
+        OverlapConflict conflict,
+        VersionReconcilePolicy policy,
+        CancellationToken cancellationToken)
+    {
+        var side = policy switch
+        {
+            VersionReconcilePolicy.VersionWins => VersionConflictResolutionChoice.TakeVersion,
+            VersionReconcilePolicy.DefaultWins => VersionConflictResolutionChoice.TakeDefault,
+            VersionReconcilePolicy.LastWriteWins => await ResolveLastWriteWinsSideAsync(versionId, conflict, cancellationToken).ConfigureAwait(false),
+            _ => (VersionConflictResolutionChoice?)null,
+        };
+
+        if (side is null)
+        {
+            return false;
+        }
+
+        await ApplyResolutionToOverlayAsync(versionId, conflict.LayerId, conflict.ObjectId, side.Value, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the last-write-wins side by comparing the latest change generation produced by the
+    /// branch overlay against the latest DEFAULT change generation for the feature since the merge base.
+    /// </summary>
+    private async Task<VersionConflictResolutionChoice> ResolveLastWriteWinsSideAsync(
+        Guid versionId,
+        OverlapConflict conflict,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand("""
+            SELECT
+                COALESCE((SELECT MAX(generation) FROM honua.feature_changes
+                          WHERE version_id = @version AND layer_id = @layer AND objectid = @objectid), 0) AS branch_gen,
+                COALESCE((SELECT MAX(generation) FROM honua.feature_changes
+                          WHERE version_id IS NULL AND layer_id = @layer AND objectid = @objectid), 0) AS default_gen
+            """, connection);
+        command.Parameters.AddWithValue("version", versionId);
+        command.Parameters.AddWithValue("layer", conflict.LayerId);
+        command.Parameters.AddWithValue("objectid", conflict.ObjectId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var branchGen = reader.GetInt64(0);
+        var defaultGen = reader.GetInt64(1);
+
+        // The branch wins ties: an explicit branch edit is the more recent intentional change.
+        return branchGen >= defaultGen
+            ? VersionConflictResolutionChoice.TakeVersion
+            : VersionConflictResolutionChoice.TakeDefault;
+    }
+
+    /// <summary>
+    /// Applies one operator-submitted manual resolution: rewrites the overlay row to the chosen side and
+    /// marks the persisted pending conflict resolved. Returns false when there was no pending conflict.
+    /// </summary>
+    private async Task<bool> ApplyManualResolutionAsync(
+        Guid versionId,
+        VersionConflictResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var markCommand = new NpgsqlCommand("""
+            UPDATE honua.version_conflicts
+            SET status = 1, resolution_choice = @choice, resolved_at = now()
+            WHERE version_id = @version AND layer_id = @layer AND objectid = @objectid AND status = 0
+            """, connection);
+        markCommand.Parameters.AddWithValue("choice", (short)resolution.Choice);
+        markCommand.Parameters.AddWithValue("version", versionId);
+        markCommand.Parameters.AddWithValue("layer", resolution.LayerId);
+        markCommand.Parameters.AddWithValue("objectid", resolution.ObjectId);
+        var affected = await markCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affected == 0)
+        {
+            return false;
+        }
+
+        await ApplyResolutionToOverlayAsync(versionId, resolution.LayerId, resolution.ObjectId, resolution.Choice, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Rewrites the branch overlay row for the resolved feature so the post replays the chosen side:
+    /// take-version keeps the overlay as-is; take-default rewrites the overlay to the live DEFAULT image
+    /// (or removes the overlay row when DEFAULT deleted it); take-base rewrites to the captured base
+    /// image. All keep the overlay-mediated post path so DEFAULT data is untouched until post.
+    /// </summary>
+    private async Task ApplyResolutionToOverlayAsync(
+        Guid versionId,
+        int layerId,
+        long objectId,
+        VersionConflictResolutionChoice choice,
+        CancellationToken cancellationToken)
+    {
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        if (choice == VersionConflictResolutionChoice.TakeVersion)
+        {
+            // The branch overlay already carries the version image to write, but its captured base image
+            // still reflects the common ancestor. DEFAULT has since diverged (that is why this is a
+            // conflict), so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*) would block the
+            // replay and DEFAULT would keep its own value. Resolving "take version" means the operator
+            // accepts the current DEFAULT as the new base to overwrite: rebase the overlay's base image onto
+            // the live DEFAULT row so the drift check passes and the version's value lands on DEFAULT. If
+            // DEFAULT deleted the row, leave the base untouched — the drift guard already treats a vanished
+            // update target as a conflict, which is the correct outcome for "take version" over a deletion.
+            await using var rebaseCommand = new NpgsqlCommand($"""
+                UPDATE honua.version_edits ve
+                SET base_geometry = f.geometry, base_attributes = f.attributes, modified_at = now()
+                FROM {featuresTable} f
+                WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+                  AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+                  AND ve.operation = 2
+                """, connection);
+            rebaseCommand.Parameters.AddWithValue("version", versionId);
+            rebaseCommand.Parameters.AddWithValue("layer", layerId);
+            rebaseCommand.Parameters.AddWithValue("objectid", objectId);
+            await rebaseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (choice == VersionConflictResolutionChoice.TakeDefault)
+        {
+            // Take DEFAULT: if DEFAULT still has the row, set the overlay to an UPDATE carrying DEFAULT's
+            // image (a no-op post against DEFAULT); if DEFAULT deleted it, drop the overlay row so the
+            // branch no longer shadows/posts the feature. Rebase the overlay's base image onto DEFAULT too
+            // (base_geometry/base_attributes = DEFAULT's): the resolution accepts the live DEFAULT as the
+            // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) sees no
+            // drift and the post proceeds — without this the stale common-ancestor base still differs from
+            // the diverged DEFAULT and the post is wrongly blocked even though reconcile reported CanPost.
+            await using var command = new NpgsqlCommand($"""
+                WITH d AS (
+                    SELECT geometry, attributes FROM {featuresTable}
+                    WHERE layer_id = @layer AND objectid = @objectid
+                ),
+                upd AS (
+                    UPDATE honua.version_edits ve
+                    SET operation = 2, geometry = d.geometry, attributes = d.attributes,
+                        base_geometry = d.geometry, base_attributes = d.attributes, modified_at = now()
+                    FROM d
+                    WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+                    RETURNING 1
+                )
+                DELETE FROM honua.version_edits ve
+                WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+                  AND NOT EXISTS (SELECT 1 FROM d)
+                """, connection);
+            command.Parameters.AddWithValue("version", versionId);
+            command.Parameters.AddWithValue("layer", layerId);
+            command.Parameters.AddWithValue("objectid", objectId);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // TakeBase: rewrite the overlay to the captured base image (an UPDATE that restores the
+        // common-ancestor state on post).
+        await using var baseCommand = new NpgsqlCommand("""
+            UPDATE honua.version_edits
+            SET operation = 2, geometry = base_geometry, attributes = base_attributes, modified_at = now()
+            WHERE version_id = @version AND layer_id = @layer AND objectid = @objectid
+            """, connection);
+        baseCommand.Parameters.AddWithValue("version", versionId);
+        baseCommand.Parameters.AddWithValue("layer", layerId);
+        baseCommand.Parameters.AddWithValue("objectid", objectId);
+        await baseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces the version's persisted pending conflict set with the supplied unresolved conflicts and,
+    /// when the reconcile is clean, advances the common-ancestor cursor — all in one transaction (#1553).
+    /// Clearing stale pending rows (auto-merged / auto-resolved this run), inserting the current set, and
+    /// advancing the merge base commit atomically, so a crash cannot leave the durable conflict set and
+    /// the cursor disagreeing. The operation is naturally idempotent: a re-run recomputes the same set
+    /// from the durable overlay and rewrites it.
+    /// </summary>
+    /// <param name="versionId">Version being reconciled.</param>
+    /// <param name="conflicts">Unresolved conflicts to persist as pending.</param>
+    /// <param name="advanceToGeneration">When non-null, advance the merge base to this generation (clean reconcile).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task PersistConflictsAndAdvanceAsync(
+        Guid versionId,
+        IReadOnlyCollection<VersionReconcileConflict> conflicts,
+        long? advanceToGeneration,
+        CancellationToken cancellationToken)
+    {
+        var (txConnection, dbTransaction) = await _connectionProvider
+            .OpenTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await using var _ = txConnection;
+        var connection = txConnection.RequireNpgsqlConnection();
+        var transaction = (NpgsqlTransaction)dbTransaction;
+        await using var __ = transaction;
+
+        await using (var clear = new NpgsqlCommand(
+            "DELETE FROM honua.version_conflicts WHERE version_id = @version AND status = 0", connection)
+        { Transaction = transaction })
+        {
+            clear.Parameters.AddWithValue("version", versionId);
+            await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var conflict in conflicts)
+        {
+            await using var insert = new NpgsqlCommand("""
+                INSERT INTO honua.version_conflicts
+                    (version_id, layer_id, objectid, conflict_type, status,
+                     base_attributes, default_attributes, version_attributes,
+                     base_geometry_wkt, default_geometry_wkt, version_geometry_wkt, field_diffs)
+                VALUES (@version, @layer, @objectid, @type, 0,
+                        @base_attrs::jsonb, @default_attrs::jsonb, @version_attrs::jsonb,
+                        @base_geom, @default_geom, @version_geom, @field_diffs::jsonb)
+                """, connection)
+            { Transaction = transaction };
+            insert.Parameters.AddWithValue("version", versionId);
+            insert.Parameters.AddWithValue("layer", conflict.LayerId);
+            insert.Parameters.AddWithValue("objectid", conflict.ObjectId);
+            insert.Parameters.AddWithValue("type", (short)conflict.ConflictType);
+            insert.Parameters.AddWithValue("base_attrs", (object?)conflict.BaseAttributesJson ?? DBNull.Value);
+            insert.Parameters.AddWithValue("default_attrs", (object?)conflict.DefaultAttributesJson ?? DBNull.Value);
+            insert.Parameters.AddWithValue("version_attrs", (object?)conflict.VersionAttributesJson ?? DBNull.Value);
+            insert.Parameters.AddWithValue("base_geom", (object?)conflict.BaseGeometryWkt ?? DBNull.Value);
+            insert.Parameters.AddWithValue("default_geom", (object?)conflict.DefaultGeometryWkt ?? DBNull.Value);
+            insert.Parameters.AddWithValue("version_geom", (object?)conflict.VersionGeometryWkt ?? DBNull.Value);
+            var fieldDiffsJson = conflict.FieldDiffs.IsDefaultOrEmpty
+                ? null
+                : JsonSerializer.Serialize(conflict.FieldDiffs.ToArray(), VersionConflictJson.FieldDiffArray);
+            insert.Parameters.AddWithValue("field_diffs", (object?)fieldDiffsJson ?? DBNull.Value);
+            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (advanceToGeneration is { } generation)
+        {
+            await using var advance = new NpgsqlCommand(
+                "UPDATE honua.gdb_versions SET common_ancestor_gen = @gen, modified_at = now() WHERE version_id = @id",
+                connection)
+            { Transaction = transaction };
+            advance.Parameters.AddWithValue("gen", generation);
+            advance.Parameters.AddWithValue("id", versionId);
+            await advance.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> CountPendingConflictsAsync(Guid versionId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM honua.version_conflicts WHERE version_id = @version AND status = 0", connection);
+        command.Parameters.AddWithValue("version", versionId);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long count ? (int)count : 0;
+    }
+
+    private async Task AdvanceCommonAncestorAsync(Guid versionId, long generation, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "UPDATE honua.gdb_versions SET common_ancestor_gen = @gen, modified_at = now() WHERE version_id = @id",
+            connection);
+        command.Parameters.AddWithValue("gen", generation);
+        command.Parameters.AddWithValue("id", versionId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetVersionStateAsync(Guid versionId, VersionState state, CancellationToken cancellationToken)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "UPDATE honua.gdb_versions SET state = @state, modified_at = now() WHERE version_id = @id", connection);
+        command.Parameters.AddWithValue("state", (short)state);
+        command.Parameters.AddWithValue("id", versionId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // ---- Field-level diff helpers --------------------------------------------------------------
+
+    private static ImmutableDictionary<string, JsonElement> ParseAttributes(string? attributesJson)
+    {
+        if (string.IsNullOrWhiteSpace(attributesJson))
+        {
+            return ImmutableDictionary<string, JsonElement>.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(attributesJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return ImmutableDictionary<string, JsonElement>.Empty;
+            }
+
+            var builder = ImmutableDictionary.CreateBuilder<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                builder[property.Name] = property.Value.Clone();
+            }
+
+            return builder.ToImmutable();
+        }
+        catch (JsonException)
+        {
+            return ImmutableDictionary<string, JsonElement>.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Returns the set of attribute names whose value differs between the base image and a target image
+    /// (added, removed, or value-changed keys), compared by canonical JSON text.
+    /// </summary>
+    private static HashSet<string> ChangedFields(
+        ImmutableDictionary<string, JsonElement> baseFields,
+        ImmutableDictionary<string, JsonElement> targetFields)
+    {
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in baseFields.Keys.Union(targetFields.Keys, StringComparer.Ordinal))
+        {
+            // hasBase/hasTarget are independent lookups (added/removed/changed keys are all possible
+            // since key is drawn from the union of both key sets); not a tautology despite the analyzer note.
+            var hasBase = baseFields.TryGetValue(key, out var baseValue);
+            var hasTarget = targetFields.TryGetValue(key, out var targetValue);
+            if (hasBase != hasTarget || !ElementsEqual(baseValue, targetValue))
+            {
+                changed.Add(key);
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool ElementsEqual(JsonElement left, JsonElement right)
+        => string.Equals(left.GetRawText(), right.GetRawText(), StringComparison.Ordinal);
+
+    private static ImmutableArray<VersionConflictFieldDiff> BuildFieldDiffs(
+        string[] fields,
+        ImmutableDictionary<string, JsonElement> baseFields,
+        ImmutableDictionary<string, JsonElement> defaultFields,
+        ImmutableDictionary<string, JsonElement> versionFields)
+    {
+        if (fields.Length == 0)
+        {
+            return ImmutableArray<VersionConflictFieldDiff>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<VersionConflictFieldDiff>(fields.Length);
+        foreach (var name in fields.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            builder.Add(new VersionConflictFieldDiff(
+                name,
+                Render(baseFields, name),
+                Render(defaultFields, name),
+                Render(versionFields, name)));
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static string? Render(ImmutableDictionary<string, JsonElement> fields, string name)
+        => fields.TryGetValue(name, out var value) ? value.GetRawText() : null;
+
+    /// <summary>
+    /// Builds a JSON object literal of DEFAULT's changed fields for the JSONB merge patch, rendering a
+    /// field DEFAULT removed as a JSON null. Values are emitted from their raw JSON text so the merged
+    /// value preserves DEFAULT's original JSON shape (numbers, strings, nested objects).
+    /// </summary>
+    private static string BuildMergePatchJson(
+        IReadOnlyCollection<string> changedFields,
+        ImmutableDictionary<string, JsonElement> defaultFields)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var field in changedFields)
+            {
+                writer.WritePropertyName(field);
+                if (defaultFields.TryGetValue(field, out var value))
+                {
+                    value.WriteTo(writer);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static ImmutableArray<VersionConflictFieldDiff> DeserializeFieldDiffs(string? fieldDiffsJson)
+    {
+        if (string.IsNullOrWhiteSpace(fieldDiffsJson))
+        {
+            return ImmutableArray<VersionConflictFieldDiff>.Empty;
+        }
+
+        var array = JsonSerializer.Deserialize(fieldDiffsJson, VersionConflictJson.FieldDiffArray);
+        return array is null or { Length: 0 }
+            ? ImmutableArray<VersionConflictFieldDiff>.Empty
+            : ImmutableArray.Create(array);
+    }
+
+    // ---- Internal analysis types ---------------------------------------------------------------
+
+    private sealed record OverlapAnalysis(
+        IReadOnlyList<OverlapConflict> Conflicts,
+        IReadOnlyList<FieldMerge> AutoMerges);
+
+    private sealed record OverlapConflict(
+        int LayerId,
+        long ObjectId,
+        ReplicaConflictType ConflictType,
+        string? BaseAttributesJson,
+        string? DefaultAttributesJson,
+        string? VersionAttributesJson,
+        string? BaseGeometryWkt,
+        string? DefaultGeometryWkt,
+        string? VersionGeometryWkt,
+        ImmutableArray<VersionConflictFieldDiff> FieldDiffs)
+    {
+        public VersionReconcileConflict ToReport() => new(
+            LayerId,
+            ObjectId,
+            ConflictType,
+            BaseAttributesJson,
+            DefaultAttributesJson,
+            VersionAttributesJson,
+            BaseGeometryWkt,
+            DefaultGeometryWkt,
+            VersionGeometryWkt,
+            FieldDiffs);
+    }
+
+    private sealed record FieldMerge(
+        int LayerId,
+        long ObjectId,
+        IReadOnlyCollection<string> DefaultChangedFields,
+        ImmutableDictionary<string, JsonElement> DefaultFields,
+        bool MergeDefaultGeometry);
+}

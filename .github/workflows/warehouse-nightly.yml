@@ -53,11 +53,11 @@ jobs:
           - project: Honua.Snowflake.Tests
             csproj: tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj
           - project: Honua.Redshift.Tests
-            csproj: tests/dotnet/Honua.Redshift.Tests/Honua.Redshift.Tests.csproj
+            csproj: tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj
           - project: Honua.Databricks.Tests
-            csproj: tests/dotnet/Honua.Databricks.Tests/Honua.Databricks.Tests.csproj
+            csproj: tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj
           - project: Honua.SqlServer.Tests
-            csproj: tests/dotnet/Honua.SqlServer.Tests/Honua.SqlServer.Tests.csproj
+            csproj: tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj
     env:
       # Optional repository secrets — every one of these is unset by default,
       # which is exactly the "not configured, self-skip" state each test class

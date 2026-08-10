@@ -1,0 +1,141 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Text;
+using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.SpatialAnalytics.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.SpatialAnalytics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Db.Postgres.Features.FeatureStore;
+
+/// <summary>
+/// Dependency injection extensions for the refactored feature store services
+/// </summary>
+internal static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the refactored feature store services with dependency injection
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <param name="schemaName">Optional database schema name</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddRefactoredFeatureStore(this IServiceCollection services, string? schemaName = null)
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+
+        // Register object pools for performance optimization
+        services.AddSingleton<ObjectPool<StringBuilder>>(_ =>
+            poolProvider.Create(new Services.StringBuilderPooledObjectPolicy()));
+
+        services.AddSingleton<ObjectPool<Dictionary<string, object?>>>(_ =>
+            poolProvider.Create(new DictionaryPooledObjectPolicy()));
+
+        // Register core feature store services
+        services.AddSingleton<IGeometryProcessor>(provider =>
+        {
+            var limits = provider.GetService<IOptions<LimitsOptions>>()?.Value?.Geometry;
+            var geoJsonPrecision = limits?.MaxCoordinatePrecision ?? FeatureQueryEncoding.GeometryTextPrecision;
+            return new GeometryProcessor(geoJsonPrecision);
+        });
+
+        services.AddScoped<IFeatureCacheManager>(provider =>
+        {
+            var connectionProvider = provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
+            var logger = provider.GetRequiredService<ILogger<FeatureCacheManager>>();
+            return new FeatureCacheManager(connectionProvider, logger, schemaName);
+        });
+
+        services.AddScoped<IFeatureQueryBuilder>(provider =>
+        {
+            var stringBuilderPool = provider.GetRequiredService<ObjectPool<StringBuilder>>();
+            var geometryProcessor = provider.GetRequiredService<IGeometryProcessor>();
+            return new FeatureQueryBuilder(stringBuilderPool, geometryProcessor, schemaName);
+        });
+
+        services.AddScoped<IFeatureDataAccess>(provider =>
+        {
+            var dependencies = new FeatureDataAccessDependencies(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                provider.GetRequiredService<IGeometryProcessor>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
+                provider.GetService<PreparedStatementCache>(),
+                provider.GetRequiredService<ILogger<FeatureDataAccess>>(),
+                provider.GetService<IOptions<PerformanceMonitoringOptions>>(),
+                provider.GetService<IOptions<LimitsOptions>>(),
+                provider.GetService<IPerformanceMonitor>(),
+                schemaName,
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>());
+
+            return new FeatureDataAccess(dependencies);
+        });
+
+        // Register the main feature store implementation.
+        services.AddScoped<PostgresFeatureStoreRefactored>(provider =>
+            new PostgresFeatureStoreRefactored(
+                provider.GetRequiredService<IFeatureQueryBuilder>(),
+                provider.GetRequiredService<IFeatureDataAccess>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
+                provider.GetService<IConnectionEncryptionService>(),
+                provider.GetService<IFilterExpressionService>(),
+                provider.GetService<IMetadataV2GraphProvider>(),
+                provider.GetService<ILogger<PostgresStorageMappedFeatureReader>>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
+
+        // Register segregated interfaces
+        services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IKmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+
+        // Spatial analytics reader (clustering, spatial join, buffer aggregate, density).
+        // Composes the existing query builder + data access pipeline so all observability
+        // (slow-query logging, metrics, telemetry) flows through the same code path as
+        // statistics, date bins and H3 aggregation. The optional metadata/filter services
+        // let the reader enforce metadata-v2 permanent (row-visibility) filters like the
+        // main feature store does.
+        services.AddScoped<ISpatialAnalyticsReader>(provider =>
+            new PostgresSpatialAnalyticsReader(
+                provider.GetRequiredService<IFeatureQueryBuilder>(),
+                provider.GetRequiredService<IFeatureDataAccess>(),
+                provider.GetRequiredService<IFeatureCacheManager>(),
+                provider.GetService<IMetadataV2GraphProvider>(),
+                provider.GetService<IFilterExpressionService>()));
+
+        // Feature-change transactional outbox (#692). PostgreSQL is the canonical
+        // mutation-capable provider so it owns the outbox repository implementation and
+        // reports SupportsTransactionalOutbox = true. Both registrations are scoped to
+        // match the connection-provider lifetime used by the data access layer.
+        services.AddScoped<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>();
+        services.AddScoped<Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository>(
+            provider => provider.GetRequiredService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
+        services.AddScoped<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>(
+            provider => provider.GetRequiredService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresFeatureChangeOutboxRepository>());
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
+            Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.PostgresOutboxCapabilityProvider>();
+
+        return services;
+    }
+}

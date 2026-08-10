@@ -6,8 +6,8 @@
 
 ### Critical Violations:
 1. **Dependency Direction Violations**
-   - `Honua.Core` depending on `Honua.Postgres` or `Honua.Server`
-   - `Honua.Postgres` depending on `Honua.Server`
+   - `Honua.Core` depending on `Honua.Db.Postgres` or `Honua.Server`
+   - `Honua.Db.Postgres` depending on `Honua.Server`
    - Detection: `using` statements, project references
 
 2. **API Pattern Violations**

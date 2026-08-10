@@ -356,18 +356,18 @@ Query_InvalidSyntax_Returns400WithErrorDetails()
 ```csharp
 // VIOLATION: Core depending on Infrastructure
 // File: src/Honua.Core/SomeFile.cs
-using Honua.Postgres;        // BLOCKING - Core cannot depend on Infrastructure
+using Honua.Db.Postgres;        // BLOCKING - Core cannot depend on Infrastructure
 using Honua.Server;          // BLOCKING - Core cannot depend on Server
 
 // CORRECT: Infrastructure depending on Core
-// File: src/Honua.Postgres/SomeFile.cs
+// File: src/Honua.Db/Postgres/SomeFile.cs
 using Honua.Core.Features.Abstractions;  // OK - Infrastructure can use Core abstractions
 ```
 
-Dependency flow rule: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.MySql` <- `Honua.Server`
+Dependency flow rule: `Honua.Core` <- `Honua.Db.Postgres` / `Honua.Db.DuckDB` / `Honua.Db.MySql` <- `Honua.Server`
 - Core defines abstractions and domain models
 - Postgres, DuckDB, and MySql implement Core interfaces
-- Server uses Core plus the active provider (selected via `DataSource:Provider`; `mysql` and `mariadb` both resolve to `Honua.MySql`)
+- Server uses Core plus the active provider (selected via `DataSource:Provider`; `mysql` and `mariadb` both resolve to `Honua.Db.MySql`)
 
 **2. API pattern violations**
 ```csharp
@@ -470,7 +470,7 @@ class A : B : C : D { }  // WARNING: >3 levels, consider composition
 // Honua.Core defines interface
 public interface IFeatureReader { }
 
-// Honua.Postgres implements interface
+// Honua.Db.Postgres implements interface
 internal class PostgresFeatureStore : IFeatureReader { }
 
 // Honua.Server uses interface
@@ -539,16 +539,17 @@ Planning and phase tracking live in GitHub issues and PRs. Do not implement feat
 src/
 ├── Honua.Server/          # Main host (Minimal APIs)
 ├── Honua.Core/            # Domain models, abstractions
-├── Honua.Postgres/        # PostgreSQL implementation
-├── Honua.DuckDB/          # DuckDB read-only provider
-└── Honua.MySql/           # MySQL/MariaDB read/query-only provider
+└── Honua.Db/
+    ├── Postgres/          # PostgreSQL implementation
+    ├── DuckDB/            # DuckDB read-only provider
+    └── MySql/             # MySQL/MariaDB read/query-only provider
 
-tests/
+tests/dotnet/
 ├── Honua.TestKit/         # Shared test infrastructure
 ├── Honua.Core.Tests/      # Unit tests
 ├── Honua.Server.Tests/    # Integration tests
-├── Honua.DuckDB.Tests/    # DuckDB provider tests
-├── Honua.MySql.Tests/     # MySQL/MariaDB provider tests (Testcontainers gated)
+├── Honua.Db.DuckDB.Tests/ # DuckDB provider tests
+├── Honua.Db.MySql.Tests/  # MySQL/MariaDB provider tests (Testcontainers gated)
 └── Honua.Architecture.Tests/  # Architecture enforcement
 ```
 

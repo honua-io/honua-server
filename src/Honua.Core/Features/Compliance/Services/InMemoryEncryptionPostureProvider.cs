@@ -16,7 +16,7 @@ namespace Honua.Core.Features.Compliance.Services;
 /// counter on <see cref="RotateAsync"/>. The provider stores version metadata
 /// only — no cipher key material, no ciphertext re-encryption, no envelope
 /// rewrap. Real key-material rotation is the responsibility of the
-/// <c>Honua.Postgres.Features.Security.IConnectionEncryptionService</c> path.
+/// <c>Honua.Db.Postgres.Features.Security.IConnectionEncryptionService</c> path.
 /// </summary>
 /// <remarks>
 /// <para>

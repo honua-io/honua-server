@@ -27,12 +27,12 @@ public sealed class SqlDialectGuardrailTests
     /// </summary>
     private static readonly IReadOnlyList<(string Name, System.Reflection.Assembly Assembly)> ProviderAssemblies = new[]
     {
-        ("Honua.Postgres", typeof(Honua.Postgres.Queries.Filters.PostgresSqlDialect).Assembly),
-        ("Honua.MySql", typeof(Honua.MySql.Queries.Filters.MySqlSqlDialect).Assembly),
-        ("Honua.SqlServer", typeof(Honua.SqlServer.Queries.Filters.SqlServerSqlDialect).Assembly),
-        ("Honua.DuckDB", typeof(Honua.DuckDB.Queries.Filters.DuckDbSqlDialect).Assembly),
-        ("Honua.Oracle", typeof(Honua.Oracle.Queries.Filters.OracleSqlDialect).Assembly),
-        ("Honua.Redshift", typeof(Honua.Redshift.Queries.Filters.RedshiftSqlDialect).Assembly),
+        ("Honua.Postgres", typeof(Honua.Db.Postgres.Queries.Filters.PostgresSqlDialect).Assembly),
+        ("Honua.MySql", typeof(Honua.Db.MySql.Queries.Filters.MySqlSqlDialect).Assembly),
+        ("Honua.SqlServer", typeof(Honua.Db.SqlServer.Queries.Filters.SqlServerSqlDialect).Assembly),
+        ("Honua.DuckDB", typeof(Honua.Db.DuckDB.Queries.Filters.DuckDbSqlDialect).Assembly),
+        ("Honua.Oracle", typeof(Honua.Db.Oracle.Queries.Filters.OracleSqlDialect).Assembly),
+        ("Honua.Redshift", typeof(Honua.Db.Redshift.Queries.Filters.RedshiftSqlDialect).Assembly),
         ("Honua.Snowflake", typeof(Honua.Snowflake.Queries.Filters.SnowflakeSqlDialect).Assembly),
     };
 
@@ -91,8 +91,8 @@ public sealed class SqlDialectGuardrailTests
         // DuckDB do not have one yet; when they grow one, add them here.
         var translatorTypes = new[]
         {
-            typeof(Honua.Postgres.Queries.Filters.PostgresSqlFilterTranslator),
-            typeof(Honua.MySql.Queries.Filters.MySqlSqlFilterTranslator),
+            typeof(Honua.Db.Postgres.Queries.Filters.PostgresSqlFilterTranslator),
+            typeof(Honua.Db.MySql.Queries.Filters.MySqlSqlFilterTranslator),
         };
 
         foreach (var type in translatorTypes)

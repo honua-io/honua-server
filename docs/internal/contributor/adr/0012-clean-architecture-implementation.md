@@ -27,7 +27,7 @@ Implement **Clean Architecture** with three primary layers and strict dependency
 ```
 Honua.Server (Presentation/Host)
     ↓ (depends on)
-Honua.Postgres (Infrastructure)
+Honua.Db.Postgres (Infrastructure)
     ↓ (depends on)
 Honua.Core (Domain/Application)
 ```
@@ -48,7 +48,7 @@ Honua.Core (Domain/Application)
 - Query models and validation rules
 - Protocol-agnostic business operations
 
-**Honua.Postgres (Infrastructure Layer)**
+**Honua.Db.Postgres (Infrastructure Layer)**
 - Database access implementations
 - External service adapters
 - Infrastructure concerns (caching, logging)
@@ -115,7 +115,7 @@ public interface IFeatureStore
 
 **Infrastructure Implementation (Internal)**
 ```csharp
-// Honua.Postgres/Features/PostgresFeatureStore.cs
+// Honua.Db.Postgres/Features/PostgresFeatureStore.cs
 internal class PostgresFeatureStore : IFeatureStore
 {
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query)

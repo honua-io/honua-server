@@ -9,7 +9,7 @@ non-functional-parity epic #1273).
 
 Honua reprojects geometry with PostGIS' embedded PROJ engine and routes every
 output-CRS `ST_Transform` through the shared `DatumTransformSql` chokepoint
-(`src/Honua.Postgres/Features/FeatureStore/Services/DatumTransformSql.cs`) plus
+(`src/Honua.Db/Postgres/Features/FeatureStore/Services/DatumTransformSql.cs`) plus
 the import overload (`migration 053_AddImportDatumTransformation.sql`).
 
 The **base** `postgis/postgis:*` images ship only the minimal Debian
@@ -73,7 +73,7 @@ and runs against this DB:
 ```bash
 export HONUA_PROJ_GRID_TEST=1
 export HONUA_TEST_DB_URL='Host=localhost;Port=5436;Database=honua_test;Username=test;Password=test'
-dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
     --filter "FullyQualifiedName~DatumGridProvisioning"
 ```
 

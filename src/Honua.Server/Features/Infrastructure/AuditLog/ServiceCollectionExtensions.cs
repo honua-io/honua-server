@@ -5,7 +5,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Middleware;
-using Honua.Postgres.Features.AuditLog;
+using Honua.Db.Postgres.Features.AuditLog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;

@@ -148,7 +148,7 @@ graph TB
             FilterAST[Filter AST<br/><i>Shared filter representation</i>]
         end
 
-        subgraph "Honua.Postgres (Library)"
+        subgraph "Honua.Db.Postgres (Library)"
             PgStore[PostgresFeatureStore]
             PgCatalog[PostgresLayerCatalog]
             PgUoW[PostgresUnitOfWork]

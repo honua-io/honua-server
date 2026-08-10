@@ -34,7 +34,7 @@ public class BasicArchitectureTests
         // Verify src project directories
         Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server")).Should().BeTrue($"Honua.Server project should exist in {projectRoot}");
         Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Core")).Should().BeTrue($"Honua.Core project should exist in {projectRoot}");
-        Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Postgres")).Should().BeTrue($"Honua.Postgres project should exist in {projectRoot}");
+        Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Db", "Postgres")).Should().BeTrue($"Honua.Postgres project should exist in {projectRoot}");
 
         // Verify test project directories
         Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "dotnet", "Honua.TestKit")).Should().BeTrue($"Honua.TestKit project should exist in {projectRoot}");

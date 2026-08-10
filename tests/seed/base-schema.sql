@@ -175,7 +175,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
 -- Store the raster payload EXTERNAL (out-of-line, UNCOMPRESSED) so dynamic
 -- tile/terrain/statistics/export reads fetch only the chunks they touch instead
 -- of detoasting and decompressing the entire monolithic row (#1625). Keep in sync
--- with src/Honua.Postgres/Migrations/001 and Server migration 055.
+-- with src/Honua.Db/Postgres/Migrations/001 and Server migration 055.
 ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.raster_statistics (
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
 
 -- Layer-level (mosaic) band statistics persisted by PostgresRasterStore so ImageServer
 -- service metadata is served from persisted values instead of per-request ST_SummaryStats
--- (#1639). Keep in sync with src/Honua.Postgres/Migrations/003_CreateRasterLayerStatistics.sql.
+-- (#1639). Keep in sync with src/Honua.Db/Postgres/Migrations/003_CreateRasterLayerStatistics.sql.
 CREATE TABLE IF NOT EXISTS honua.raster_layer_statistics (
     layer_id INTEGER NOT NULL,
     merge_strategy VARCHAR(32) NOT NULL,

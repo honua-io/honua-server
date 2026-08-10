@@ -280,19 +280,19 @@ assert_descriptor \
   "MCP"
 assert_descriptor \
   "publishing-postgres-targeted" \
-  "src/Honua.Postgres/Features/Publishing/PostgresPublishedServiceStore.cs" \
+  "src/Honua.Db/Postgres/Features/Publishing/PostgresPublishedServiceStore.cs" \
   "targeted" \
   "false" \
   "Core"
 assert_descriptor \
   "publishing-postgres-includes-mcp" \
-  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "src/Honua.Db/Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
   "targeted" \
   "false" \
   "MCP"
 assert_excludes_shard \
   "publishing-excludes-imageserver" \
-  "src/Honua.Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
+  "src/Honua.Db/Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
   "GeoServices ImageServer"
 
 # The promotion migration is selected by the Core shard's migration/startup
@@ -325,7 +325,7 @@ assert_descriptor \
 # shared registrar can affect every Postgres-backed fixture and must run all.
 assert_descriptor \
   "postgres-service-registration-still-run-all" \
-  "src/Honua.Postgres/ServiceCollectionExtensions.cs" \
+  "src/Honua.Db/Postgres/ServiceCollectionExtensions.cs" \
   "infrastructure_change" \
   "true" \
   "Core"
@@ -1009,7 +1009,7 @@ assert_descriptor \
   "Server Features Admin Integrations and Automation"
 assert_descriptor \
   "alert-postgres-includes-agentic-ops-owner" \
-  "src/Honua.Postgres/Features/Alerts/PostgresAlertDispatchStore.cs" \
+  "src/Honua.Db/Postgres/Features/Alerts/PostgresAlertDispatchStore.cs" \
   "targeted" \
   "false" \
   "Server Features Admin Integrations and Automation"
@@ -1021,7 +1021,7 @@ assert_descriptor \
   "Server Features Studio and Feature Store"
 assert_descriptor \
   "authorization-postgres-includes-studio-owner" \
-  "src/Honua.Postgres/Features/Authorization/PostgresRlsPolicyStore.cs" \
+  "src/Honua.Db/Postgres/Features/Authorization/PostgresRlsPolicyStore.cs" \
   "targeted" \
   "false" \
   "Server Features Studio and Feature Store"
@@ -1033,7 +1033,7 @@ assert_descriptor \
   "Server Features Studio and Feature Store"
 assert_descriptor \
   "forms-postgres-includes-studio-owner" \
-  "src/Honua.Postgres/Features/Forms/PostgresFormPackageStore.cs" \
+  "src/Honua.Db/Postgres/Features/Forms/PostgresFormPackageStore.cs" \
   "targeted" \
   "false" \
   "Server Features Studio and Feature Store"
