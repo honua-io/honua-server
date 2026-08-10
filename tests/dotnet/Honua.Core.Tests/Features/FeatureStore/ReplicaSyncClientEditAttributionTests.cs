@@ -301,9 +301,11 @@ public sealed class ReplicaSyncClientEditAttributionTests
             new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
             serverStateCapturer: new TokenCapturer());
 
-        repository.DetectionUpdates.Should().ContainSingle()
-            .Which.ResolutionBaseGeneration.Should().Be(
-                60, "the cursor read after the capture, not the one before it");
+        repository.DetectionUpdates
+            .Select(update => update.ResolutionBaseGeneration)
+            .Should().Equal(
+                [50, 60],
+                "capture first records the safe base, then advances it to the post-capture cursor");
     }
 
     [UnitTest]
@@ -329,8 +331,11 @@ public sealed class ReplicaSyncClientEditAttributionTests
             new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
             serverStateCapturer: new ShiftingTokenCapturer());
 
-        repository.DetectionUpdates.Should().ContainSingle()
-            .Which.ResolutionBaseGeneration.Should().Be(50, "the snapshot moved, so the base stays behind it");
+        repository.DetectionUpdates
+            .Select(update => update.ResolutionBaseGeneration)
+            .Should().Equal(
+                [50, 50],
+                "the early completion marker and final base both stay behind the moved snapshot");
     }
 
     [UnitTest]
@@ -482,6 +487,40 @@ public sealed class ReplicaSyncClientEditAttributionTests
         persisted.ResolutionBaseGeneration.Should().Be(
             99,
             "the same early update leaves a conservative completion marker for recovery");
+    }
+
+    [UnitTest]
+    public async Task ApplyUpload_PersistsCompletionMarkerWhenConflictedServerRowIsAbsent()
+    {
+        // A delete observed after the replica base can conflict with a client update while capture
+        // correctly returns no server envelope. The missing row still represents a completed capture,
+        // so a later failure must not leave the durable record looking detection-incomplete forever.
+        var tracker = new RecordingChangeTracker(
+            ServerChange(objectId: 42) with { Operation = FeatureChangeOperation.Delete })
+        {
+            ThrowOnGenerationRead = 2,
+        };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        Func<Task> act = () => service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
+            serverStateCapturer: new TokenCapturer(absentObjectIds: 42));
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        var record = repository.Upserts.Should().ContainSingle().Subject;
+        var persisted = repository.RecordFor(record.ConflictId);
+        persisted.ServerStateJson.Should().BeNull("an absent server row has no envelope to store");
+        persisted.ResolutionBaseGeneration.Should().Be(
+            99,
+            "the safe base records that capture completed even when the row was absent");
     }
 
     /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>

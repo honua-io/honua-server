@@ -511,7 +511,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
-        if (!canRecordConflicts || serverStates.Count == 0)
+        if (!canRecordConflicts)
         {
             return;
         }
@@ -519,11 +519,14 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         for (var index = layerConflictStartIndex; index < conflicts.Count; index++)
         {
             var conflict = conflicts[index];
-            if (conflict.ConflictId is not { Length: > 0 } conflictId ||
-                !serverStates.TryGetValue((conflict.PublicLayerId, conflict.ObjectId), out var serverStateJson))
+            if (conflict.ConflictId is not { Length: > 0 } conflictId)
             {
                 continue;
             }
+
+            _ = serverStates.TryGetValue(
+                (conflict.PublicLayerId, conflict.ObjectId),
+                out var serverStateJson);
 
             try
             {
