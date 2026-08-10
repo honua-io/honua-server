@@ -402,41 +402,6 @@ internal static class ServiceSettingsEndpoints
             }
 
             var metadataUpdatedAt = DateTimeOffset.UtcNow;
-            var updatedMetadata = governanceRequested
-                ? ApplySourceGovernancePatch(resource.Metadata, request, sourceGovernance, metadataUpdatedAt)
-                : resource.Metadata;
-
-            // Patch access policy off the V2 resource's current AccessPolicy.
-            AccessPolicy? updatedAccessPolicy = resource.AccessPolicy;
-            if (request.AccessPolicy is not null)
-            {
-                var existingAp = resource.AccessPolicy ?? new AccessPolicy();
-                updatedAccessPolicy = existingAp with
-                {
-                    AllowAnonymous = request.AccessPolicy.AllowAnonymous ?? existingAp.AllowAnonymous,
-                    AllowAnonymousWrite = request.AccessPolicy.AllowAnonymousWrite ?? existingAp.AllowAnonymousWrite,
-                    AllowedRoles = request.AccessPolicy.AllowedRoles ?? existingAp.AllowedRoles,
-                    AllowedWriteRoles = request.AccessPolicy.AllowedWriteRoles ?? existingAp.AllowedWriteRoles
-                };
-            }
-
-            // Patch time info off the V2 Temporal block (StartTimeField / EndTimeField /
-            // TrackIdField).
-            var existingTemporal = resource.Temporal;
-            string? startTimeField = existingTemporal?.StartTimeField;
-            string? endTimeField = existingTemporal?.EndTimeField;
-            string? trackIdField = existingTemporal?.TrackIdField;
-            var temporalRequested = request.TimeInfo is not null;
-            if (request.TimeInfo is { } incomingTimeInfo)
-            {
-                startTimeField = incomingTimeInfo.StartTimeField is "" ? null : (incomingTimeInfo.StartTimeField ?? startTimeField);
-                endTimeField = incomingTimeInfo.EndTimeField is "" ? null : (incomingTimeInfo.EndTimeField ?? endTimeField);
-                trackIdField = incomingTimeInfo.TrackIdField is "" ? null : (incomingTimeInfo.TrackIdField ?? trackIdField);
-            }
-            var updatedTemporal = temporalRequested || existingTemporal is not null
-                ? ToV2Temporal(startTimeField, endTimeField, trackIdField, existing: existingTemporal)
-                : null;
-
             // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
             // strategy in the response (so PUT semantics are preserved for callers), but
             // it does not round-trip through the graph store. Documented in the mutator
@@ -461,21 +426,53 @@ internal static class ServiceSettingsEndpoints
                 updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
-            await MutateResourceByIdAsync(
+            var persistedResource = await MutateResourceByIdAsync(
                 graphStore,
                 resource.Metadata.Id,
                 next =>
                 {
-                    if (updatedAccessPolicy is not null)
+                    if (request.AccessPolicy is { } incomingAccessPolicy)
                     {
-                        next = next with { AccessPolicy = updatedAccessPolicy };
+                        var existingAccessPolicy = next.AccessPolicy ?? new AccessPolicy();
+                        next = next with
+                        {
+                            AccessPolicy = existingAccessPolicy with
+                            {
+                                AllowAnonymous = incomingAccessPolicy.AllowAnonymous ?? existingAccessPolicy.AllowAnonymous,
+                                AllowAnonymousWrite = incomingAccessPolicy.AllowAnonymousWrite ?? existingAccessPolicy.AllowAnonymousWrite,
+                                AllowedRoles = incomingAccessPolicy.AllowedRoles ?? existingAccessPolicy.AllowedRoles,
+                                AllowedWriteRoles = incomingAccessPolicy.AllowedWriteRoles ?? existingAccessPolicy.AllowedWriteRoles
+                            }
+                        };
                     }
+
+                    if (request.TimeInfo is { } incomingTimeInfo)
+                    {
+                        var existingTemporal = next.Temporal;
+                        var startTimeField = incomingTimeInfo.StartTimeField is ""
+                            ? null
+                            : incomingTimeInfo.StartTimeField ?? existingTemporal?.StartTimeField;
+                        var endTimeField = incomingTimeInfo.EndTimeField is ""
+                            ? null
+                            : incomingTimeInfo.EndTimeField ?? existingTemporal?.EndTimeField;
+                        var trackIdField = incomingTimeInfo.TrackIdField is ""
+                            ? null
+                            : incomingTimeInfo.TrackIdField ?? existingTemporal?.TrackIdField;
+                        next = next with
+                        {
+                            Temporal = ToV2Temporal(
+                                startTimeField,
+                                endTimeField,
+                                trackIdField,
+                                existing: existingTemporal)
+                        };
+                    }
+
                     next = next with
                     {
                         Metadata = governanceRequested
                             ? ApplySourceGovernancePatch(next.Metadata, request, sourceGovernance, metadataUpdatedAt)
                             : next.Metadata,
-                        Temporal = updatedTemporal,
                     };
                     // RasterMosaic has no typed V2 home yet — silently drop until the V2
                     // raster extension lands. The v1 admin shape is preserved so
@@ -483,14 +480,20 @@ internal static class ServiceSettingsEndpoints
                     return next;
                 },
                 context.RequestAborted).ConfigureAwait(false);
+            if (persistedResource is null)
+            {
+                return TypedResults.NotFound(
+                    ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
+            }
+
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
-                resource.Metadata.Name,
-                updatedMetadata,
-                updatedAccessPolicy,
-                updatedTemporal,
+                persistedResource.Metadata.Name,
+                persistedResource.Metadata,
+                persistedResource.AccessPolicy,
+                persistedResource.Temporal,
                 updatedRasterMosaic);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
@@ -851,7 +854,7 @@ internal static class ServiceSettingsEndpoints
     /// resource id is carried across optimistic-concurrency retries so same-name protocol
     /// services cannot redirect a patch to another resource.
     /// </summary>
-    private static async Task MutateResourceByIdAsync(
+    private static async Task<MetadataV2Resource?> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
@@ -865,10 +868,11 @@ internal static class ServiceSettingsEndpoints
                 string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
             if (resourceIndex < 0)
             {
-                return;
+                return null;
             }
 
-            resources[resourceIndex] = mutate(resources[resourceIndex]);
+            var mutatedResource = mutate(resources[resourceIndex]);
+            resources[resourceIndex] = mutatedResource;
 
             var updated = snapshot.Graph with
             {
@@ -879,7 +883,7 @@ internal static class ServiceSettingsEndpoints
             try
             {
                 _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
+                return mutatedResource;
             }
             catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
             {

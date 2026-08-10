@@ -41,7 +41,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
-                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)))
+                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer))
         {
             if (!resourcesById.TryGetValue(publication.ResourceId, out var resource))
             {

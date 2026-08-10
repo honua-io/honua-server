@@ -21011,6 +21011,7 @@
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithEmptyTimeInfo_ClearsTemporalWithoutError",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithMixedCaseMergeStrategy_NormalizesToCanonical",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithProtocolSpecificNameCollision_UpdatesOnlyFeatureServerResource",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithRasterMosaicPayload_ReturnsUpdatedMergeStrategy",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithSourceGovernance_UpdatesPublicMetadata",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips",
