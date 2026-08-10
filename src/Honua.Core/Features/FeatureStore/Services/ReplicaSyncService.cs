@@ -113,6 +113,25 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
                 .Select(edit => edit.ObjectId!.Value));
 
+            // Manual review binds the applied rows to the state DETECTION saw, so the tokens are read
+            // before the change-log probe, not after it. Capturing afterwards would describe a row a
+            // server edit had already changed, and the write would then accept it and overwrite the very
+            // edit this mode promises to withhold (#2430).
+            var preconditionTokens = new Dictionary<long, string>();
+            var boundObjectIds = !request.LastWriteWins && serverStateCapturer is not null && uploadedObjectIds.Count > 0;
+            if (boundObjectIds)
+            {
+                var tokenTargets = uploadedObjectIds
+                    .Select(objectId => new ReplicaConflictCaptureTarget(
+                        layer.PublicLayerId, layer.StorageLayerId, objectId))
+                    .ToImmutableArray();
+                foreach (var entry in await serverStateCapturer!
+                             .CaptureTokensAsync(tokenTargets, cancellationToken).ConfigureAwait(false))
+                {
+                    preconditionTokens[entry.Key] = entry.Value;
+                }
+            }
+
             // Only the uploaded ids can ever be probed below, so push the id filter into the change
             // tracker: providers that support it (Postgres) restrict the change-log scan in SQL, and
             // the interface default filters client-side. Either way a long-offline replica's upload
@@ -246,33 +265,41 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
             }
 
-            // Under manual review the mode's contract is that a conflicting edit is withheld, so an edit
-            // detection judged non-conflicting must not overwrite a server change that committed between
-            // the change-log read and this write. Binding those rows to the state detection saw turns
-            // that race into a failed row the client re-syncs, instead of a silent overwrite. Under
-            // last-write-wins the client edit is meant to win, so no precondition is attached (#2430).
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
-            if (!request.LastWriteWins && serverStateCapturer is not null && editsToApply.Count > 0)
+            if (boundObjectIds && editsToApply.Count > 0)
             {
-                var preconditionTargets = editsToApply
-                    .Where(edit => edit.ObjectId is not null)
-                    .Select(edit => new ReplicaConflictCaptureTarget(
-                        layer.PublicLayerId, layer.StorageLayerId, edit.ObjectId!.Value))
+                // A target that was ABSENT at capture time has no token, and absence cannot be expressed
+                // as a precondition — so such an edit is withheld rather than dispatched. Dispatching it
+                // unguarded would update or delete a row inserted under the same object id between the
+                // capture and the write, which is exactly what this mode forbids (#2430).
+                var unguarded = editsToApply
+                    .Where(edit => edit.ObjectId is { } id && !preconditionTokens.ContainsKey(id))
+                    .Select(edit => edit.ObjectId!.Value)
                     .Distinct()
-                    .ToImmutableArray();
-                if (preconditionTargets.Length > 0)
+                    .ToArray();
+                if (unguarded.Length > 0)
                 {
-                    var tokens = await serverStateCapturer
-                        .CaptureTokensAsync(preconditionTargets, cancellationToken)
-                        .ConfigureAwait(false);
-                    preconditions = tokens
-                        .Select(entry => new FeatureEditPrecondition
-                        {
-                            ObjectId = entry.Key,
-                            ExpectedStateToken = entry.Value,
-                        })
+                    var guarded = editsToApply
+                        .Where(edit => edit.ObjectId is not { } id || preconditionTokens.ContainsKey(id))
                         .ToImmutableArray();
+                    editsToApply.Clear();
+                    editsToApply.AddRange(guarded);
+                    anyFailure = true;
+                    firstFailure ??=
+                        "Some uploaded edits target features that no longer exist on the server and could not be applied under manual conflict review. Re-synchronize to have them recorded as conflicts.";
                 }
+
+                preconditions = editsToApply
+                    .Where(edit => edit.ObjectId is not null)
+                    .Select(edit => edit.ObjectId!.Value)
+                    .Distinct()
+                    .Where(preconditionTokens.ContainsKey)
+                    .Select(objectId => new FeatureEditPrecondition
+                    {
+                        ObjectId = objectId,
+                        ExpectedStateToken = preconditionTokens[objectId],
+                    })
+                    .ToImmutableArray();
             }
 
             var applyResult = editsToApply.Count == 0

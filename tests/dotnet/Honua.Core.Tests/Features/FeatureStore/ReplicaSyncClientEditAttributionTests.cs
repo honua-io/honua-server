@@ -253,6 +253,31 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_WithholdsEditsTargetingAnAbsentRow()
+    {
+        // Absence cannot be expressed as a precondition, so an edit whose target was gone at capture
+        // time is withheld: dispatching it unguarded would update or delete a row inserted under the
+        // same object id between the capture and the write.
+        var tracker = new RecordingChangeTracker();
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [], failed: false);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 7, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            applier,
+            serverStateCapturer: new TokenCapturer(absentObjectIds: 7));
+
+        applier.DispatchedEdits.IsDefaultOrEmpty.Should().BeTrue("an unguardable edit must not be dispatched");
+        report.Success.Should().BeFalse("the client is told to re-synchronize");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_LastWriteWins_DoesNotBindEditsToAPrecondition()
     {
         // Last-write-wins exists so the client edit wins over concurrent server state; failing it on a
@@ -272,8 +297,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         applier.Preconditions.Should().BeEmpty();
     }
 
-    /// <summary>Capturer that reports a token per requested feature.</summary>
-    private sealed class TokenCapturer : IReplicaServerStateCapturer
+    /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
+    private sealed class TokenCapturer(params long[] absentObjectIds) : IReplicaServerStateCapturer
     {
         public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
@@ -285,7 +310,9 @@ public sealed class ReplicaSyncClientEditAttributionTests
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyDictionary<long, string>>(
-                targets.ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}"));
+                targets
+                    .Where(t => !absentObjectIds.Contains(t.ObjectId))
+                    .ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}"));
     }
 
     [UnitTest]
@@ -454,6 +481,9 @@ public sealed class ReplicaSyncClientEditAttributionTests
         /// <summary>Preconditions the sync service bound the batch to.</summary>
         public ImmutableArray<FeatureEditPrecondition> Preconditions { get; private set; }
 
+        /// <summary>Edits the sync service actually dispatched.</summary>
+        public ImmutableArray<ReplicaUploadEdit> DispatchedEdits { get; private set; }
+
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
             int publicLayerId,
@@ -463,6 +493,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
             CancellationToken cancellationToken = default)
         {
             Preconditions = preconditions;
+            DispatchedEdits = edits;
             return Task.FromResult(new ReplicaLayerApplyResult(
                 publicLayerId,
                 AppliedAdds: 0,
