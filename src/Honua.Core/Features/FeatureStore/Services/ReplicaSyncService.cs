@@ -271,8 +271,28 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 // cursor made every later staleness probe rediscover that same edit and answer Stale
                 // forever. An edit arriving between the capture and this read is the reverse case, and
                 // is caught by the state-token precondition the resolution write carries (#2430).
-                withheldBaseGeneration = await _changeTracker
+                var postCaptureGeneration = await _changeTracker
                     .GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+
+                // Confirm nothing moved between the capture and that read. If it did, the envelope is
+                // older than the cursor it would be paired with, and a later keepServer would see no
+                // post-base change and overwrite the newer state with the stale snapshot. The fallback
+                // is the pre-capture cursor, which fails safe in the other direction: the probe then
+                // finds the edit and answers Stale rather than overwriting it (#2430).
+                if (boundObjectIds)
+                {
+                    var confirmation = await serverStateCapturer
+                        .CaptureTokensAsync(targets, cancellationToken).ConfigureAwait(false);
+                    var stableSnapshot = preconditionTokens.Count == confirmation.Count
+                        && preconditionTokens.All(entry =>
+                            confirmation.TryGetValue(entry.Key, out var token)
+                            && string.Equals(token, entry.Value, StringComparison.Ordinal));
+                    withheldBaseGeneration = stableSnapshot ? postCaptureGeneration : preBatchGeneration;
+                }
+                else
+                {
+                    withheldBaseGeneration = postCaptureGeneration;
+                }
             }
 
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;

@@ -307,6 +307,33 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_WhenTheSnapshotMovedDuringCapture_FallsBackToThePreCaptureCursor()
+    {
+        // The envelope would otherwise be older than the cursor it is paired with, and a later
+        // keepServer would see no post-base change and overwrite the newer state with the stale
+        // snapshot. The pre-capture cursor fails safe the other way: the probe finds the edit.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42))
+        {
+            Generations = new Queue<long>([50L, 60L]),
+        };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
+            serverStateCapturer: new ShiftingTokenCapturer());
+
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(50, "the snapshot moved, so the base stays behind it");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_WithholdsRepeatedTargetsForOneObject()
     {
         // The writer revalidates the token before each mutation, so one token shared by two operations
@@ -353,6 +380,27 @@ public sealed class ReplicaSyncClientEditAttributionTests
             serverStateCapturer: new TokenCapturer());
 
         applier.Preconditions.Should().BeEmpty();
+    }
+
+    /// <summary>Capturer whose second token pass reports a different value, as a concurrent edit does.</summary>
+    private sealed class ShiftingTokenCapturer : IReplicaServerStateCapturer
+    {
+        private int _passes;
+
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
+                new Dictionary<(int, long), string>());
+
+        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+        {
+            var pass = Interlocked.Increment(ref _passes);
+            return Task.FromResult<IReadOnlyDictionary<long, string>>(
+                targets.ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}-pass{pass}"));
+        }
     }
 
     /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
