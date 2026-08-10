@@ -655,6 +655,32 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenTheWriteOutcomeIsUnknown_KeepsTheClaimResumable()
+    {
+        // An indeterminate write is not a failure. Releasing the claim here means that if the write DID
+        // land, the next attempt sees this resolution's own change as a post-conflict edit and returns
+        // Stale forever, stranding the conflict. Keeping it claimed with WriteCommitted=false is
+        // exactly the resumable state, and the write is idempotent by construction.
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var service = CreateService(repository, new IndeterminateApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.WriteOutcomeUnknown);
+        repository.Current.Status.Should().Be(
+            ReplicaConflictStatus.Resolved, "the claim is retained, not released");
+        repository.Current.WriteCommitted.Should().BeFalse();
+        repository.Current.FinalizationPending.Should().BeTrue("the resolution is resumable");
+
+        // The retry resumes and completes it.
+        var retried = await CreateService(repository, new RecordingApplier())
+            .ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        retried.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        repository.Current.FinalizationPending.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenTheStalenessProbeFaults_ReleasesTheClaim()
     {
         // The claim has already moved the record out of the reviewable state, but nothing was written
@@ -878,6 +904,16 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictResolutionCommand command,
             CancellationToken cancellationToken = default)
             => Task.FromResult(new ReplicaConflictApplyResult(Applied: false, FailureMessage: "write rejected"));
+    }
+
+    /// <summary>Applier whose write may or may not have committed, as a lost commit ack reports.</summary>
+    private sealed class IndeterminateApplier : IReplicaConflictResolutionApplier
+    {
+        public Task<ReplicaConflictApplyResult> ApplyAsync(
+            ReplicaConflictResolutionCommand command,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ReplicaConflictApplyResult(
+                Applied: false, FailureMessage: "commit outcome unknown", CommitOutcomeUnknown: true));
     }
 
     private sealed class ThrowingApplier : IReplicaConflictResolutionApplier

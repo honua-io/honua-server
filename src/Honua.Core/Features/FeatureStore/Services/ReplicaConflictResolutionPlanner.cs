@@ -86,9 +86,12 @@ public static class ReplicaConflictResolutionPlanner
                 "The server deleted this feature, so the client update cannot be re-applied. Re-upload the feature as an insert if it should exist again.");
         }
 
-        if (conflict.ClientEditApplied)
+        if (conflict.ClientEditApplied && !conflict.ClientEditOutcomeUnknown)
         {
             // Last-write-wins already committed the client edit; the committed state matches the choice.
+            // Skipped when the outcome is unknown: the shortcut asserts the row already holds the client
+            // state, and if the ambiguous write never landed this would report the client edit accepted
+            // while the server state was still in place. Writing it is idempotent either way (#2430).
             return NoEffect(committedNewServerState: false);
         }
 
@@ -113,9 +116,12 @@ public static class ReplicaConflictResolutionPlanner
 
     private static ReplicaConflictResolutionPlan PlanKeepServer(ReplicaConflictRecord conflict)
     {
-        if (!conflict.ClientEditApplied)
+        if (!conflict.ClientEditApplied && !conflict.ClientEditOutcomeUnknown)
         {
             // Manual review skipped the client edit, so the server state was never overwritten.
+            // Skipped when the outcome is unknown: the shortcut asserts the row still holds the server
+            // state, and if the ambiguous write did land this would report the server state kept while
+            // the client overwrite remained. Restoring it is idempotent either way (#2430).
             return NoEffect(committedNewServerState: false);
         }
 
@@ -153,14 +159,13 @@ public static class ReplicaConflictResolutionPlanner
         // payload name the same field with two values and which one wins depends on dictionary
         // enumeration order. Reject rather than pick: the request does not describe a single state, and
         // an ambiguous merge cannot be reproduced by the resume path either (#2430).
-        var distinctNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in fieldValues.Keys)
+        var duplicate = fieldValues.Keys
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
         {
-            if (!distinctNames.Add(name))
-            {
-                return Invalid(
-                    $"'fieldValues' names field '{name}' more than once (field names are case-insensitive); supply a single value per field.");
-            }
+            return Invalid(
+                $"'fieldValues' names field '{duplicate.Key}' more than once (field names are case-insensitive); supply a single value per field.");
         }
 
         if (conflict.ConflictType is ReplicaConflictType.DeleteUpdate or ReplicaConflictType.UpdateDelete)

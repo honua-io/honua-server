@@ -68,13 +68,18 @@ public readonly record struct ReplicaConflictResolutionOutcome(
 /// cursor the captured states describe, and the precondition a later resolution checks against. Null
 /// leaves it unchanged.
 /// </param>
+/// <param name="ClientEditOutcomeUnknown">
+/// Whether the storage layer could not say if the conflicting client edit committed, or null to leave
+/// it unchanged.
+/// </param>
 public readonly record struct ReplicaConflictDetectionUpdate(
     string ConflictId,
     ReplicaConflictType? ConflictType,
     string? ClientStateJson,
     string? ServerStateJson,
     bool? ClientEditApplied,
-    long? ResolutionBaseGeneration = null);
+    long? ResolutionBaseGeneration = null,
+    bool? ClientEditOutcomeUnknown = null);
 
 /// <summary>
 /// A progress marker for an in-flight resolution: whether its feature write has committed, the

@@ -117,6 +117,14 @@ public readonly record struct ReplicaConflictResolutionCommand(
 /// <param name="FailureMessage">
 /// Sanitized failure message when the write did not commit. Never carries provider internals.
 /// </param>
+/// <param name="CommitOutcomeUnknown">
+/// True when the pipeline could not determine whether the write committed — a lost commit
+/// acknowledgement, say. Distinct from <paramref name="Applied"/> being false, which asserts the write
+/// did NOT happen: an indeterminate outcome must keep the resolution claimed and resumable rather than
+/// released, because releasing it lets the next attempt see this resolution's own change as a
+/// post-conflict edit and strand the conflict as permanently stale (#2430).
+/// </param>
 public readonly record struct ReplicaConflictApplyResult(
     bool Applied,
-    string? FailureMessage);
+    string? FailureMessage,
+    bool CommitOutcomeUnknown = false);

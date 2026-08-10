@@ -69,6 +69,14 @@ internal enum ReplicaConflictResolutionStatus
     /// is provisional and cannot be resolved against yet.
     /// </summary>
     DetectionInFlight = 8,
+
+    /// <summary>
+    /// The shared edit pipeline could not determine whether the resolved state committed. The
+    /// resolution stays claimed and resumable so a retry re-applies it idempotently, because
+    /// releasing it would let the next attempt see this resolution's own change as a post-conflict
+    /// edit and strand the conflict as permanently stale.
+    /// </summary>
+    WriteOutcomeUnknown = 9,
 }
 
 /// <summary>
@@ -323,6 +331,26 @@ internal sealed partial class ReplicaConflictResolutionService
                 throw;
             }
 
+            if (applyResult.CommitOutcomeUnknown)
+            {
+                // Deliberately NOT released. The pipeline is saying the write may have landed, so the
+                // conflict is neither resolved nor safely reviewable: it stays claimed with
+                // WriteCommitted=false, which is exactly the resumable state, and a retry of the same
+                // request re-applies the (idempotent) write and finishes finalization. Releasing here
+                // would let the next attempt see this resolution's own change as a post-conflict edit
+                // and return Stale forever (#2430).
+                // Back-date the claim so the operator's retry can resume immediately instead of waiting
+                // out the lease. The lease exists to stop a second dispatch while an attempt is still
+                // running; here the attempt has demonstrably finished, it just cannot say how.
+                await ExpireClaimLeaseAsync(claimed, request).ConfigureAwait(false);
+                Log.ResolutionWriteOutcomeUnknown(
+                    _logger, conflict.ConflictId, conflict.ServiceId, conflict.LayerId, conflict.ObjectId);
+                activity?.SetStatus(ActivityStatusCode.Error, "write outcome unknown");
+                return Failure(
+                    ReplicaConflictResolutionStatus.WriteOutcomeUnknown,
+                    "The resolved conflict state may or may not have been committed: the storage layer did not acknowledge the transaction. The resolution stays claimed - retry the same request to complete it.");
+            }
+
             if (!applyResult.Applied)
             {
                 // Release the claim so the conflict stays reviewable: recording a resolution for a
@@ -512,6 +540,17 @@ internal sealed partial class ReplicaConflictResolutionService
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
             var reapplied = await ApplyResolutionWriteAsync(existing, plan, cancellationToken)
                 .ConfigureAwait(false);
+            if (reapplied.CommitOutcomeUnknown)
+            {
+                // Same reasoning as the first attempt: keep the claim so the next retry resumes.
+                await ExpireClaimLeaseAsync(existing, request).ConfigureAwait(false);
+                Log.ResolutionWriteOutcomeUnknown(
+                    _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);
+                return Failure(
+                    ReplicaConflictResolutionStatus.WriteOutcomeUnknown,
+                    "The resolved conflict state may or may not have been committed: the storage layer did not acknowledge the transaction. The resolution stays claimed - retry the same request to complete it.");
+            }
+
             if (!reapplied.Applied)
             {
                 await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
@@ -637,6 +676,24 @@ internal sealed partial class ReplicaConflictResolutionService
 
         return claimed;
     }
+
+    /// <summary>
+    /// Back-dates a retained claim past its lease so the operator's own retry can resume it at once.
+    /// Used only for an indeterminate write, where the attempt has finished but cannot say whether it
+    /// committed: the claim must stay (releasing it strands the conflict as permanently stale if the
+    /// write did land), yet holding a live lease would make every retry look like a concurrent
+    /// duplicate for the length of the lease (#2430).
+    /// </summary>
+    private Task<bool> ExpireClaimLeaseAsync(
+        ReplicaConflictRecord claimed,
+        ReplicaConflictResolutionServiceRequest request)
+        => _conflictRepository.TryTakeOverClaimAsync(
+            claimed.ConflictId,
+            request.Actor,
+            request.Action,
+            claimed.ResolvedAt ?? default,
+            DateTimeOffset.UtcNow - ClaimLease - TimeSpan.FromSeconds(1),
+            CancellationToken.None);
 
     /// <summary>
     /// A stable hash of everything that determines which state a resolution writes: the action plus the
@@ -815,6 +872,11 @@ internal sealed partial class ReplicaConflictResolutionService
             long objectId,
             ReplicaConflictResolutionAction action,
             ReplicaConflictResolutionEffect effect);
+
+        [LoggerMessage(EventId = 7757, Level = LogLevel.Error,
+            Message = "Replica conflict {ConflictId} for service {ServiceId} layer {LayerId} objectId {ObjectId} stays claimed: the storage layer did not acknowledge the resolution write, so it may or may not have committed")]
+        public static partial void ResolutionWriteOutcomeUnknown(
+            ILogger logger, string conflictId, string serviceId, int layerId, long objectId);
 
         [LoggerMessage(EventId = 7746, Level = LogLevel.Warning,
             Message = "Replica conflict {ConflictId} for service {ServiceId} layer {LayerId} objectId {ObjectId} was left pending: the resolved feature state failed to commit")]

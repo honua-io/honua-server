@@ -40,6 +40,14 @@ public sealed class ReplicaConflictSummary
     /// </summary>
     public required bool ClientEditApplied { get; init; }
 
+    /// <summary>
+    /// Whether the storage layer could not say if the conflicting client edit committed. When true,
+    /// <see cref="ClientEditApplied"/> is not trustworthy in either direction and both
+    /// <c>acceptClient</c> and <c>keepServer</c> perform a real write rather than a no-op, so the row
+    /// matches the operator's decision whichever way the ambiguous write went (#2430).
+    /// </summary>
+    public bool ClientEditOutcomeUnknown { get; init; }
+
     /// <summary>Timestamp (UTC) when the conflict was first recorded.</summary>
     public required DateTimeOffset DetectedAt { get; init; }
 }
@@ -90,6 +98,14 @@ public sealed class ReplicaConflictDetail
     /// keeping the server then restores the captured pre-conflict server state (#2430).
     /// </summary>
     public required bool ClientEditApplied { get; init; }
+
+    /// <summary>
+    /// Whether the storage layer could not say if the conflicting client edit committed. When true,
+    /// <see cref="ClientEditApplied"/> is not trustworthy in either direction and both
+    /// <c>acceptClient</c> and <c>keepServer</c> perform a real write rather than a no-op, so the row
+    /// matches the operator's decision whichever way the ambiguous write went (#2430).
+    /// </summary>
+    public bool ClientEditOutcomeUnknown { get; init; }
 
     /// <summary>Base/common-ancestor feature state, when known. Opaque feature object.</summary>
     public System.Text.Json.JsonElement? BaseState { get; init; }

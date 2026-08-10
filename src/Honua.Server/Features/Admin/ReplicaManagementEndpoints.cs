@@ -391,7 +391,8 @@ internal static class ReplicaManagementEndpoints
     /// <summary>
     /// Maps a non-applied resolution outcome onto its HTTP problem response. Malformed operator inputs
     /// are 400, an action that does not apply to the conflict's recorded state is 409, a resolution
-    /// this deployment cannot commit is 501, and a failed commit is 502 with the conflict left pending.
+    /// this deployment cannot commit is 501, an indeterminate commit is 503 with the resolution left
+    /// claimed and retryable, and a failed commit is 502 with the conflict left pending.
     /// </summary>
     private static IResult CreateResolutionProblem(
         HttpContext context,
@@ -422,6 +423,11 @@ internal static class ReplicaManagementEndpoints
             ReplicaConflictResolutionStatus.WriteUnsupported => (
                 StatusCodes.Status501NotImplemented,
                 result.Message ?? "Applying this resolution is not supported by this deployment."),
+            // 503 rather than 502: the write may have landed, the resolution stays claimed, and
+            // retrying the same request is the documented way to finish it (#2430).
+            ReplicaConflictResolutionStatus.WriteOutcomeUnknown => (
+                StatusCodes.Status503ServiceUnavailable,
+                result.Message ?? "The resolved conflict state may or may not have been committed; retry the same request to complete it."),
             _ => (
                 StatusCodes.Status502BadGateway,
                 result.Message ?? "The resolved conflict state could not be committed; the conflict remains pending."),
@@ -483,6 +489,7 @@ internal static class ReplicaManagementEndpoints
         Status = StatusToString(record.Status),
         ServerGeneration = record.ServerGeneration,
         ClientEditApplied = record.ClientEditApplied,
+        ClientEditOutcomeUnknown = record.ClientEditOutcomeUnknown,
         DetectedAt = record.DetectedAt,
     };
 
@@ -507,6 +514,7 @@ internal static class ReplicaManagementEndpoints
             UserId = record.UserId,
             ServerGeneration = record.ServerGeneration,
             ClientEditApplied = record.ClientEditApplied,
+            ClientEditOutcomeUnknown = record.ClientEditOutcomeUnknown,
             BaseState = baseState,
             ClientState = clientState,
             ServerState = serverState,

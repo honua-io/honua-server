@@ -92,6 +92,14 @@ public static class GeoServicesEditErrorCodes
     public const int OperationRolledBack = 1008;
 
     /// <summary>
+    /// The provider could not determine whether the operation committed: the transaction's commit
+    /// acknowledgement was lost, so the row may or may not have been written. Distinct from a
+    /// definite failure because a caller must not assume the write did not happen — retries have to
+    /// stay idempotent and any at-most-once reservation has to be retained (#2430).
+    /// </summary>
+    public const int CommitOutcomeUnknown = 1009;
+
+    /// <summary>
     /// Maps a failed canonical <see cref="EditOperationResult"/> returned by a feature writer
     /// onto the stable per-feature code that should appear in the <c>applyEdits</c> envelope.
     /// The classification is deterministic and never inspects the free-form error message:
@@ -109,6 +117,14 @@ public static class GeoServicesEditErrorCodes
         if (result.IsPreconditionFailure || result.ErrorCode == EditOperationResult.PreconditionFailedErrorCode)
         {
             return UpdateConflict;
+        }
+
+        // Indeterminate outcome, classified ahead of everything else: the writer is telling us the
+        // row MAY have committed. Collapsing it into a definite failure code loses that, and callers
+        // that key off the code then treat a possibly-committed write as one that never happened.
+        if (result.IsCommitOutcomeUnknown)
+        {
+            return CommitOutcomeUnknown;
         }
 
         return result.ErrorCode switch

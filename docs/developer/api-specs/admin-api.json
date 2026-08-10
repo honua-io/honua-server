@@ -13263,7 +13263,7 @@
           "Services"
         ],
         "summary": "Resolve Replica Conflict",
-        "description": "Applies an operator-selected resolution to a pending or deferred conflict, committing the resolved feature state through the shared edit pipeline before recording audit evidence. Which action produces a new committed server state depends on whether the conflicting client edit was already applied (`clientEditApplied`): under last-write-wins the client edit is already committed, so `acceptClient` is a no-op and `keepServer` restores the captured pre-conflict server state; under `conflictHandling=manualReview` the polarity is reversed. `mergeFields` requires `fieldValues` and `chooseGeometry` requires `geometry`, otherwise 400. An already-resolved conflict, or an action that does not apply to the conflict's recorded state (for example keeping the server after the client's delete already committed), is rejected with 409.",
+        "description": "Applies an operator-selected resolution to a pending or deferred conflict, committing the resolved feature state through the shared edit pipeline before recording audit evidence. Which action produces a new committed server state depends on whether the conflicting client edit was already applied (`clientEditApplied`): under last-write-wins the client edit is already committed, so `acceptClient` is a no-op and `keepServer` restores the captured pre-conflict server state; under `conflictHandling=manualReview` the polarity is reversed. `mergeFields` requires `fieldValues` and `chooseGeometry` requires `geometry`, otherwise 400. An already-resolved conflict, or an action that does not apply to the conflict's recorded state (for example keeping the server after the client's delete already committed), is rejected with 409. When the storage layer cannot say whether the write committed, the resolution stays claimed and the call returns 503; retrying the same request resumes it idempotently. A conflict whose own uploaded edit had an indeterminate commit outcome carries `clientEditOutcomeUnknown`, and both `acceptClient` and `keepServer` then perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went.",
         "operationId": "resolveServiceReplicaConflict",
         "parameters": [
           {
@@ -13352,6 +13352,16 @@
           },
           "502": {
             "description": "The resolved feature state could not be committed through the shared edit pipeline; the conflict is left pending and reviewable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The shared edit pipeline could not determine whether the resolved feature state committed - the storage layer did not acknowledge the transaction. The resolution stays claimed with its write not yet marked committed, which is the resumable state; retry the same request (same operator, action, and inputs) to complete it. The conflict is deliberately not returned to the reviewable pool, because releasing it would let the next attempt see this resolution's own change as a post-conflict edit and reject it as stale forever.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38924,6 +38934,10 @@
             "type": "boolean",
             "description": "Whether the conflicting client edit was still committed to the layer (last-write-wins) or withheld for manual review. Determines what resolving the conflict has to write."
           },
+          "clientEditOutcomeUnknown": {
+            "type": "boolean",
+            "description": "Whether the storage layer could not say if the conflicting client edit committed - the transaction's commit acknowledgement was lost. When true, clientEditApplied is not trustworthy in either direction and both acceptClient and keepServer perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went."
+          },
           "detectedAt": {
             "type": "string",
             "format": "date-time"
@@ -39014,6 +39028,10 @@
           "clientEditApplied": {
             "type": "boolean",
             "description": "Whether the conflicting client edit was still committed to the layer (last-write-wins) or withheld for manual review. Accepting the client is a no-op when the edit already landed; keeping the server then restores the captured pre-conflict server state."
+          },
+          "clientEditOutcomeUnknown": {
+            "type": "boolean",
+            "description": "Whether the storage layer could not say if the conflicting client edit committed - the transaction's commit acknowledgement was lost. When true, clientEditApplied is not trustworthy in either direction and both acceptClient and keepServer perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went."
           },
           "baseState": {
             "type": "object",

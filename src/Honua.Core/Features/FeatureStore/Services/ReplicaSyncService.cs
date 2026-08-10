@@ -389,6 +389,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             ? []
             : new HashSet<int>(applyResult.CommittedEditIndexes);
 
+        // Slots the writer could not classify. Kept separate from committedSlots: an indeterminate row
+        // is neither "landed" nor "did not land", and recording it as either lets one of the two
+        // resolution shortcuts report a state the row may not hold (#2430).
+        var indeterminateSlots = applyResult.IndeterminateEditIndexes.IsDefaultOrEmpty
+            ? []
+            : new HashSet<int>(applyResult.IndeterminateEditIndexes);
+
         // Only the edit that EXECUTES last for a given object leaves its client state in the row.
         // Ranked by execution order rather than by request slot: the shared edit pipeline groups a
         // batch into creates, then updates, then deletes, so an upload listing delete(5) before
@@ -414,10 +421,17 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         }
 
         var promoted = new HashSet<string>(StringComparer.Ordinal);
+        var indeterminate = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < layerConflictIndexes.Count; i++)
         {
             var index = layerConflictIndexes[i];
             var conflict = conflicts[index];
+
+            if (indeterminateSlots.Contains(layerConflictSlots[i]) &&
+                conflict.ConflictId is { Length: > 0 } unknownId)
+            {
+                indeterminate.Add(unknownId);
+            }
             var winner = lastCommittedByObject.GetValueOrDefault(conflict.ObjectId, (Rank: -1, Slot: -1));
             if (winner.Rank != ExecutionRank(conflict.ClientKind) || winner.Slot != layerConflictSlots[i])
             {
@@ -450,6 +464,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ClientStateJson: null,
                             ServerStateJson: null,
                             ClientEditApplied: promoted.Contains(conflictId) ? true : null,
+                            ClientEditOutcomeUnknown: indeterminate.Contains(conflictId) ? true : null,
                             ResolutionBaseGeneration: baseGenerations.TryGetValue(conflictId, out var generation)
                                 ? generation
                                 : preBatchGeneration),

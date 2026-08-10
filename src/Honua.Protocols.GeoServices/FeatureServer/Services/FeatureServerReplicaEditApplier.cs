@@ -118,31 +118,40 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             appliedDeletes,
             Failed: failed,
             FailureMessage: failed ? "Uploaded replica edits failed to apply." : null,
-            CommittedEditIndexes: CollectCommittedEditIndexes(response, updateSlots, deleteSlots));
+            CommittedEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: true),
+            IndeterminateEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: false));
     }
 
     /// <summary>
-    /// Collects the request slots of the update/delete rows that actually committed. With
-    /// <c>rollbackOnFailure=false</c> the shared pipeline commits rows independently, so the
-    /// layer-wide failed flag cannot tell a caller whether a <em>particular</em> uploaded edit landed;
-    /// the conflict recorder needs exactly that (#2430).
+    /// Collects the request slots of the update/delete rows that definitely committed
+    /// (<paramref name="committed"/> true), or those whose commit outcome the writer could not
+    /// determine (false). With <c>rollbackOnFailure=false</c> the shared pipeline commits rows
+    /// independently, so the layer-wide failed flag cannot tell a caller whether a <em>particular</em>
+    /// uploaded edit landed; the conflict recorder needs exactly that (#2430).
     /// </summary>
     /// <remarks>
+    /// The two sets are disjoint, and an indeterminate row belongs to neither "committed" nor
+    /// "did not commit": treating it as a definite failure recorded the conflict as
+    /// <c>ClientEditApplied=false</c>, and a later keepServer then planned a no-op while the client
+    /// overwrite may well have been in place.
+    /// <para>
     /// Result arrays are index-aligned with the request arrays (Esri applyEdits semantics), so each
     /// result maps back to the slot recorded when the row was dispatched. Adds are excluded: they mint
     /// new server-assigned ids and can never be the target of an upload conflict.
+    /// </para>
     /// </remarks>
-    private static ImmutableArray<int> CollectCommittedEditIndexes(
+    private static ImmutableArray<int> CollectEditIndexes(
         ApplyEditsResponse response,
         List<int> updateSlots,
-        List<int> deleteSlots)
+        List<int> deleteSlots,
+        bool committed)
     {
-        var committed = ImmutableArray.CreateBuilder<int>();
-        AppendCommitted(response.UpdateResults, updateSlots);
-        AppendCommitted(response.DeleteResults, deleteSlots);
-        return committed.ToImmutable();
+        var slotsOut = ImmutableArray.CreateBuilder<int>();
+        Append(response.UpdateResults, updateSlots);
+        Append(response.DeleteResults, deleteSlots);
+        return slotsOut.ToImmutable();
 
-        void AppendCommitted(EditResult[]? results, List<int> slots)
+        void Append(EditResult[]? results, List<int> slots)
         {
             if (results is null)
             {
@@ -152,9 +161,13 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             var count = Math.Min(results.Length, slots.Count);
             for (var index = 0; index < count; index++)
             {
-                if (results[index].Success)
+                var result = results[index];
+                var matches = committed
+                    ? result.Success
+                    : !result.Success && result.Error?.Code == GeoServicesEditErrorCodes.CommitOutcomeUnknown;
+                if (matches)
                 {
-                    committed.Add(slots[index]);
+                    slotsOut.Add(slots[index]);
                 }
             }
         }

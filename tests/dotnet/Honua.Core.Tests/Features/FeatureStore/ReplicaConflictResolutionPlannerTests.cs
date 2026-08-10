@@ -167,6 +167,46 @@ public sealed class ReplicaConflictResolutionPlannerTests
     }
 
     [Fact]
+    public void Plan_KeepServerWithUnknownCommitOutcome_RestoresTheServerStateInsteadOfNoOp()
+    {
+        // The no-op shortcut asserts the row still holds the server state. When the writer could not
+        // say whether the client edit committed, that assertion is unsafe: if the edit did land, the
+        // shortcut reports the server state kept while the client overwrite is still in place.
+        var conflict = Conflict(
+            clientEditApplied: false,
+            serverState: """{"attributes":{"objectid":1,"NAME":"server"}}""") with
+        {
+            ClientEditOutcomeUnknown = true,
+        };
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(
+            conflict, ReplicaConflictResolutionAction.KeepServer, NoInputs);
+
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.WriteFeatureState);
+        plan.CommittedNewServerState.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Plan_AcceptClientWithUnknownCommitOutcome_WritesTheClientStateInsteadOfNoOp()
+    {
+        // Mirror image: the applied shortcut asserts the row already holds the client state, and if
+        // the ambiguous write never landed it reports the client edit accepted while the server state
+        // is still there. Writing it is idempotent whichever way the ambiguous write went.
+        var conflict = Conflict(
+            clientEditApplied: true,
+            clientState: """{"attributes":{"objectid":1,"NAME":"client"}}""") with
+        {
+            ClientEditOutcomeUnknown = true,
+        };
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(
+            conflict, ReplicaConflictResolutionAction.AcceptClient, NoInputs);
+
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.WriteFeatureState);
+        plan.CommittedNewServerState.Should().BeTrue();
+    }
+
+    [Fact]
     public void Plan_MergeFieldsWithCaseInsensitiveDuplicateNames_IsRejectedAsInvalidRequest()
     {
         // Field names are matched to schema fields case-insensitively, so these two entries name the

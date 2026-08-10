@@ -198,6 +198,30 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_IndeterminateEdit_RecordsTheUnknownCommitOutcome()
+    {
+        // The writer explicitly says the row MAY have committed. Recording that as a definite
+        // not-applied let a later keepServer plan a no-op while the client overwrite may have been in
+        // place, so the conflict carries the indeterminate flag instead.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(
+                committedEditIndexes: [], failed: true, indeterminateEditIndexes: [0]));
+
+        report.Conflicts.Should().ContainSingle()
+            .Which.Applied.Should().BeFalse("an indeterminate edit is not a committed one either");
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ClientEditOutcomeUnknown.Should().BeTrue();
+        repository.DetectionUpdates.Should().OnlyContain(u => u.ClientEditApplied == null);
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_DeleteListedBeforeUpdateForOneObject_PromotesTheDelete()
     {
         // The shared edit pipeline groups a batch into creates, then updates, then deletes rather than
@@ -297,7 +321,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
     /// Edit applier that reports a layer-wide failure while still attributing the rows that
     /// committed, mirroring the shared pipeline's best-effort per-row behavior.
     /// </summary>
-    private sealed class PartialFailureEditApplier(int[]? committedEditIndexes, bool failed) : IReplicaEditApplier
+    private sealed class PartialFailureEditApplier(
+        int[]? committedEditIndexes,
+        bool failed,
+        int[]? indeterminateEditIndexes = null) : IReplicaEditApplier
     {
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
@@ -314,7 +341,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 FailureMessage: failed ? "partial failure" : null,
                 CommittedEditIndexes: committedEditIndexes is null
                     ? default
-                    : [.. committedEditIndexes]));
+                    : [.. committedEditIndexes],
+                IndeterminateEditIndexes: indeterminateEditIndexes is null
+                    ? default
+                    : [.. indeterminateEditIndexes]));
     }
 
     private sealed class RecordingConflictRepository : IReplicaConflictRepository

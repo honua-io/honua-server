@@ -188,6 +188,16 @@ public readonly record struct ReplicaConflictRecord
     public bool ClientEditApplied { get; init; }
 
     /// <summary>
+    /// Whether the storage layer could not say if the conflicting client edit committed — the
+    /// transaction's acknowledgement was lost, so the row may or may not carry the client state. When
+    /// true, neither value of <see cref="ClientEditApplied"/> is trustworthy and the resolution planner
+    /// must not take either of its no-op shortcuts: keeping the server restores the captured server
+    /// state, and accepting the client writes the captured client state, so the resulting row matches
+    /// the operator's decision whichever way the ambiguous write went (#2430).
+    /// </summary>
+    public bool ClientEditOutcomeUnknown { get; init; }
+
+    /// <summary>
     /// Pre-serialized JSON for the base (common-ancestor) feature state, when known.
     /// </summary>
     /// <remarks>

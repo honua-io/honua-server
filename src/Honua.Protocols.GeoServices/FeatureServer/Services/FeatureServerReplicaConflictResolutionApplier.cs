@@ -116,9 +116,19 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             ? response.DeleteResults
             : response.UpdateResults;
 
-        return Succeeded(effectResults, command.Effect)
-            ? new ReplicaConflictApplyResult(Applied: true, FailureMessage: null)
-            : new ReplicaConflictApplyResult(Applied: false, FailureMessage);
+        if (Succeeded(effectResults, command.Effect))
+        {
+            return new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
+        }
+
+        // An indeterminate row is NOT a failure: the writer is saying the resolution may have
+        // committed. Reporting it as uncommitted releases the claim, and if the write did land the
+        // next attempt sees this resolution's own change as a post-conflict edit and returns Stale
+        // forever (#2430).
+        return new ReplicaConflictApplyResult(
+            Applied: false,
+            FailureMessage,
+            CommitOutcomeUnknown: CommitOutcomeUnknown(effectResults));
     }
 
     /// <summary>
@@ -241,6 +251,10 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     private static bool Succeeded(EditResult[]? results, ReplicaConflictResolutionEffect effect)
         => results is { Length: > 0 }
             && Array.TrueForAll(results, r => r.Success || IsAlreadyAbsent(r, effect));
+
+    private static bool CommitOutcomeUnknown(EditResult[]? results)
+        => results is { Length: > 0 }
+            && Array.Exists(results, r => r.Error?.Code == GeoServicesEditErrorCodes.CommitOutcomeUnknown);
 
     private static bool IsAlreadyAbsent(EditResult result, ReplicaConflictResolutionEffect effect)
         => effect == ReplicaConflictResolutionEffect.DeleteFeature
