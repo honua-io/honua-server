@@ -464,6 +464,48 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenACurrentRecordNeverFinishedDetection_StaysBlockedPastTheSettleWindow()
+    {
+        // A sync cut short between the insert and the enrichment leaves a current record with no base
+        // generation. Ageing it out would skip the staleness precondition entirely - there is nothing
+        // to compare against - and let the resolution overwrite edits made after the aborted sync.
+        var incomplete = Conflict(clientEditApplied: false) with
+        {
+            ResolutionBaseGeneration = null,
+            ServerStateJson = null,
+            DetectedAt = DateTimeOffset.UtcNow.AddHours(-3),
+        };
+        var repository = new FakeConflictRepository(incomplete);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.AcceptClient));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.DetectionInFlight);
+        result.Message.Should().Contain("did not finish recording");
+        applier.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_LegacyRecordWithoutDetectionState_StaysResolvable()
+    {
+        // A record written before detection persisted any of this state will never gain it. Blocking
+        // those forever would make every pre-existing conflict permanently unresolvable.
+        var legacy = Conflict(clientEditApplied: true) with
+        {
+            StorageLayerId = null,
+            ResolutionBaseGeneration = null,
+            DetectedAt = DateTimeOffset.UtcNow.AddHours(-3),
+        };
+        var repository = new FakeConflictRepository(legacy);
+        var service = CreateService(repository, new RecordingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenOnlyTheClientEnvelopeIsAttached_TreatsDetectionAsStillInFlight()
     {
         // The client envelope is now written with the conflict record while the server envelope is
@@ -836,6 +878,36 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenTheResumedWriteMarkerLosesTheClaim_StopsInsteadOfFinalizing()
+    {
+        // A re-applied write can outlive the lease and another retry can restamp resolved_at.
+        // Continuing would finalize a row this request no longer owns, and if the replacement then
+        // fails and releases its claim the conflict is left pending behind a committed feature change.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(expired)
+        {
+            ClaimSucceeds = false,
+            LoseClaimOnWriteMarker = true,
+        };
+        var audit = new NoOpAuditLog();
+        var service = CreateService(repository, new RecordingApplier(), auditLog: audit);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.AlreadyResolved);
+        audit.Records.Should().Be(0, "a request that lost its claim must not write success evidence");
+        repository.Current.FinalizationPending.Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenAnotherRecoveryWinsTheTakeover_DoesNotReapplyTheWrite()
     {
         // Recovery re-dispatches the write, so it has to be single-winner in its own right: two
@@ -1024,6 +1096,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Simulates a retry taking the claim over while this request's audit is running.</summary>
         public bool LoseClaimBeforeFinalMarker { get; init; }
 
+        /// <summary>Simulates a retry taking the claim over while a re-applied write is running.</summary>
+        public bool LoseClaimOnWriteMarker { get; init; }
+
         public List<ReplicaConflictFinalizationUpdate> FinalizationUpdates { get; } = [];
 
         public ReplicaConflictRecord Current { get; private set; } = seed;
@@ -1121,6 +1196,11 @@ public sealed class ReplicaConflictResolutionServiceTests
             // Only the final marker fails, so the generation stamp and audit still run: that is the
             // state a claim taken over during a slow audit actually leaves behind.
             if (LoseClaimBeforeFinalMarker && update.Finalized == true)
+            {
+                return Task.FromResult(false);
+            }
+
+            if (LoseClaimOnWriteMarker && update.WriteCommitted == true)
             {
                 return Task.FromResult(false);
             }

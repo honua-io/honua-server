@@ -196,7 +196,9 @@ internal sealed partial class ReplicaConflictResolutionService
             activity?.SetStatus(ActivityStatusCode.Error, "detection-in-flight");
             return Failure(
                 ReplicaConflictResolutionStatus.DetectionInFlight,
-                "This conflict is still being recorded by the synchronization that produced it. Retry the resolution shortly.");
+                DateTimeOffset.UtcNow - conflict.DetectedAt < DetectionSettleWindow
+                    ? "This conflict is still being recorded by the synchronization that produced it. Retry the resolution shortly."
+                    : "The synchronization that produced this conflict did not finish recording it, so the conflict-time state a resolution needs is missing. It cannot be resolved safely; re-run the synchronization for this replica.");
         }
 
         var plan = ReplicaConflictResolutionPlanner.Plan(conflict, request.Action, request.Inputs);
@@ -454,26 +456,46 @@ internal sealed partial class ReplicaConflictResolutionService
     /// </remarks>
     private static bool IsDetectionInFlight(ReplicaConflictRecord conflict)
     {
-        if (DateTimeOffset.UtcNow - conflict.DetectedAt >= DetectionSettleWindow)
+        if (conflict.StorageLayerId is null)
         {
-            // Old enough that whatever state it has is all it will ever have; treat it as settled so
-            // legacy records, and records whose enrichment failed outright, stay resolvable.
+            // A genuine legacy record: written before detection persisted any of this state, so it will
+            // never gain it. Blocking those forever would make every pre-existing conflict permanently
+            // unresolvable, so they are treated as settled — with the staleness precondition skipped,
+            // as documented on HasPostConflictEditAsync.
             return false;
         }
 
-        // The base generation alone is NOT the completion signal: the sync service stamps it before
-        // the protocol adapter attaches the server envelope, so a record can look settled while a state
-        // a resolution actually reads is still missing (#2430). Detection counts as settled only once
-        // BOTH envelopes are durable: the client side is now written with the record while the server
-        // side is attached afterwards, so "either one present" let an operator resolve in between and
-        // run a field merge or geometry choice against the client envelope alone, overwriting server
-        // attributes that were supposed to be preserved. The settle window above bounds the wait, so a
-        // conflict that genuinely has only one side (a client delete, or a feature the server already
-        // deleted) still becomes resolvable.
-        return conflict.ResolutionBaseGeneration is null
+        if (DateTimeOffset.UtcNow - conflict.DetectedAt >= DetectionSettleWindow &&
+            !IsDetectionIncomplete(conflict))
+        {
+            // Recorded by a current sync, past the settle window, and complete: settled.
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a conflict recorded by a current sync is missing state a resolution reads.
+    /// </summary>
+    /// <remarks>
+    /// The base generation alone is NOT the completion signal: the sync service stamps it before the
+    /// protocol adapter attaches the server envelope, so a record can look settled while a state a
+    /// resolution actually reads is still missing (#2430). Both envelopes must be durable: the client
+    /// side is written with the record while the server side is attached afterwards, so "either one
+    /// present" let an operator resolve in between and run a field merge or geometry choice against the
+    /// client envelope alone, overwriting server attributes that were supposed to be preserved.
+    /// <para>
+    /// A record that is still incomplete after the settle window is not "settled" — its originating
+    /// sync was cut short between the insert and the enrichment. Ageing it out would skip the staleness
+    /// precondition (there is no base generation to check against) and let a resolution overwrite edits
+    /// made after the aborted sync, so it stays blocked until the state it needs exists.
+    /// </para>
+    /// </remarks>
+    private static bool IsDetectionIncomplete(ReplicaConflictRecord conflict)
+        => conflict.ResolutionBaseGeneration is null
             || string.IsNullOrWhiteSpace(conflict.ClientStateJson)
             || string.IsNullOrWhiteSpace(conflict.ServerStateJson);
-    }
 
     /// <summary>
     /// Decides what a lost claim means. A conflict whose resolution is already finalized is genuinely
@@ -582,7 +604,7 @@ internal sealed partial class ReplicaConflictResolutionService
                     reapplied.FailureMessage ?? "The resolved conflict state could not be committed.");
             }
 
-            await _conflictRepository.TryUpdateFinalizationStateAsync(
+            var resumedMarked = await _conflictRepository.TryUpdateFinalizationStateAsync(
                     new ReplicaConflictFinalizationUpdate(
                         existing.ConflictId,
                         request.Actor,
@@ -593,6 +615,16 @@ internal sealed partial class ReplicaConflictResolutionService
                         Finalized: null),
                     CancellationToken.None)
                 .ConfigureAwait(false);
+            if (!resumedMarked)
+            {
+                // The re-applied write outlived the lease and another retry restamped resolved_at.
+                // Continuing would finalize a row this request no longer owns, and if the replacement
+                // then fails and releases its claim the conflict is pending behind a feature change
+                // this request committed (#2430).
+                Log.ResolutionClaimLost(_logger, existing.ConflictId);
+                return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
+            }
+
             existing = existing with { WriteCommitted = true };
         }
 

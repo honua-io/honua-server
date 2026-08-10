@@ -174,6 +174,15 @@ public static class ReplicaConflictResolutionPlanner
                 "A field merge does not apply to a delete conflict: choose acceptClient or keepServer instead.");
         }
 
+        // A partial resolution only writes what the operator named and inherits the rest from whichever
+        // side is currently committed. With an indeterminate upload outcome that side is unknown, so the
+        // merge would silently restore the other side's unmentioned attributes and geometry. The
+        // whole-state actions stay available and are idempotent either way (#2430).
+        if (conflict.ClientEditOutcomeUnknown)
+        {
+            return NotApplicable("The storage layer could not confirm whether this conflict's uploaded edit committed, so which side is currently in the row is unknown. A partial resolution would carry the unmentioned attributes and geometry from a side that may not be current; choose acceptClient or keepServer, which write a complete known state.");
+        }
+
         // Merge onto the currently committed state where it is known, so unmentioned fields keep their
         // committed values instead of silently reverting to the other side of the conflict.
         var baseEnvelope = conflict.ClientEditApplied
@@ -213,6 +222,13 @@ public static class ReplicaConflictResolutionPlanner
         {
             return NotApplicable(
                 "A geometry choice does not apply to a delete conflict: choose acceptClient or keepServer instead.");
+        }
+
+        // Same as a field merge: the attributes come from whichever side is currently committed, and an
+        // indeterminate upload outcome means that side is unknown (#2430).
+        if (conflict.ClientEditOutcomeUnknown)
+        {
+            return NotApplicable("The storage layer could not confirm whether this conflict's uploaded edit committed, so which side is currently in the row is unknown. A partial resolution would carry the unmentioned attributes and geometry from a side that may not be current; choose acceptClient or keepServer, which write a complete known state.");
         }
 
         var chosenEnvelope = source == GeometrySourceClient ? conflict.ClientStateJson : conflict.ServerStateJson;

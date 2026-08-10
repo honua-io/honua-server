@@ -166,6 +166,26 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.InvalidRequest);
     }
 
+    [Theory]
+    [InlineData(ReplicaConflictResolutionAction.MergeFields)]
+    [InlineData(ReplicaConflictResolutionAction.ChooseGeometry)]
+    public void Plan_PartialActionsWithUnknownCommitOutcome_AreRejectedAsNotApplicable(
+        ReplicaConflictResolutionAction action)
+    {
+        // A partial resolution writes only what the operator named and inherits the rest from whichever
+        // side is currently committed. With an indeterminate upload outcome that side is unknown, so it
+        // would silently restore the other side's unmentioned attributes and geometry.
+        var conflict = Conflict(clientEditApplied: false) with { ClientEditOutcomeUnknown = true };
+        var inputs = action == ReplicaConflictResolutionAction.MergeFields
+            ? Merge(("name", "\"merged\""))
+            : new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: "client");
+
+        var plan = ReplicaConflictResolutionPlanner.Plan(conflict, action, inputs);
+
+        plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
+        plan.Effect.Should().Be(ReplicaConflictResolutionEffect.None);
+    }
+
     [Fact]
     public void Plan_KeepServerWithUnknownCommitOutcome_RestoresTheServerStateInsteadOfNoOp()
     {
