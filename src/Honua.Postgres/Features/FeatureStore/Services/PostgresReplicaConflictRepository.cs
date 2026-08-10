@@ -18,7 +18,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         conflict_id, replica_id, service_id, layer_id, objectid, conflict_type, status,
         sync_operation_id, device_id, user_id, server_generation,
         base_state_json, client_state_json, server_state_json, detected_at,
-        resolution_action, resolved_by, resolved_at, resolved_server_generation
+        resolution_action, resolved_by, resolved_at, resolved_server_generation,
+        client_edit_applied
         """;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -37,8 +38,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 conflict_id, replica_id, service_id, layer_id, objectid, conflict_type, status,
                 sync_operation_id, device_id, user_id, server_generation,
                 base_state_json, client_state_json, server_state_json, detected_at,
-                resolution_action, resolved_by, resolved_at, resolved_server_generation)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                resolution_action, resolved_by, resolved_at, resolved_server_generation,
+                client_edit_applied)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             ON CONFLICT (conflict_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 conflict_type = EXCLUDED.conflict_type,
@@ -48,7 +50,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 resolution_action = EXCLUDED.resolution_action,
                 resolved_by = EXCLUDED.resolved_by,
                 resolved_at = EXCLUDED.resolved_at,
-                resolved_server_generation = EXCLUDED.resolved_server_generation
+                resolved_server_generation = EXCLUDED.resolved_server_generation,
+                client_edit_applied = EXCLUDED.client_edit_applied
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -73,6 +76,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.Add(NullableText(record.ResolvedBy));
         command.Parameters.Add(NullableTimestampTz(record.ResolvedAt));
         command.Parameters.Add(NullableBigint(record.ResolvedServerGeneration));
+        command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.ClientEditApplied);
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -195,6 +199,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         ResolvedBy = reader.IsDBNull(16) ? null : reader.GetString(16),
         ResolvedAt = reader.IsDBNull(17) ? null : reader.GetFieldValue<DateTimeOffset>(17),
         ResolvedServerGeneration = reader.IsDBNull(18) ? null : reader.GetInt64(18),
+        ClientEditApplied = reader.GetBoolean(19),
     };
 
     private static NpgsqlParameter NullableText(string? value) =>

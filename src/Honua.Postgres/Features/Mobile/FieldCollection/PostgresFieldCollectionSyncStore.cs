@@ -559,16 +559,47 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             };
         }
 
-        if (current is null || current.IsDeleted)
+        if (current is null)
         {
-            // Delete of an already-absent feature is idempotently applied.
-            var version = current?.Version + 1 ?? 1L;
+            // The feature never existed on the server, so a delete is vacuously satisfied.
             return new FieldCollectionPushResult
             {
                 ChangeId = request.ChangeId,
                 Outcome = FieldCollectionPushOutcome.Applied,
                 ServerGeneration = 0,
-                Version = version,
+                Version = 1L,
+            };
+        }
+
+        if (current.IsDeleted)
+        {
+            // The row is already tombstoned. Two cases have to be told apart, and previously were not
+            // (#2430): a retry of THIS client's own delete — its base version is the pre-delete version,
+            // so the tombstone sits exactly one version ahead (or the client already observed the
+            // tombstone) — is idempotently applied and must not bump the version again; anything else
+            // means a concurrent actor deleted the feature at a version this client never saw, which is
+            // the delete-vs-delete conflict the wire contract has always declared and never produced.
+            var isOwnDeleteRetry = current.Version == request.BaseVersion.Value ||
+                current.Version == request.BaseVersion.Value + 1;
+            if (isOwnDeleteRetry)
+            {
+                return new FieldCollectionPushResult
+                {
+                    ChangeId = request.ChangeId,
+                    Outcome = FieldCollectionPushOutcome.Applied,
+                    ServerGeneration = 0,
+                    Version = current.Version,
+                };
+            }
+
+            return new FieldCollectionPushResult
+            {
+                ChangeId = request.ChangeId,
+                Outcome = FieldCollectionPushOutcome.Conflict,
+                ServerGeneration = 0,
+                ConflictType = FieldCollectionConflictType.DeleteDelete,
+                ServerVersion = current.Version,
+                ServerFeaturePayloadJson = current.PayloadJson,
             };
         }
 

@@ -139,7 +139,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     // edit would lose it with no record to resolve. Under last-write-wins the edit is
                     // still applied below, so a record failure stays tolerable (logged only).
                     var conflictId = canRecordConflicts
-                        ? await RecordConflictAsync(request, layer.PublicLayerId, objectId, conflictType, mustRecord: !applyConflicting, cancellationToken).ConfigureAwait(false)
+                        ? await RecordConflictAsync(request, layer.PublicLayerId, objectId, conflictType, clientEditApplied: applyConflicting, cancellationToken).ConfigureAwait(false)
                         : null;
 
                     conflicts.Add(new ReplicaSyncConflict(
@@ -222,12 +222,19 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             _ => ReplicaConflictType.Attribute,
         };
 
+    // clientEditApplied: whether the conflicting client edit is still applied to the layer
+    // (last-write-wins) or was skipped for manual review. Persisted on the record because conflict
+    // resolution cannot be planned without it: accepting the client is a no-op when the edit already
+    // landed, whereas keeping the server then requires restoring the captured pre-conflict state
+    // (#2430). It is also the "must record" signal — under manual review the record is the only
+    // carrier of the client intent, so a failed write has to surface rather than silently drop the
+    // edit.
     private async Task<string?> RecordConflictAsync(
         ReplicaSyncRequest request,
         int publicLayerId,
         long objectId,
         ReplicaConflictType conflictType,
-        bool mustRecord,
+        bool clientEditApplied,
         CancellationToken cancellationToken)
     {
         var conflictId = Guid.NewGuid().ToString("N");
@@ -244,6 +251,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             DeviceId = request.DeviceId,
             UserId = request.UserId,
             ServerGeneration = request.BaseGeneration,
+            ClientEditApplied = clientEditApplied,
             DetectedAt = DateTimeOffset.UtcNow,
         };
 
@@ -257,10 +265,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // Always surface the failure in logs for operator follow-up.
             Log.ConflictRecordFailed(_logger, request.ReplicaId, publicLayerId, objectId, ex);
 
-            // Manual review (mustRecord): the conflicting edit will be skipped, so the conflict
-            // record is the only carrier of the client intent. Losing it would drop the edit with
-            // no trace, so propagate the failure and fail the sync instead of returning null.
-            if (mustRecord)
+            // Manual review (the client edit was NOT applied): the conflicting edit will be skipped,
+            // so the conflict record is the only carrier of the client intent. Losing it would drop
+            // the edit with no trace, so propagate the failure and fail the sync instead of returning
+            // null.
+            if (!clientEditApplied)
             {
                 throw;
             }

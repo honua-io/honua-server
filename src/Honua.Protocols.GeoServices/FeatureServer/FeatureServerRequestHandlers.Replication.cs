@@ -22,6 +22,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 // Behavior reference: Replication durability (#383)
 // Uses IChangeTracker for monotonic generation counters and incremental delta extraction
@@ -1004,6 +1005,19 @@ internal static partial class FeatureServerEndpoints
                 [rollbackError ?? "rollbackOnFailure must be a boolean value."]);
         }
 
+        // Honua extension parameter (#2430): conflictHandling selects what happens to an uploaded edit
+        // that collides with a concurrent server edit. `lastWriteWins` (the default, and the historical
+        // behavior) still commits the client edit and records the conflict as advisory review evidence;
+        // `manualReview` withholds the conflicting edit so the durable conflict record is the only
+        // carrier of the client intent until an operator resolves it. Both modes require a provider that
+        // can persist conflicts; without one the canonical sync service falls back to last-write-wins.
+        if (!TryParseConflictHandling(values, out var lastWriteWins, out var conflictHandlingError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid conflictHandling parameter",
+                [conflictHandlingError!]);
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
 
         SynchronizeReplicaConflict[]? conflicts = null;
@@ -1047,7 +1061,7 @@ internal static partial class FeatureServerEndpoints
                         : ReplicaSyncDirection.Bidirectional,
                     BaseGeneration: replica.LastSyncGeneration,
                     LayerEdits: layerEdits,
-                    LastWriteWins: true,
+                    LastWriteWins: lastWriteWins,
                     SyncOperationId: context.TraceIdentifier,
                     RollbackOnFailure: rollbackOnFailure);
 
@@ -1191,6 +1205,41 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
+    }
+
+    /// <summary>
+    /// Parses the Honua <c>conflictHandling</c> extension parameter for <c>synchronizeReplica</c> into
+    /// the canonical last-write-wins flag (#2430). Accepts <c>lastWriteWins</c> (default) and
+    /// <c>manualReview</c>; anything else is a bad request rather than a silent fallback, so a client
+    /// that misspells the mode never believes its edits are being withheld for review when they are
+    /// being committed.
+    /// </summary>
+    private static bool TryParseConflictHandling(
+        IReadOnlyDictionary<string, StringValues> values,
+        out bool lastWriteWins,
+        out string? error)
+    {
+        lastWriteWins = true;
+        error = null;
+
+        var raw = GetValueString(values, "conflictHandling");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        switch (raw.Trim().ToLowerInvariant())
+        {
+            case "lastwritewins":
+                lastWriteWins = true;
+                return true;
+            case "manualreview":
+                lastWriteWins = false;
+                return true;
+            default:
+                error = "conflictHandling must be either 'lastWriteWins' or 'manualReview'.";
+                return false;
+        }
     }
 
     /// <summary>

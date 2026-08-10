@@ -57,6 +57,10 @@ public static class AdminServiceCollectionExtensions
         // audit trail. Scoped because it consumes the scoped IAuditLog sink.
         services.TryAddScoped<SecureConnectionGovernance>();
 
+        // Disconnected-sync conflict resolution (#2430). Scoped because it consumes the scoped
+        // conflict repository, audit sink, and the protocol adapter's shared-edit-pipeline applier.
+        services.TryAddScoped<ReplicaConflictResolutionService>();
+
         return services;
     }
 }

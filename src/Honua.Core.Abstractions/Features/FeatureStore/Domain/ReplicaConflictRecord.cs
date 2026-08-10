@@ -125,7 +125,28 @@ public readonly record struct ReplicaConflictRecord
     /// </summary>
     public required long ServerGeneration { get; init; }
 
-    /// <summary>Pre-serialized JSON for the base (common-ancestor) feature state, when known.</summary>
+    /// <summary>
+    /// Whether the conflicting client edit was still committed to the layer when the conflict was
+    /// detected. True under the last-write-wins conflict-handling mode (the client edit overwrote the
+    /// concurrent server state and the record is advisory); false under manual review (the client edit
+    /// was skipped and this record is the only carrier of the client intent). Resolution semantics
+    /// depend on it: accepting the client is a no-op when the edit already landed, whereas keeping the
+    /// server requires restoring the captured pre-conflict server state (#2430).
+    /// </summary>
+    public bool ClientEditApplied { get; init; }
+
+    /// <summary>
+    /// Pre-serialized JSON for the base (common-ancestor) feature state, when known.
+    /// </summary>
+    /// <remarks>
+    /// Left null by the GeoServices replica path: the server change log records only
+    /// <c>(generation, layerId, objectId, operation)</c> with no per-change value snapshot, so the
+    /// feature state as of the replica's base generation is not reconstructible server-side, and the
+    /// Esri replica upload model carries no client-supplied base either. The conflict-review diff
+    /// degrades to a two-way client-vs-server comparison in that case rather than inventing an
+    /// ancestor. The field is kept because other replica-capable producers (and a future
+    /// snapshot-carrying change log) can populate it.
+    /// </remarks>
     public string? BaseStateJson { get; init; }
 
     /// <summary>Pre-serialized JSON for the incoming client feature state.</summary>

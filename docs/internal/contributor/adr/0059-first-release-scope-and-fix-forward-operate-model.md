@@ -162,6 +162,29 @@ deployment. It lights up when the customer opts in.
 > 403 a fully valid bearer-token admin request (#2945). It is `maturity: experimental`
 > again, gated behind `Capabilities:Experimental:security.mtls:Enabled`.
 
+> **Update (#2430).** **Disconnected-sync / replicas** (`sync.offline`) has been promoted
+> out of this experimental + disabled set to **GA (`Implemented`)**. The admin replica and
+> conflict-review routes (`/api/v1/admin/services/{id}/replicas` + the conflict
+> list/detail/resolution surfaces) drop their `WithCapabilityGate("sync.offline")`,
+> therefore carry `maturity: implemented` in the feature catalog, and the capability is
+> advertised in the manifest. It remains **Pro-edition** gated
+> (`fieldops.offline-sync` entitlement) — GA does not bypass licensing. GA-hardening made
+> conflict resolution a real edit rather than bookkeeping: a resolution commits the
+> resolved feature state through the shared edit pipeline
+> (`IReplicaConflictResolutionApplier`) instead of only recording an action; conflict
+> records persist whether the client edit was applied (`client_edit_applied`) so a
+> keep-server resolution restores the captured pre-conflict server state under
+> last-write-wins; a new `conflictHandling=manualReview` `synchronizeReplica` extension
+> withholds conflicting edits for operator review; and delete-vs-delete field-collection
+> conflicts are now produced instead of being silently treated as idempotent. **Only
+> `sync.offline` is promoted.** The "Disconnected-sync conflict review" bullet above and
+> the **disconnected-sync / replicas** entry in the two-mechanism roster below are
+> superseded by this note, as is the `sync.offline` clause of the "Forms + field
+> collection" bullet — but the rest of that bullet stands: `form.package` authoring and
+> field data collection (server form-package endpoints + `IFieldCollectionSyncStore`)
+> stay in the entitlement/UI-gated set, and the **Mobile** bullet (honua-mobile SDK,
+> honua-collect field data collection) is unchanged.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime

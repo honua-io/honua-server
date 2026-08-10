@@ -233,6 +233,129 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_DeleteOfConcurrentlyDeletedFeature_ReturnsDeleteDeleteConflict()
+    {
+        // delete-vs-delete has always been declared on the wire contract and was never produced:
+        // a delete landing on an already-tombstoned row was reported as idempotently applied even
+        // when a different actor had deleted it at a version this client never saw, silently hiding
+        // the divergence from the field client (#2430).
+        var featureId = $"feat-{Guid.NewGuid():N}";
+        const int layerId = 137;
+
+        var insertResponse = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 12.5, latitude: 41.9),
+        });
+        insertResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var insertJson = JsonDocument.Parse(await insertResponse.Content.ReadAsStringAsync());
+        var insertedVersion = insertJson.RootElement.GetProperty("version").GetInt64();
+
+        // Another actor updates and then deletes the feature, moving the tombstone two versions past
+        // the base this client still holds.
+        var updateResponse = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "update",
+            baseVersion = insertedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 12.6, latitude: 41.8),
+        });
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var updateJson = JsonDocument.Parse(await updateResponse.Content.ReadAsStringAsync());
+        var updatedVersion = updateJson.RootElement.GetProperty("version").GetInt64();
+
+        var otherDelete = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "delete",
+            baseVersion = updatedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+        });
+        otherDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var otherDeleteJson = JsonDocument.Parse(await otherDelete.Content.ReadAsStringAsync());
+        otherDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+
+        // This client's delete still carries the pre-update base version.
+        var staleDelete = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "delete",
+            baseVersion = insertedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+        });
+        staleDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var staleDeleteJson = JsonDocument.Parse(await staleDelete.Content.ReadAsStringAsync());
+        staleDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("conflict");
+        staleDeleteJson.RootElement.GetProperty("conflictType").GetString().Should().Be("delete-delete");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/fieldcollection/changes")]
+    public async Task Push_RetriedDeleteOfOwnDelete_StaysIdempotent()
+    {
+        // A retry of the client's OWN delete must remain idempotently applied and must not bump the
+        // version again — the delete-vs-delete conflict is for a concurrent actor's tombstone only.
+        var featureId = $"feat-{Guid.NewGuid():N}";
+        const int layerId = 138;
+
+        var insertResponse = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "insert",
+            timestamp = DateTimeOffset.UtcNow,
+            feature = NewFeaturePayload(longitude: 13.5, latitude: 42.9),
+        });
+        insertResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var insertJson = JsonDocument.Parse(await insertResponse.Content.ReadAsStringAsync());
+        var insertedVersion = insertJson.RootElement.GetProperty("version").GetInt64();
+
+        var firstDelete = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "delete",
+            baseVersion = insertedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+        });
+        firstDelete.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstDeleteJson = JsonDocument.Parse(await firstDelete.Content.ReadAsStringAsync());
+        firstDeleteJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        var deletedVersion = firstDeleteJson.RootElement.GetProperty("version").GetInt64();
+
+        // Same logical delete, new change id (a client that lost the response and retried).
+        var retry = await _client.PostAsJsonAsync(ChangesPath, new
+        {
+            changeId = Guid.NewGuid().ToString("N"),
+            featureId,
+            layerId,
+            operation = "delete",
+            baseVersion = insertedVersion,
+            timestamp = DateTimeOffset.UtcNow,
+        });
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var retryJson = JsonDocument.Parse(await retry.Content.ReadAsStringAsync());
+        retryJson.RootElement.GetProperty("outcome").GetString().Should().Be("applied");
+        retryJson.RootElement.GetProperty("version").GetInt64().Should().Be(
+            deletedVersion, "an idempotent delete retry must not advance the feature version");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/fieldcollection/changes")]
     public async Task Pull_SinceGeneration_ReturnsOrderedChanges()
     {

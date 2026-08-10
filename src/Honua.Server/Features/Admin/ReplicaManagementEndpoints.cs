@@ -2,14 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Console;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -39,6 +38,14 @@ namespace Honua.Server.Features.Admin;
 /// case the conflict endpoints return a not-supported denial rather than an empty result.
 /// </para>
 /// <para>
+/// Resolution is not bookkeeping (#2430): the endpoint delegates to
+/// <see cref="ReplicaConflictResolutionService"/>, which plans the feature-store effect from the
+/// conflict's classification and whether the client edit was committed at sync time, writes the
+/// resolved state through the shared edit pipeline, and only then records the durable resolution. A
+/// resolution that cannot be committed leaves the conflict pending rather than reporting a state that
+/// never landed.
+/// </para>
+/// <para>
 /// The group is gated by <c>RequireAdminAuthorization</c> (replica/conflict-review entitlement),
 /// which is the distinct authorization surface separate from the per-layer data-editor checks
 /// used by the protocol replication endpoints.
@@ -61,10 +68,8 @@ internal static class ReplicaManagementEndpoints
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
-            // T10 (#2346): disconnected-sync replica/conflict review is
-            // built-experimental and gated OFF the first-release surface (404 when
-            // sync.offline is experimental-disabled).
-            .WithCapabilityGate("sync.offline")
+            // Promoted to GA in #2430 — no capability gate; admin authorization still
+            // required below.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Replicas")
@@ -294,8 +299,7 @@ internal static class ReplicaManagementEndpoints
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] IReplicaRepository replicaRepository,
         [FromServices] IReplicaConflictRepository conflictRepository,
-        [FromServices] IChangeTracker changeTracker,
-        [FromServices] IAuditLog auditLog,
+        [FromServices] ReplicaConflictResolutionService resolutionService,
         CancellationToken cancellationToken)
     {
         var (replica, problem) = await ResolveReplicaAsync(
@@ -331,93 +335,72 @@ internal static class ReplicaManagementEndpoints
                 "A valid 'action' is required: acceptClient, keepServer, mergeFields, chooseGeometry, rejectClient, or defer.");
         }
 
-        var existing = await conflictRepository.GetAsync(conflictId, cancellationToken).ConfigureAwait(false);
-        if (existing is null ||
-            !string.Equals(existing.Value.ReplicaId, replica.ReplicaId, StringComparison.OrdinalIgnoreCase))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status404NotFound,
-                $"Conflict '{conflictId}' not found for replica '{replicaId}'.");
-        }
-
-        if (existing.Value.Status == ReplicaConflictStatus.Resolved)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status409Conflict,
-                $"Conflict '{conflictId}' has already been resolved.");
-        }
-
-        // Resolutions that adopt client edits (accept-client, field merge, geometry choice) produce
-        // a new committed server state, captured by advancing the server generation cursor. Keep-
-        // server, reject-client, and defer do not produce a new server state.
-        var committedNewServerState = action is ReplicaConflictResolutionAction.AcceptClient
-            or ReplicaConflictResolutionAction.MergeFields
-            or ReplicaConflictResolutionAction.ChooseGeometry;
-
-        long? resolvedGeneration = committedNewServerState
-            ? await changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
-            : null;
-
-        var actor = ConsolePrincipal.ResolveActorId(context.User) ?? "system";
-        var resolution = new ReplicaConflictResolution(
-            conflictId,
-            action,
-            actor,
-            DateTimeOffset.UtcNow,
-            resolvedGeneration);
-
-        var outcome = await conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
-        if (outcome.Record is null)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status404NotFound,
-                $"Conflict '{conflictId}' not found for replica '{replicaId}'.");
-        }
-
-        if (!outcome.Applied)
-        {
-            // The conflict was already resolved (e.g. by a concurrent operator that won the guarded
-            // update); do not re-report this losing request as a success or emit a success audit
-            // event. Mirror the pre-check's already-resolved response.
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status409Conflict,
-                $"Conflict '{conflictId}' has already been resolved.");
-        }
-
-        var resolved = outcome.Record;
-
-        await auditLog.RecordAsync(
-            new AuditEvent
-            {
-                Timestamp = resolution.ResolvedAt,
-                EventType = AuditEventType.AdminAction,
-                Actor = actor,
-                ActorType = AuditActorType.UserId,
-                ResourceType = "replica_conflict",
-                ResourceId = conflictId,
-                Action = $"replica.conflict.resolve.{ActionToString(action)}",
-                Outcome = AuditOutcome.Success,
-                CorrelationId = context.TraceIdentifier,
-                Details = JsonSerializer.Serialize(
-                    new ReplicaConflictResolutionRequest { Action = ActionToString(action) },
-                    ReplicaManagementJsonContext.Default.ReplicaConflictResolutionRequest),
-            },
+        // The resolution is planned and committed by the shared service: it writes the resolved feature
+        // state through the shared edit pipeline before recording the durable resolution, so the
+        // recorded outcome always matches the committed state (#2430).
+        var result = await resolutionService.ResolveAsync(
+            new ReplicaConflictResolutionServiceRequest(
+                replica.ReplicaId,
+                conflictId,
+                action,
+                ActionToString(action),
+                new ReplicaConflictResolutionInputs(request.FieldValues, request.Geometry),
+                ConsolePrincipal.ResolveActorId(context.User) ?? "system",
+                context.TraceIdentifier),
             cancellationToken)
             .ConfigureAwait(false);
 
+        if (result.Status != ReplicaConflictResolutionStatus.Applied || result.Record is not { } resolved)
+        {
+            return CreateResolutionProblem(context, result, replicaId, conflictId);
+        }
+
         var response = new ReplicaConflictResolutionResponse
         {
-            Conflict = ToConflictDetail(resolved.Value),
-            CommittedNewServerState = committedNewServerState,
+            Conflict = ToConflictDetail(resolved),
+            CommittedNewServerState = result.CommittedNewServerState,
+            Effect = EffectToString(result.Effect),
         };
 
         return Results.Json(
             ApiResponse<ReplicaConflictResolutionResponse>.CreateSuccess(response),
             ReplicaManagementJsonContext.Default.ApiResponseReplicaConflictResolutionResponse);
+    }
+
+    /// <summary>
+    /// Maps a non-applied resolution outcome onto its HTTP problem response. Malformed operator inputs
+    /// are 400, an action that does not apply to the conflict's recorded state is 409, a resolution
+    /// this deployment cannot commit is 501, and a failed commit is 502 with the conflict left pending.
+    /// </summary>
+    private static IResult CreateResolutionProblem(
+        HttpContext context,
+        ReplicaConflictResolutionResult result,
+        string replicaId,
+        string conflictId)
+    {
+        var (statusCode, message) = result.Status switch
+        {
+            ReplicaConflictResolutionStatus.NotFound => (
+                StatusCodes.Status404NotFound,
+                $"Conflict '{conflictId}' not found for replica '{replicaId}'."),
+            ReplicaConflictResolutionStatus.AlreadyResolved => (
+                StatusCodes.Status409Conflict,
+                $"Conflict '{conflictId}' has already been resolved."),
+            ReplicaConflictResolutionStatus.InvalidRequest => (
+                StatusCodes.Status400BadRequest,
+                result.Message ?? "The conflict resolution request is not valid for the selected action."),
+            ReplicaConflictResolutionStatus.NotApplicable => (
+                StatusCodes.Status409Conflict,
+                result.Message ?? "The selected resolution does not apply to this conflict."),
+            ReplicaConflictResolutionStatus.WriteUnsupported => (
+                StatusCodes.Status501NotImplemented,
+                result.Message ?? "Applying this resolution is not supported by this deployment."),
+            _ => (
+                StatusCodes.Status502BadGateway,
+                result.Message ?? "The resolved conflict state could not be committed; the conflict remains pending."),
+        };
+
+        return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
     }
 
     /// <summary>
@@ -472,6 +455,7 @@ internal static class ReplicaManagementEndpoints
         ConflictType = ConflictTypeToString(record.ConflictType),
         Status = StatusToString(record.Status),
         ServerGeneration = record.ServerGeneration,
+        ClientEditApplied = record.ClientEditApplied,
         DetectedAt = record.DetectedAt,
     };
 
@@ -495,6 +479,7 @@ internal static class ReplicaManagementEndpoints
             DeviceId = record.DeviceId,
             UserId = record.UserId,
             ServerGeneration = record.ServerGeneration,
+            ClientEditApplied = record.ClientEditApplied,
             BaseState = baseState,
             ClientState = clientState,
             ServerState = serverState,
@@ -592,6 +577,14 @@ internal static class ReplicaManagementEndpoints
         ReplicaConflictStatus.Resolved => "resolved",
         ReplicaConflictStatus.Deferred => "deferred",
         _ => status.ToString().ToLowerInvariant(),
+    };
+
+    private static string EffectToString(ReplicaConflictResolutionEffect effect) => effect switch
+    {
+        ReplicaConflictResolutionEffect.None => "none",
+        ReplicaConflictResolutionEffect.WriteFeatureState => "writeFeatureState",
+        ReplicaConflictResolutionEffect.DeleteFeature => "deleteFeature",
+        _ => effect.ToString().ToLowerInvariant(),
     };
 
     private static string ActionToString(ReplicaConflictResolutionAction action) => action switch
