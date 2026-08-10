@@ -18,7 +18,6 @@ using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
-using Honua.Sdk.GeoServices;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -113,7 +112,7 @@ internal static class InfrastructureCompositionRoot
         // when ArcGisRest:Enabled is explicitly false.
         if (configuration.GetValue("ArcGisRest:Enabled", true))
         {
-            Honua.Sdk.GeoServices.ServiceCollectionExtensions.AddGeoServicesFeatureProvider(services, configuration);
+            Honua.ArcGisRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
         }
 
         // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
