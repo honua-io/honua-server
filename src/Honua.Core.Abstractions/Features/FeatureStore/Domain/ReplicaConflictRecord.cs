@@ -165,6 +165,15 @@ public readonly record struct ReplicaConflictRecord
     public string? ResolutionInputHash { get; init; }
 
     /// <summary>
+    /// Optimistic-concurrency token for the conflicting row as it was when this resolution was claimed,
+    /// captured before the staleness precondition ran. A recovery that must re-apply an unmarked write
+    /// uses it as the write's precondition instead of re-reading the row: a token derived at retry time
+    /// would describe whatever is in the row now, including a foreign edit that landed during the lease,
+    /// and the write would then overwrite it (#2430).
+    /// </summary>
+    public string? PreWriteStateToken { get; init; }
+
+    /// <summary>
     /// Whether the resolution has been claimed but not yet finalized — its produced generation not
     /// persisted, or its audit evidence not written. Such a resolution is resumable: a retry completes
     /// the remaining finalization instead of short-circuiting to already-resolved, so an interruption

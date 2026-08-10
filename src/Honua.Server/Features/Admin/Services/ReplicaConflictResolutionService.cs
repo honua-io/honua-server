@@ -315,6 +315,25 @@ internal sealed partial class ReplicaConflictResolutionService
             throw;
         }
 
+        // Persist it on the claim: a recovery must re-apply against the row as it was when the
+        // resolution was claimed, not against whatever a retry-time read would return (#2430).
+        if (expectedStateToken is { Length: > 0 })
+        {
+            await _conflictRepository.TryUpdateFinalizationStateAsync(
+                    new ReplicaConflictFinalizationUpdate(
+                        claimed.ConflictId,
+                        request.Actor,
+                        request.Action,
+                        claimed.ResolvedAt ?? default,
+                        WriteCommitted: null,
+                        ResolvedServerGeneration: null,
+                        Finalized: null,
+                        PreWriteStateToken: expectedStateToken),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            claimed = claimed with { PreWriteStateToken = expectedStateToken };
+        }
+
         if (stale)
         {
             // The feature moved after this conflict was recorded, so the captured conflict-time state
@@ -633,16 +652,20 @@ internal sealed partial class ReplicaConflictResolutionService
             existing = existing with { ResolvedAt = takenOverAt };
 
             Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
-            var resumeToken = existing.StorageLayerId is { } resumeLayerId
-                ? await _applier!.CaptureStateTokenAsync(resumeLayerId, existing.ObjectId, cancellationToken)
-                    .ConfigureAwait(false)
-                : null;
-            var reapplied = await ApplyResolutionWriteAsync(existing, plan, resumeToken, cancellationToken)
+            // The RETAINED token, never one derived now. Recovery skips the staleness probe on purpose
+            // (the change it would trip over may be this resolution's own write), so a retry-time token
+            // would describe whatever is in the row at this moment — including a normal edit that landed
+            // during the lease — and the precondition would then happily overwrite it (#2430).
+            var reapplied = await ApplyResolutionWriteAsync(
+                    existing, plan, existing.PreWriteStateToken, cancellationToken)
                 .ConfigureAwait(false);
             if (reapplied.PreconditionFailed)
             {
-                // A resumed re-apply is bound to the same conflict-time state, so the same window
-                // applies. Release and report stale rather than retrying into the newer edit.
+                // The row is no longer what it was when this resolution was claimed. That is either this
+                // resolution's own write (its marker never landed) or a foreign edit during the lease,
+                // and the collapsed change log cannot tell them apart. Refusing to write is the only
+                // answer that cannot destroy data: the claim is released so the conflict is reviewable
+                // against the state that is actually there (#2430).
                 await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
                 Log.ResolutionStale(
                     _logger, existing.ConflictId, existing.ServiceId, existing.LayerId, existing.ObjectId);

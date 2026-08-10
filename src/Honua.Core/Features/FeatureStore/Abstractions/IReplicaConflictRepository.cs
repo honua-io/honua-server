@@ -114,6 +114,11 @@ public readonly record struct ReplicaConflictDetectionUpdate(
 /// <param name="ResolvedServerGeneration">
 /// Generation produced by the committed write, or null to leave it unchanged.
 /// </param>
+/// <param name="PreWriteStateToken">
+/// Optimistic-concurrency token for the row as it was when the resolution was claimed, or null to
+/// leave it unchanged. A recovery re-applies the write against this token rather than one derived at
+/// retry time.
+/// </param>
 /// <param name="Finalized">
 /// Whether finalization is complete, or null to leave it unchanged.
 /// </param>
@@ -124,7 +129,8 @@ public readonly record struct ReplicaConflictFinalizationUpdate(
     DateTimeOffset ResolvedAt,
     bool? WriteCommitted,
     long? ResolvedServerGeneration,
-    bool? Finalized);
+    bool? Finalized,
+    string? PreWriteStateToken = null);
 
 /// <summary>
 /// Persistent storage for durable disconnected-sync conflict records (#1167). Conflict records are

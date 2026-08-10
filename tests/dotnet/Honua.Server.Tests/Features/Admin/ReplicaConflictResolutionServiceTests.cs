@@ -968,6 +968,44 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_RecoveryReappliesAgainstTheRetainedToken_NotARetryTimeRead()
+    {
+        // Recovery skips the staleness probe on purpose, so a token derived now would describe whatever
+        // is in the row at this moment - including a normal edit that landed during the lease - and the
+        // precondition would happily overwrite it.
+        var expired = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.LastCommand!.Value.ExpectedStateToken.Should().Be(
+            "token-at-claim", "the recovered write is bound to the row as it was when the claim was taken");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_PersistsThePreWriteTokenOnTheClaim()
+    {
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
+        var service = CreateService(repository, new RecordingApplier());
+
+        await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        repository.Current.PreWriteStateToken.Should().Be("token-1");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenAnotherRecoveryWinsTheTakeover_DoesNotReapplyTheWrite()
     {
         // Recovery re-dispatches the write, so it has to be single-winner in its own right: two
@@ -1330,6 +1368,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 WriteCommitted = update.WriteCommitted ?? Current.WriteCommitted,
                 ResolvedServerGeneration = update.ResolvedServerGeneration ?? Current.ResolvedServerGeneration,
                 FinalizationPending = update.Finalized is { } f ? !f : Current.FinalizationPending,
+                PreWriteStateToken = update.PreWriteStateToken ?? Current.PreWriteStateToken,
             };
             return Task.FromResult(true);
         }
