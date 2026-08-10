@@ -380,22 +380,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         long preBatchGeneration,
         CancellationToken cancellationToken)
     {
-        var byObjectId = new Dictionary<long, List<string>>();
-        foreach (var index in layerConflictIndexes)
-        {
-            var conflict = conflicts[index];
-            if (conflict.ConflictId is not { Length: > 0 } conflictId)
-            {
-                continue;
-            }
-
-            if (!byObjectId.TryGetValue(conflict.ObjectId, out var ids))
-            {
-                byObjectId[conflict.ObjectId] = ids = [];
-            }
-
-            ids.Add(conflictId);
-        }
+        var byObjectId = layerConflictIndexes
+            .Select(index => conflicts[index])
+            .Where(conflict => conflict.ConflictId is { Length: > 0 })
+            .GroupBy(conflict => conflict.ObjectId)
+            .ToDictionary(group => group.Key, group => group.Select(conflict => conflict.ConflictId!).ToArray());
 
         var generations = new Dictionary<string, long>(StringComparer.Ordinal);
         if (byObjectId.Count == 0)
@@ -407,14 +396,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             .GetChangesSinceAsync(preBatchGeneration, [layer.StorageLayerId], new HashSet<long>(byObjectId.Keys), cancellationToken)
             .ConfigureAwait(false);
 
-        foreach (var change in changes)
+        foreach (var change in changes.Where(change => byObjectId.ContainsKey(change.ObjectId)))
         {
-            if (!byObjectId.TryGetValue(change.ObjectId, out var ids))
-            {
-                continue;
-            }
-
-            foreach (var conflictId in ids)
+            foreach (var conflictId in byObjectId[change.ObjectId])
             {
                 if (!generations.TryGetValue(conflictId, out var current) || change.Generation > current)
                 {
