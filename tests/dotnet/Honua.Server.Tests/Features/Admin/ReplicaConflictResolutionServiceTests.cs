@@ -1038,6 +1038,13 @@ public sealed class ReplicaConflictResolutionServiceTests
         repository.DetectionUpdates.Should().ContainSingle()
             .Which.ResolutionBaseGeneration.Should().Be(
                 FakeChangeTracker.Generation, "the conflict is re-pointed at the state that is there now");
+
+        // The refreshed envelope IS the current server side, so the attribution that described the
+        // original upload must not survive: a later acceptClient would otherwise take its no-op
+        // shortcut and report success while the row still held the server state.
+        repository.Current.ClientEditApplied.Should().BeFalse();
+        repository.Current.ClientEditOutcomeUnknown.Should().BeFalse();
+        repository.Current.ClientEditSuperseded.Should().BeFalse();
     }
 
     [UnitTest]
@@ -1431,6 +1438,9 @@ public sealed class ReplicaConflictResolutionServiceTests
             {
                 ServerStateJson = update.ServerStateJson ?? Current.ServerStateJson,
                 ResolutionBaseGeneration = update.ResolutionBaseGeneration ?? Current.ResolutionBaseGeneration,
+                ClientEditApplied = update.ClientEditApplied ?? Current.ClientEditApplied,
+                ClientEditOutcomeUnknown = update.ClientEditOutcomeUnknown ?? Current.ClientEditOutcomeUnknown,
+                ClientEditSuperseded = update.ClientEditSuperseded ?? Current.ClientEditSuperseded,
             };
             return Task.FromResult(true);
         }

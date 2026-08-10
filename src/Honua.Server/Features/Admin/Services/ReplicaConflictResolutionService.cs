@@ -933,11 +933,27 @@ internal sealed partial class ReplicaConflictResolutionService
 
         try
         {
+            // Generation first, then the state, then a re-read to prove the state did not move between
+            // them. Sampling the generation last would let an edit landing in between be inside the new
+            // base while absent from the refreshed envelope, so a later resolution would find nothing
+            // post-base and overwrite that edit with the stale snapshot (#2430).
+            var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+                .ConfigureAwait(false);
             var snapshot = await _applier
                 .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
                 .ConfigureAwait(false);
-            var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
+            var confirmation = await _applier
+                .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
                 .ConfigureAwait(false);
+            if (confirmation.Exists != snapshot.Exists ||
+                !string.Equals(confirmation.StateToken, snapshot.StateToken, StringComparison.Ordinal))
+            {
+                // The row moved while it was being re-baselined. Leave the conflict as it was rather
+                // than pairing an envelope with a generation that does not describe it; the operator
+                // gets the unchanged (safe, possibly stale) record instead.
+                Log.ResolutionRebaselineSkipped(_logger, conflict.ConflictId);
+                return;
+            }
 
             await _conflictRepository.TryUpdateDetectionStateAsync(
                     new ReplicaConflictDetectionUpdate(
@@ -945,8 +961,14 @@ internal sealed partial class ReplicaConflictResolutionService
                         ConflictType: null,
                         ClientStateJson: null,
                         ServerStateJson: snapshot.StateJson,
-                        ClientEditApplied: null,
-                        ResolutionBaseGeneration: generation),
+                        // The refreshed envelope IS the current server side, so the attribution flags
+                        // that described the original upload no longer hold. Leaving ClientEditApplied
+                        // true would let a later acceptClient take its no-op shortcut and report success
+                        // while the row still held the server state.
+                        ClientEditApplied: false,
+                        ResolutionBaseGeneration: generation,
+                        ClientEditOutcomeUnknown: false,
+                        ClientEditSuperseded: false),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -1156,6 +1178,10 @@ internal sealed partial class ReplicaConflictResolutionService
             long objectId,
             ReplicaConflictResolutionAction action,
             ReplicaConflictResolutionEffect effect);
+
+        [LoggerMessage(EventId = 7759, Level = LogLevel.Warning,
+            Message = "Replica conflict {ConflictId} was not re-baselined: the feature changed while its state was being refreshed")]
+        public static partial void ResolutionRebaselineSkipped(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7758, Level = LogLevel.Warning,
             Message = "Replica conflict {ConflictId} could not be re-baselined onto the current server state")]
