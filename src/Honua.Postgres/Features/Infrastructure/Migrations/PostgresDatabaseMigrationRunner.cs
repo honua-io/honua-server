@@ -29,6 +29,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
+    private readonly string _metadataSchemaVariable;
 
     public PostgresDatabaseMigrationRunner(
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
@@ -37,6 +38,11 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
+        var configuredMetadataSchema = configuration?["Database:Schema"];
+        _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(
+            string.IsNullOrWhiteSpace(configuredMetadataSchema)
+                ? PostgresSchemaConfiguration.DefaultMetadataSchema
+                : configuredMetadataSchema);
 
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
@@ -58,7 +64,10 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             ValidateArguments(connectionString, migrationsAssembly);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var upgrader = BuildUpgrader(BuildMigrationConnectionString(connectionString), migrationsAssembly);
+            var upgrader = BuildUpgrader(
+                BuildMigrationConnectionString(connectionString),
+                migrationsAssembly,
+                _metadataSchemaVariable);
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
@@ -209,7 +218,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return DatabaseMigrationResult.Failed(error, error.Message);
         }
 
-        var upgrader = BuildUpgrader(migrationConnectionString, migrationsAssembly);
+        var upgrader = BuildUpgrader(migrationConnectionString, migrationsAssembly, _metadataSchemaVariable);
 
         try
         {
@@ -272,11 +281,15 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             SearchPath = "public",
         }.ConnectionString;
 
-    private static UpgradeEngine BuildUpgrader(string connectionString, Assembly migrationsAssembly) =>
+    private static UpgradeEngine BuildUpgrader(
+        string connectionString,
+        Assembly migrationsAssembly,
+        string metadataSchemaVariable) =>
         DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .JournalToPostgresqlTable("public", "schema_versions")
             .WithScriptsEmbeddedInAssembly(migrationsAssembly)
+            .WithVariable("HonuaSchema", metadataSchemaVariable)
             .WithTransaction()
             .LogToConsole()
             .Build();

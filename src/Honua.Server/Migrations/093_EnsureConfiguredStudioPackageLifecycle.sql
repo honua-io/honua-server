@@ -1,11 +1,10 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Studio package lifecycle persistence for Console authoring (#1180).
--- Draft rows are mutable; content-version rows are append-only and never updated
--- after insertion. Pointer transitions are stored on studio_content_items and
--- audited through publication/rollback request tables.
-
+-- Forward-only repair for installations that selected a non-default Database:Schema after the
+-- original Studio lifecycle migration was journaled (#3067). Fresh installations provision these
+-- objects in migration 035; existing installations need this idempotent migration because DbUp
+-- does not replay an already-journaled script after its schema qualification is corrected.
 CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
 
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_items (
@@ -15,6 +14,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_items (
     family               TEXT        NOT NULL,
     current_version_id   UUID        NULL,
     published_version_id UUID        NULL,
+    owner_id             TEXT        NULL,
     created_by           TEXT        NULL,
     updated_by           TEXT        NULL,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_content_items (
     CONSTRAINT studio_content_items_family
         CHECK (family IN ('query','analysis','map','dashboard','report','form','app','workflow','gp','etl'))
 );
+
+ALTER TABLE $HonuaSchema$.studio_content_items
+    ADD COLUMN IF NOT EXISTS owner_id TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_content_items_workspace_key
     ON $HonuaSchema$.studio_content_items (
@@ -125,21 +128,39 @@ CREATE INDEX IF NOT EXISTS idx_studio_publication_requests_item_created
     ON $HonuaSchema$.studio_publication_requests (item_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.studio_rollback_requests (
-    request_id        UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    item_id           UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
-    target_version_id UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_versions(version_id) ON DELETE CASCADE,
-    pointer           TEXT        NOT NULL,
-    current_version_id UUID       NULL,
-    published_version_id UUID     NULL,
-    requested_by      TEXT        NULL,
-    reason            TEXT        NULL,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    request_id           UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    item_id              UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_items(item_id) ON DELETE CASCADE,
+    target_version_id    UUID        NOT NULL REFERENCES $HonuaSchema$.studio_content_versions(version_id) ON DELETE CASCADE,
+    pointer              TEXT        NOT NULL,
+    current_version_id   UUID        NULL,
+    published_version_id UUID        NULL,
+    requested_by         TEXT        NULL,
+    reason               TEXT        NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT studio_rollback_requests_pointer
         CHECK (pointer IN ('current','published','both'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_studio_rollback_requests_item_created
     ON $HonuaSchema$.studio_rollback_requests (item_id, created_at DESC);
+
+UPDATE $HonuaSchema$.studio_content_items AS item
+SET owner_id = COALESCE(
+    (
+        SELECT NULLIF(BTRIM(draft.owner_id), '')
+        FROM $HonuaSchema$.studio_package_drafts AS draft
+        WHERE draft.item_id = item.item_id
+          AND NULLIF(BTRIM(draft.owner_id), '') IS NOT NULL
+        ORDER BY draft.created_at ASC, draft.draft_id ASC
+        LIMIT 1
+    ),
+    item.created_by
+)
+WHERE item.owner_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_studio_content_items_owner_list
+    ON $HonuaSchema$.studio_content_items (owner_id, updated_at DESC, item_id DESC)
+    WHERE owner_id IS NOT NULL;
 
 COMMENT ON TABLE $HonuaSchema$.studio_content_versions IS
     'Append-only immutable Studio package content versions (#1180).';

@@ -15,6 +15,18 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
     private static readonly DateTimeOffset _acceptedAt = new(2026, 5, 11, 10, 0, 0, TimeSpan.Zero);
 
     [UnitTest]
+    [Operation(TestOperations.Query)]
+    public void DurabilityCapabilities_ProcessLocalStore_FailClosedForCheckpointing()
+    {
+        var repository = CreateRepository();
+
+        Assert.False(repository.SupportsReplicaSharedReplay);
+        Assert.False(repository.SupportsRestartDurableReplay);
+        Assert.False(repository.SupportsRestartDurableCheckpointCursors);
+        Assert.False(repository.SupportsRestartDurableCheckpointing);
+    }
+
+    [UnitTest]
     [Operation(TestOperations.Append)]
     public async Task AppendAsync_NewOperations_AssignsMonotonicServerCursors()
     {
@@ -104,6 +116,23 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
         Assert.Equal(1, stale.MinimumReplayCursor.Value);
         Assert.Equal(SavedMapOperationReplayStatus.ResyncRequired, unknownAhead.Status);
         Assert.Equal(3, unknownAhead.HeadCursor.Value);
+    }
+
+    [UnitTest]
+    [Operation(TestOperations.Query)]
+    public async Task ReplayPendingCheckpointAsync_RecordedCursor_ReplaysOnlyNewSuffix()
+    {
+        var repository = CreateRepository();
+        await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty));
+        await repository.AppendAsync(CreateRequest("op-2", new SavedMapOperationCursor(1)));
+        await repository.RecordCheckpointAsync(new SavedMapId("map-1"), new SavedMapOperationCursor(2));
+        await repository.AppendAsync(CreateRequest("op-3", new SavedMapOperationCursor(2)));
+
+        var replay = await repository.ReplayPendingCheckpointAsync(new SavedMapId("map-1"));
+
+        Assert.Equal(SavedMapOperationReplayStatus.Ok, replay.Status);
+        Assert.Equal(2, replay.SinceCursor.Value);
+        Assert.Equal("op-3", Assert.Single(replay.Operations).OperationId.Value);
     }
 
     [UnitTest]

@@ -25,6 +25,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
     private readonly string _itemsTable;
     private readonly string _draftsTable;
     private readonly string _versionsTable;
+    private readonly string _checkpointVersionsTable;
     private readonly string _dependenciesTable;
     private readonly string _publicationRequestsTable;
     private readonly string _rollbackRequestsTable;
@@ -36,6 +37,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         _itemsTable = SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
         _draftsTable = SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
         _versionsTable = SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
+        _checkpointVersionsTable = SchemaSearchPath.QualifyTable("saved_map_checkpoint_versions", schemaName);
         _dependenciesTable = SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
         _publicationRequestsTable = SchemaSearchPath.QualifyTable("studio_publication_requests", schemaName);
         _rollbackRequestsTable = SchemaSearchPath.QualifyTable("studio_rollback_requests", schemaName);
@@ -300,11 +302,31 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
-    public async Task<StudioContentVersion> CreateVersionAsync(
+    public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
         string? actorId,
+        CancellationToken cancellationToken = default) =>
+        CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint checkpoint,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        return CreateVersionCoreAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
+    }
+
+    private async Task<StudioContentVersion> CreateVersionCoreAsync(
+        StudioPackageDraft draft,
+        string? changeNote,
+        string? actorId,
+        StudioVersionCheckpoint? checkpoint,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
 
@@ -399,6 +421,16 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             }
 
             await InsertDependencySidecarsAsync(connection, transaction, draft.ItemId, versionId, dependencies, cancellationToken).ConfigureAwait(false);
+            if (checkpoint is not null)
+            {
+                await InsertCheckpointVersionAsync(
+                        connection,
+                        transaction,
+                        versionId,
+                        checkpoint,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
             await UpdatePointersAsync(
                 connection,
                 transaction,
@@ -457,6 +489,76 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? ReadVersion(reader)
             : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
+        string mapId,
+        long afterCursor,
+        long throughCursor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
+        if (afterCursor < 0 || throughCursor < afterCursor)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(afterCursor),
+                "Checkpoint cursor bounds must be non-negative and ordered.");
+        }
+
+        var sql = $"""
+            SELECT v.version_id, v.item_id, v.package_key, v.workspace_id, v.owner_id,
+                   v.version_number, v.content_hash, v.envelope, v.validation, v.dependencies,
+                   v.provenance, v.source_draft_id, v.base_version_id, v.change_note,
+                   v.created_by, v.created_at, c.map_id, c.checkpoint_cursor
+            FROM {_checkpointVersionsTable} AS c
+            INNER JOIN {_versionsTable} AS v ON v.version_id = c.version_id
+            WHERE c.map_id = @map_id
+              AND c.acknowledged_at IS NULL
+              AND c.checkpoint_cursor >= @after_cursor
+              AND c.checkpoint_cursor <= @through_cursor
+            ORDER BY c.checkpoint_cursor DESC, c.created_at DESC, v.version_number DESC
+            LIMIT 1
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@map_id", mapId);
+        command.Parameters.AddWithValue("@after_cursor", afterCursor);
+        command.Parameters.AddWithValue("@through_cursor", throughCursor);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new StudioCheckpointedVersion
+        {
+            Version = ReadVersion(reader),
+            Checkpoint = new StudioVersionCheckpoint
+            {
+                MapId = reader.GetString(16),
+                OperationCursor = reader.GetInt64(17),
+            },
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task AcknowledgeCheckpointVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_checkpointVersionsTable}
+            SET acknowledged_at = COALESCE(acknowledged_at, @acknowledged_at)
+            WHERE version_id = @version_id
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@acknowledged_at", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("@version_id", versionId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<StudioContentItemPointers?> GetPointersAsync(
@@ -981,6 +1083,35 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         {
             throw new KeyNotFoundException("Studio content item was not found.");
         }
+    }
+
+    private async Task InsertCheckpointVersionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid versionId,
+        StudioVersionCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        if (checkpoint.OperationCursor < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(checkpoint),
+                checkpoint.OperationCursor,
+                "Checkpoint operation cursor must be non-negative.");
+        }
+
+        var sql = $"""
+            INSERT INTO {_checkpointVersionsTable}
+                (map_id, checkpoint_cursor, version_id, created_at)
+            VALUES
+                (@map_id, @checkpoint_cursor, @version_id, @created_at)
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@map_id", checkpoint.MapId);
+        command.Parameters.AddWithValue("@checkpoint_cursor", checkpoint.OperationCursor);
+        command.Parameters.AddWithValue("@version_id", versionId);
+        command.Parameters.AddWithValue("@created_at", DateTimeOffset.UtcNow);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task InsertDependencySidecarsAsync(
