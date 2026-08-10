@@ -267,7 +267,7 @@ internal sealed partial class ReplicaConflictResolutionService
 
         activity?.SetTag("replicaconflict.effect", plan.Effect.ToString());
 
-        if (RestoresCapturedServerState(request.Action, plan) &&
+        if (RestoresCapturedServerState(request.Action, plan, claimed) &&
             await HasUncapturedServerEditAsync(claimed, cancellationToken).ConfigureAwait(false))
         {
             // The pre-apply server snapshot is taken before conflict detection runs, so a server edit
@@ -307,14 +307,8 @@ internal sealed partial class ReplicaConflictResolutionService
             ReplicaConflictApplyResult applyResult;
             try
             {
-                applyResult = await _applier!.ApplyAsync(
-                    new ReplicaConflictResolutionCommand(
-                        conflict.ServiceId,
-                        conflict.LayerId,
-                        conflict.ObjectId,
-                        plan.Effect,
-                        plan.FeatureStateJson),
-                    cancellationToken).ConfigureAwait(false);
+                applyResult = await ApplyResolutionWriteAsync(claimed, plan, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -450,15 +444,19 @@ internal sealed partial class ReplicaConflictResolutionService
 
         if (plan.Effect != ReplicaConflictResolutionEffect.None && !existing.WriteCommitted)
         {
-            // Releasing is the only destructive branch here, and "same operator, same action,
-            // unfinalized" cannot by itself tell a CRASHED attempt from one still in flight. Without a
-            // lease, a second request from the same operator would tear down its own live first
-            // attempt, which could then still commit its edit while a third request claimed and wrote
-            // concurrently. Only a claim that has been silent longer than the lease is treated as
-            // abandoned; a live one is reported as already-resolved and left alone (#2430).
+            // The claim is unfinalized and the committed-write marker is absent, so the previous
+            // attempt died somewhere around its write and we cannot tell from durable state whether it
+            // landed. Both guesses are wrong: releasing strands the conflict (the retry's staleness
+            // probe would see the resolution's OWN change and return Stale forever), and assuming it
+            // landed can finalize a state that never existed.
             //
-            // Resuming finalization needs no such guard: it is idempotent and claim-bound, so a
-            // duplicate request converges on the same generation instead of corrupting anything.
+            // The write itself is the tie-breaker, because it is idempotent by construction: it sets a
+            // known target state or deletes a known feature. So the attempt is simply re-run, with the
+            // staleness probe skipped for exactly this case — the change it would trip over may be our
+            // own (#2430).
+            //
+            // The lease still applies first: "same operator, same action" cannot distinguish a crashed
+            // attempt from one still in flight, and re-dispatching over a live attempt would race it.
             var claimAge = DateTimeOffset.UtcNow - (existing.ResolvedAt ?? DateTimeOffset.UtcNow);
             if (claimAge < ClaimLease)
             {
@@ -466,19 +464,28 @@ internal sealed partial class ReplicaConflictResolutionService
                 return Failure(ReplicaConflictResolutionStatus.AlreadyResolved, message: null);
             }
 
-            // No durable evidence the write committed, so the abandoned attempt is released and the
-            // conflict returns to pending for a clean retry.
-            //
-            // Deliberately NOT inferred from the change log: a change-log entry carries no resolution
-            // identity, so an ordinary edit by someone else would look identical to "our write landed"
-            // and the retry would skip the write and finalize a state that never existed. The
-            // double-apply this might seem to risk is already prevented by the staleness precondition
-            // — if the write did land, the retry's probe sees it and returns 409 rather than
-            // re-applying (#2430).
-            await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
-            return Failure(
-                ReplicaConflictResolutionStatus.WriteFailed,
-                "A previous attempt to resolve this conflict did not commit; the conflict has been returned to pending. Retry the resolution.");
+            Log.ResolutionWriteReapplied(_logger, existing.ConflictId);
+            var reapplied = await ApplyResolutionWriteAsync(existing, plan, cancellationToken)
+                .ConfigureAwait(false);
+            if (!reapplied.Applied)
+            {
+                await ReleaseClaimAsync(existing, CancellationToken.None).ConfigureAwait(false);
+                return Failure(
+                    ReplicaConflictResolutionStatus.WriteFailed,
+                    reapplied.FailureMessage ?? "The resolved conflict state could not be committed.");
+            }
+
+            await _conflictRepository.TryUpdateFinalizationStateAsync(
+                    new ReplicaConflictFinalizationUpdate(
+                        existing.ConflictId,
+                        request.Actor,
+                        request.Action,
+                        WriteCommitted: true,
+                        ResolvedServerGeneration: null,
+                        Finalized: null),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            existing = existing with { WriteCommitted = true };
         }
 
         Log.ResolutionResumed(_logger, existing.ConflictId, existing.ServiceId, existing.LayerId);
@@ -571,16 +578,38 @@ internal sealed partial class ReplicaConflictResolutionService
     }
 
     /// <summary>
+    /// Dispatches the planned resolution write through the shared edit pipeline. Idempotent by
+    /// construction — it sets a known target state or deletes a known feature — which is what lets an
+    /// interrupted attempt simply re-run it rather than having to guess whether it landed.
+    /// </summary>
+    private Task<ReplicaConflictApplyResult> ApplyResolutionWriteAsync(
+        ReplicaConflictRecord conflict,
+        ReplicaConflictResolutionPlan plan,
+        CancellationToken cancellationToken)
+        => _applier!.ApplyAsync(
+            new ReplicaConflictResolutionCommand(
+                conflict.ServiceId,
+                conflict.LayerId,
+                conflict.ObjectId,
+                plan.Effect,
+                plan.FeatureStateJson),
+            cancellationToken);
+
+    /// <summary>
     /// Whether this resolution writes the captured <em>server</em> snapshot back to the feature, which
     /// is the only case that depends on that snapshot being complete.
     /// </summary>
     private static bool RestoresCapturedServerState(
         ReplicaConflictResolutionAction action,
-        ReplicaConflictResolutionPlan plan)
+        ReplicaConflictResolutionPlan plan,
+        ReplicaConflictRecord conflict)
         => plan.Effect == ReplicaConflictResolutionEffect.WriteFeatureState
-            && action is ReplicaConflictResolutionAction.KeepServer
-                or ReplicaConflictResolutionAction.RejectClient
-                or ReplicaConflictResolutionAction.ChooseGeometry;
+            && (action is ReplicaConflictResolutionAction.KeepServer
+                    or ReplicaConflictResolutionAction.RejectClient
+                    or ReplicaConflictResolutionAction.ChooseGeometry
+                // Under manual review the merge builds on the captured SERVER state, so it consumes the
+                // snapshot too; under last-write-wins it builds on the client state and does not.
+                || (action == ReplicaConflictResolutionAction.MergeFields && !conflict.ClientEditApplied));
 
     /// <summary>
     /// Whether a server edit may have landed after the pre-apply snapshot was taken but before the
@@ -607,7 +636,12 @@ internal sealed partial class ReplicaConflictResolutionService
             .GetChangesSinceAsync(conflict.ServerGeneration, [storageLayerId], new HashSet<long> { conflict.ObjectId }, cancellationToken)
             .ConfigureAwait(false);
 
-        return changes.Count(change => change.ObjectId == conflict.ObjectId && change.Generation <= baseGeneration) > 1;
+        // Manual review withholds the conflicting edit, so the batch contributes NO change of its own
+        // and a single foreign change is already an uncaptured server edit. Last-write-wins contributes
+        // exactly one, so only a second change is foreign.
+        var ownChanges = conflict.ClientEditApplied ? 1 : 0;
+        return changes.Count(change => change.ObjectId == conflict.ObjectId && change.Generation <= baseGeneration)
+            > ownChanges;
     }
 
     /// <summary>
@@ -752,6 +786,10 @@ internal sealed partial class ReplicaConflictResolutionService
         [LoggerMessage(EventId = 7752, Level = LogLevel.Information,
             Message = "Replica conflict {ConflictId} is claimed by an attempt that is still within the lease window; reporting already-resolved rather than resuming or releasing it")]
         public static partial void ResolutionClaimStillLive(ILogger logger, string conflictId);
+
+        [LoggerMessage(EventId = 7755, Level = LogLevel.Warning,
+            Message = "Re-applying the resolution write for replica conflict {ConflictId}: a previous attempt left no committed-write marker, and the write is idempotent")]
+        public static partial void ResolutionWriteReapplied(ILogger logger, string conflictId);
 
         [LoggerMessage(EventId = 7754, Level = LogLevel.Warning,
             Message = "Refused to restore the captured server state for replica conflict {ConflictId} (service {ServiceId} layer {LayerId} objectId {ObjectId}): another server edit landed while the conflict was being recorded, so the snapshot may be incomplete")]

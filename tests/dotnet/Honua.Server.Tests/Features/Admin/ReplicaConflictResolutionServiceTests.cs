@@ -308,7 +308,34 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_WhenWriteMarkerIsFalseAndNothingLanded_ReleasesTheClaim()
+    public async Task ResolveAsync_WhenAbandonedClaimHasNoWriteMarker_ReappliesTheIdempotentWrite()
+    {
+        // Whether the previous attempt's write landed cannot be told from durable state, and both
+        // guesses are wrong: releasing strands the conflict behind its own staleness probe, assuming it
+        // landed can finalize a state that never existed. The write is idempotent, so it is re-run.
+        var claimed = Conflict(clientEditApplied: true) with
+        {
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+        };
+        var repository = new FakeConflictRepository(claimed);
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Applied);
+        applier.Calls.Should().Be(1, "the idempotent write is re-run exactly once");
+        repository.Current.FinalizationPending.Should().BeFalse();
+        repository.Current.WriteCommitted.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenTheReappliedWriteFails_ReleasesTheClaim()
     {
         var claimed = Conflict(clientEditApplied: true) with
         {
@@ -319,14 +346,12 @@ public sealed class ReplicaConflictResolutionServiceTests
             WriteCommitted = false,
             ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
         };
-        var repository = new FakeConflictRepository(claimed) { ClaimSucceeds = false };
-        var applier = new RecordingApplier();
-        var service = CreateService(repository, applier);
+        var repository = new FakeConflictRepository(claimed);
+        var service = CreateService(repository, new FailingApplier());
 
         var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
 
         result.Status.Should().Be(ReplicaConflictResolutionStatus.WriteFailed);
-        applier.Calls.Should().Be(0);
         repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
     }
 
@@ -751,7 +776,8 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictResolution resolution,
             CancellationToken cancellationToken = default)
         {
-            if (!ClaimSucceeds)
+            // Mirror the real guard: a claim only wins on a row that is not mid-flight.
+            if (!ClaimSucceeds || Current.FinalizationPending)
             {
                 return Task.FromResult(new ReplicaConflictResolutionOutcome(Current, Applied: false));
             }

@@ -249,6 +249,12 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         // other action is terminal and is only applied to a conflict that is still pending or
         // deferred — never one already resolved with a non-defer action. The WHERE guard makes the
         // transition atomic and the RETURNING clause surfaces the post-state for the caller.
+        //
+        // `AND finalized` is what makes the claim single-winner across deferrals (#2430): a deferred
+        // row stays claimable, but only while no attempt is mid-flight on it. Without it two requests
+        // could both claim the same Deferred row, and the loser's stale progress updates would be
+        // silently dropped while it still reported success. A pending conflict is inserted finalized,
+        // and the claim below clears the flag for the duration of the attempt.
         var newStatus = resolution.Action == ReplicaConflictResolutionAction.Defer
             ? (short)ReplicaConflictStatus.Deferred
             : (short)ReplicaConflictStatus.Resolved;
@@ -264,6 +270,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 finalized = FALSE
             WHERE conflict_id = $1
               AND status <> {(short)ReplicaConflictStatus.Resolved}
+              AND finalized
             RETURNING {SelectColumns}
             """;
 
