@@ -204,6 +204,31 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithPublisherAndDistinctAttribution_ProjectsBothProviders()
+    {
+        const string publisher = "Example publisher";
+        const string attribution = "Example community contributors";
+        UpdateGovernanceMetadata(
+            license: "MIT",
+            attribution,
+            publisher);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
+        providers.Should().HaveCount(2);
+        providers.Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == publisher &&
+            provider.GetProperty("roles")[0].GetString() == "producer");
+        providers.Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == attribution);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithContactOnly_ProjectsHostProvider()
     {
         const string contactName = "Example data host";

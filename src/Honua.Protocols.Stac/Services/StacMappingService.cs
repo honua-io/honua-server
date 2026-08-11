@@ -183,10 +183,9 @@ internal sealed class StacMappingService
                 Url = contactMatchesPublisher ? contactUrl : null
             });
         }
-        else if (attribution is not null && !string.Equals(
-                     attribution,
-                     contactName,
-                     StringComparison.OrdinalIgnoreCase))
+        if (attribution is not null &&
+            !string.Equals(attribution, publisher, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(attribution, contactName, StringComparison.OrdinalIgnoreCase))
         {
             providers.Add(new StacProvider { Name = attribution });
         }
