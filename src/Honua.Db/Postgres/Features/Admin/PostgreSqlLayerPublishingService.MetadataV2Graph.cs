@@ -2588,7 +2588,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Service? service = null;
         if (matchingFeatureServices.Length > 1)
         {
-            service = protocolEnabledServices.Length == 1 ? protocolEnabledServices[0] : null;
+            var activeResourceIds = graph.Resources
+                .Where(resource => resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                .Select(resource => resource.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var preferredFeatureServices = matchingFeatureServices
+                .Where(candidate => graph.Publications.Any(publication =>
+                    string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    MetadataV2ServiceProtocols.IsPreferredPublicationType(
+                        MetadataV2ServiceProtocols.FeatureServer,
+                        publication.PublicationType) &&
+                    activeResourceIds.Contains(publication.ResourceId)))
+                .ToArray();
+            service = preferredFeatureServices.Length == 1 ? preferredFeatureServices[0] : null;
         }
 
         if (service is null && matchingFeatureServices.Length > 1)
