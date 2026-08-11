@@ -95,6 +95,44 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesSince_PublicObjectIdFilter_FindsDeletedCustomIdChange()
+    {
+        const int layerId = 990105;
+        const long storageObjectId = 190105;
+        const long publicObjectId = 700105;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseGeneration = await tracker.GetCurrentGenerationAsync();
+
+        _fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, public_objectid, operation)
+                VALUES
+                    (nextval('honua.sync_generation'), @layerId, @storageObjectId, @publicObjectId, 3);
+                """;
+            command.Parameters.AddWithValue("layerId", layerId);
+            command.Parameters.AddWithValue("storageObjectId", storageObjectId);
+            command.Parameters.AddWithValue("publicObjectId", publicObjectId);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var changes = await tracker.GetChangesSinceAsync(
+            baseGeneration,
+            [layerId],
+            new HashSet<long> { publicObjectId });
+
+        changes.Should().ContainSingle()
+            .Which.Should().Match<FeatureChange>(change =>
+                change.ObjectId == storageObjectId
+                && change.PublicObjectId == publicObjectId
+                && change.Operation == FeatureChangeOperation.Delete);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task ChangeCollapsing_OperationValues_AreValidEnumMembers()
     {
         var tracker = _fixture.GetService<IChangeTracker>();

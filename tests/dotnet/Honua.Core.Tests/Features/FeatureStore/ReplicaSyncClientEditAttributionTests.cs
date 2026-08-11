@@ -294,6 +294,51 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_DeletedCustomPublicObjectId_UsesTheDurableChangeLogIdentity()
+    {
+        // Once the server row is deleted CaptureTokensAsync cannot recover its internal Feature.Id.
+        // The delete change therefore has to carry the public id.primary alias itself; otherwise the
+        // upload probes with the public id, misses the internal-id change, and retries forever as an
+        // unguardable non-conflict.
+        const long publicObjectId = 7001;
+        const long storageObjectId = 19;
+        var deletedChange = ServerChange(objectId: storageObjectId) with
+        {
+            PublicObjectId = publicObjectId,
+            Operation = FeatureChangeOperation.Delete,
+        };
+        var tracker = new RecordingChangeTracker(deletedChange);
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [], failed: false);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(
+                        FeatureEditOperationKind.Update,
+                        ObjectId: publicObjectId,
+                        Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            applier,
+            serverStateCapturer: new TokenCapturer(absentObjectIds: publicObjectId));
+
+        report.Conflicts.Should().ContainSingle()
+            .Which.Should().Match<ReplicaSyncConflict>(conflict =>
+                conflict.ObjectId == publicObjectId && conflict.ConflictType == ReplicaConflictType.UpdateDelete);
+        applier.DispatchedEdits.IsDefaultOrEmpty.Should().BeTrue(
+            "manual review withholds the actual delete conflict");
+        tracker.ObjectIdFilters.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo([publicObjectId],
+                "no live row exists yet to translate the initial probe to storage identity");
+        repository.Upserts.Should().ContainSingle()
+            .Which.StorageObjectId.Should().Be(storageObjectId,
+                "the durable public alias recovers the deleted row's internal change-log identity");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_WithholdsEditsTargetingAnAbsentRow()
     {
         // Absence cannot be expressed as a precondition, so an edit whose target was gone at capture
@@ -745,6 +790,31 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 60, "the base is clamped to the watermark taken immediately after the batch");
     }
 
+    [UnitTest]
+    public async Task ApplyUpload_FailedConflictingEdit_StaysOnThePreBatchBaseGeneration()
+    {
+        // A foreign mutation can commit after detection and make the edit's precondition fail. The
+        // later change-log probe sees that foreign generation, but it cannot be attributed to an edit
+        // the writer explicitly says did not commit.
+        var foreignEdit = ServerChange(objectId: 42) with { Generation = 90 };
+        var tracker = new RecordingChangeTracker(foreignEdit) { Generations = new Queue<long>([50L, 60L]) };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            new PartialFailureEditApplier(committedEditIndexes: [], failed: true),
+            serverStateCapturer: new TokenCapturer());
+
+        repository.DetectionUpdates
+            .Where(update => update.ResolutionBaseGeneration.HasValue)
+            .Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(
+                50, "an edit that did not commit must not absorb a post-detection foreign generation");
+    }
+
     private static FeatureChange ServerChange(long objectId) => new()
     {
         ChangeId = objectId,
@@ -804,7 +874,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
         {
             ObjectIdFilters.Add(objectIds?.ToArray() ?? []);
             return Task.FromResult<IReadOnlyList<FeatureChange>>(
-                objectIds is null ? changes : changes.Where(change => objectIds.Contains(change.ObjectId)).ToArray());
+                objectIds is null
+                    ? changes
+                    : changes.Where(change => objectIds.Contains(change.ObjectId)
+                        || change.PublicObjectId is { } publicObjectId && objectIds.Contains(publicObjectId)).ToArray());
         }
     }
 

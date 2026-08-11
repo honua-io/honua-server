@@ -154,13 +154,22 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     .ConfigureAwait(false);
                 foreach (var change in serverChanges)
                 {
-                    if (!publicObjectIdsByStorageObjectId.TryGetValue(change.ObjectId, out var publicObjectIds))
+                    var matchedPublicObjectIds = new HashSet<long>();
+                    if (publicObjectIdsByStorageObjectId.TryGetValue(change.ObjectId, out var mappedPublicObjectIds))
                     {
-                        continue;
+                        matchedPublicObjectIds.UnionWith(mappedPublicObjectIds);
+                    }
+                    if (change.PublicObjectId is { } durablePublicObjectId &&
+                        uploadedObjectIds.Contains(durablePublicObjectId))
+                    {
+                        matchedPublicObjectIds.Add(durablePublicObjectId);
                     }
 
-                    foreach (var publicObjectId in publicObjectIds)
+                    foreach (var publicObjectId in matchedPublicObjectIds)
                     {
+                        // A deleted custom-id row cannot be resolved by CaptureTokensAsync. The change
+                        // log's durable alias supplies both halves of the identity after deletion.
+                        storageObjectIdsByPublicId[publicObjectId] = change.ObjectId;
                         serverByObjectId[publicObjectId] = change.Operation;
                     }
                 }
@@ -468,6 +477,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         layer,
                         conflicts,
                         layerConflictIndexes,
+                        layerConflictSlots,
+                        applyResult.CommittedEditIndexes,
                         storageObjectIdsByPublicId,
                         preBatchGeneration,
                         postBatchGeneration,
@@ -484,6 +495,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         layerConflictIds,
                         applyResult,
                         baseGenerations,
+                        preBatchGeneration,
                         withheldBaseGeneration,
                         canRecordConflicts,
                         CancellationToken.None)
@@ -630,6 +642,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
         IReadOnlyDictionary<string, long> baseGenerations,
+        long preBatchGeneration,
         long withheldBaseGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
@@ -735,8 +748,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             return;
         }
 
-        // Every conflict on the layer gets the resolution-base generation, including the ones manual
-        // review withheld; only the ones whose own edit committed also get the applied flag.
+        var dispatchedConflictIds = layerConflictIndexes
+            .Select(index => conflicts[index].ConflictId)
+            .Where(static conflictId => !string.IsNullOrEmpty(conflictId))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Every conflict on the layer gets a resolution base. Confirmed commits use their own
+        // change generation; dispatched edits that failed or became indeterminate stay on the
+        // pre-batch cursor; manual-review conflicts that were deliberately withheld use the
+        // post-capture snapshot cursor.
         foreach (var conflictId in layerConflictIds)
         {
             try
@@ -752,7 +772,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ClientEditSuperseded: superseded.Contains(conflictId) ? true : null,
                             ResolutionBaseGeneration: baseGenerations.TryGetValue(conflictId, out var generation)
                                 ? generation
-                                : withheldBaseGeneration),
+                                : dispatchedConflictIds.Contains(conflictId)
+                                    ? preBatchGeneration
+                                    : withheldBaseGeneration),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -794,13 +816,20 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ReplicaUploadLayerEdits layer,
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
+        List<int> layerConflictSlots,
+        ImmutableArray<int> committedEditIndexes,
         IReadOnlyDictionary<long, long> storageObjectIdsByPublicId,
         long preBatchGeneration,
         long postBatchGeneration,
         CancellationToken cancellationToken)
     {
+        var committedSlots = committedEditIndexes.IsDefaultOrEmpty
+            ? []
+            : new HashSet<int>(committedEditIndexes);
         var byStorageObjectId = layerConflictIndexes
-            .Select(index => conflicts[index])
+            .Select((index, position) => (Conflict: conflicts[index], Slot: layerConflictSlots[position]))
+            .Where(candidate => committedSlots.Contains(candidate.Slot))
+            .Select(candidate => candidate.Conflict)
             .Where(conflict => conflict.ConflictId is { Length: > 0 })
             .GroupBy(conflict => storageObjectIdsByPublicId.GetValueOrDefault(
                 conflict.ObjectId,

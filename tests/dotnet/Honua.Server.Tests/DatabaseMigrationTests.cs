@@ -164,6 +164,35 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var activeTopologyGenerations = (int)(await topologyGenerationCmd.ExecuteScalarAsync())!;
         activeTopologyGenerations.Should().Be(1,
             "a fresh database should preserve the default solve mapping as one active generation");
+
+        // A custom protocol id must remain recoverable from the change log after its feature row is
+        // deleted. Replica conflict detection can no longer resolve the live row at that point.
+        await using (var customIdChangeCmd = connection.CreateCommand())
+        {
+            customIdChangeCmd.CommandText = """
+                INSERT INTO honua.layers
+                    (layer_id, layer_name, table_name, primary_key_column, geometry_type)
+                VALUES
+                    (990105, 'migration_custom_id', 'features', 'asset_id', 'Point');
+
+                INSERT INTO features (objectid, layer_id, attributes)
+                VALUES (190105, 990105, '{"asset_id": 700105}'::jsonb);
+
+                DELETE FROM features
+                WHERE objectid = 190105;
+
+                SELECT public_objectid
+                FROM honua.feature_changes
+                WHERE layer_id = 990105
+                  AND objectid = 190105
+                  AND operation = 3
+                ORDER BY generation DESC
+                LIMIT 1;
+                """;
+            var deletedPublicObjectId = (long)(await customIdChangeCmd.ExecuteScalarAsync())!;
+            deletedPublicObjectId.Should().Be(700105,
+                "the delete trigger should persist the configured public id.primary from OLD attributes");
+        }
     }
 
     [Fact]

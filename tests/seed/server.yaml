@@ -1483,10 +1483,12 @@ sql:
           generation BIGINT NOT NULL,
           layer_id INT NOT NULL,
           objectid BIGINT NOT NULL,
+          public_objectid BIGINT,
           operation SMALLINT NOT NULL,
           changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
       );
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
   - |
       CREATE TABLE IF NOT EXISTS honua.replica_conflicts (
           conflict_id TEXT PRIMARY KEY,
@@ -1531,6 +1533,7 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_generation_layer ON honua.feature_changes(generation, layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_changed_at ON honua.feature_changes(changed_at);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_objectid ON honua.feature_changes(layer_id, objectid, generation);"
+  - "CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_public_objectid ON honua.feature_changes(layer_id, public_objectid, generation);"
   # Branch-versioning foundation (#1272 Track B): version registry + change-log version dimension.
   - |
       CREATE TABLE IF NOT EXISTS honua.gdb_versions (
@@ -1555,12 +1558,55 @@ sql:
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS version_id UUID;"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_version_generation ON honua.feature_changes(version_id, generation, layer_id);"
   - |
+      CREATE OR REPLACE FUNCTION honua.resolve_feature_public_objectid(
+          target_layer_id INT,
+          storage_objectid BIGINT,
+          row_attributes JSONB)
+      RETURNS BIGINT AS $$
+      DECLARE
+          primary_id_field TEXT;
+          raw_public_objectid TEXT;
+          resolved_public_objectid BIGINT;
+      BEGIN
+          SELECT NULLIF(primary_key_column, '')
+          INTO primary_id_field
+          FROM honua.layers
+          WHERE layer_id = target_layer_id;
+          IF primary_id_field IS NULL
+             OR lower(primary_id_field) = 'objectid'
+             OR row_attributes IS NULL
+             OR jsonb_typeof(row_attributes) <> 'object' THEN
+              RETURN storage_objectid;
+          END IF;
+          raw_public_objectid := row_attributes ->> primary_id_field;
+          IF raw_public_objectid IS NULL THEN
+              SELECT value
+              INTO raw_public_objectid
+              FROM jsonb_each_text(row_attributes)
+              WHERE lower(key) = lower(primary_id_field)
+              LIMIT 1;
+          END IF;
+          IF raw_public_objectid IS NULL OR raw_public_objectid !~ '^[+-]?[0-9]+$' THEN
+              RETURN storage_objectid;
+          END IF;
+          BEGIN
+              resolved_public_objectid := raw_public_objectid::BIGINT;
+          EXCEPTION
+              WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+                  RETURN storage_objectid;
+          END;
+          RETURN resolved_public_objectid;
+      END;
+      $$ LANGUAGE plpgsql STABLE;
+  - |
       CREATE OR REPLACE FUNCTION honua.track_feature_changes()
       RETURNS TRIGGER AS $$
       DECLARE
           gen BIGINT;
           lid INT;
           oid BIGINT;
+          public_oid BIGINT;
+          row_attributes JSONB;
           op SMALLINT;
           ver TEXT;
           ver_uuid UUID;
@@ -1569,24 +1615,29 @@ sql:
           IF TG_OP = 'INSERT' THEN
               lid := NEW.layer_id;
               oid := NEW.objectid;
+              row_attributes := NEW.attributes;
               op := 1;
           ELSIF TG_OP = 'UPDATE' THEN
               lid := NEW.layer_id;
               oid := NEW.objectid;
+              row_attributes := NEW.attributes;
               op := 2;
           ELSIF TG_OP = 'DELETE' THEN
               lid := OLD.layer_id;
               oid := OLD.objectid;
+              row_attributes := OLD.attributes;
               op := 3;
           END IF;
+          public_oid := honua.resolve_feature_public_objectid(lid, oid, row_attributes);
           ver := current_setting('honua.gdb_version', true);
           IF ver IS NULL OR ver = '' THEN
               ver_uuid := NULL;
           ELSE
               ver_uuid := ver::UUID;
           END IF;
-          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, version_id)
-          VALUES (gen, lid, oid, op, ver_uuid);
+          INSERT INTO honua.feature_changes
+              (generation, layer_id, objectid, public_objectid, operation, version_id)
+          VALUES (gen, lid, oid, public_oid, op, ver_uuid);
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;
@@ -1621,13 +1672,19 @@ sql:
       RETURNS TRIGGER AS $$
       DECLARE
           gen BIGINT;
+          public_oid BIGINT;
       BEGIN
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;
           gen := nextval('honua.sync_generation');
-          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, version_id)
-          VALUES (gen, NEW.layer_id, NEW.objectid, NEW.operation, NEW.version_id);
+          public_oid := honua.resolve_feature_public_objectid(
+              NEW.layer_id,
+              NEW.objectid,
+              COALESCE(NEW.attributes, NEW.base_attributes));
+          INSERT INTO honua.feature_changes
+              (generation, layer_id, objectid, public_objectid, operation, version_id)
+          VALUES (gen, NEW.layer_id, NEW.objectid, public_oid, NEW.operation, NEW.version_id);
           NEW.branch_gen := gen;
           RETURN NEW;
       END;
