@@ -474,12 +474,13 @@ public sealed record LayerSourceGovernance
         }
 
         var identifiers = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var value in values.EnumerateArray())
+        foreach (var identifier in values.EnumerateArray()
+                     .Where(static value => value.ValueKind == JsonValueKind.String)
+                     .Select(static value => value.GetString())
+                     .OfType<string>()
+                     .Where(static identifier => identifier.Length > 0))
         {
-            if (value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } identifier)
-            {
-                identifiers.Add(identifier);
-            }
+            identifiers.Add(identifier);
         }
 
         if (identifiers.Count == 0)
