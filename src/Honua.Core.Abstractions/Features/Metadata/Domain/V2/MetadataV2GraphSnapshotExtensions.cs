@@ -32,8 +32,9 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-               resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired };
+        return IsServingLifecycle(publication.Status.Lifecycle) &&
+               resource is not null &&
+               IsServingLifecycle(resource.Status.Lifecycle);
     }
 
     /// <summary>
@@ -45,9 +46,13 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-               resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired };
+        return IsServingLifecycle(binding.Status.Lifecycle) &&
+               resource is not null &&
+               IsServingLifecycle(resource.Status.Lifecycle);
     }
+
+    private static bool IsServingLifecycle(MetadataV2LifecycleStatus lifecycle)
+        => lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
 
     /// <summary>
     /// Finds a service by case-insensitive name.

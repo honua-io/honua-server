@@ -231,6 +231,7 @@ public sealed class TestMetadataV2GraphBuilder
                 Annotations = annotations ?? new Dictionary<string, string>()
             },
             Type = type,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
             AccessPolicy = accessPolicy,
             Spatial = spatial,
@@ -252,6 +253,7 @@ public sealed class TestMetadataV2GraphBuilder
         _bindings.Add(new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = resourceId,
             ConnectionId = connectionId,
             StorageType = storageType,
@@ -325,6 +327,7 @@ public sealed class TestMetadataV2GraphBuilder
         _publications.Add(new MetadataV2Publication
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = serviceLocalId ?? id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,

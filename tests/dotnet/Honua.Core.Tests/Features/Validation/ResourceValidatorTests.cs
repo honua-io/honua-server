@@ -316,11 +316,13 @@ public sealed class ResourceValidatorTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-ogc", Name = "OGC resource" },
                     Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = ActiveStatus(),
                 },
                 new MetadataV2Resource
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-feature", Name = "FeatureServer resource" },
                     Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = ActiveStatus(),
                 },
             ],
             Services =
@@ -336,6 +338,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-ogc", Name = "7" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-ogc",
                     ServiceId = "mixed-service",
                     PublicationType = MetadataV2PublicationType.OgcCollection,
@@ -344,6 +347,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-feature", Name = "7" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-feature",
                     ServiceId = "mixed-service",
                     PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
@@ -371,6 +375,7 @@ public sealed class ResourceValidatorTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-image-layer-2000", Name = "Browser Points imagery" },
                     Type = MetadataV2ResourceType.RasterDataset,
+                    Status = ActiveStatus(),
                     StorageBindingIds = ["storage-image-layer-2000"],
                     PrimaryStorageBindingId = "storage-image-layer-2000",
                 },
@@ -378,6 +383,7 @@ public sealed class ResourceValidatorTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-2000", Name = "Browser Points" },
                     Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = ActiveStatus(),
                     StorageBindingIds = ["storage-layer-2000"],
                     PrimaryStorageBindingId = "storage-layer-2000",
                 },
@@ -388,6 +394,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "storage-image-layer-2000", Name = "storage-image-layer-2000" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-image-layer-2000",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "honua.raster_data",
@@ -396,6 +403,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "storage-layer-2000", Name = "storage-layer-2000" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-layer-2000",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "public.features",
@@ -423,6 +431,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-browser-compat-image-2000", Name = "2000" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-image-layer-2000",
                     ServiceId = "svc-browser-compat-image",
                     StorageBindingId = "storage-image-layer-2000",
@@ -432,6 +441,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-browser-compat-map-2000", Name = "2000" },
+                    Status = ActiveStatus(),
                     ResourceId = "res-layer-2000",
                     ServiceId = "svc-browser-compat-map",
                     StorageBindingId = "storage-layer-2000",
@@ -441,4 +451,7 @@ public sealed class ResourceValidatorTests
             ],
         };
     }
+
+    private static MetadataV2Status ActiveStatus()
+        => new() { Lifecycle = MetadataV2LifecycleStatus.Active };
 }

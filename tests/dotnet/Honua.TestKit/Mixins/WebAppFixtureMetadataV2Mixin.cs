@@ -419,6 +419,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-feature-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-feature",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -436,6 +437,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-odata-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-odata",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -453,6 +455,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-stac-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-stac",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -470,6 +473,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-ogc-features-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-ogc-features",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",

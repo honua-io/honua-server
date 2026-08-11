@@ -111,31 +111,49 @@ public sealed class MetadataV2GraphSnapshotTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void IsRoutable_RequiresNonRetiredPublicationAndResource()
+    public void IsRoutable_RequiresServingPublicationAndResourceLifecycle()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var deprecated = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var draft = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
         var publication = new MetadataV2Publication { Status = active };
         var resource = new MetadataV2Resource { Status = active };
 
         publication.IsRoutable(resource).Should().BeTrue();
+        (publication with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
+        publication.IsRoutable(resource with { Status = deprecated }).Should().BeTrue();
+        (publication with { Status = draft }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = draft }).Should().BeFalse();
         (publication with { Status = retired }).IsRoutable(resource).Should().BeFalse();
         publication.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        (publication with { Status = archived }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = archived }).Should().BeFalse();
         publication.IsRoutable(resource: null).Should().BeFalse();
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void IsRoutable_RequiresNonRetiredBindingAndResource()
+    public void IsRoutable_RequiresServingBindingAndResourceLifecycle()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var deprecated = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var draft = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
         var binding = new MetadataV2StorageBinding { Status = active };
         var resource = new MetadataV2Resource { Status = active };
 
         binding.IsRoutable(resource).Should().BeTrue();
+        (binding with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
+        binding.IsRoutable(resource with { Status = deprecated }).Should().BeTrue();
+        (binding with { Status = draft }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = draft }).Should().BeFalse();
         (binding with { Status = retired }).IsRoutable(resource).Should().BeFalse();
         binding.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        (binding with { Status = archived }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = archived }).Should().BeFalse();
         binding.IsRoutable(resource: null).Should().BeFalse();
     }
 
