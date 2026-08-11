@@ -1812,17 +1812,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         JsonArray persisted,
         string identityProperty)
     {
-        var identityComparer = GetJsonArrayIdentityComparer(identityProperty);
-        var previousIndices = IndexJsonArrayByIdentity(previous, identityProperty, identityComparer);
-        var persistedIndices = IndexJsonArrayByIdentity(persisted, identityProperty, identityComparer);
+        var currentIdentities = GetJsonArrayOccurrenceIdentities(current, identityProperty);
+        var previousIdentities = GetJsonArrayOccurrenceIdentities(previous, identityProperty);
+        var persistedIdentities = GetJsonArrayOccurrenceIdentities(persisted, identityProperty);
+        var previousIndices = previousIdentities
+            .Select((identity, index) => new { Identity = identity, Index = index })
+            .ToDictionary(item => item.Identity, item => item.Index, StringComparer.Ordinal);
+        var persistedIndices = persistedIdentities
+            .Select((identity, index) => new { Identity = identity, Index = index })
+            .ToDictionary(item => item.Identity, item => item.Index, StringComparer.Ordinal);
         var restored = new List<RestoredJsonArrayItem>(previous.Count + current.Count);
         for (var currentIndex = 0; currentIndex < current.Count; currentIndex++)
         {
             var currentItem = current[currentIndex]!;
-            var identity = GetJsonArrayIdentity(currentItem, identityProperty);
+            var identity = currentIdentities[currentIndex];
             if (!persistedIndices.TryGetValue(identity, out var persistedIndex))
             {
-                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null));
+                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null, identity));
                 continue;
             }
 
@@ -1833,11 +1839,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     new OptionalJsonNode(true, currentItem),
                     new OptionalJsonNode(true, previous[previousIndex]),
                     new OptionalJsonNode(true, persistedItem));
-                restored.Add(new RestoredJsonArrayItem(restoredItem.Node, previousIndex));
+                restored.Add(new RestoredJsonArrayItem(restoredItem.Node, previousIndex, identity));
             }
             else if (!JsonNode.DeepEquals(currentItem, persistedItem))
             {
-                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null));
+                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null, identity));
             }
             // Items introduced only by the failed mutation are otherwise omitted.
         }
@@ -1845,7 +1851,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         for (var previousIndex = 0; previousIndex < previous.Count; previousIndex++)
         {
             var previousItem = previous[previousIndex]!;
-            var identity = GetJsonArrayIdentity(previousItem, identityProperty);
+            var identity = previousIdentities[previousIndex];
             if (persistedIndices.ContainsKey(identity))
             {
                 continue;
@@ -1853,10 +1859,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
             var recreatedIndex = restored.FindIndex(item =>
                 item.PreviousIndex is null &&
-                item.Node is not null &&
-                identityComparer.Equals(
-                    GetJsonArrayIdentity(item.Node, identityProperty),
-                    identity));
+                string.Equals(item.Identity, identity, StringComparison.Ordinal));
             if (recreatedIndex >= 0)
             {
                 restored[recreatedIndex] = restored[recreatedIndex] with { PreviousIndex = previousIndex };
@@ -1866,7 +1869,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             var insertionIndex = restored.FindIndex(item => item.PreviousIndex > previousIndex);
             restored.Insert(
                 insertionIndex >= 0 ? insertionIndex : restored.Count,
-                new RestoredJsonArrayItem(previousItem.DeepClone(), previousIndex));
+                new RestoredJsonArrayItem(previousItem.DeepClone(), previousIndex, identity));
         }
 
         var restoredArray = new JsonArray();
@@ -1892,37 +1895,40 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         identityProperty = identityProperties.FirstOrDefault(candidate =>
-            HasUniqueJsonArrayIdentity(current, candidate) &&
-            HasUniqueJsonArrayIdentity(previous, candidate) &&
-            HasUniqueJsonArrayIdentity(persisted, candidate)) ?? string.Empty;
+            HasJsonArrayIdentity(current, candidate) &&
+            HasJsonArrayIdentity(previous, candidate) &&
+            HasJsonArrayIdentity(persisted, candidate)) ?? string.Empty;
         return identityProperty.Length > 0;
     }
 
-    private static bool HasUniqueJsonArrayIdentity(JsonArray array, string identityProperty)
-    {
-        var identities = new HashSet<string>(GetJsonArrayIdentityComparer(identityProperty));
-        return array.All(item =>
+    private static bool HasJsonArrayIdentity(JsonArray array, string identityProperty)
+        => array.All(item =>
             item is JsonObject itemObject &&
             itemObject.TryGetPropertyValue(identityProperty, out var identityNode) &&
-            identityNode is not null &&
-            identities.Add(JsonNodeText(identityNode)));
-    }
+            identityNode is not null);
 
-    private static Dictionary<string, int> IndexJsonArrayByIdentity(
-        JsonArray array,
-        string identityProperty,
-        StringComparer identityComparer)
-        => array.Select((item, index) => new
-        {
-            Identity = GetJsonArrayIdentity(item!, identityProperty),
-            Index = index,
-        })
-            .ToDictionary(item => item.Identity, item => item.Index, identityComparer);
-
-    private static StringComparer GetJsonArrayIdentityComparer(string identityProperty)
-        => identityProperty is "name" or "encoding" or "attribute"
+    private static string[] GetJsonArrayOccurrenceIdentities(JsonArray array, string identityProperty)
+    {
+        var isCaseInsensitive = identityProperty is "name" or "encoding" or "attribute";
+        var identityComparer = isCaseInsensitive
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal;
+        var occurrences = new Dictionary<string, int>(identityComparer);
+        return array.Select(item =>
+        {
+            var identity = GetJsonArrayIdentity(item!, identityProperty);
+            occurrences.TryGetValue(identity, out var occurrence);
+            occurrences[identity] = occurrence + 1;
+            var normalizedIdentity = isCaseInsensitive
+                ? identity.ToUpperInvariant()
+                : identity;
+            return string.Concat(
+                normalizedIdentity,
+                "\u001F",
+                occurrence.ToString(CultureInfo.InvariantCulture));
+        })
+            .ToArray();
+    }
 
     private static string GetJsonArrayIdentity(JsonNode item, string identityProperty)
         => JsonNodeText(item[identityProperty]!);
@@ -1951,7 +1957,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             => new(Exists, Node?.DeepClone());
     }
 
-    private readonly record struct RestoredJsonArrayItem(JsonNode? Node, int? PreviousIndex);
+    private readonly record struct RestoredJsonArrayItem(
+        JsonNode? Node,
+        int? PreviousIndex,
+        string Identity);
 
     private static T RestorePublicationMutationValue<T>(
         T current,

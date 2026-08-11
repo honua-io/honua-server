@@ -1517,6 +1517,59 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_AlignsRepeatedSymbologyRuleAttributesByOccurrence()
+    {
+        var commercialRule = new Symbology3DRule
+        {
+            Attribute = "category",
+            Comparison = Symbology3DComparison.Equals,
+            Value = "commercial",
+            Color = new Symbology3DColor(255, 0, 0),
+        };
+        var residentialRule = new Symbology3DRule
+        {
+            Attribute = "category",
+            Comparison = Symbology3DComparison.Equals,
+            Value = "residential",
+            Color = new Symbology3DColor(0, 0, 255),
+            Opacity = 0.5,
+        };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-repeated-symbology" },
+            Symbology3D = new Symbology3D
+            {
+                Rules = [commercialRule, residentialRule],
+            },
+        };
+        var clearedResource = previousResource with { Symbology3D = null };
+        var concurrentIndustrialRule = residentialRule with
+        {
+            Value = "industrial",
+            Opacity = 0.8,
+        };
+        var concurrentlyRecreatedResource = clearedResource with
+        {
+            Symbology3D = previousResource.Symbology3D! with
+            {
+                Rules = [commercialRule, concurrentIndustrialRule],
+            },
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            new MetadataV2Graph { Revision = 9, Resources = [concurrentlyRecreatedResource] },
+            new MetadataV2Graph { Revision = 7, Resources = [previousResource] },
+            new MetadataV2Graph { Revision = 8, Resources = [clearedResource] },
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var rules = compensation.Resources.Should().ContainSingle().Which.Symbology3D!.Rules;
+        rules.Should().HaveCount(2);
+        rules.Select(rule => rule.Value).Should().Equal("commercial", "industrial");
+        rules[1].Opacity.Should().Be(0.8);
+        rules.Should().NotContain(rule => rule.Value == "residential");
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresSchemaFieldsIndependently()
     {
         var previousField = new MetadataV2Field
