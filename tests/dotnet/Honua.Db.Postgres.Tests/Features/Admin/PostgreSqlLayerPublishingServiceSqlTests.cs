@@ -857,6 +857,65 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithMissingCanonicalBinding_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                }
+            ]
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Missing layer",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("absent from the canonical metadata graph");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithMissingCanonicalResource_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-missing",
+                    StorageLayerId = 101
+                }
+            ]
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Dangling layer",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("references missing canonical resource 'resource-missing'");
+    }
+
+    [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithProtocolSpecificNameCollision_SelectsFeatureServer()
     {
         var ogcService = new MetadataV2Service

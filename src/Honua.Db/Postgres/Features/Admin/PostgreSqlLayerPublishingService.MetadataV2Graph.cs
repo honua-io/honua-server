@@ -169,10 +169,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layer.LayerName,
             layer.Srid,
             DateTimeOffset.UtcNow);
-        if (updatedGraph is null)
-        {
-            return null;
-        }
 
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
         if (!validation.IsValid)
@@ -550,7 +546,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             JsonSerializer.SerializeToElement(left, typeInfo),
             JsonSerializer.SerializeToElement(right, typeInfo));
 
-    internal static MetadataV2Graph? BuildLinkedLayerMetadataV2Graph(
+    internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
         string serviceName,
         int layerId,
@@ -577,9 +573,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ? null
             : graph.Resources.FirstOrDefault(candidate =>
                 string.Equals(candidate.Metadata.Id, binding.ResourceId, StringComparison.Ordinal));
-        if (binding is null || resource is null)
+        if (binding is null)
         {
-            return null;
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Layer {layerId} is absent from the canonical metadata graph and cannot be linked to service '{serviceName}'.",
+                layerId);
+        }
+
+        if (resource is null)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Layer {layerId} references missing canonical resource '{binding.ResourceId}' and cannot be linked to service '{serviceName}'.",
+                layerId);
         }
 
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
