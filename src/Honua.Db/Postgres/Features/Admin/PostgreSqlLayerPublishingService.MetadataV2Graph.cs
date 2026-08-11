@@ -385,18 +385,32 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
         {
+            bool IsRepurposedFailedBinding(string? bindingId)
+                => bindingId is not null &&
+                   addedBindingIdsForPublicationCleanup.Contains(bindingId) &&
+                   currentBindingsForPublicationCleanup.TryGetValue(bindingId, out var currentBinding) &&
+                   persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) &&
+                   HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
+
+            currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
+            persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
+            var resolvedBindingId = publication.StorageBindingId ??
+                currentResource?.PrimaryStorageBindingId ??
+                (currentResource is { StorageBindingIds.Count: > 0 }
+                    ? currentResource.StorageBindingIds[0]
+                    : null);
+            var bindingWasRepurposed = IsRepurposedFailedBinding(resolvedBindingId);
             var usesFailedResource = addedResourceIdsForPublicationCleanup.Contains(publication.ResourceId) &&
-                (!currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource) ||
-                 !persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource) ||
-                 !HasResourceBeenRepurposed(
-                     currentResource,
-                     persistedResource,
-                     addedBindingIdsForPublicationCleanup));
+                (currentResource is null ||
+                 persistedResource is null ||
+                 (!HasResourceBeenRepurposed(
+                      currentResource,
+                      persistedResource,
+                      addedBindingIdsForPublicationCleanup) &&
+                  !bindingWasRepurposed));
             var usesFailedBinding = publication.StorageBindingId is { } bindingId &&
                 addedBindingIdsForPublicationCleanup.Contains(bindingId) &&
-                (!currentBindingsForPublicationCleanup.TryGetValue(bindingId, out var currentBinding) ||
-                 !persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) ||
-                 !HasStorageBindingBeenRepurposed(currentBinding, persistedBinding));
+                !IsRepurposedFailedBinding(bindingId);
             return usesFailedResource || usesFailedBinding;
         }
 
