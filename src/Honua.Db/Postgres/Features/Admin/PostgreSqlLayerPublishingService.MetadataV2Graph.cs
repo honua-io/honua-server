@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -152,10 +153,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        var persisted = await _metadataGraphStore
-            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+        return await PersistMetadataV2MutationAsync(
+                graph,
+                updatedGraph,
+                expectedEtag,
+                cancellationToken)
             .ConfigureAwait(false);
-        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
     private async Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
@@ -180,10 +183,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Linked layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        var persisted = await _metadataGraphStore
-            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+        return await PersistMetadataV2MutationAsync(
+                graph,
+                updatedGraph,
+                expectedEtag,
+                cancellationToken)
             .ConfigureAwait(false);
-        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
     private async Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
@@ -214,10 +219,36 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Layer lifecycle metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        var persisted = await _metadataGraphStore
-            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+        return await PersistMetadataV2MutationAsync(
+                graph,
+                updatedGraph,
+                expectedEtag,
+                cancellationToken)
             .ConfigureAwait(false);
-        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
+    }
+
+    internal async Task<MetadataV2GraphMutation> PersistMetadataV2MutationAsync(
+        MetadataV2Graph previousGraph,
+        MetadataV2Graph updatedGraph,
+        string? expectedEtag,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var persisted = await _metadataGraphStore
+                .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+                .ConfigureAwait(false);
+            return new MetadataV2GraphMutation(previousGraph, updatedGraph, persisted.Etag);
+        }
+        catch (MetadataV2GraphCommitOutcomeUnknownException commitException)
+        {
+            var mutation = new MetadataV2GraphMutation(
+                previousGraph,
+                updatedGraph,
+                commitException.PendingSnapshot.Etag);
+            await CompensateMetadataV2MutationAsync(mutation, commitException).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private async Task CompensateMetadataV2MutationAsync(

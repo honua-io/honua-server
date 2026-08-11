@@ -872,7 +872,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         int? ServiceSrid,
         int? TargetSrid);
 
-    private sealed record MetadataV2GraphMutation(
+    internal sealed record MetadataV2GraphMutation(
         MetadataV2Graph PreviousGraph,
         MetadataV2Graph PersistedGraph,
         string PersistedEtag);

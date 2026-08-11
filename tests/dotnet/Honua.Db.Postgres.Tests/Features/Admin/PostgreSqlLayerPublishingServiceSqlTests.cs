@@ -4,12 +4,16 @@
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
@@ -74,6 +78,49 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Services.Should().BeEquivalentTo(original.Services);
         compensation.Publications.Should().BeEquivalentTo(original.Publications);
         compensation.StorageBindings.Should().BeEquivalentTo(original.StorageBindings);
+    }
+
+    [Fact]
+    public async Task PersistMetadataV2MutationAsync_WithUnknownGraphCommit_CompensatesUsingReceipt()
+    {
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-original" },
+                },
+            ],
+        };
+        var updated = previous with
+        {
+            Revision = 8,
+            Resources =
+            [
+                previous.Resources[0] with
+                {
+                    Metadata = previous.Resources[0].Metadata with { Title = "Failed update" },
+                },
+            ],
+        };
+        var store = new IndeterminateCommitGraphStore(updated);
+        var service = new PostgreSqlLayerPublishingService(
+            Mock.Of<ITableDiscoveryService>(),
+            store,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance);
+
+        var action = () => service.PersistMetadataV2MutationAsync(
+            previous,
+            updated,
+            "\"previous\"",
+            CancellationToken.None);
+
+        await action.Should().ThrowAsync<MetadataV2GraphCommitOutcomeUnknownException>();
+        store.SavedGraphs.Should().HaveCount(2);
+        store.SavedGraphs[1].Revision.Should().Be(9);
+        store.SavedGraphs[1].Resources.Should().BeEquivalentTo(previous.Resources);
     }
 
     [Fact]
@@ -2209,6 +2256,18 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             "parcels");
         retiredOnlyResult.Should().ContainSingle().Which.Should().Be(
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, retiredMetadata));
+
+        var deprecatedStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var deprecatedGraph = graph with
+        {
+            Resources = [graph.Resources[0], graph.Resources[1] with { Status = deprecatedStatus }],
+            Publications = [graph.Publications[0], graph.Publications[1] with { Status = deprecatedStatus }],
+        };
+        var deprecatedResult = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(
+            deprecatedGraph,
+            "parcels");
+        deprecatedResult.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, activeMetadata));
     }
 
     [Fact]
@@ -3571,6 +3630,40 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 IsNumeric = true
             }
         };
+
+    private sealed class IndeterminateCommitGraphStore(MetadataV2Graph pendingGraph) : IMetadataV2GraphStore
+    {
+        private MetadataV2GraphSnapshot _current = new(pendingGraph, "\"pending\"", DateTimeOffset.UtcNow);
+
+        public List<MetadataV2Graph> SavedGraphs { get; } = [];
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(_current);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(
+                _current.Revision == revision ? _current : null);
+
+        public Task<MetadataV2GraphSnapshot> SaveAsync(
+            MetadataV2Graph graph,
+            string? expectedEtag,
+            CancellationToken cancellationToken = default)
+        {
+            SavedGraphs.Add(graph);
+            if (SavedGraphs.Count == 1)
+            {
+                throw new MetadataV2GraphCommitOutcomeUnknownException(
+                    _current,
+                    "123",
+                    new IOException("commit acknowledgement lost"));
+            }
+
+            _current = new MetadataV2GraphSnapshot(graph, "\"compensated\"", DateTimeOffset.UtcNow);
+            return Task.FromResult(_current);
+        }
+    }
 
     [Fact]
     public void BuildAttributesExpression_WithWideTables_ChunksJsonbBuildObjectCalls()

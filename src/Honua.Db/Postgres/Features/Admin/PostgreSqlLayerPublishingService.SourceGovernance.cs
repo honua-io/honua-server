@@ -55,6 +55,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                      string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
                      publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer)
                  .OrderByDescending(publication =>
+                     publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                     resourcesById.TryGetValue(publication.ResourceId, out var resource) &&
+                     resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                 .ThenByDescending(publication =>
                      publication.Status.Lifecycle == MetadataV2LifecycleStatus.Active &&
                      resourcesById.TryGetValue(publication.ResourceId, out var resource) &&
                      resource.Status.Lifecycle == MetadataV2LifecycleStatus.Active))
