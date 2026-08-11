@@ -181,6 +181,118 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
+    {
+        var previousPublication = CreatePublication(
+            "pub-imported",
+            "service-shared",
+            "resource-existing",
+            "binding-existing",
+            1,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var failedPublication = CreatePublication(
+            "pub-generated",
+            "service-shared",
+            "resource-existing",
+            "binding-existing",
+            1,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var concurrentPublication = CreatePublication(
+            "pub-concurrent",
+            "service-shared",
+            "resource-concurrent",
+            "binding-concurrent",
+            2,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-shared" },
+                    PublicationIds = [previousPublication.Metadata.Id],
+                },
+            ],
+            Publications = [previousPublication],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Services =
+            [
+                previous.Services[0] with
+                {
+                    PublicationIds = [previousPublication.Metadata.Id, failedPublication.Metadata.Id],
+                },
+            ],
+            Publications = [failedPublication],
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            Services =
+            [
+                persisted.Services[0] with
+                {
+                    PublicationIds =
+                    [
+                        previousPublication.Metadata.Id,
+                        failedPublication.Metadata.Id,
+                        concurrentPublication.Metadata.Id,
+                    ],
+                },
+            ],
+            Publications = [failedPublication, concurrentPublication],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T05:00:00Z", CultureInfo.InvariantCulture));
+
+        compensation.Publications.Should().Equal(previousPublication, concurrentPublication);
+        compensation.Services.Should().ContainSingle().Which.PublicationIds
+            .Should().Equal(previousPublication.Metadata.Id, concurrentPublication.Metadata.Id);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_PreservesConcurrentEditToReplacementPublication()
+    {
+        var previousPublication = CreatePublication(
+            "pub-imported",
+            "service-shared",
+            "resource-existing",
+            "binding-existing",
+            1,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var failedPublication = CreatePublication(
+            "pub-generated",
+            "service-shared",
+            "resource-existing",
+            "binding-existing",
+            1,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var concurrentPublication = failedPublication with
+        {
+            Metadata = failedPublication.Metadata with { Title = "Concurrent route title" },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Publications = [previousPublication] };
+        var persisted = previous with { Revision = 8, Publications = [failedPublication] };
+        var current = persisted with { Revision = 9, Publications = [concurrentPublication] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T05:30:00Z", CultureInfo.InvariantCulture));
+
+        compensation.Publications.Should().ContainSingle().Which.Should().Be(concurrentPublication);
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingServiceFieldsThreeWay()
     {
         var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);

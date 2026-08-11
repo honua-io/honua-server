@@ -290,17 +290,50 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Select(item => item.Metadata.Id)
             .Where(id => !previousPublicationIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
-        var publications = currentGraph.Publications
-            .Where(item => !addedPublicationIds.Contains(item.Metadata.Id))
-            .Select(item => previousPublicationsById.TryGetValue(item.Metadata.Id, out var previous) &&
-                            persistedPublicationsById.TryGetValue(item.Metadata.Id, out var persisted)
-                ? RestoreUnchangedEntity(
-                    item,
-                    previous,
-                    persisted,
-                    MetadataV2JsonContext.Default.MetadataV2Publication)
-                : item)
-            .ToArray();
+        var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        foreach (var previous in previousGraph.Publications.Where(previous =>
+                     !persistedPublicationsById.ContainsKey(previous.Metadata.Id)))
+        {
+            var replacement = persistedGraph.Publications.FirstOrDefault(persisted =>
+                addedPublicationIds.Contains(persisted.Metadata.Id) &&
+                HasSamePublicationSlot(previous, persisted));
+            if (replacement is not null)
+            {
+                replacedPublicationsByPersistedId.TryAdd(replacement.Metadata.Id, previous);
+            }
+        }
+
+        var publications = new List<MetadataV2Publication>(currentGraph.Publications.Count);
+        foreach (var current in currentGraph.Publications)
+        {
+            if (addedPublicationIds.Contains(current.Metadata.Id) &&
+                persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persistedAdded) &&
+                JsonEquivalent(
+                    current,
+                    persistedAdded,
+                    MetadataV2JsonContext.Default.MetadataV2Publication))
+            {
+                if (replacedPublicationsByPersistedId.TryGetValue(current.Metadata.Id, out var replaced) &&
+                    !currentGraph.Publications.Any(other =>
+                        !string.Equals(other.Metadata.Id, current.Metadata.Id, StringComparison.Ordinal) &&
+                        HasSamePublicationSlot(other, replaced)))
+                {
+                    publications.Add(replaced);
+                }
+
+                continue;
+            }
+
+            publications.Add(
+                previousPublicationsById.TryGetValue(current.Metadata.Id, out var previous) &&
+                persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persisted)
+                    ? RestoreUnchangedEntity(
+                        current,
+                        previous,
+                        persisted,
+                        MetadataV2JsonContext.Default.MetadataV2Publication)
+                    : current);
+        }
 
         var previousServiceIds = previousGraph.Services
             .Select(item => item.Metadata.Id)
@@ -425,6 +458,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Connections = connections,
         };
     }
+
+    private static bool HasSamePublicationSlot(
+        MetadataV2Publication left,
+        MetadataV2Publication right)
+        => string.Equals(left.ServiceId, right.ServiceId, StringComparison.Ordinal) &&
+           left.LayerIndex == right.LayerIndex &&
+           left.PublicationType == right.PublicationType;
 
     private static T RestoreUnchangedEntity<T>(
         T current,
