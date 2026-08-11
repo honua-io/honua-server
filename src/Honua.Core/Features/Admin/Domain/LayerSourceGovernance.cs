@@ -137,9 +137,7 @@ public sealed record LayerSourceGovernance
     /// <param name="license">Candidate SPDX license identifier.</param>
     /// <returns>The canonical URL, or <see langword="null"/> for expressions and non-cataloged values.</returns>
     public static string? GetSpdxLicenseUrl(string? license)
-        => IsSpdxLicenseIdentifier(license)
-            ? $"https://spdx.org/licenses/{license}.html"
-            : null;
+        => SpdxLicensePolicy.GetLicenseUrl(license);
 
     /// <summary>Builds canonical Metadata v2 license/source links for this value.</summary>
     /// <returns>Zero to two canonical external links.</returns>

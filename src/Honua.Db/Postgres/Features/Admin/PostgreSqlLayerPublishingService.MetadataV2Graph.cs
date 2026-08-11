@@ -309,10 +309,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             if (addedPublicationIds.Contains(current.Metadata.Id) &&
                 persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persistedAdded) &&
-                JsonEquivalent(
-                    current,
-                    persistedAdded,
-                    MetadataV2JsonContext.Default.MetadataV2Publication))
+                StillUsesFailedPublicationDataTarget(current, persistedAdded))
             {
                 if (replacedPublicationsByPersistedId.TryGetValue(current.Metadata.Id, out var replaced) &&
                     !currentGraph.Publications.Any(other =>
@@ -328,11 +325,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             publications.Add(
                 previousPublicationsById.TryGetValue(current.Metadata.Id, out var previous) &&
                 persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persisted)
-                    ? RestoreUnchangedEntity(
-                        current,
-                        previous,
-                        persisted,
-                        MetadataV2JsonContext.Default.MetadataV2Publication)
+                    ? RestorePublicationMutation(current, previous, persisted)
                     : current);
         }
 
@@ -455,16 +448,70 @@ internal sealed partial class PostgreSqlLayerPublishingService
            left.LayerIndex == right.LayerIndex &&
            left.PublicationType == right.PublicationType;
 
-    private static T RestoreUnchangedEntity<T>(
-        T current,
-        T previous,
-        T persisted,
-        JsonTypeInfo<T> typeInfo)
-    {
-        var mutationChangedEntity = !JsonEquivalent(previous, persisted, typeInfo);
-        var currentStillMatchesMutation = JsonEquivalent(current, persisted, typeInfo);
-        return mutationChangedEntity && currentStillMatchesMutation ? previous : current;
-    }
+    private static bool StillUsesFailedPublicationDataTarget(
+        MetadataV2Publication current,
+        MetadataV2Publication persisted)
+        => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) &&
+           string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
+
+    private static MetadataV2Publication RestorePublicationMutation(
+        MetadataV2Publication current,
+        MetadataV2Publication previous,
+        MetadataV2Publication persisted)
+        => current with
+        {
+            Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            ResourceId = RestoreMutationValue(current.ResourceId, previous.ResourceId, persisted.ResourceId),
+            ServiceId = RestoreMutationValue(current.ServiceId, previous.ServiceId, persisted.ServiceId),
+            StorageBindingId = RestoreMutationValue(
+                current.StorageBindingId,
+                previous.StorageBindingId,
+                persisted.StorageBindingId),
+            PublicationType = RestoreMutationValue(
+                current.PublicationType,
+                previous.PublicationType,
+                persisted.PublicationType),
+            TitleOverride = RestoreMutationValue(
+                current.TitleOverride,
+                previous.TitleOverride,
+                persisted.TitleOverride),
+            Identifier = RestorePublicationMutationValue(
+                current.Identifier,
+                previous.Identifier,
+                persisted.Identifier,
+                static value => new MetadataV2Publication { Identifier = value }),
+            LayerIndex = RestoreMutationValue(current.LayerIndex, previous.LayerIndex, persisted.LayerIndex),
+            Path = RestoreMutationValue(current.Path, previous.Path, persisted.Path),
+            ServiceLocalId = RestoreMutationValue(
+                current.ServiceLocalId,
+                previous.ServiceLocalId,
+                persisted.ServiceLocalId),
+            IsPrimary = RestoreMutationValue(current.IsPrimary, previous.IsPrimary, persisted.IsPrimary),
+            SupportedFormats = RestoreMutationSequence(
+                current.SupportedFormats,
+                previous.SupportedFormats,
+                persisted.SupportedFormats),
+            FieldAliases = RestorePublicationMutationValue(
+                current.FieldAliases,
+                previous.FieldAliases,
+                persisted.FieldAliases,
+                static value => new MetadataV2Publication { FieldAliases = value }),
+            Capabilities = RestoreMutationSequence(
+                current.Capabilities,
+                previous.Capabilities,
+                persisted.Capabilities),
+            Options = RestorePublicationMutationValue(
+                current.Options,
+                previous.Options,
+                persisted.Options,
+                static value => new MetadataV2Publication { Options = value }),
+            Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
+            Extensions = RestorePublicationMutationValue(
+                current.Extensions,
+                previous.Extensions,
+                persisted.Extensions,
+                static value => new MetadataV2Publication { Extensions = value }),
+        };
 
     /// <summary>
     /// Applies a field-level three-way inverse to the existing service that publication updated.
@@ -762,6 +809,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
             persisted,
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Resource);
+
+    private static T RestorePublicationMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2Publication> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2Publication);
 
     private static T RestoreStorageBindingMutationValue<T>(
         T current,

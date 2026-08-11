@@ -556,6 +556,18 @@ internal static class CollectionsEndpoints
             });
         }
 
+        if (!governance.Links.Any(link =>
+                string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase)) &&
+            SpdxLicensePolicy.GetLicenseUrl(governance.License) is { } derivedLicenseUrl)
+        {
+            collectionLinks.Add(new Link
+            {
+                Href = derivedLicenseUrl,
+                Rel = RelationTypes.License,
+                Title = governance.License
+            });
+        }
+
         // Items links for all supported encodings
         foreach (var format in OgcFeaturesUtilities.FeatureFormats)
         {

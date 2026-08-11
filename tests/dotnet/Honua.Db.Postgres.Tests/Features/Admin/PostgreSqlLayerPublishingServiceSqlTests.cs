@@ -161,7 +161,15 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     ResourceId = "resource-concurrent",
                 },
             ],
-            Publications = [.. persisted.Publications, concurrentPublication],
+            Publications =
+            [
+                persisted.Publications[0],
+                persisted.Publications[1] with
+                {
+                    Metadata = persisted.Publications[1].Metadata with { Title = "Concurrent title" },
+                },
+                concurrentPublication,
+            ],
         };
 
         var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
@@ -260,7 +268,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void BuildRebasedCompensatingMetadataV2Graph_PreservesConcurrentEditToReplacementPublication()
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresReplacementDespiteConcurrentNonTargetEdit()
     {
         var previousPublication = CreatePublication(
             "pub-imported",
@@ -290,7 +298,71 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             persisted,
             DateTimeOffset.Parse("2026-08-11T05:30:00Z", CultureInfo.InvariantCulture));
 
-        compensation.Publications.Should().ContainSingle().Which.Should().Be(concurrentPublication);
+        compensation.Publications.Should().ContainSingle().Which.Should().Be(previousPublication);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingPublicationFieldsThreeWay()
+    {
+        var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);
+        var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
+        var previousPublication = CreatePublication(
+            "pub-existing",
+            "service-original",
+            "resource-original",
+            "binding-original",
+            1,
+            MetadataV2PublicationType.EsriFeatureLayer) with
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "pub-existing",
+                Title = "Original title",
+                UpdatedAt = originalAt,
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Draft,
+                State = MetadataV2OperationalState.Unknown,
+                ObservedAt = originalAt,
+            },
+        };
+        var persistedPublication = previousPublication with
+        {
+            Metadata = previousPublication.Metadata with
+            {
+                Title = "Published title",
+                UpdatedAt = publishedAt,
+            },
+            ResourceId = "resource-published",
+            StorageBindingId = "binding-published",
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = publishedAt,
+            },
+        };
+        var currentPublication = persistedPublication with
+        {
+            Metadata = persistedPublication.Metadata with { Title = "Concurrent title" },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Publications = [previousPublication] };
+        var persisted = previous with { Revision = 8, Publications = [persistedPublication] };
+        var current = persisted with { Revision = 9, Publications = [currentPublication] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var publication = compensation.Publications.Should().ContainSingle().Which;
+        publication.Metadata.Title.Should().Be("Concurrent title", "a later edit to the same field wins");
+        publication.Metadata.UpdatedAt.Should().Be(originalAt);
+        publication.ResourceId.Should().Be(previousPublication.ResourceId);
+        publication.StorageBindingId.Should().Be(previousPublication.StorageBindingId);
+        publication.Status.Should().Be(previousPublication.Status);
     }
 
     [Fact]

@@ -24,6 +24,14 @@ public static class SpdxLicensePolicy
     public static bool IsLicenseIdentifier(string? license)
         => !string.IsNullOrWhiteSpace(license) && SpdxIdentifiers.Licenses.Contains(license);
 
+    /// <summary>Returns the canonical SPDX documentation URL for a standalone identifier.</summary>
+    /// <param name="license">Candidate SPDX license identifier.</param>
+    /// <returns>The canonical URL, or <see langword="null"/> for expressions and non-cataloged values.</returns>
+    public static string? GetLicenseUrl(string? license)
+        => IsLicenseIdentifier(license)
+            ? $"https://spdx.org/licenses/{license}.html"
+            : null;
+
     /// <summary>Validates SPDX expression syntax and identifier membership.</summary>
     /// <param name="expression">Candidate SPDX expression.</param>
     /// <returns><see langword="true"/> when the expression is valid.</returns>
