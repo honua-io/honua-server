@@ -526,6 +526,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Id = "resource-layer-7",
                 Name = "Imported resource",
                 Publisher = "Original publisher",
+                ContactPoint = new MetadataV2ContactPoint
+                {
+                    Name = "Original contact",
+                    Email = "original@example.test",
+                    Url = "https://example.test/original-contact",
+                },
                 CreatedAt = originalAt,
                 UpdatedAt = originalAt,
                 Tags = ["tag-original"],
@@ -582,6 +588,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             {
                 Name = "Published resource",
                 Publisher = null,
+                ContactPoint = null,
                 UpdatedAt = publishedAt,
                 Tags = [],
                 Labels = new Dictionary<string, string> { ["edited"] = "failed" },
@@ -618,6 +625,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Metadata = persistedResource.Metadata with
             {
                 Publisher = "Concurrent Data Office",
+                ContactPoint = new MetadataV2ContactPoint { Email = "concurrent@example.test" },
                 Tags = ["tag-concurrent"],
                 Labels = new Dictionary<string, string>
                 {
@@ -650,6 +658,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
+        resource.Metadata.ContactPoint.Should().BeEquivalentTo(new MetadataV2ContactPoint
+        {
+            Name = "Original contact",
+            Email = "concurrent@example.test",
+            Url = "https://example.test/original-contact",
+        });
         resource.Metadata.Tags.Should().Equal("tag-original", "tag-concurrent");
         resource.Metadata.Labels.Should().BeEquivalentTo(new Dictionary<string, string>
         {

@@ -1040,12 +1040,39 @@ internal sealed partial class PostgreSqlLayerPublishingService
             License = RestoreMutationValue(current.License, previous.License, persisted.License),
             Attribution = RestoreMutationValue(current.Attribution, previous.Attribution, persisted.Attribution),
             Publisher = RestoreMutationValue(current.Publisher, previous.Publisher, persisted.Publisher),
-            ContactPoint = RestoreMutationValue(current.ContactPoint, previous.ContactPoint, persisted.ContactPoint),
+            ContactPoint = RestoreContactPointMutation(
+                current.ContactPoint,
+                previous.ContactPoint,
+                persisted.ContactPoint),
             Links = RestoreMetadataLinksMutation(
                 current.Links,
                 previous.Links,
                 persisted.Links),
         };
+
+    private static MetadataV2ContactPoint? RestoreContactPointMutation(
+        MetadataV2ContactPoint? current,
+        MetadataV2ContactPoint? previous,
+        MetadataV2ContactPoint? persisted)
+    {
+        if (current is null)
+        {
+            return persisted is null && previous is not null ? previous : null;
+        }
+
+        var previousValue = previous ?? new MetadataV2ContactPoint();
+        var persistedValue = persisted ?? new MetadataV2ContactPoint();
+        var restored = current with
+        {
+            Name = RestoreMutationValue(current.Name, previousValue.Name, persistedValue.Name),
+            Email = RestoreMutationValue(current.Email, previousValue.Email, persistedValue.Email),
+            Url = RestoreMutationValue(current.Url, previousValue.Url, persistedValue.Url),
+        };
+
+        return previous is null && restored.Name is null && restored.Email is null && restored.Url is null
+            ? null
+            : restored;
+    }
 
     private static List<MetadataV2Link> RestoreMetadataLinksMutation(
         IReadOnlyList<MetadataV2Link> current,
