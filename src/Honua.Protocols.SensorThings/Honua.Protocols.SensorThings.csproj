@@ -30,7 +30,6 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
-    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

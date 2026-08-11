@@ -35,7 +35,6 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
-    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
