@@ -1624,12 +1624,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         if (current.Node is JsonArray currentArray &&
-            previous.Node is JsonArray previousArray &&
-            persisted.Node is JsonArray persistedArray)
+            IsJsonArrayOrEmpty(previous) &&
+            IsJsonArrayOrEmpty(persisted))
         {
             return new OptionalJsonNode(
                 true,
-                RestoreJsonArrayMutation(currentArray, previousArray, persistedArray));
+                RestoreJsonArrayMutation(
+                    currentArray,
+                    previous.Node as JsonArray ?? new JsonArray(),
+                    persisted.Node as JsonArray ?? new JsonArray()));
         }
 
         return current.DeepClone();
@@ -1823,6 +1826,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static bool IsJsonObjectOrEmpty(OptionalJsonNode value)
         => !value.Exists || value.Node is null || value.Node is JsonObject;
+
+    private static bool IsJsonArrayOrEmpty(OptionalJsonNode value)
+        => !value.Exists || value.Node is null || value.Node is JsonArray;
 
     private static OptionalJsonNode GetOptionalJsonProperty(JsonObject? value, string propertyName)
         => value is not null && value.TryGetPropertyValue(propertyName, out var propertyValue)

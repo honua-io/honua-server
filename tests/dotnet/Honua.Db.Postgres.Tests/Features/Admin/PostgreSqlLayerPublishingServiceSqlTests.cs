@@ -1184,6 +1184,82 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RebasesArraysAcrossAbsentCompositeBaselines()
+    {
+        var previousSubtype = new MetadataV2Subtype
+        {
+            Code = JsonSerializer.SerializeToElement(1),
+            Name = "Previous subtype",
+        };
+        var concurrentSubtype = new MetadataV2Subtype
+        {
+            Code = JsonSerializer.SerializeToElement(2),
+            Name = "Concurrent subtype",
+        };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-cleared-subtypes" },
+            Subtypes = new MetadataV2Subtypes
+            {
+                SubtypeField = "previous_type",
+                Subtypes = [previousSubtype],
+            },
+        };
+        var clearedResource = previousResource with { Subtypes = null };
+        var concurrentlyRecreatedResource = clearedResource with
+        {
+            Subtypes = new MetadataV2Subtypes
+            {
+                SubtypeField = "concurrent_type",
+                Subtypes = [concurrentSubtype],
+            },
+        };
+
+        var restoredClear = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            new MetadataV2Graph { Revision = 9, Resources = [concurrentlyRecreatedResource] },
+            new MetadataV2Graph { Revision = 7, Resources = [previousResource] },
+            new MetadataV2Graph { Revision = 8, Resources = [clearedResource] },
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var recreatedSubtypes = restoredClear.Resources.Should().ContainSingle().Which.Subtypes;
+        recreatedSubtypes!.SubtypeField.Should().Be("concurrent_type");
+        recreatedSubtypes.Subtypes.Select(subtype => subtype.Code.GetInt32()).Should().Equal(2, 1);
+
+        var emptyResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-introduced-subtypes" },
+        };
+        var failedIntroducedResource = emptyResource with
+        {
+            Subtypes = new MetadataV2Subtypes
+            {
+                SubtypeField = "failed_type",
+                Subtypes = [previousSubtype],
+            },
+        };
+        var concurrentlyExtendedResource = failedIntroducedResource with
+        {
+            Subtypes = failedIntroducedResource.Subtypes! with
+            {
+                SubtypeField = "concurrent_type",
+                Subtypes = [previousSubtype, concurrentSubtype],
+            },
+        };
+
+        var restoredIntroduction = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            new MetadataV2Graph { Revision = 9, Resources = [concurrentlyExtendedResource] },
+            new MetadataV2Graph { Revision = 7, Resources = [emptyResource] },
+            new MetadataV2Graph { Revision = 8, Resources = [failedIntroducedResource] },
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var introducedSubtypes = restoredIntroduction.Resources.Should().ContainSingle().Which.Subtypes;
+        introducedSubtypes!.SubtypeField.Should().Be("concurrent_type");
+        var retainedSubtype = introducedSubtypes.Subtypes.Should().ContainSingle().Which;
+        retainedSubtype.Code.GetInt32().Should().Be(2);
+        retainedSubtype.Name.Should().Be("Concurrent subtype");
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresSchemaFieldsIndependently()
     {
         var previousField = new MetadataV2Field
