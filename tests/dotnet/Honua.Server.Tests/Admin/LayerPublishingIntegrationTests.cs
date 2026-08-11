@@ -296,6 +296,122 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
+    [Protocol(TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task PublishedLayer_WithServiceGovernanceDefaults_ProjectsFallbacksAcrossProtocols()
+    {
+        const string license = "CC-BY-4.0";
+        const string attribution = "Service-level data contributors";
+        const string publisher = "Service Data Office";
+        const string licenseUrl = "https://example.test/licenses/cc-by-4.0";
+        const string sourceUrl = "https://example.test/datasets/service-default";
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+        });
+        _layerId = published.LayerId;
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == published.LayerId &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ResourceId;
+        var publishingServiceIds = snapshot.Graph.Publications
+            .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
+            .Select(publication => publication.ServiceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var services = snapshot.Graph.Services
+            .Select(service => publishingServiceIds.Contains(service.Metadata.Id)
+                ? service with
+                {
+                    Metadata = service.Metadata with
+                    {
+                        License = license,
+                        Attribution = attribution,
+                        Publisher = publisher,
+                        Links =
+                        [
+                            new MetadataV2Link
+                            {
+                                Href = licenseUrl,
+                                Rel = "license",
+                                Title = license,
+                            },
+                            new MetadataV2Link
+                            {
+                                Href = sourceUrl,
+                                Rel = "describedby",
+                                Title = "Source documentation",
+                            },
+                        ],
+                    },
+                }
+                : service)
+            .ToArray();
+        await SaveMetadataGraphAsync(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = services,
+        });
+
+        var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
+        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
+        var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
+        var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
+        featureServer.Be200Ok();
+        mapServer.Be200Ok();
+        ogcCollection.Be200Ok();
+        stacCollection.Be200Ok();
+
+        AssertGeoServicesGovernance(
+            await featureServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+        AssertGeoServicesGovernance(
+            await mapServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+
+        using var ogcDocument = JsonDocument.Parse(await ogcCollection.Content.ReadAsStringAsync());
+        ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
+        AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(
+            ogcDocument.RootElement.GetProperty("links"),
+            "describedby",
+            sourceUrl,
+            "Source documentation");
+
+        using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
+        stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
+        stacDocument.RootElement.GetProperty("providers")[0].GetProperty("name").GetString().Should().Be(publisher);
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(
+            stacDocument.RootElement.GetProperty("links"),
+            "describedby",
+            sourceUrl,
+            "Source documentation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /stac/collections")]
     [Endpoint("GET /stac/collections/{collectionId}")]

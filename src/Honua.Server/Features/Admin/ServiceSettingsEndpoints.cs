@@ -339,6 +339,7 @@ internal static class ServiceSettingsEndpoints
             }
 
             var featureServices = services
+                .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
                 .Where(service => IsFeatureServerService(snapshot.Graph, service))
                 .ToArray();
             if (featureServices.Length == 0)

@@ -533,6 +533,7 @@ internal static class CollectionsEndpoints
         var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service?.Metadata);
 
         // Self link
         collectionLinks.Add(Link.Create(
@@ -541,7 +542,7 @@ internal static class CollectionsEndpoints
             type: MediaTypes.Json,
             title: displayName));
 
-        foreach (var governanceLink in resource.Metadata.Links.Where(link =>
+        foreach (var governanceLink in governance.Links.Where(link =>
                      string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
         {
@@ -724,7 +725,7 @@ internal static class CollectionsEndpoints
             Id = collectionId,
             Title = displayName,
             Description = description,
-            Attribution = resource.Metadata.Attribution,
+            Attribution = governance.Attribution,
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,

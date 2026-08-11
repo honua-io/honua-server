@@ -304,11 +304,24 @@ public sealed class ResourceValidator : IResourceValidator
         // Resolve against the publication surface requested by the route instead of the
         // first-wins ServicesByName index, otherwise a preceding aggregate/OGC service can
         // make a FeatureServer request serve the wrong resource.
-        var candidates = snapshot.Graph.Services
+        var protocolServices = snapshot.Graph.Services
             .Where(service =>
                 string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
             .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
+
+        // An exact graph identity has the same precedence as the service-root route. Select it
+        // before filtering by layer publication so an absent layer remains a 404 on that service
+        // instead of falling through to a different service whose display name collides with the id.
+        var exactId = protocolServices.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
+        if (exactId is not null)
+        {
+            return exactId;
+        }
+
+        var candidates = protocolServices
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
                     publication.LayerIndex == layerId &&
@@ -317,13 +330,6 @@ public sealed class ResourceValidator : IResourceValidator
                     snapshot.ResolveResource(publication) is
                     { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
             .ToArray();
-
-        var exactId = candidates.FirstOrDefault(service =>
-            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
-        if (exactId is not null)
-        {
-            return exactId;
-        }
 
         // Prefer a service with the protocol's canonical publication type when one exists.
         // MapServer also serves feature publications created by the standard admin publish path,

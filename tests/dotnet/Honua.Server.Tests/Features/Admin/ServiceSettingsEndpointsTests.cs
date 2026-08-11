@@ -383,6 +383,61 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithDisabledSameNameFeatureService_IgnoresDisabledPublication()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var enabledPublication = snapshot.Graph.Publications.First(publication =>
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            publication.LayerIndex == 0);
+        var enabledService = snapshot.Graph.Services.Single(service =>
+            string.Equals(service.Metadata.Id, enabledPublication.ServiceId, StringComparison.Ordinal));
+        var enabledResource = snapshot.Graph.Resources.Single(resource =>
+            string.Equals(resource.Metadata.Id, enabledPublication.ResourceId, StringComparison.Ordinal));
+        var disabledResource = enabledResource with
+        {
+            Metadata = enabledResource.Metadata with
+            {
+                Id = "resource-test-disabled-feature-collision",
+                License = "MIT",
+            },
+            StorageBindingIds = [],
+            PrimaryStorageBindingId = null,
+        };
+        var disabledPublication = enabledPublication with
+        {
+            Metadata = enabledPublication.Metadata with { Id = "publication-test-disabled-feature-collision" },
+            ServiceId = "service-test-disabled-feature-collision",
+            ResourceId = disabledResource.Metadata.Id,
+            StorageBindingId = null,
+        };
+        var disabledService = enabledService with
+        {
+            Metadata = enabledService.Metadata with { Id = disabledPublication.ServiceId },
+            Protocols = [ServiceProtocols.MapServer],
+            PublicationIds = [disabledPublication.Metadata.Id],
+        };
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = snapshot.Graph.Services.Append(disabledService).ToArray(),
+            Resources = snapshot.Graph.Resources.Append(disabledResource).ToArray(),
+            Publications = snapshot.Graph.Publications.Append(disabledPublication).ToArray(),
+        }, schema: _fixture.MetadataGraphSchema);
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        updated.Resources.Single(resource => resource.Metadata.Id == enabledResource.Metadata.Id)
+            .Metadata.License.Should().Be("CC0-1.0");
+        updated.Resources.Single(resource => resource.Metadata.Id == disabledResource.Metadata.Id)
+            .Metadata.License.Should().Be("MIT");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithMixedPublicationsInFeatureService_UpdatesFeatureResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();

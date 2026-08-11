@@ -14,6 +14,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -285,27 +286,50 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var previousPublicationIds = previousGraph.Publications
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousPublicationsById = previousGraph.Publications
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedPublicationsById = persistedGraph.Publications
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedPublicationIds = persistedGraph.Publications
             .Select(item => item.Metadata.Id)
             .Where(id => !previousPublicationIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
         var publications = currentGraph.Publications
             .Where(item => !addedPublicationIds.Contains(item.Metadata.Id))
+            .Select(item => previousPublicationsById.TryGetValue(item.Metadata.Id, out var previous) &&
+                            persistedPublicationsById.TryGetValue(item.Metadata.Id, out var persisted)
+                ? RestoreUnchangedEntity(
+                    item,
+                    previous,
+                    persisted,
+                    MetadataV2JsonContext.Default.MetadataV2Publication)
+                : item)
             .ToArray();
 
         var previousServiceIds = previousGraph.Services
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousServicesById = previousGraph.Services
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedServicesById = persistedGraph.Services
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedServiceIds = persistedGraph.Services
             .Select(item => item.Metadata.Id)
             .Where(id => !previousServiceIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
         var services = currentGraph.Services
-            .Select(service => service with
+            .Select(service =>
             {
-                PublicationIds = service.PublicationIds
-                    .Where(id => !addedPublicationIds.Contains(id))
-                    .ToArray()
+                var restored = previousServicesById.TryGetValue(service.Metadata.Id, out var previous) &&
+                               persistedServicesById.TryGetValue(service.Metadata.Id, out var persisted)
+                    ? RestoreServiceMutation(service, previous, persisted)
+                    : service;
+                return restored with
+                {
+                    PublicationIds = restored.PublicationIds
+                        .Where(id => !addedPublicationIds.Contains(id))
+                        .ToArray()
+                };
             })
             .Where(service => !addedServiceIds.Contains(service.Metadata.Id) ||
                 publications.Any(publication =>
@@ -316,11 +340,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var previousResourceIds = previousGraph.Resources
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousResourcesById = previousGraph.Resources
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedResourcesById = persistedGraph.Resources
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedResourceIds = persistedGraph.Resources
             .Select(item => item.Metadata.Id)
             .Where(id => !previousResourceIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
         var resources = currentGraph.Resources
+            .Select(resource => previousResourcesById.TryGetValue(resource.Metadata.Id, out var previous) &&
+                                persistedResourcesById.TryGetValue(resource.Metadata.Id, out var persisted)
+                ? RestoreUnchangedEntity(
+                    resource,
+                    previous,
+                    persisted,
+                    MetadataV2JsonContext.Default.MetadataV2Resource)
+                : resource)
             .Where(resource => !addedResourceIds.Contains(resource.Metadata.Id) ||
                 publications.Any(publication =>
                     string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)) ||
@@ -332,11 +368,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var previousBindingIds = previousGraph.StorageBindings
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousBindingsById = previousGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedBindingsById = persistedGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedBindingIds = persistedGraph.StorageBindings
             .Select(item => item.Metadata.Id)
             .Where(id => !previousBindingIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
         var bindings = currentGraph.StorageBindings
+            .Select(binding => previousBindingsById.TryGetValue(binding.Metadata.Id, out var previous) &&
+                               persistedBindingsById.TryGetValue(binding.Metadata.Id, out var persisted)
+                ? RestoreUnchangedEntity(
+                    binding,
+                    previous,
+                    persisted,
+                    MetadataV2JsonContext.Default.MetadataV2StorageBinding)
+                : binding)
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
                 publications.Any(publication =>
                     string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)) ||
@@ -348,11 +396,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var previousConnectionIds = previousGraph.Connections
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousConnectionsById = previousGraph.Connections
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedConnectionsById = persistedGraph.Connections
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedConnectionIds = persistedGraph.Connections
             .Select(item => item.Metadata.Id)
             .Where(id => !previousConnectionIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
         var connections = currentGraph.Connections
+            .Select(connection => previousConnectionsById.TryGetValue(connection.Metadata.Id, out var previous) &&
+                                  persistedConnectionsById.TryGetValue(connection.Metadata.Id, out var persisted)
+                ? RestoreUnchangedEntity(
+                    connection,
+                    previous,
+                    persisted,
+                    MetadataV2JsonContext.Default.MetadataV2Connection)
+                : connection)
             .Where(connection => !addedConnectionIds.Contains(connection.Metadata.Id) ||
                 bindings.Any(binding =>
                     string.Equals(binding.ConnectionId, connection.Metadata.Id, StringComparison.Ordinal)))
@@ -369,6 +429,130 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Connections = connections,
         };
     }
+
+    private static T RestoreUnchangedEntity<T>(
+        T current,
+        T previous,
+        T persisted,
+        JsonTypeInfo<T> typeInfo)
+    {
+        var mutationChangedEntity = !JsonEquivalent(previous, persisted, typeInfo);
+        var currentStillMatchesMutation = JsonEquivalent(current, persisted, typeInfo);
+        return mutationChangedEntity && currentStillMatchesMutation ? previous : current;
+    }
+
+    /// <summary>
+    /// Applies a field-level three-way inverse to the existing service that publication updated.
+    /// Fields still equal to the failed persisted mutation return to their pre-mutation values;
+    /// fields a later graph writer changed remain untouched.
+    /// </summary>
+    private static MetadataV2Service RestoreServiceMutation(
+        MetadataV2Service current,
+        MetadataV2Service previous,
+        MetadataV2Service persisted)
+        => current with
+        {
+            Metadata = RestoreServiceMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            ServiceType = RestoreMutationValue(current.ServiceType, previous.ServiceType, persisted.ServiceType),
+            Route = RestoreMutationValue(current.Route, previous.Route, persisted.Route),
+            SpatialReference = RestoreSpatialReferenceMutation(
+                current.SpatialReference,
+                previous.SpatialReference,
+                persisted.SpatialReference),
+            Protocols = RestoreMutationSequence(current.Protocols, previous.Protocols, persisted.Protocols),
+            Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
+        };
+
+    private static MetadataV2ObjectMetadata RestoreServiceMetadataMutation(
+        MetadataV2ObjectMetadata current,
+        MetadataV2ObjectMetadata previous,
+        MetadataV2ObjectMetadata persisted)
+        => current with
+        {
+            Name = RestoreMutationValue(current.Name, previous.Name, persisted.Name),
+            Title = RestoreMutationValue(current.Title, previous.Title, persisted.Title),
+            Description = RestoreMutationValue(current.Description, previous.Description, persisted.Description),
+            CreatedAt = RestoreMutationValue(current.CreatedAt, previous.CreatedAt, persisted.CreatedAt),
+            UpdatedAt = RestoreMutationValue(current.UpdatedAt, previous.UpdatedAt, persisted.UpdatedAt),
+        };
+
+    private static MetadataV2SpatialReference? RestoreSpatialReferenceMutation(
+        MetadataV2SpatialReference? current,
+        MetadataV2SpatialReference? previous,
+        MetadataV2SpatialReference? persisted)
+    {
+        if (current is null || previous is null || persisted is null)
+        {
+            return RestoreMutationValue(current, previous, persisted);
+        }
+
+        return current with
+        {
+            Srid = RestoreMutationValue(current.Srid, previous.Srid, persisted.Srid),
+            Crs = RestoreMutationValue(current.Crs, previous.Crs, persisted.Crs),
+            IsGeographic = RestoreMutationValue(
+                current.IsGeographic,
+                previous.IsGeographic,
+                persisted.IsGeographic),
+        };
+    }
+
+    private static MetadataV2Status RestoreStatusMutation(
+        MetadataV2Status current,
+        MetadataV2Status previous,
+        MetadataV2Status persisted)
+        => current with
+        {
+            Lifecycle = RestoreMutationValue(current.Lifecycle, previous.Lifecycle, persisted.Lifecycle),
+            State = RestoreMutationValue(current.State, previous.State, persisted.State),
+            Conditions = RestoreMutationSequence(current.Conditions, previous.Conditions, persisted.Conditions),
+            ObservedAt = RestoreMutationValue(current.ObservedAt, previous.ObservedAt, persisted.ObservedAt),
+        };
+
+    private static T RestoreMutationValue<T>(T current, T previous, T persisted)
+        => !EqualityComparer<T>.Default.Equals(previous, persisted) &&
+           EqualityComparer<T>.Default.Equals(current, persisted)
+            ? previous
+            : current;
+
+    private static IReadOnlyList<T> RestoreMutationSequence<T>(
+        IReadOnlyList<T> current,
+        IReadOnlyList<T> previous,
+        IReadOnlyList<T> persisted)
+    {
+        if (previous.SequenceEqual(persisted))
+        {
+            return current;
+        }
+
+        var restored = new List<T>(previous.Count + current.Count);
+        foreach (var previousItem in previous)
+        {
+            // Restore values removed by the failed mutation. Values the mutation retained are kept
+            // only if the concurrent writer did not subsequently remove them.
+            if (!persisted.Contains(previousItem) || current.Contains(previousItem))
+            {
+                restored.Add(previousItem);
+            }
+        }
+
+        foreach (var currentItem in current)
+        {
+            // Preserve values introduced by a later writer, but omit values introduced only by the
+            // failed mutation.
+            if (!persisted.Contains(currentItem) && !restored.Contains(currentItem))
+            {
+                restored.Add(currentItem);
+            }
+        }
+
+        return restored;
+    }
+
+    private static bool JsonEquivalent<T>(T left, T right, JsonTypeInfo<T> typeInfo)
+        => JsonElement.DeepEquals(
+            JsonSerializer.SerializeToElement(left, typeInfo),
+            JsonSerializer.SerializeToElement(right, typeInfo));
 
     internal static MetadataV2Graph? BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,

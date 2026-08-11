@@ -368,6 +368,7 @@ internal static partial class MapServerEndpoints
         var serviceExtent = ResolveServiceExtent(serviceLayers, ResolveServiceSpatialReference(service, serviceLayers));
         var layerCapabilities = BuildMapServerLayerCapabilities(resource);
         var hasGeometry = HasMapServerGeometry(resource);
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
 
         return new MapServerLayerResponse
         {
@@ -377,12 +378,12 @@ internal static partial class MapServerEndpoints
                 : layerName,
             Type = hasGeometry ? "Feature Layer" : "Table",
             Description = resource.Metadata.Description,
-            CopyrightText = string.IsNullOrWhiteSpace(resource.Metadata.Attribution)
-                ? resource.Metadata.License
-                : resource.Metadata.Attribution,
-            License = resource.Metadata.License,
-            Publisher = resource.Metadata.Publisher,
-            Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),
+            CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
+                ? governance.License
+                : governance.Attribution,
+            License = governance.License,
+            Publisher = governance.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             GeometryType = hasGeometry ? MapGeometryTypeToEsri(resource.ReadGeometryType()) : null,
             SpatialReference = ToEsriSpatialReference(ResolveLayerSpatialReference(resource)),
             Extent = ResolveLayerExtent(resource, serviceExtent),

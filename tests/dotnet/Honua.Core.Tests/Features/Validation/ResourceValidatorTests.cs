@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
@@ -143,6 +144,41 @@ public sealed class ResourceValidatorTests
         result.Resource.Service.Metadata.Id.Should().Be("service-feature");
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
         result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceLayerV2Async_ExactServiceIdWithMissingLayer_DoesNotFallThroughToNameMatch()
+    {
+        var graph = MixedProtocolPublicationGraph();
+        var exactIdService = graph.Services[0] with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "route-token", Name = "exact-service" },
+            Protocols = [ServiceProtocols.FeatureServer],
+            PublicationIds = [],
+        };
+        var nameMatchedService = exactIdService with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-by-name", Name = "route-token" },
+            PublicationIds = ["pub-feature"],
+        };
+        graph = graph with
+        {
+            Services = [exactIdService, nameMatchedService],
+            Publications =
+            [
+                graph.Publications[1] with { ServiceId = nameMatchedService.Metadata.Id },
+            ],
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(graph));
+
+        var result = await validator.ValidateServiceLayerV2Async(
+            exactIdService.Metadata.Id,
+            7,
+            ServiceProtocols.FeatureServer);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
     }
 
     [UnitTest]

@@ -162,6 +162,92 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingServiceFieldsThreeWay()
+    {
+        var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);
+        var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
+        var originalCondition = new MetadataV2Condition
+        {
+            Type = "Original",
+            Status = "True",
+        };
+        var concurrentCondition = new MetadataV2Condition
+        {
+            Type = "Concurrent",
+            Status = "True",
+        };
+        var previousService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "service-existing",
+                Name = "roads",
+                Description = "Original service",
+                CreatedAt = originalAt,
+                UpdatedAt = originalAt,
+            },
+            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Route = "/ogc/features",
+            Protocols = [ServiceProtocols.OgcFeatures],
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Draft,
+                State = MetadataV2OperationalState.Unknown,
+                Conditions = [originalCondition],
+                ObservedAt = originalAt,
+            },
+        };
+        var persistedService = previousService with
+        {
+            Metadata = previousService.Metadata with
+            {
+                Title = "roads",
+                UpdatedAt = publishedAt,
+            },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = "/rest/services/roads/FeatureServer",
+            Protocols = ServiceProtocols.All,
+            SpatialReference = MetadataV2SpatialReference.WebMercator,
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = publishedAt,
+            },
+        };
+        var currentService = persistedService with
+        {
+            Metadata = persistedService.Metadata with { Publisher = "Concurrent Data Office" },
+            Route = "/concurrent/route",
+            Protocols = [.. persistedService.Protocols, "ConcurrentProtocol"],
+            Status = persistedService.Status with { Conditions = [concurrentCondition] },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Services = [previousService] };
+        var persisted = previous with { Revision = 8, Services = [persistedService] };
+        var current = persisted with { Revision = 9, Services = [currentService] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var service = compensation.Services.Should().ContainSingle().Which;
+        service.ServiceType.Should().Be(previousService.ServiceType);
+        service.Route.Should().Be("/concurrent/route", "a later edit to the same field wins");
+        service.SpatialReference.Should().Be(previousService.SpatialReference);
+        service.Protocols.Should().Equal(ServiceProtocols.OgcFeatures, "ConcurrentProtocol");
+        service.Status.Lifecycle.Should().Be(previousService.Status.Lifecycle);
+        service.Status.State.Should().Be(previousService.Status.State);
+        service.Status.ObservedAt.Should().Be(previousService.Status.ObservedAt);
+        service.Status.Conditions.Should().Equal(originalCondition, concurrentCondition);
+        service.Metadata.Title.Should().BeNull();
+        service.Metadata.UpdatedAt.Should().Be(originalAt);
+        service.Metadata.Publisher.Should().Be("Concurrent Data Office");
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithSameServiceIndex_UsesGlobalStorageIdentity()
     {
         var graph = new MetadataV2Graph

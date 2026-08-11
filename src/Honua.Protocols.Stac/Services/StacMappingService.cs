@@ -51,6 +51,7 @@ internal sealed class StacMappingService
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
+        MetadataV2Service service,
         int layerIndex,
         IFeatureReader featureReader,
         string baseUrl,
@@ -59,11 +60,14 @@ internal sealed class StacMappingService
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(featureReader);
 
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
         var stacBase = $"{baseUrl}/stac";
         var displayName = ResolveDisplayName(publication, resource, layerIndex);
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
+        var governedResource = resource with { Metadata = governance };
 
         var links = ImmutableArray.CreateBuilder<Link>();
 
@@ -106,7 +110,7 @@ internal sealed class StacMappingService
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
 
-        foreach (var governanceLink in resource.Metadata.Links.Where(link =>
+        foreach (var governanceLink in governance.Links.Where(link =>
                      string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
         {
@@ -132,8 +136,8 @@ internal sealed class StacMappingService
             Id = collectionId,
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
-            License = resource.ResolveLicense(),
-            Providers = BuildProviders(resource.Metadata),
+            License = governedResource.ResolveLicense(),
+            Providers = BuildProviders(governance),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
             Links = links.ToImmutable(),

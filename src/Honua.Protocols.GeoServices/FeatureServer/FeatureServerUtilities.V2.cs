@@ -165,18 +165,19 @@ internal static partial class FeatureServerEndpoints
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
         var extent = ResolveLayerExtentV2(resource, srid ?? SpatialReference.WGS84.Wkid);
+        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
 
         return new LayerResponse
         {
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
             Description = resource.Metadata.Description,
-            CopyrightText = string.IsNullOrWhiteSpace(resource.Metadata.Attribution)
-                ? resource.Metadata.License
-                : resource.Metadata.Attribution,
-            License = resource.Metadata.License,
-            Publisher = resource.Metadata.Publisher,
-            Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),
+            CopyrightText = string.IsNullOrWhiteSpace(governance.Attribution)
+                ? governance.License
+                : governance.Attribution,
+            License = governance.License,
+            Publisher = governance.Publisher,
+            Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,
