@@ -410,6 +410,120 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         GetLayerMetadata(0).License.Should().Be("CC0-1.0");
     }
 
+    [Theory]
+    [Trait("Category", "Integration")]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithRetiredBindingCollision_UpdatesOnlyActiveResource(
+        bool retirePublication)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var activePublication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == 0);
+        var activeResource = snapshot.Graph.Resources.Single(candidate =>
+            string.Equals(candidate.Metadata.Id, activePublication.ResourceId, StringComparison.Ordinal));
+        var retiredResource = activeResource with
+        {
+            Metadata = activeResource.Metadata with
+            {
+                Id = "resource-test-retired-collision",
+                License = "MIT",
+            },
+            Status = activeResource.Status with
+            {
+                Lifecycle = retirePublication
+                    ? activeResource.Status.Lifecycle
+                    : MetadataV2LifecycleStatus.Retired,
+            },
+            StorageBindingIds = [],
+            PrimaryStorageBindingId = null,
+        };
+        var retiredPublication = activePublication with
+        {
+            Metadata = activePublication.Metadata with { Id = "publication-test-retired-collision" },
+            ResourceId = retiredResource.Metadata.Id,
+            StorageBindingId = null,
+            Status = activePublication.Status with
+            {
+                Lifecycle = retirePublication
+                    ? MetadataV2LifecycleStatus.Retired
+                    : activePublication.Status.Lifecycle,
+            },
+        };
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Append(retiredResource).ToArray(),
+            Publications = snapshot.Graph.Publications.Append(retiredPublication).ToArray(),
+        }, schema: _fixture.MetadataGraphSchema);
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        updated.Resources.Single(resource => resource.Metadata.Id == activeResource.Metadata.Id)
+            .Metadata.License.Should().Be("CC0-1.0");
+        updated.Resources.Single(resource => resource.Metadata.Id == retiredResource.Metadata.Id)
+            .Metadata.License.Should().Be("MIT");
+    }
+
+    [Theory]
+    [Trait("Category", "Integration")]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WhenBindingRetiresDuringUpdate_ReturnsNotFound(
+        bool retirePublication)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == 0);
+        var activatedGraph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = retirePublication
+                ? snapshot.Graph.Publications.Select(candidate =>
+                    candidate.Metadata.Id == publication.Metadata.Id
+                        ? candidate with
+                        {
+                            Status = candidate.Status with
+                            {
+                                Lifecycle = MetadataV2LifecycleStatus.Retired,
+                            },
+                        }
+                        : candidate).ToArray()
+                : snapshot.Graph.Publications,
+            Resources = retirePublication
+                ? snapshot.Graph.Resources
+                : snapshot.Graph.Resources.Select(candidate =>
+                    candidate.Metadata.Id == publication.ResourceId
+                        ? candidate with
+                        {
+                            Status = candidate.Status with
+                            {
+                                Lifecycle = MetadataV2LifecycleStatus.Retired,
+                            },
+                        }
+                        : candidate).ToArray(),
+        };
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.ActivateAfterNextRead(activatedGraph);
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var current = _fixture.GetCurrentV2GraphSnapshot().Graph.Resources.Single(candidate =>
+            candidate.Metadata.Id == publication.ResourceId);
+        current.Metadata.License.Should().Be(snapshot.Graph.Resources.Single(candidate =>
+            candidate.Metadata.Id == publication.ResourceId).Metadata.License);
+    }
+
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WhenFeatureLayerIsRelinked_DoesNotMutateEitherResource()

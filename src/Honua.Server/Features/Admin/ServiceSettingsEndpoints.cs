@@ -353,10 +353,16 @@ internal static class ServiceSettingsEndpoints
             var featureServiceIds = featureServices
                 .Select(service => service.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
+            var activeResourceIds = snapshot.Graph.Resources
+                .Where(candidate => candidate.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                .Select(candidate => candidate.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
             var targetResourceIds = snapshot.Graph.Publications
                 .Where(publication =>
                     featureServiceIds.Contains(publication.ServiceId) &&
                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    activeResourceIds.Contains(publication.ResourceId) &&
                     publication.LayerIndex == layerId)
                 .Select(publication => publication.ResourceId)
                 .Distinct(StringComparer.Ordinal)
@@ -988,10 +994,16 @@ internal static class ServiceSettingsEndpoints
             return FeatureLayerBindingState.Conflict;
         }
 
+        var activeResourceIds = graph.Resources
+            .Where(resource => resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+            .Select(resource => resource.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
         var currentResourceIds = graph.Publications
             .Where(publication =>
                 featureServiceIds.Contains(publication.ServiceId) &&
                 publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                activeResourceIds.Contains(publication.ResourceId) &&
                 publication.LayerIndex == layerId)
             .Select(publication => publication.ResourceId)
             .Distinct(StringComparer.Ordinal)
@@ -1006,8 +1018,7 @@ internal static class ServiceSettingsEndpoints
             return FeatureLayerBindingState.Conflict;
         }
 
-        return graph.Resources.Any(resource =>
-            string.Equals(resource.Metadata.Id, expectedResourceId, StringComparison.Ordinal))
+        return activeResourceIds.Contains(expectedResourceId)
             ? FeatureLayerBindingState.Bound
             : FeatureLayerBindingState.NotFound;
     }
