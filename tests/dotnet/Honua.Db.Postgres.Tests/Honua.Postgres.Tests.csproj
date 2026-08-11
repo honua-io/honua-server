@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Features/Import/Fixtures/ArcGis/*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
