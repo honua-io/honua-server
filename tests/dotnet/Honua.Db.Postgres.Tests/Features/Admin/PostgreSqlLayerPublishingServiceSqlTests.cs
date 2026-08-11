@@ -798,7 +798,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     "resource-beta",
                     "binding-beta",
                     101,
-                    MetadataV2PublicationType.OgcCollection)
+                    MetadataV2PublicationType.EsriFeatureLayer)
             ]
         };
 
@@ -819,6 +819,82 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().ContainSingle().Which.Metadata.Id.Should().Be("pub-stac-alpha-101");
         graph.Publications.Single(publication => publication.Metadata.Id == "pub-beta-101")
             .ResourceId.Should().Be("resource-beta");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithOtherProtocolAtTargetIndex_AddsFeaturePublication()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Revision = 4,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    PublicationIds = ["pub-ogc-101"],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" },
+                    PrimaryStorageBindingId = "binding-alpha",
+                    StorageBindingIds = ["binding-alpha"],
+                },
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-beta" },
+                    PrimaryStorageBindingId = "binding-beta",
+                    StorageBindingIds = ["binding-beta"],
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-alpha" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101,
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-beta" },
+                    ResourceId = "resource-beta",
+                    StorageLayerId = 202,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication(
+                    "pub-ogc-101",
+                    "service-beta",
+                    "resource-beta",
+                    "binding-beta",
+                    101,
+                    MetadataV2PublicationType.OgcCollection),
+            ],
+        };
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Governed parcels",
+            4326,
+            DateTimeOffset.Parse("2026-08-11T08:00:00Z", CultureInfo.InvariantCulture));
+
+        updated.Publications.Should().ContainSingle(publication =>
+            publication.Metadata.Id == "pub-ogc-101" &&
+            publication.PublicationType == MetadataV2PublicationType.OgcCollection);
+        updated.Publications.Should().ContainSingle(publication =>
+            publication.ServiceId == "service-beta" &&
+            publication.ResourceId == "resource-alpha" &&
+            publication.StorageBindingId == "binding-alpha" &&
+            publication.LayerIndex == 101 &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
     }
 
     [Fact]
