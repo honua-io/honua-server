@@ -27,6 +27,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToArray();
     }
 
+    internal static PublishedLayerSummary HydrateSourceGovernance(
+        PublishedLayerSummary layer,
+        MetadataV2Graph graph,
+        string serviceName)
+    {
+        var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName);
+        return metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
+            ? HydrateSourceGovernance(layer, metadata)
+            : layer;
+    }
+
     internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByStorageLayer(
         MetadataV2Graph graph,
         string serviceName)

@@ -907,6 +907,74 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void HydrateSourceGovernance_WithPersistedGraph_UsesSnapshotMetadata()
+    {
+        var metadata = new MetadataV2ObjectMetadata
+        {
+            Id = "resource-parcels",
+            License = "MIT",
+            Attribution = "County GIS",
+            Links = [new MetadataV2Link { Href = "https://example.test/license", Rel = "license" }],
+        };
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-parcels", Name = "parcels" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = metadata,
+                    PrimaryStorageBindingId = "binding-parcels",
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels" },
+                    ResourceId = metadata.Id,
+                    StorageLayerId = 7,
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "publication-parcels" },
+                    ServiceId = "service-parcels",
+                    ResourceId = metadata.Id,
+                    StorageBindingId = "binding-parcels",
+                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                    LayerIndex = 7,
+                }
+            ],
+        };
+        var layer = new PublishedLayerSummary
+        {
+            LayerId = 7,
+            LayerName = "Parcels",
+            Schema = "public",
+            Table = "parcels",
+            GeometryType = "Polygon",
+            ServiceName = "parcels",
+        };
+
+        var hydrated = PostgreSqlLayerPublishingService.HydrateSourceGovernance(layer, graph, "parcels");
+
+        hydrated.License.Should().Be("MIT");
+        hydrated.Attribution.Should().Be("County GIS");
+        hydrated.LicenseUrl.Should().Be("https://example.test/license");
+        hydrated.LayerName.Should().Be(layer.LayerName);
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolSpecificNameCollision_UsesFeatureServerResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };

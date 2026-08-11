@@ -459,6 +459,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                         linkedLayer,
                         cancellationToken)
                     .ConfigureAwait(false);
+                linkedLayer = HydrateSourceGovernance(
+                    linkedLayer,
+                    metadataMutation.PersistedGraph,
+                    normalizedService);
             }
 
             await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
@@ -485,7 +489,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             throw;
         }
 
-        return await HydrateSourceGovernanceAsync(linkedLayer, normalizedService, cancellationToken).ConfigureAwait(false);
+        return linkedLayer;
     }
 
     public async Task<TablePublishValidationResult> ValidateTableForPublishAsync(

@@ -156,7 +156,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
-    private async Task<MetadataV2GraphMutation?> UpsertLinkedLayerMetadataV2Async(
+    private async Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
         string serviceName,
         PublishedLayerSummary layer,
         CancellationToken cancellationToken)
