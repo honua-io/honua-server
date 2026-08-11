@@ -355,6 +355,7 @@ internal static class ServiceSettingsEndpoints
             var targetResourceIds = snapshot.Graph.Publications
                 .Where(publication =>
                     featureServiceIds.Contains(publication.ServiceId) &&
+                    publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
                     publication.Identifier.IsNumeric &&
                     publication.LayerIndex == layerId)
                 .Select(publication => publication.ResourceId)

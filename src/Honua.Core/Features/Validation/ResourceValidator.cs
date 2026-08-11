@@ -129,9 +129,25 @@ public sealed class ResourceValidator : IResourceValidator
     }
 
     /// <inheritdoc />
-    public async Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+    public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
         CancellationToken cancellationToken = default)
+        => ValidateServiceCoreAsync(serviceId, requiredProtocol: null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+        string serviceId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requiredProtocol);
+        return ValidateServiceCoreAsync(serviceId, requiredProtocol, cancellationToken);
+    }
+
+    private async Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceCoreAsync(
+        string serviceId,
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(serviceId))
         {
@@ -140,6 +156,15 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (requiredProtocol is not null)
+        {
+            var protocolService = ResolveServiceForProtocol(snapshot, serviceId, requiredProtocol);
+            return protocolService is not null
+                ? ResourceValidationResult.Success(protocolService)
+                : ResourceValidationResult.NotFound<MetadataV2Service>(
+                    ErrorMessages.NotFound.FormatService(serviceId));
+        }
+
         if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
         {
             return ResourceValidationResult.Success(byName);
@@ -150,6 +175,54 @@ public sealed class ResourceValidator : IResourceValidator
         }
         return ResourceValidationResult.NotFound<MetadataV2Service>(
             ErrorMessages.NotFound.FormatService(serviceId));
+    }
+
+    private static MetadataV2Service? ResolveServiceForProtocol(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        string requiredProtocol)
+    {
+        var candidates = snapshot.Graph.Services
+            .Where(service =>
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
+
+        var exactId = candidates.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
+        if (exactId is not null)
+        {
+            return exactId;
+        }
+
+        var preferred = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
+                    snapshot.ResolveResource(publication) is
+                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+            .ToArray();
+        if (preferred.Length == 1)
+        {
+            return preferred[0];
+        }
+
+        var compatible = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType) &&
+                    snapshot.ResolveResource(publication) is
+                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+            .ToArray();
+        if (compatible.Length == 1)
+        {
+            return compatible[0];
+        }
+
+        return candidates.Length == 1 ? candidates[0] : null;
     }
 
     /// <inheritdoc />

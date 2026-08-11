@@ -157,7 +157,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task ServiceInfo_UnknownService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceV2Async("MissingService", Arg.Any<CancellationToken>())
+        resourceValidator.ValidateServiceV2Async("MissingService", "GPServer", Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.NotFound<MetadataV2Service>("Service 'MissingService' was not found."));
 
         var fixture = new WebAppFixture()
@@ -295,7 +295,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task TaskInfo_ProtocolDisabledService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceV2Async(ServiceId, Arg.Any<CancellationToken>())
+        resourceValidator.ValidateServiceV2Async(ServiceId, "GPServer", Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(CreateGpServerServiceV2(gpServerEnabled: false)));
 
         var fixture = new WebAppFixture()
@@ -608,7 +608,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task SubmitJob_ProtocolDisabledService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceV2Async(ServiceId, Arg.Any<CancellationToken>())
+        resourceValidator.ValidateServiceV2Async(ServiceId, "GPServer", Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(CreateGpServerServiceV2(gpServerEnabled: false)));
 
         var fixture = new WebAppFixture()
@@ -1987,6 +1987,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
             string serviceId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+            string serviceId,
+            string requiredProtocol,
             CancellationToken cancellationToken = default)
             => throw exception;
 

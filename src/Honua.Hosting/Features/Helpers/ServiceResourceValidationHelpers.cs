@@ -44,7 +44,9 @@ internal static class ServiceResourceValidationHelpers
         ResourceValidationResult<MetadataV2Service> serviceResult;
         try
         {
-            serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken).ConfigureAwait(false);
+            serviceResult = await resourceValidator
+                .ValidateServiceV2Async(serviceId, protocol, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (IsCatalogStorageUnavailable(ex))
         {

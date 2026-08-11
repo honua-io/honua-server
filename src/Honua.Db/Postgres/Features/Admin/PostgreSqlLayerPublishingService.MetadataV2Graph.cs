@@ -10,6 +10,7 @@
 // projection layer that is large, shared across the publish and extent-refresh paths,
 // and easier to audit independently from the SQL-heavy persistence code.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -199,14 +200,31 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .SaveAsync(compensatingGraph, mutation.PersistedEtag, CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch (Exception compensationException)
+        catch (DbException compensationException)
         {
-            throw new AggregateException(
-                "The layer transaction failed after Metadata v2 persistence, and the compensating graph write also failed.",
-                commitException,
-                compensationException);
+            throw BuildCompensationFailure(commitException, compensationException);
+        }
+        catch (InvalidOperationException compensationException)
+        {
+            throw BuildCompensationFailure(commitException, compensationException);
+        }
+        catch (IOException compensationException)
+        {
+            throw BuildCompensationFailure(commitException, compensationException);
+        }
+        catch (TimeoutException compensationException)
+        {
+            throw BuildCompensationFailure(commitException, compensationException);
         }
     }
+
+    private static AggregateException BuildCompensationFailure(
+        Exception commitException,
+        Exception compensationException)
+        => new(
+            "The layer transaction failed after Metadata v2 persistence, and the compensating graph write also failed.",
+            commitException,
+            compensationException);
 
     internal static MetadataV2Graph BuildCompensatingMetadataV2Graph(
         MetadataV2Graph previousGraph,

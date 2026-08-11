@@ -136,6 +136,40 @@ public sealed class ResourceValidatorTests
         result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_WithSharedName_ResolvesProtocolSpecificService()
+    {
+        var graph = MixedProtocolPublicationGraph();
+        graph = graph with
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
+                    Protocols = [ServiceProtocols.FeatureServer],
+                },
+            ],
+            Publications =
+            [
+                graph.Publications[0] with { ServiceId = "service-aggregate" },
+                graph.Publications[1] with { ServiceId = "service-feature" },
+            ],
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(graph));
+
+        var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.FeatureServer);
+
+        result.IsValid.Should().BeTrue();
+        result.Resource!.Metadata.Id.Should().Be("service-feature");
+    }
+
     private static MetadataV2Graph MixedProtocolPublicationGraph()
     {
         return new MetadataV2Graph

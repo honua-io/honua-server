@@ -59,6 +59,15 @@ public interface IResourceValidator
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates a service while resolving same-name protocol services against the requested
+    /// protocol's canonical publication surface.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+        string serviceId,
+        string requiredProtocol,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates that a service and layer exist in the canonical Metadata v2 graph.
     /// Returns the resolved (service, publication, resource) triple; publications carry
     /// the protocol-facing service-local LayerIndex so callers that need it have it.
