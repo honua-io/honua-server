@@ -82,7 +82,9 @@ internal static partial class FeatureServerEndpoints
         {
             ServiceName = service.Metadata.Name,
             ServiceDescription = service.Metadata.Description ?? string.Empty,
-            CopyrightText = service.Metadata.Attribution,
+            CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
+                ? service.Metadata.License
+                : service.Metadata.Attribution,
             License = service.Metadata.License,
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
@@ -169,7 +171,9 @@ internal static partial class FeatureServerEndpoints
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
             Description = resource.Metadata.Description,
-            CopyrightText = resource.Metadata.Attribution,
+            CopyrightText = string.IsNullOrWhiteSpace(resource.Metadata.Attribution)
+                ? resource.Metadata.License
+                : resource.Metadata.Attribution,
             License = resource.Metadata.License,
             Publisher = resource.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),

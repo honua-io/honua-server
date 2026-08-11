@@ -401,7 +401,6 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
 
-            var metadataUpdatedAt = DateTimeOffset.UtcNow;
             // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
             // strategy in the response (so PUT semantics are preserved for callers), but
             // it does not round-trip through the graph store. Documented in the mutator
@@ -471,7 +470,11 @@ internal static class ServiceSettingsEndpoints
                     next = next with
                     {
                         Metadata = governanceRequested
-                            ? ApplySourceGovernancePatch(next.Metadata, request, sourceGovernance, metadataUpdatedAt)
+                            ? ApplySourceGovernancePatch(
+                                next.Metadata,
+                                request,
+                                sourceGovernance,
+                                DateTimeOffset.UtcNow)
                             : next.Metadata,
                     };
                     // RasterMosaic has no typed V2 home yet — silently drop until the V2
@@ -648,7 +651,9 @@ internal static class ServiceSettingsEndpoints
             Attribution = request.Attribution is null ? current.Attribution : normalized?.Attribution,
             Publisher = request.Publisher is null ? current.Publisher : normalized?.Publisher,
             Links = links,
-            UpdatedAt = updatedAt
+            UpdatedAt = current.UpdatedAt is { } currentUpdatedAt && currentUpdatedAt > updatedAt
+                ? currentUpdatedAt
+                : updatedAt
         };
     }
 

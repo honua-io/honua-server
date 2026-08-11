@@ -150,6 +150,43 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithCompoundSpdxLicense_UsesVariousLicenseToken()
+    {
+        UpdateGovernanceMetadata(
+            license: "MIT OR Apache-2.0",
+            attribution: null,
+            publisher: null);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("license").GetString().Should().Be("various");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithAttributionOnly_PreservesAttributionAsProvider()
+    {
+        const string attribution = "Example community contributors";
+        UpdateGovernanceMetadata(
+            license: "MIT",
+            attribution,
+            publisher: null);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
+        providers.Should().ContainSingle();
+        providers[0].GetProperty("name").GetString().Should().Be(attribution);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
@@ -246,4 +283,14 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         bbox[1].GetDouble().Should().NotBe(-90d);
         bbox[3].GetDouble().Should().NotBe(90d);
     }
+
+    private void UpdateGovernanceMetadata(string? license, string? attribution, string? publisher)
+        => _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with
+            {
+                License = license,
+                Attribution = attribution,
+                Publisher = publisher
+            });
 }

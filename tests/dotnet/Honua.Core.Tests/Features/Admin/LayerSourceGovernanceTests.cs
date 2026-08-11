@@ -31,6 +31,10 @@ public sealed class LayerSourceGovernanceTests
     [InlineData("MIT AND(Apache-2.0)")]
     [InlineData("MIT OR")]
     [InlineData("(MIT OR Apache-2.0")]
+    [InlineData("proprietary+")]
+    [InlineData("MIT OR proprietary")]
+    [InlineData("Not-A-License")]
+    [InlineData("MIT WITH Not-An-Exception")]
     public void TryCreate_WithMalformedSpdxExpression_RejectsLicense(string license)
     {
         var accepted = LayerSourceGovernance.TryCreate(

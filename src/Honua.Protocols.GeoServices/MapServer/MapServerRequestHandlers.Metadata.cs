@@ -255,7 +255,9 @@ internal static partial class MapServerEndpoints
                 Id = layer.PublicLayerId,
                 Name = layer.Name
             })],
-            CopyrightText = service.Metadata.Attribution ?? string.Empty,
+            CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
+                ? service.Metadata.License ?? string.Empty
+                : service.Metadata.Attribution,
             License = service.Metadata.License,
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
@@ -375,7 +377,9 @@ internal static partial class MapServerEndpoints
                 : layerName,
             Type = hasGeometry ? "Feature Layer" : "Table",
             Description = resource.Metadata.Description,
-            CopyrightText = resource.Metadata.Attribution,
+            CopyrightText = string.IsNullOrWhiteSpace(resource.Metadata.Attribution)
+                ? resource.Metadata.License
+                : resource.Metadata.Attribution,
             License = resource.Metadata.License,
             Publisher = resource.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(resource.Metadata),

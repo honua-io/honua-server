@@ -33,15 +33,33 @@ internal static class StacResourceExtensions
     public static string ResolveLicense(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        if (!string.IsNullOrWhiteSpace(resource.Metadata.License))
+        var declared = !string.IsNullOrWhiteSpace(resource.Metadata.License)
+            ? resource.Metadata.License.Trim()
+            : ReadString(resource, "license")?.Trim();
+        if (string.IsNullOrWhiteSpace(declared))
         {
-            return resource.Metadata.License.Trim();
+            return "proprietary";
         }
 
-        var declared = ReadString(resource, "license");
-        return string.IsNullOrWhiteSpace(declared)
-            ? "proprietary"
-            : declared.Trim();
+        return IsSingleStacLicenseToken(declared)
+            ? declared
+            : "various";
+    }
+
+    private static bool IsSingleStacLicenseToken(string license)
+    {
+        if (string.Equals(license, "proprietary", StringComparison.Ordinal) ||
+            string.Equals(license, "various", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return !license.Any(char.IsWhiteSpace) &&
+            !license.Contains('(') &&
+            !license.Contains(')') &&
+            !license.Contains('+') &&
+            !license.StartsWith("LicenseRef-", StringComparison.Ordinal) &&
+            !license.StartsWith("DocumentRef-", StringComparison.Ordinal);
     }
 
     /// <summary>

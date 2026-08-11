@@ -266,6 +266,64 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer)]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
+    public async Task UpdateLayerMetadata_WithLicenseOnly_UsesLicenseAsGeoServicesCopyright()
+    {
+        using var content = new StringContent(
+            """{"license":"MIT","attribution":""}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+        response.Be200Ok();
+
+        foreach (var path in new[]
+                 {
+                     "/rest/services/test/FeatureServer/0?f=json",
+                     "/rest/services/test/MapServer/0?f=json"
+                 })
+        {
+            var publicResponse = await _client.GetAsync(path);
+            publicResponse.Be200Ok();
+            using var publicDocument = JsonDocument.Parse(await publicResponse.Content.ReadAsStringAsync());
+            publicDocument.RootElement.GetProperty("copyrightText").GetString().Should().Be("MIT");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithLaterExistingTimestamp_DoesNotRegressUpdatedAt()
+    {
+        var futureUpdatedAt = DateTimeOffset.UtcNow.AddDays(1);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == 0);
+        var resources = snapshot.Graph.Resources
+            .Select(resource => resource.Metadata.Id == publication.ResourceId
+                ? resource with
+                {
+                    Metadata = resource.Metadata with { UpdatedAt = futureUpdatedAt }
+                }
+                : resource)
+            .ToArray();
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = resources
+        }, schema: _fixture.MetadataGraphSchema);
+
+        using var content = new StringContent("""{"license":"MIT"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.Be200Ok();
+        GetLayerMetadata(0).UpdatedAt.Should().Be(futureUpdatedAt);
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithProtocolSpecificNameCollision_UpdatesOnlyFeatureServerResource()
     {

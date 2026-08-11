@@ -133,18 +133,35 @@ internal sealed class StacMappingService
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
             License = resource.ResolveLicense(),
-            Providers = string.IsNullOrWhiteSpace(resource.Metadata.Publisher)
-                ? null
-                : ImmutableArray.Create(new StacProvider
-                {
-                    Name = resource.Metadata.Publisher.Trim(),
-                    Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Producer)
-                }),
+            Providers = BuildProviders(resource.Metadata),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
             Links = links.ToImmutable(),
             StacExtensions = resource.ResolveDeclaredExtensions()
         };
+    }
+
+    private static ImmutableArray<StacProvider>? BuildProviders(MetadataV2ObjectMetadata metadata)
+    {
+        var publisher = string.IsNullOrWhiteSpace(metadata.Publisher)
+            ? null
+            : metadata.Publisher.Trim();
+        var attribution = string.IsNullOrWhiteSpace(metadata.Attribution)
+            ? null
+            : metadata.Attribution.Trim();
+        if (publisher is null)
+        {
+            return attribution is null
+                ? null
+                : ImmutableArray.Create(new StacProvider { Name = attribution });
+        }
+
+        return ImmutableArray.Create(new StacProvider
+        {
+            Name = publisher,
+            Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Producer),
+            Description = attribution
+        });
     }
 
     internal static string ResolveDisplayName(

@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Admin.Domain;
@@ -10,6 +12,10 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed record LayerSourceGovernance
 {
+    private const string SpdxIdentifierResourceName =
+        "Honua.Core.Features.Admin.Domain.spdx-identifiers.json";
+    private static readonly SpdxIdentifierCatalog SpdxIdentifiers = LoadSpdxIdentifiers();
+
     /// <summary>Canonical owner marker for links managed by the layer source-governance surface.</summary>
     public const string LinkManager = "layer-source-governance";
 
@@ -351,8 +357,15 @@ public sealed record LayerSourceGovernance
                     IsValidSpdxIdString(token[additionReferencePrefix.Length..]);
             }
 
-            return (role == SpdxIdentifierRole.License || !hasOrLaterSuffix) &&
-                IsValidSpdxIdString(token);
+            if (!IsValidSpdxIdString(token))
+            {
+                return false;
+            }
+
+            var identifier = token.ToString();
+            return role == SpdxIdentifierRole.License
+                ? SpdxIdentifiers.Licenses.Contains(identifier)
+                : !hasOrLaterSuffix && SpdxIdentifiers.Exceptions.Contains(identifier);
         }
 
         if (hasOrLaterSuffix || colon != token.LastIndexOf(':'))
@@ -428,6 +441,49 @@ public sealed record LayerSourceGovernance
 
     private static bool IsIdentifierCharacter(char value)
         => char.IsAsciiLetterOrDigit(value) || value is '-' or '.' or '+' or ':';
+
+    private static SpdxIdentifierCatalog LoadSpdxIdentifiers()
+    {
+        var assembly = typeof(LayerSourceGovernance).Assembly;
+        using var stream = assembly.GetManifestResourceStream(SpdxIdentifierResourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded SPDX identifier catalog '{SpdxIdentifierResourceName}' was not found.");
+        using var document = JsonDocument.Parse(stream);
+        var root = document.RootElement;
+        return new SpdxIdentifierCatalog(
+            ReadIdentifierSet(root, "licenses"),
+            ReadIdentifierSet(root, "exceptions"));
+    }
+
+    private static FrozenSet<string> ReadIdentifierSet(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var values) || values.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException(
+                $"Embedded SPDX identifier catalog has no '{propertyName}' array.");
+        }
+
+        var identifiers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values.EnumerateArray())
+        {
+            if (value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } identifier)
+            {
+                identifiers.Add(identifier);
+            }
+        }
+
+        if (identifiers.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Embedded SPDX identifier catalog has an empty '{propertyName}' array.");
+        }
+
+        return identifiers.ToFrozenSet(StringComparer.Ordinal);
+    }
+
+    private sealed record SpdxIdentifierCatalog(
+        FrozenSet<string> Licenses,
+        FrozenSet<string> Exceptions);
 
     private enum SpdxIdentifierRole
     {
