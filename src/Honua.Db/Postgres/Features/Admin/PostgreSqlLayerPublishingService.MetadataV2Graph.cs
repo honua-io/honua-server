@@ -513,16 +513,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     return resource;
                 }
 
-                var hasEnabledBinding = bindings.Any(binding =>
-                    string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
-                    binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
                 return resource with
                 {
                     Status = resource.Status with
                     {
-                        Lifecycle = hasEnabledBinding
-                            ? MetadataV2LifecycleStatus.Active
-                            : MetadataV2LifecycleStatus.Retired,
+                        Lifecycle = DeriveResourceLifecycleFromBindings(bindings, resource.Metadata.Id),
                     },
                 };
             })
@@ -2482,10 +2477,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
             graph.StorageBindings,
             binding,
             static item => item.Metadata.Id);
-        var hasEnabledBinding = storageBindings.Any(candidate =>
-            string.Equals(candidate.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
-            candidate.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
-        resource = resource with { Status = LayerReadyStatus(hasEnabledBinding, now) };
+        resource = resource with
+        {
+            Status = resource.Status with
+            {
+                Lifecycle = DeriveResourceLifecycleFromBindings(storageBindings, resource.Metadata.Id),
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = now,
+            },
+        };
 
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
         service ??= BuildPublishedService(graph, serviceName, srid, now);
@@ -2614,12 +2614,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 changed = true;
-                var hasEnabledBinding = storageBindings.Any(binding =>
-                    string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
-                    binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
-                var resourceLifecycle = hasEnabledBinding
-                    ? MetadataV2LifecycleStatus.Active
-                    : MetadataV2LifecycleStatus.Retired;
+                var resourceLifecycle = DeriveResourceLifecycleFromBindings(
+                    storageBindings,
+                    resource.Metadata.Id);
                 return resource with { Status = SetLifecycle(resource.Status, resourceLifecycle) };
             })
             .ToArray();
@@ -3273,6 +3270,34 @@ internal sealed partial class PostgreSqlLayerPublishingService
             State = MetadataV2OperationalState.Ready,
             ObservedAt = now
         };
+
+    private static MetadataV2LifecycleStatus DeriveResourceLifecycleFromBindings(
+        IEnumerable<MetadataV2StorageBinding> bindings,
+        string resourceId)
+    {
+        var lifecycles = bindings
+            .Where(binding => string.Equals(binding.ResourceId, resourceId, StringComparison.Ordinal))
+            .Select(binding => binding.Status.Lifecycle)
+            .ToHashSet();
+        if (lifecycles.Contains(MetadataV2LifecycleStatus.Active))
+        {
+            return MetadataV2LifecycleStatus.Active;
+        }
+        if (lifecycles.Contains(MetadataV2LifecycleStatus.Deprecated))
+        {
+            return MetadataV2LifecycleStatus.Deprecated;
+        }
+        if (lifecycles.Contains(MetadataV2LifecycleStatus.Draft))
+        {
+            return MetadataV2LifecycleStatus.Draft;
+        }
+        if (lifecycles.Contains(MetadataV2LifecycleStatus.Archived))
+        {
+            return MetadataV2LifecycleStatus.Archived;
+        }
+
+        return MetadataV2LifecycleStatus.Retired;
+    }
 
     private static List<T> UpsertById<T>(
         IReadOnlyList<T> items,

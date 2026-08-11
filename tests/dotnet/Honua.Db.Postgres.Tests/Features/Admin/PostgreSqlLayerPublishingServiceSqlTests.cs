@@ -2830,6 +2830,31 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         firstDisabled.Publications.Single(publication => publication.Metadata.Id == "pub-8")
             .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
 
+        var deprecatedStatus = activeStatus with { Lifecycle = MetadataV2LifecycleStatus.Deprecated };
+        var deprecatedSiblingGraph = graph with
+        {
+            StorageBindings =
+            [
+                graph.StorageBindings[0],
+                graph.StorageBindings[1] with { Status = deprecatedStatus },
+            ],
+            Publications =
+            [
+                graph.Publications[0],
+                graph.Publications[1] with { Status = deprecatedStatus },
+            ],
+        };
+        var targetDisabledWithDeprecatedSibling =
+            PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
+                deprecatedSiblingGraph,
+                [7],
+                enabled: false,
+                disabledAt);
+        targetDisabledWithDeprecatedSibling.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Deprecated);
+        targetDisabledWithDeprecatedSibling.Publications.Single(publication => publication.Metadata.Id == "pub-8")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Deprecated);
+
         var allDisabled = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
             firstDisabled,
             [8],
