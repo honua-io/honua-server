@@ -19,7 +19,14 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Publication publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return publication.IsRoutable(snapshot.ResolveResource(publication));
+        var resource = snapshot.ResolveResource(publication);
+        if (!publication.IsRoutable(resource))
+        {
+            return false;
+        }
+
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return binding is null || binding.IsRoutable(resource);
     }
 
     /// <summary>

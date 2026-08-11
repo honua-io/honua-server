@@ -157,6 +157,72 @@ public sealed class MetadataV2GraphSnapshotTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void SnapshotIsRoutable_RequiresServingResolvedBindingLifecycle()
+    {
+        var graph = SampleGraph();
+        var publication = graph.Publications.Single();
+        var binding = graph.StorageBindings.Single();
+
+        foreach (var lifecycle in new[]
+                 {
+                     MetadataV2LifecycleStatus.Draft,
+                     MetadataV2LifecycleStatus.Retired,
+                     MetadataV2LifecycleStatus.Archived,
+                 })
+        {
+            var snapshot = new MetadataV2GraphSnapshot(
+                graph with
+                {
+                    StorageBindings =
+                    [
+                        binding with { Status = new MetadataV2Status { Lifecycle = lifecycle } }
+                    ]
+                },
+                $"\"{lifecycle}\"",
+                DateTimeOffset.UtcNow);
+
+            snapshot.IsRoutable(publication).Should().BeFalse();
+        }
+
+        var deprecatedSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                StorageBindings =
+                [
+                    binding with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated }
+                    }
+                ]
+            },
+            "\"deprecated\"",
+            DateTimeOffset.UtcNow);
+        deprecatedSnapshot.IsRoutable(publication).Should().BeTrue();
+
+        var resource = graph.Resources.Single();
+        var bindinglessPublication = publication with { StorageBindingId = null };
+        var bindinglessSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                Resources =
+                [
+                    resource with
+                    {
+                        Type = MetadataV2ResourceType.Document,
+                        StorageBindingIds = [],
+                        PrimaryStorageBindingId = null,
+                    }
+                ],
+                StorageBindings = [],
+                Publications = [bindinglessPublication],
+            },
+            "\"bindingless\"",
+            DateTimeOffset.UtcNow);
+        bindinglessSnapshot.IsRoutable(bindinglessPublication).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void IsRoutable_RequiresServingBindingAndResourceLifecycle()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
