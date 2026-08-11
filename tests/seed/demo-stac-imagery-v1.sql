@@ -67,6 +67,22 @@ SELECT set_config('honua.seed_schema', :'schema', false);
 --    share the Honua features table.
 -- ---------------------------------------------------------------------------
 
+-- The metadata graph can outlive the physical demo relation across database
+-- resets or partial reseeds. Recreate the migration-compatible relation before
+-- publishing its binding so the seed never advertises a table that is absent.
+CREATE TABLE IF NOT EXISTS features (
+    objectid BIGSERIAL PRIMARY KEY,
+    layer_id INT NOT NULL,
+    geometry GEOMETRY,
+    attributes JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
+CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
+CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+
 DELETE FROM features WHERE layer_id IN (90810, 90820);
 
 INSERT INTO features (objectid, layer_id, geometry, attributes)
