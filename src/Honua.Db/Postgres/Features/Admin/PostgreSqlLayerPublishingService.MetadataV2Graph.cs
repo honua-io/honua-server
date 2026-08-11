@@ -406,6 +406,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Select(item => item.Metadata.Id)
             .Where(id => !previousBindingIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
+        var previousBindingsById = previousGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var persistedBindingsById = persistedGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var rebasedBindings = currentGraph.StorageBindings
+            .Select(binding => previousBindingsById.TryGetValue(binding.Metadata.Id, out var previous) &&
+                               persistedBindingsById.TryGetValue(binding.Metadata.Id, out var persisted)
+                ? RestoreStorageBindingMutation(binding, previous, persisted)
+                : binding)
+            .ToArray();
+        var lifecycleMutatedResourceIds = persistedGraph.StorageBindings
+            .Where(persisted =>
+                previousBindingsById.TryGetValue(persisted.Metadata.Id, out var previous) &&
+                previous.Status.Lifecycle != persisted.Status.Lifecycle)
+            .SelectMany(persisted =>
+            {
+                var previous = previousBindingsById[persisted.Metadata.Id];
+                return new[] { previous.ResourceId, persisted.ResourceId };
+            })
+            .ToHashSet(StringComparer.Ordinal);
         var previousResourceIds = previousGraph.Resources
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
@@ -434,15 +454,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     other.StyleResourceIds.Contains(resource.Metadata.Id, StringComparer.Ordinal)))
             .ToArray();
 
-        var previousBindingsById = previousGraph.StorageBindings
-            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
-        var persistedBindingsById = persistedGraph.StorageBindings
-            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
-        var bindings = currentGraph.StorageBindings
-            .Select(binding => previousBindingsById.TryGetValue(binding.Metadata.Id, out var previous) &&
-                               persistedBindingsById.TryGetValue(binding.Metadata.Id, out var persisted)
-                ? RestoreStorageBindingMutation(binding, previous, persisted)
-                : binding)
+        var bindings = rebasedBindings
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
                 HasStorageBindingBeenRepurposed(binding, persistedBindingsById[binding.Metadata.Id]) &&
                 resources.Any(resource =>
@@ -452,6 +464,37 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 resources.Any(resource =>
                     string.Equals(resource.PrimaryStorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) ||
                     resource.StorageBindingIds.Contains(binding.Metadata.Id, StringComparer.Ordinal)))
+            .ToArray();
+        var resourceLifecycleRecomputeIds = currentGraph.Resources
+            .Where(current =>
+                lifecycleMutatedResourceIds.Contains(current.Metadata.Id) &&
+                previousResourcesById.TryGetValue(current.Metadata.Id, out var previous) &&
+                persistedResourcesById.TryGetValue(current.Metadata.Id, out var persisted) &&
+                current.Status.Lifecycle == persisted.Status.Lifecycle &&
+                previous.Status.Lifecycle != persisted.Status.Lifecycle)
+            .Select(resource => resource.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        resources = resources
+            .Select(resource =>
+            {
+                if (!resourceLifecycleRecomputeIds.Contains(resource.Metadata.Id))
+                {
+                    return resource;
+                }
+
+                var hasEnabledBinding = bindings.Any(binding =>
+                    string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                    binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
+                return resource with
+                {
+                    Status = resource.Status with
+                    {
+                        Lifecycle = hasEnabledBinding
+                            ? MetadataV2LifecycleStatus.Active
+                            : MetadataV2LifecycleStatus.Retired,
+                    },
+                };
+            })
             .ToArray();
 
         var previousConnectionIds = previousGraph.Connections

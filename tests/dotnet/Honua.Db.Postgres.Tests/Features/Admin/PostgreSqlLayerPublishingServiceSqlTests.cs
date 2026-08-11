@@ -191,6 +191,76 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal("pub-original", "pub-concurrent");
     }
 
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_DerivesResourceLifecycleFromRebasedBindings()
+    {
+        var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
+                    StorageBindingIds = ["binding-target", "binding-sibling"],
+                    PrimaryStorageBindingId = "binding-target",
+                    Status = retiredStatus,
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-target" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 7,
+                    Status = retiredStatus,
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-sibling" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 8,
+                    Status = retiredStatus,
+                },
+            ],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Resources = [previous.Resources[0] with { Status = activeStatus }],
+            StorageBindings =
+            [
+                previous.StorageBindings[0] with { Status = activeStatus },
+                previous.StorageBindings[1],
+            ],
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            StorageBindings =
+            [
+                persisted.StorageBindings[0],
+                persisted.StorageBindings[1] with { Status = activeStatus },
+            ],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T20:00:00Z", CultureInfo.InvariantCulture));
+
+        compensation.StorageBindings.Single(binding => binding.Metadata.Id == "binding-target")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+        compensation.StorageBindings.Single(binding => binding.Metadata.Id == "binding-sibling")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        compensation.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+    }
+
     [Theory]
     [InlineData("resource-concurrent", "binding-failed", true)]
     [InlineData("resource-failed", "binding-concurrent", true)]
