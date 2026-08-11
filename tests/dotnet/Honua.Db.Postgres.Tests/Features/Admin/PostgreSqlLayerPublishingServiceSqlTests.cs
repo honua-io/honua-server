@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Reflection;
+using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Admin;
@@ -468,6 +469,162 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Spatial.StorageCrs.Should().Be(previousResource.Spatial.StorageCrs);
         resource.Spatial.Bbox.Should().Be(concurrentBbox, "a later edit to the same field wins");
         resource.Status.Should().Be(previousResource.Status);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresBindingAndConnectionFieldsThreeWay()
+    {
+        var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);
+        var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
+        var previousBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "binding-layer-7",
+                Name = "imported-binding",
+                UpdatedAt = originalAt,
+            },
+            ResourceId = "resource-original",
+            ConnectionId = "connection-original",
+            StorageType = MetadataV2StorageType.ObjectPrefix,
+            Locator = "legacy/object",
+            StorageLayerId = 99,
+            Capabilities = [MetadataV2StorageBindingCapability.Download],
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["source"] = JsonSerializer.SerializeToElement("legacy"),
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Draft,
+                State = MetadataV2OperationalState.Unknown,
+                ObservedAt = originalAt,
+            },
+        };
+        var persistedBinding = previousBinding with
+        {
+            Metadata = previousBinding.Metadata with
+            {
+                Name = "binding-layer-7",
+                UpdatedAt = publishedAt,
+            },
+            ResourceId = "resource-layer-7",
+            ConnectionId = "connection-published",
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "honua.features",
+            StorageLayerId = 7,
+            Capabilities =
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Filter,
+            ],
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["schemaName"] = JsonSerializer.SerializeToElement("honua"),
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = publishedAt,
+            },
+        };
+        var currentBinding = persistedBinding with
+        {
+            Locator = "concurrent.table",
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["concurrent"] = JsonSerializer.SerializeToElement(true),
+            },
+        };
+        var previousConnection = new MetadataV2Connection
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "connection-published",
+                Title = "Imported connection",
+                UpdatedAt = originalAt,
+            },
+            Type = MetadataV2ConnectionType.HttpApi,
+            Provider = "legacy",
+            Endpoint = new Uri("https://legacy.example.test"),
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["mode"] = JsonSerializer.SerializeToElement("legacy"),
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Draft,
+                State = MetadataV2OperationalState.Unknown,
+                ObservedAt = originalAt,
+            },
+        };
+        var persistedConnection = previousConnection with
+        {
+            Metadata = previousConnection.Metadata with
+            {
+                Title = "PostGIS secure connection",
+                UpdatedAt = publishedAt,
+            },
+            Type = MetadataV2ConnectionType.Database,
+            Provider = "postgis",
+            Endpoint = null,
+            Options = new Dictionary<string, JsonElement>(),
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = publishedAt,
+            },
+        };
+        var currentConnection = persistedConnection with { SecretRef = "concurrent-secret" };
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            StorageBindings = [previousBinding],
+            Connections = [previousConnection],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            StorageBindings = [persistedBinding],
+            Connections = [persistedConnection],
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            StorageBindings = [currentBinding],
+            Connections = [currentConnection],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var binding = compensation.StorageBindings.Should().ContainSingle().Which;
+        binding.Metadata.Name.Should().Be(previousBinding.Metadata.Name);
+        binding.Metadata.UpdatedAt.Should().Be(originalAt);
+        binding.ResourceId.Should().Be(previousBinding.ResourceId);
+        binding.ConnectionId.Should().Be(previousBinding.ConnectionId);
+        binding.StorageType.Should().Be(previousBinding.StorageType);
+        binding.Locator.Should().Be("concurrent.table", "a later edit to the same field wins");
+        binding.StorageLayerId.Should().Be(previousBinding.StorageLayerId);
+        binding.Capabilities.Should().Equal(previousBinding.Capabilities);
+        binding.Options.Should().BeEquivalentTo(previousBinding.Options);
+        binding.Status.Should().Be(previousBinding.Status);
+        binding.Extensions.Should().ContainKey("concurrent");
+
+        var connection = compensation.Connections.Should().ContainSingle().Which;
+        connection.Metadata.Title.Should().Be(previousConnection.Metadata.Title);
+        connection.Metadata.UpdatedAt.Should().Be(originalAt);
+        connection.Type.Should().Be(previousConnection.Type);
+        connection.Provider.Should().Be(previousConnection.Provider);
+        connection.Endpoint.Should().Be(previousConnection.Endpoint);
+        connection.SecretRef.Should().Be("concurrent-secret", "a later edit to the same field wins");
+        connection.Options.Should().BeEquivalentTo(previousConnection.Options);
+        connection.Status.Should().Be(previousConnection.Status);
     }
 
     [Fact]

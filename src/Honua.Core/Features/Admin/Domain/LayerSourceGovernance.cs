@@ -138,11 +138,17 @@ public sealed record LayerSourceGovernance
     public IReadOnlyList<MetadataV2Link> ToMetadataLinks()
     {
         var links = new List<MetadataV2Link>(2);
-        if (LicenseUrl is not null)
+        var resolvedLicenseUrl = LicenseUrl;
+        if (resolvedLicenseUrl is null && IsSpdxLicenseIdentifier(License))
+        {
+            resolvedLicenseUrl = $"https://spdx.org/licenses/{License}.html";
+        }
+
+        if (resolvedLicenseUrl is not null)
         {
             links.Add(new MetadataV2Link
             {
-                Href = LicenseUrl,
+                Href = resolvedLicenseUrl,
                 Rel = "license",
                 Title = License,
                 ManagedBy = LinkManager

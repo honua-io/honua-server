@@ -8,6 +8,45 @@ namespace Honua.Core.Tests.Features.Admin;
 
 public sealed class LayerSourceGovernanceTests
 {
+    [Fact]
+    public void ToMetadataLinks_WithStandaloneSpdxLicense_DerivesCanonicalLicenseUrl()
+    {
+        var accepted = LayerSourceGovernance.TryCreate(
+            "MIT",
+            attribution: null,
+            publisher: null,
+            licenseUrl: null,
+            sourceUrl: null,
+            out var governance,
+            out var error);
+
+        var link = governance!.ToMetadataLinks().Should().ContainSingle().Which;
+
+        accepted.Should().BeTrue();
+        error.Should().BeNull();
+        link.Href.Should().Be("https://spdx.org/licenses/MIT.html");
+        link.Rel.Should().Be("license");
+        link.Title.Should().Be("MIT");
+        link.ManagedBy.Should().Be(LayerSourceGovernance.LinkManager);
+    }
+
+    [Fact]
+    public void ToMetadataLinks_WithSpdxExpressionWithoutUrl_DoesNotInventLicenseUrl()
+    {
+        var accepted = LayerSourceGovernance.TryCreate(
+            "MIT OR Apache-2.0",
+            attribution: null,
+            publisher: null,
+            licenseUrl: null,
+            sourceUrl: null,
+            out var governance,
+            out var error);
+
+        accepted.Should().BeTrue();
+        error.Should().BeNull();
+        governance!.ToMetadataLinks().Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("+")]
     [InlineData(":")]

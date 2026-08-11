@@ -405,11 +405,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var bindings = currentGraph.StorageBindings
             .Select(binding => previousBindingsById.TryGetValue(binding.Metadata.Id, out var previous) &&
                                persistedBindingsById.TryGetValue(binding.Metadata.Id, out var persisted)
-                ? RestoreUnchangedEntity(
-                    binding,
-                    previous,
-                    persisted,
-                    MetadataV2JsonContext.Default.MetadataV2StorageBinding)
+                ? RestoreStorageBindingMutation(binding, previous, persisted)
                 : binding)
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
                 publications.Any(publication =>
@@ -433,11 +429,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var connections = currentGraph.Connections
             .Select(connection => previousConnectionsById.TryGetValue(connection.Metadata.Id, out var previous) &&
                                   persistedConnectionsById.TryGetValue(connection.Metadata.Id, out var persisted)
-                ? RestoreUnchangedEntity(
-                    connection,
-                    previous,
-                    persisted,
-                    MetadataV2JsonContext.Default.MetadataV2Connection)
+                ? RestoreConnectionMutation(connection, previous, persisted)
                 : connection)
             .Where(connection => !addedConnectionIds.Contains(connection.Metadata.Id) ||
                 bindings.Any(binding =>
@@ -502,7 +494,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Resource persisted)
         => current with
         {
-            Metadata = RestoreResourceMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
             Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
             StorageBindingIds = RestoreResourceMutationValue(
                 current.StorageBindingIds,
@@ -602,7 +594,63 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 static value => new MetadataV2Resource { Extensions = value }),
         };
 
-    private static MetadataV2ObjectMetadata RestoreResourceMetadataMutation(
+    private static MetadataV2StorageBinding RestoreStorageBindingMutation(
+        MetadataV2StorageBinding current,
+        MetadataV2StorageBinding previous,
+        MetadataV2StorageBinding persisted)
+        => current with
+        {
+            Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            ResourceId = RestoreMutationValue(current.ResourceId, previous.ResourceId, persisted.ResourceId),
+            ConnectionId = RestoreMutationValue(current.ConnectionId, previous.ConnectionId, persisted.ConnectionId),
+            StorageType = RestoreMutationValue(current.StorageType, previous.StorageType, persisted.StorageType),
+            Locator = RestoreMutationValue(current.Locator, previous.Locator, persisted.Locator),
+            StorageLayerId = RestoreMutationValue(
+                current.StorageLayerId,
+                previous.StorageLayerId,
+                persisted.StorageLayerId),
+            Capabilities = RestoreMutationSequence(
+                current.Capabilities,
+                previous.Capabilities,
+                persisted.Capabilities),
+            Options = RestoreStorageBindingMutationValue(
+                current.Options,
+                previous.Options,
+                persisted.Options,
+                static value => new MetadataV2StorageBinding { Options = value }),
+            Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
+            Extensions = RestoreStorageBindingMutationValue(
+                current.Extensions,
+                previous.Extensions,
+                persisted.Extensions,
+                static value => new MetadataV2StorageBinding { Extensions = value }),
+        };
+
+    private static MetadataV2Connection RestoreConnectionMutation(
+        MetadataV2Connection current,
+        MetadataV2Connection previous,
+        MetadataV2Connection persisted)
+        => current with
+        {
+            Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
+            Provider = RestoreMutationValue(current.Provider, previous.Provider, persisted.Provider),
+            Endpoint = RestoreMutationValue(current.Endpoint, previous.Endpoint, persisted.Endpoint),
+            SecretRef = RestoreMutationValue(current.SecretRef, previous.SecretRef, persisted.SecretRef),
+            Options = RestoreConnectionMutationValue(
+                current.Options,
+                previous.Options,
+                persisted.Options,
+                static value => new MetadataV2Connection { Options = value }),
+            Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
+            Extensions = RestoreConnectionMutationValue(
+                current.Extensions,
+                previous.Extensions,
+                persisted.Extensions,
+                static value => new MetadataV2Connection { Extensions = value }),
+        };
+
+    private static MetadataV2ObjectMetadata RestoreObjectMetadataMutation(
         MetadataV2ObjectMetadata current,
         MetadataV2ObjectMetadata previous,
         MetadataV2ObjectMetadata persisted)
@@ -714,6 +762,30 @@ internal sealed partial class PostgreSqlLayerPublishingService
             persisted,
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Resource);
+
+    private static T RestoreStorageBindingMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2StorageBinding> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2StorageBinding);
+
+    private static T RestoreConnectionMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2Connection> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2Connection);
 
     private static T RestoreMetadataMutationValue<T>(
         T current,
