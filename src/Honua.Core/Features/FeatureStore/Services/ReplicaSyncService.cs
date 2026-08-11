@@ -118,8 +118,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // server edit had already changed, and the write would then accept it and overwrite the very
             // edit this mode promises to withhold (#2430).
             var preconditionTokens = new Dictionary<long, string>();
-            var boundObjectIds = !request.LastWriteWins && serverStateCapturer is not null && uploadedObjectIds.Count > 0;
-            if (boundObjectIds)
+            var bindManualReviewEdits = !request.LastWriteWins && serverStateCapturer is not null && uploadedObjectIds.Count > 0;
+            if (bindManualReviewEdits)
             {
                 var tokenTargets = uploadedObjectIds
                     .Select(objectId => new ReplicaConflictCaptureTarget(
@@ -242,6 +242,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 ? await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false)
                 : 0L;
             var withheldBaseGeneration = preBatchGeneration;
+            // Last-write-wins may overwrite the server state represented by the conflict envelope, but
+            // only that state. Binding the write to the token captured with the envelope prevents an
+            // edit that lands after capture from being overwritten without ever appearing in the
+            // durable conflict record (#2430). An absent capture is bound as expected absence.
+            var lastWriteWinsConflictPreconditions = new Dictionary<long, FeatureEditPrecondition>();
 
             // Snapshot the server side of every conflicting feature HERE: after detection, before the
             // uploaded edits apply. Capturing earlier let a server edit landing in between be flagged
@@ -262,22 +267,40 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 var captured = await serverStateCapturer.CaptureAsync(targets, cancellationToken)
                     .ConfigureAwait(false);
                 var capturedTokens = new Dictionary<long, string>();
+                if (request.LastWriteWins)
+                {
+                    foreach (var target in targets)
+                    {
+                        lastWriteWinsConflictPreconditions[target.ObjectId] = new FeatureEditPrecondition
+                        {
+                            ObjectId = target.ObjectId,
+                            ExpectedRowAbsent = true,
+                        };
+                    }
+                }
+
                 foreach (var entry in captured)
                 {
                     serverStates[entry.Key] = entry.Value.StateJson;
                     capturedTokens[entry.Key.ObjectId] = entry.Value.StateToken;
+                    if (request.LastWriteWins)
+                    {
+                        lastWriteWinsConflictPreconditions[entry.Key.ObjectId] = new FeatureEditPrecondition
+                        {
+                            ObjectId = entry.Key.ObjectId,
+                            ExpectedStateToken = entry.Value.StateToken,
+                        };
+                    }
                 }
 
-                // The conflict record already exists, so make each captured envelope and a safe
-                // pre-capture base durable before the next cancellable operation. A successful layer
-                // later advances that base to the cursor its final state describes. If work aborts
-                // below, the conservative earlier base keeps later edits visible without leaving the
-                // record permanently incomplete (#2430).
+                // The conflict record already exists, so make each captured envelope durable before
+                // the next cancellable operation. Deliberately do NOT stamp the resolution base yet:
+                // that field is the detection-complete marker, and the upload outcome is not known
+                // until ApplyAsync returns and per-edit attribution is durable below (#2430).
                 await PersistCapturedServerStatesAsync(
                         conflicts,
                         layerConflictStartIndex,
                         serverStates,
-                        preBatchGeneration,
                         canRecordConflicts,
                         CancellationToken.None)
                     .ConfigureAwait(false);
@@ -296,7 +319,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 // post-base change and overwrite the newer state with the stale snapshot. The fallback
                 // is the pre-capture cursor, which fails safe in the other direction: the probe then
                 // finds the edit and answers Stale rather than overwriting it (#2430).
-                if (boundObjectIds)
+                if (bindManualReviewEdits)
                 {
                     var confirmation = await serverStateCapturer
                         .CaptureTokensAsync(targets, cancellationToken).ConfigureAwait(false);
@@ -313,7 +336,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             }
 
             var preconditions = ImmutableArray<FeatureEditPrecondition>.Empty;
-            if (boundObjectIds && editsToApply.Count > 0)
+            if (bindManualReviewEdits && editsToApply.Count > 0)
             {
                 // Two kinds of edit cannot share the ordinary state-token binding used for uploaded
                 // mutations, and manual review withholds rather than dispatching either unguarded
@@ -357,6 +380,31 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         ExpectedStateToken = preconditionTokens[objectId],
                     })
                     .ToImmutableArray();
+            }
+            else if (request.LastWriteWins && lastWriteWinsConflictPreconditions.Count > 0 && editsToApply.Count > 0)
+            {
+                // One token cannot guard several sequential mutations of the same object: the first
+                // successful mutation necessarily invalidates it for the second. Fail this layer
+                // closed instead of dispatching any part of a batch whose conflicting overwrite cannot
+                // be tied to the captured envelope without corrupting per-edit slot attribution.
+                var repeatedBoundTarget = editsToApply
+                    .Where(edit => edit.ObjectId is { } id && lastWriteWinsConflictPreconditions.ContainsKey(id))
+                    .GroupBy(edit => edit.ObjectId!.Value)
+                    .Any(group => group.Count() > 1);
+                if (repeatedBoundTarget)
+                {
+                    editsToApply.Clear();
+                    anyFailure = true;
+                    firstFailure ??=
+                        "Some last-write-wins conflict edits could not be applied because several operations target the same feature and cannot all be bound to the captured server state. Re-synchronize and retry the edits separately.";
+                }
+                else
+                {
+                    preconditions = editsToApply
+                        .Where(edit => edit.ObjectId is { } id && lastWriteWinsConflictPreconditions.ContainsKey(id))
+                        .Select(edit => lastWriteWinsConflictPreconditions[edit.ObjectId!.Value])
+                        .ToImmutableArray();
+                }
             }
 
             var applyResult = editsToApply.Count == 0
@@ -509,7 +557,6 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         int layerConflictStartIndex,
         Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
-        long safeBaseGeneration,
         bool canRecordConflicts,
         CancellationToken cancellationToken)
     {
@@ -539,7 +586,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                             ClientStateJson: null,
                             ServerStateJson: serverStateJson,
                             ClientEditApplied: null,
-                            ResolutionBaseGeneration: safeBaseGeneration),
+                            ResolutionBaseGeneration: null),
                         cancellationToken)
                     .ConfigureAwait(false);
             }

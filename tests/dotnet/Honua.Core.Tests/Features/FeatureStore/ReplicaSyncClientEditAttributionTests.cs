@@ -309,8 +309,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates
             .Select(update => update.ResolutionBaseGeneration)
             .Should().Equal(
-                [50, 60],
-                "capture first records the safe base, then advances it to the post-capture cursor");
+                [null, 60],
+                "capture persists the envelope without completing detection, then the outcome stamps the base");
     }
 
     [UnitTest]
@@ -337,7 +337,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates
             .Select(update => update.ResolutionBaseGeneration)
             .Should().Equal(
-                [50, 60],
+                [null, 60],
                 "the non-conflicting edit's token is not part of the withheld snapshot confirmation");
     }
 
@@ -367,8 +367,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates
             .Select(update => update.ResolutionBaseGeneration)
             .Should().Equal(
-                [50, 50],
-                "the early completion marker and final base both stay behind the moved snapshot");
+                [null, 50],
+                "capture remains incomplete and the final base stays behind the moved snapshot");
     }
 
     [UnitTest]
@@ -401,7 +401,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
-    public async Task ApplyUpload_LastWriteWins_DoesNotBindEditsToAPrecondition()
+    public async Task ApplyUpload_LastWriteWins_DoesNotBindNonConflictingEditsToAPrecondition()
     {
         // Last-write-wins exists so the client edit wins over concurrent server state; failing it on a
         // concurrent server edit would invert the mode's contract.
@@ -418,6 +418,30 @@ public sealed class ReplicaSyncClientEditAttributionTests
             serverStateCapturer: new TokenCapturer());
 
         applier.Preconditions.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ApplyUpload_LastWriteWins_BindsConflictToTheCapturedServerEnvelope()
+    {
+        // Last-write-wins may replace the state that conflict detection records, but a server edit
+        // landing after that envelope was captured must not be silently overwritten and omitted from
+        // the durable conflict. The overwrite is therefore bound to the envelope's own token.
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [0], failed: false);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null))),
+            applier,
+            serverStateCapturer: new AbaTokenCapturer());
+
+        applier.Preconditions.Should().ContainSingle()
+            .Which.Should().Match<FeatureEditPrecondition>(
+                p => p.ObjectId == 42 && p.ExpectedStateToken == "token-B-42",
+                "the overwrite must bind to state B captured in the durable envelope, not an earlier read");
     }
 
     /// <summary>Capturer that models A -&gt; B -&gt; A around the envelope read.</summary>
@@ -522,17 +546,16 @@ public sealed class ReplicaSyncClientEditAttributionTests
         persisted.ServerStateJson.Should().Be(
             "server-envelope-42",
             "capture is persisted before the later generation read can abort the sync");
-        persisted.ResolutionBaseGeneration.Should().Be(
-            99,
-            "the same early update leaves a conservative completion marker for recovery");
+        persisted.ResolutionBaseGeneration.Should().BeNull(
+            "the upload outcome is not yet known, so resolution must remain blocked");
     }
 
     [UnitTest]
-    public async Task ApplyUpload_PersistsCompletionMarkerWhenConflictedServerRowIsAbsent()
+    public async Task ApplyUpload_LeavesDetectionIncompleteWhenConflictedServerRowIsAbsentAndUploadAborts()
     {
         // A delete observed after the replica base can conflict with a client update while capture
-        // correctly returns no server envelope. The missing row still represents a completed capture,
-        // so a later failure must not leave the durable record looking detection-incomplete forever.
+        // correctly returns no server envelope. Capture alone does not say whether the client upload
+        // subsequently applied, so a later failure must leave the record detection-incomplete.
         var tracker = new RecordingChangeTracker(
             ServerChange(objectId: 42) with { Operation = FeatureChangeOperation.Delete })
         {
@@ -556,9 +579,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         var record = repository.Upserts.Should().ContainSingle().Subject;
         var persisted = repository.RecordFor(record.ConflictId);
         persisted.ServerStateJson.Should().BeNull("an absent server row has no envelope to store");
-        persisted.ResolutionBaseGeneration.Should().Be(
-            99,
-            "the safe base records that capture completed even when the row was absent");
+        persisted.ResolutionBaseGeneration.Should().BeNull(
+            "the missing upload outcome must keep operator resolution blocked");
     }
 
     /// <summary>Stands in for the adapter seam that owns the wire shape of a feature.</summary>
