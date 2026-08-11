@@ -30,6 +30,9 @@ internal sealed class FeatureServerReplicaClientStateSerializer : IReplicaClient
         // Updates only: a delete carries just an object id, and a create has no server identity yet, so
         // neither has a client state a resolution could write back.
         => edit.Kind == FeatureEditOperationKind.Update && edit.Payload is GeoServicesFeature feature
-            ? FeatureServerEndpoints.SerializeStateEnvelope(feature.Attributes, feature.Geometry)
+            ? FeatureServerEndpoints.SerializeStateEnvelope(
+                feature.Attributes,
+                feature.Geometry,
+                feature.IncludeGeometry)
             : null;
 }

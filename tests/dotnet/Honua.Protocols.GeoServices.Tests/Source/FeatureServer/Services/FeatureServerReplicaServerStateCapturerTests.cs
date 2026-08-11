@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -61,5 +62,33 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
             .Which.Should().Be(new KeyValuePair<long, string>(publicObjectId, FeatureStateToken.Compute(stored)));
         await reader.DidNotReceive()
             .GetAsync(storageLayerId, publicObjectId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CaptureAsync_NullStoredGeometry_PreservesExplicitNullGeometry()
+    {
+        const int publicLayerId = 3;
+        const int storageLayerId = 42;
+        const long objectId = 19;
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "assets", Name = "Assets" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+        };
+        var stored = Feature.Create(objectId, geometry: null);
+        var reader = Substitute.For<IFeatureReader>();
+        reader.GetAsync(storageLayerId, objectId, Arg.Any<CancellationToken>())
+            .Returns(stored);
+        var sut = new FeatureServerReplicaServerStateCapturer(
+            reader,
+            Substitute.For<IFilterExpressionService>(),
+            new Dictionary<int, MetadataV2Resource> { [publicLayerId] = resource });
+
+        var states = await sut.CaptureAsync(
+            [new ReplicaConflictCaptureTarget(publicLayerId, storageLayerId, objectId)]);
+
+        using var envelope = JsonDocument.Parse(states[(publicLayerId, objectId)]);
+        envelope.RootElement.TryGetProperty("geometry", out var geometry).Should().BeTrue();
+        geometry.ValueKind.Should().Be(JsonValueKind.Null);
     }
 }

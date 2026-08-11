@@ -733,6 +733,14 @@ internal sealed class FeatureServerEditsHandler(
             return;
         }
 
+        var expectedAbsentObjectIds = request.Preconditions.IsDefaultOrEmpty
+            ? null
+            : request.Preconditions
+                .Where(static precondition => precondition.ExpectedRowAbsent)
+                .Select(static precondition => precondition.ObjectId)
+                .ToHashSet();
+        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+
         for (var i = 0; i < request.Deletes.Length; i++)
         {
             if (slotObjectIds[i] is not { } objectId)
@@ -743,15 +751,37 @@ internal sealed class FeatureServerEditsHandler(
             Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
             // The pre-read is RLS-enforced on both the fast path and the custom-objectid path,
             // so a null result means the row is missing OR hidden from this caller by RLS. The
-            // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so the
-            // not-found rejection MUST be unconditional — skipping it on the default-OBJECTID
-            // fast path would let a caller delete an RLS-hidden row (#2066).
+            // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so ordinary
+            // requests MUST reject this result — skipping it on the default-OBJECTID fast path would
+            // let a caller delete an RLS-hidden row (#2066). The only exception below is a server-only
+            // expected-absence precondition, which the transactional writer re-validates (#2430).
             if (existingFeature is null)
             {
+                if (expectedAbsentObjectIds?.Contains(objectId) == true && usesInternalObjectIds)
+                {
+                    // This is a server-only idempotent conflict-resolution delete. Absence is the
+                    // precondition, not a validation failure: dispatch the no-op delete so the writer
+                    // reserves the logical key and re-checks absence inside its transaction. A
+                    // concurrent insert then fails the precondition instead of being deleted after
+                    // this pre-read (#2430).
+                    context.DeleteIds.Add(objectId);
+                    context.DeleteResponseObjectIds.Add(objectId);
+                    context.DeleteIndexes.Add(i);
+                    context.DeleteFeatures.Add(null);
+                    continue;
+                }
+
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
-                    code: GeoServicesEditErrorCodes.DeleteNotFound,
-                    description: "Feature not found",
+                    // A custom public object-id value cannot identify a missing storage row. Treat an
+                    // expected-absence resolution as stale instead of falsely finalizing it without
+                    // the provider's storage-key guard.
+                    code: expectedAbsentObjectIds?.Contains(objectId) == true
+                        ? GeoServicesEditErrorCodes.UpdateConflict
+                        : GeoServicesEditErrorCodes.DeleteNotFound,
+                    description: expectedAbsentObjectIds?.Contains(objectId) == true
+                        ? "Feature identity could not be transactionally verified"
+                        : "Feature not found",
                     objectId: objectId);
                 continue;
             }

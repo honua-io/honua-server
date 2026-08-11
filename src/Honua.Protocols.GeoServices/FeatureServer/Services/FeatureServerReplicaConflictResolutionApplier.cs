@@ -140,7 +140,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             ? response.DeleteResults
             : response.UpdateResults;
 
-        if (Succeeded(effectResults, command.Effect))
+        if (Succeeded(effectResults, command.Effect, command.ExpectedRowAbsent))
         {
             return new ReplicaConflictApplyResult(Applied: true, FailureMessage: null);
         }
@@ -320,14 +320,18 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     /// </summary>
     /// <remarks>
     /// A delete that reports <see cref="GeoServicesEditErrorCodes.DeleteNotFound"/> counts as
-    /// committed. That is what makes the resolution write genuinely idempotent, which the recovery path
-    /// depends on: an interrupted attempt whose delete already landed re-dispatches it, and treating
-    /// "already absent" as a failure would release the claim and strand the conflict forever (#2430).
-    /// The desired end state — the feature is gone — holds either way.
+    /// committed when no expected-absence guard was requested. That keeps recovery idempotent after an
+    /// interrupted delete already landed. When the caller captured absence, however, success must come
+    /// from the transactional guard; accepting the handler's pre-read result would let a concurrent
+    /// reinsert escape that guard and strand the conflict in the wrong final state (#2430).
     /// </remarks>
-    private static bool Succeeded(EditResult[]? results, ReplicaConflictResolutionEffect effect)
+    private static bool Succeeded(
+        EditResult[]? results,
+        ReplicaConflictResolutionEffect effect,
+        bool requiresTransactionalAbsenceGuard)
         => results is { Length: > 0 }
-            && Array.TrueForAll(results, r => r.Success || IsAlreadyAbsent(r, effect));
+            && Array.TrueForAll(results, r =>
+                r.Success || (!requiresTransactionalAbsenceGuard && IsAlreadyAbsent(r, effect)));
 
     private static bool PreconditionFailed(EditResult[]? results)
         => results is { Length: > 0 }

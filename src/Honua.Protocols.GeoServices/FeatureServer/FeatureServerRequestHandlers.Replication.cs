@@ -1387,7 +1387,9 @@ internal static partial class FeatureServerEndpoints
     {
         var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
             feature.Geometry, srid: null, geometryLimits: null, includeZ: true, includeM: true);
-        return SerializeStateEnvelope(feature.Attributes, geometry);
+        // A stored feature is a complete snapshot. Preserve an explicit null geometry so a later
+        // keep-server resolution can clear a geometry that the client added after this snapshot.
+        return SerializeStateEnvelope(feature.Attributes, geometry, includeGeometry: true);
     }
 
     /// <summary>
@@ -1479,7 +1481,10 @@ internal static partial class FeatureServerEndpoints
                          .Where(edit => edit.ObjectId.HasValue && edit.Feature is not null))
             {
                 states[(layer.PublicLayerId, edit.Slot)] =
-                    SerializeStateEnvelope(edit.Feature!.Attributes, edit.Feature.Geometry);
+                    SerializeStateEnvelope(
+                        edit.Feature!.Attributes,
+                        edit.Feature.Geometry,
+                        edit.Feature.IncludeGeometry);
             }
         }
 
@@ -1491,18 +1496,25 @@ internal static partial class FeatureServerEndpoints
     /// <c>{"attributes": {...}, "geometry": ...}</c> consumed by the conflict-review diff and the
     /// geometry-conflict classifier, AOT-safely via the source-generated serializers. The geometry is
     /// emitted as GeoServices (Esri) JSON on both the client and server sides so the two are directly
-    /// comparable (#1287); it is omitted entirely when the feature has no geometry.
+    /// comparable (#1287). <paramref name="includeGeometry"/> distinguishes an attribute-only client
+    /// update (property omitted) from an explicit geometry clear (property present with null).
     /// </summary>
     internal static string SerializeStateEnvelope(
         IReadOnlyDictionary<string, object?> attributes,
-        GeoServicesGeometry? geometry)
+        GeoServicesGeometry? geometry,
+        bool includeGeometry)
     {
         var attributeMap = attributes as Dictionary<string, object?> ?? new Dictionary<string, object?>(attributes);
         var attributesJson = System.Text.Json.JsonSerializer.Serialize(
             attributeMap, FeatureServerJsonContext.Default.DictionaryStringObject);
-        if (geometry is null)
+        if (!includeGeometry)
         {
             return $"{{\"attributes\":{attributesJson}}}";
+        }
+
+        if (geometry is null)
+        {
+            return $"{{\"attributes\":{attributesJson},\"geometry\":null}}";
         }
 
         var geometryJson = System.Text.Json.JsonSerializer.Serialize(
