@@ -12126,6 +12126,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_HasCrossProtocolLinks",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_NotFound_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithAttributionOnly_PreservesAttributionAsProvider",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithCompoundSpdxLicense_UsesVariousLicenseToken",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink"
       ],
@@ -21009,6 +21011,8 @@
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_PreservesUnrelatedLinksAndRefreshesLicenseTitle",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithEmptyTimeInfo_ClearsTemporalWithoutError",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithLaterExistingTimestamp_DoesNotRegressUpdatedAt",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithLicenseOnly_UsesLicenseAsGeoServicesCopyright",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithMixedCaseMergeStrategy_NormalizesToCanonical",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WithProtocolSpecificNameCollision_UpdatesOnlyFeatureServerResource",
