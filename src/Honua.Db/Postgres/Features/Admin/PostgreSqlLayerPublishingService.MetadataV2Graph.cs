@@ -891,17 +891,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static IEnumerable<(MetadataLinkIdentity Identity, MetadataV2Link Link)> EnumerateMetadataLinks(
         IReadOnlyList<MetadataV2Link> links)
     {
-        var occurrences = new Dictionary<(string Relation, string? ManagedBy), int>();
-        foreach (var link in links)
+        for (var index = 0; index < links.Count; index++)
         {
-            var stableKey = (Relation: link.Rel.ToUpperInvariant(), ManagedBy: link.ManagedBy);
-            occurrences.TryGetValue(stableKey, out var occurrence);
-            occurrences[stableKey] = occurrence + 1;
-            yield return (new MetadataLinkIdentity(stableKey.Relation, stableKey.ManagedBy, occurrence), link);
+            yield return (new MetadataLinkIdentity(index), links[index]);
         }
     }
 
-    private readonly record struct MetadataLinkIdentity(string Relation, string? ManagedBy, int Occurrence);
+    private readonly record struct MetadataLinkIdentity(int Index);
 
     private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
         MetadataV2ResourceSpatial? current,
@@ -1253,6 +1249,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var matchingFeatureServices = matchingServices
             .Where(candidate => IsFeatureServerService(graph, candidate))
             .ToArray();
+        var exactIdService = matchingFeatureServices.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
+        if (exactIdService is not null)
+        {
+            if (!MetadataV2ServiceProtocols.IsProtocolEnabled(
+                    exactIdService,
+                    MetadataV2ServiceProtocols.FeatureServer))
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Conflict,
+                    $"Service '{serviceName}' does not resolve to one unique Esri FeatureServer service.",
+                    layerId);
+            }
+
+            return exactIdService;
+        }
+
         var protocolEnabledServices = matchingFeatureServices
             .Where(candidate => MetadataV2ServiceProtocols.IsProtocolEnabled(
                 candidate,
@@ -1261,14 +1274,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (protocolEnabledServices.Length > 0)
         {
             // Protocol-disabled compatibility candidates can retain FeatureServer-shaped
-            // publications. Remove them before exact-id precedence so graph mutation and
+            // publications. Remove them from name-based resolution so graph mutation and
             // governance hydration resolve the same enabled service as runtime routing.
             matchingFeatureServices = protocolEnabledServices;
         }
 
-        var service = matchingFeatureServices.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
-        if (service is null && matchingFeatureServices.Length > 1)
+        MetadataV2Service? service = null;
+        if (matchingFeatureServices.Length > 1)
         {
             service = protocolEnabledServices.Length == 1 ? protocolEnabledServices[0] : null;
         }

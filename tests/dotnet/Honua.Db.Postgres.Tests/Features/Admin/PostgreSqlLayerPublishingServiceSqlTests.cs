@@ -511,7 +511,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Href = "https://example.test/failed",
             Title = "Failed title",
         };
-        var concurrentlyEditedFailedLink = persistedLink with { Title = "Concurrent title" };
+        var concurrentlyEditedFailedLink = persistedLink with
+        {
+            Rel = "alternate",
+            Title = "Concurrent title",
+            ManagedBy = "concurrent-writer",
+        };
         var concurrentLink = new MetadataV2Link { Href = "https://example.test/concurrent", Rel = "related" };
         var previousResource = new MetadataV2Resource
         {
@@ -595,7 +600,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
         resource.Metadata.Links.Should().Equal(
-            previousLink with { Title = "Concurrent title" },
+            previousLink with
+            {
+                Rel = "alternate",
+                Title = "Concurrent title",
+                ManagedBy = "concurrent-writer",
+            },
             concurrentLink);
         resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
@@ -1105,7 +1115,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void IndexSourceGovernanceByStorageLayer_WithDisabledExactIdCollision_UsesEnabledService()
+    public void IndexSourceGovernanceByStorageLayer_WithDisabledExactIdCollision_ReturnsConflict()
     {
         var disabledMetadata = new MetadataV2ObjectMetadata { Id = "resource-disabled", License = "MIT" };
         var enabledMetadata = new MetadataV2ObjectMetadata { Id = "resource-enabled", License = "CC-BY-4.0" };
@@ -1153,10 +1163,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ],
         };
 
-        var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
+        var action = () => PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
 
-        result.Should().ContainSingle().Which.Should().Be(
-            new KeyValuePair<int, MetadataV2ObjectMetadata>(8, enabledMetadata));
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
     [Fact]
@@ -1723,6 +1734,55 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updatedFeatureService.Route.Should().Be("/custom/beta/FeatureServer");
         updatedFeatureService.PublicationIds.Should().ContainSingle();
         updated.Publications.Should().ContainSingle().Which.ServiceId.Should().Be("service-feature");
+    }
+
+    [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithDisabledExactIdCollision_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "beta", Name = "disabled-name" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-enabled", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101,
+                },
+            ],
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Parcels",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
     }
 
     [Fact]
