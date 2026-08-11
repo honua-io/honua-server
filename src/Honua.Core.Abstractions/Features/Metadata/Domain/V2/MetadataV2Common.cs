@@ -319,6 +319,9 @@ public sealed record MetadataV2ExtensionPoint
 /// </summary>
 public sealed record MetadataV2ContactPoint
 {
+    /// <summary>Maximum public contact display-name length.</summary>
+    public const int MaxNameLength = 256;
+
     /// <summary>Display name of the contact (person or organization).</summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }

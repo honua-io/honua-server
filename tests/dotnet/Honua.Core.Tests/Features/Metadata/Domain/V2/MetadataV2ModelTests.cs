@@ -483,6 +483,40 @@ public sealed class MetadataV2ModelTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidContactName_ReturnsValidationError(bool oversized)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        var contactName = oversized
+            ? new string('x', MetadataV2ContactPoint.MaxNameLength + 1)
+            : "invalid\u0001contact";
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = contactName },
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            "metadata.contactPoint.name must not exceed",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(contactName, StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]

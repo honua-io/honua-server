@@ -655,6 +655,12 @@ public static class MetadataV2GraphValidator
                 $"{ownerLabel} metadata.publisher must not exceed {MetadataV2ObjectMetadata.MaxPublisherLength} characters or contain control characters.");
         }
 
+        if (metadata.ContactPoint is { Name: { } contactName } &&
+            !IsValidGovernanceText(contactName, MetadataV2ContactPoint.MaxNameLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.contactPoint.name must not exceed {MetadataV2ContactPoint.MaxNameLength} characters or contain control characters.");
+        }
         if (metadata.ContactPoint is { Email: { } email } &&
             !string.IsNullOrWhiteSpace(email) &&
             !HasNonEmptyEmailParts(email))

@@ -1264,48 +1264,84 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2ResourceSpatial? previous,
         MetadataV2ResourceSpatial? persisted)
     {
-        if (current is null || previous is null || persisted is null)
+        if (current is null)
         {
-            return RestoreResourceMutationValue(
-                current,
-                previous,
-                persisted,
-                static value => new MetadataV2Resource { Spatial = value });
+            return persisted is null && previous is not null ? previous : null;
         }
 
-        return current with
+        var previousValue = previous ?? new MetadataV2ResourceSpatial();
+        var persistedValue = persisted ?? new MetadataV2ResourceSpatial();
+        var restored = current with
         {
             SpatialReference = RestoreSpatialReferenceMutation(
                 current.SpatialReference,
-                previous.SpatialReference,
-                persisted.SpatialReference),
+                previousValue.SpatialReference,
+                persistedValue.SpatialReference),
             GeometryType = RestoreMutationValue(
                 current.GeometryType,
-                previous.GeometryType,
-                persisted.GeometryType),
-            Bbox = RestoreSpatialMutationValue(
+                previousValue.GeometryType,
+                persistedValue.GeometryType),
+            Bbox = RestoreBboxMutation(
                 current.Bbox,
-                previous.Bbox,
-                persisted.Bbox,
-                static value => new MetadataV2ResourceSpatial { Bbox = value }),
+                previousValue.Bbox,
+                persistedValue.Bbox),
             PrimaryGeometryField = RestoreMutationValue(
                 current.PrimaryGeometryField,
-                previous.PrimaryGeometryField,
-                persisted.PrimaryGeometryField),
-            SupportedCrs = RestoreSpatialMutationValue(
+                previousValue.PrimaryGeometryField,
+                persistedValue.PrimaryGeometryField),
+            SupportedCrs = RestoreMutationSequence(
                 current.SupportedCrs,
-                previous.SupportedCrs,
-                persisted.SupportedCrs,
-                static value => new MetadataV2ResourceSpatial { SupportedCrs = value }),
+                previousValue.SupportedCrs,
+                persistedValue.SupportedCrs),
             StorageCrs = RestoreSpatialReferenceMutation(
                 current.StorageCrs,
-                previous.StorageCrs,
-                persisted.StorageCrs),
+                previousValue.StorageCrs,
+                persistedValue.StorageCrs),
             StorageCrsCoordinateEpoch = RestoreMutationValue(
                 current.StorageCrsCoordinateEpoch,
-                previous.StorageCrsCoordinateEpoch,
-                persisted.StorageCrsCoordinateEpoch),
+                previousValue.StorageCrsCoordinateEpoch,
+                persistedValue.StorageCrsCoordinateEpoch),
         };
+
+        return previous is null &&
+               restored.SpatialReference is null &&
+               restored.GeometryType == MetadataV2GeometryType.None &&
+               restored.Bbox is null &&
+               restored.PrimaryGeometryField is null &&
+               restored.SupportedCrs.Count == 0 &&
+               restored.StorageCrs is null &&
+               restored.StorageCrsCoordinateEpoch is null
+            ? null
+            : restored;
+    }
+
+    private static MetadataV2Bbox? RestoreBboxMutation(
+        MetadataV2Bbox? current,
+        MetadataV2Bbox? previous,
+        MetadataV2Bbox? persisted)
+    {
+        if (current is null)
+        {
+            return persisted is null && previous is not null ? previous : null;
+        }
+
+        var previousValue = previous ?? new MetadataV2Bbox();
+        var persistedValue = persisted ?? new MetadataV2Bbox();
+        var restored = current with
+        {
+            West = RestoreMutationValue(current.West, previousValue.West, persistedValue.West),
+            South = RestoreMutationValue(current.South, previousValue.South, persistedValue.South),
+            East = RestoreMutationValue(current.East, previousValue.East, persistedValue.East),
+            North = RestoreMutationValue(current.North, previousValue.North, persistedValue.North),
+        };
+
+        return previous is null &&
+               restored.West == 0 &&
+               restored.South == 0 &&
+               restored.East == 0 &&
+               restored.North == 0
+            ? null
+            : restored;
     }
 
     private static AccessPolicy? RestoreAccessPolicyMutation(
@@ -1479,18 +1515,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Connection);
 
-    private static T RestoreSpatialMutationValue<T>(
-        T current,
-        T previous,
-        T persisted,
-        Func<T, MetadataV2ResourceSpatial> containerFactory)
-        => RestoreJsonMutationValue(
-            current,
-            previous,
-            persisted,
-            containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2ResourceSpatial);
-
     private static T RestoreJsonMutationValue<T, TContainer>(
         T current,
         T previous,
@@ -1520,20 +1544,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2SpatialReference? previous,
         MetadataV2SpatialReference? persisted)
     {
-        if (current is null || previous is null || persisted is null)
+        if (current is null)
         {
-            return RestoreMutationValue(current, previous, persisted);
+            return persisted is null && previous is not null ? previous : null;
         }
 
-        return current with
+        var previousValue = previous ?? new MetadataV2SpatialReference();
+        var persistedValue = persisted ?? new MetadataV2SpatialReference();
+        var restored = current with
         {
-            Srid = RestoreMutationValue(current.Srid, previous.Srid, persisted.Srid),
-            Crs = RestoreMutationValue(current.Crs, previous.Crs, persisted.Crs),
+            Srid = RestoreMutationValue(current.Srid, previousValue.Srid, persistedValue.Srid),
+            Crs = RestoreMutationValue(current.Crs, previousValue.Crs, persistedValue.Crs),
             IsGeographic = RestoreMutationValue(
                 current.IsGeographic,
-                previous.IsGeographic,
-                persisted.IsGeographic),
+                previousValue.IsGeographic,
+                persistedValue.IsGeographic),
         };
+
+        return previous is null && restored.Srid is null && restored.Crs is null && !restored.IsGeographic
+            ? null
+            : restored;
     }
 
     private static MetadataV2Status RestoreStatusMutation(
@@ -1564,25 +1594,175 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return current;
         }
 
-        var restored = new List<T>(previous.Count + current.Count);
-        foreach (var previousItem in previous.Where(previousItem =>
-                     !persisted.Contains(previousItem) || current.Contains(previousItem)))
+        var mutationAnchors = AlignEqualSequence(previous, persisted);
+        var persistedToPrevious = new Dictionary<int, int>();
+        var pendingPrevious = new List<(int Boundary, int PreviousIndex)>();
+        var previousCursor = 0;
+        var persistedCursor = 0;
+        for (var anchorIndex = 0; anchorIndex <= mutationAnchors.Count; anchorIndex++)
         {
-            // Restore values removed by the failed mutation. Values the mutation retained are kept
-            // only if the concurrent writer did not subsequently remove them.
-            restored.Add(previousItem);
+            var hasAnchor = anchorIndex < mutationAnchors.Count;
+            var previousEnd = hasAnchor ? mutationAnchors[anchorIndex].LeftIndex : previous.Count;
+            var persistedEnd = hasAnchor ? mutationAnchors[anchorIndex].RightIndex : persisted.Count;
+            var pairedCount = Math.Min(previousEnd - previousCursor, persistedEnd - persistedCursor);
+            for (var offset = 0; offset < pairedCount; offset++)
+            {
+                persistedToPrevious[persistedCursor + offset] = previousCursor + offset;
+            }
+
+            for (var previousIndex = previousCursor + pairedCount;
+                 previousIndex < previousEnd;
+                 previousIndex++)
+            {
+                pendingPrevious.Add((persistedEnd, previousIndex));
+            }
+
+            if (!hasAnchor)
+            {
+                break;
+            }
+
+            var anchor = mutationAnchors[anchorIndex];
+            persistedToPrevious[anchor.RightIndex] = anchor.LeftIndex;
+            previousCursor = anchor.LeftIndex + 1;
+            persistedCursor = anchor.RightIndex + 1;
         }
 
-        foreach (var currentItem in current.Where(currentItem =>
-                     !persisted.Contains(currentItem) && !restored.Contains(currentItem)))
+        var persistedToCurrent = MatchEqualSequenceOccurrences(persisted, current);
+        var currentToPersisted = persistedToCurrent.ToDictionary(
+            match => match.RightIndex,
+            match => match.LeftIndex);
+        var matchedPersistedIndices = persistedToCurrent
+            .Select(match => match.LeftIndex)
+            .ToHashSet();
+        foreach (var mapping in persistedToPrevious)
         {
-            // Preserve values introduced by a later writer, but omit values introduced only by the
-            // failed mutation.
-            restored.Add(currentItem);
+            if (!matchedPersistedIndices.Contains(mapping.Key) &&
+                !EqualityComparer<T>.Default.Equals(previous[mapping.Value], persisted[mapping.Key]))
+            {
+                pendingPrevious.Add((mapping.Key, mapping.Value));
+            }
+        }
+
+        var insertions = new Dictionary<int, List<int>>();
+        foreach (var pending in pendingPrevious.OrderBy(item => item.PreviousIndex))
+        {
+            var insertionIndex = persisted.Count == 0
+                ? 0
+                : persistedToCurrent
+                    .Where(match => match.LeftIndex >= pending.Boundary)
+                    .OrderBy(match => match.LeftIndex)
+                    .Select(match => match.RightIndex)
+                    .DefaultIfEmpty(current.Count)
+                    .First();
+            if (!insertions.TryGetValue(insertionIndex, out var previousIndices))
+            {
+                previousIndices = [];
+                insertions[insertionIndex] = previousIndices;
+            }
+            previousIndices.Add(pending.PreviousIndex);
+        }
+
+        var restored = new List<T>(previous.Count + current.Count);
+        for (var currentIndex = 0; currentIndex <= current.Count; currentIndex++)
+        {
+            if (insertions.TryGetValue(currentIndex, out var previousIndices))
+            {
+                restored.AddRange(previousIndices.Select(previousIndex => previous[previousIndex]));
+            }
+
+            if (currentIndex == current.Count)
+            {
+                break;
+            }
+
+            if (!currentToPersisted.TryGetValue(currentIndex, out var persistedIndex))
+            {
+                restored.Add(current[currentIndex]);
+                continue;
+            }
+
+            if (persistedToPrevious.TryGetValue(persistedIndex, out var previousIndex))
+            {
+                restored.Add(EqualityComparer<T>.Default.Equals(
+                    previous[previousIndex],
+                    persisted[persistedIndex])
+                    ? current[currentIndex]
+                    : previous[previousIndex]);
+            }
+            // Values introduced only by the failed mutation are omitted.
         }
 
         return restored;
     }
+
+    private static List<SequenceIndexMatch> AlignEqualSequence<T>(
+        IReadOnlyList<T> left,
+        IReadOnlyList<T> right)
+    {
+        var lengths = new int[left.Count + 1, right.Count + 1];
+        for (var leftIndex = left.Count - 1; leftIndex >= 0; leftIndex--)
+        {
+            for (var rightIndex = right.Count - 1; rightIndex >= 0; rightIndex--)
+            {
+                lengths[leftIndex, rightIndex] = EqualityComparer<T>.Default.Equals(
+                    left[leftIndex],
+                    right[rightIndex])
+                    ? lengths[leftIndex + 1, rightIndex + 1] + 1
+                    : Math.Max(lengths[leftIndex + 1, rightIndex], lengths[leftIndex, rightIndex + 1]);
+            }
+        }
+
+        var matches = new List<SequenceIndexMatch>(lengths[0, 0]);
+        var leftCursor = 0;
+        var rightCursor = 0;
+        while (leftCursor < left.Count && rightCursor < right.Count)
+        {
+            if (EqualityComparer<T>.Default.Equals(left[leftCursor], right[rightCursor]))
+            {
+                matches.Add(new SequenceIndexMatch(leftCursor, rightCursor));
+                leftCursor++;
+                rightCursor++;
+            }
+            else if (lengths[leftCursor + 1, rightCursor] >= lengths[leftCursor, rightCursor + 1])
+            {
+                leftCursor++;
+            }
+            else
+            {
+                rightCursor++;
+            }
+        }
+
+        return matches;
+    }
+
+    private static List<SequenceIndexMatch> MatchEqualSequenceOccurrences<T>(
+        IReadOnlyList<T> left,
+        IReadOnlyList<T> right)
+    {
+        var matches = new List<SequenceIndexMatch>(Math.Min(left.Count, right.Count));
+        var matchedRight = new HashSet<int>();
+        for (var leftIndex = 0; leftIndex < left.Count; leftIndex++)
+        {
+            for (var rightIndex = 0; rightIndex < right.Count; rightIndex++)
+            {
+                if (matchedRight.Contains(rightIndex) ||
+                    !EqualityComparer<T>.Default.Equals(left[leftIndex], right[rightIndex]))
+                {
+                    continue;
+                }
+
+                matches.Add(new SequenceIndexMatch(leftIndex, rightIndex));
+                matchedRight.Add(rightIndex);
+                break;
+            }
+        }
+
+        return matches;
+    }
+
+    private readonly record struct SequenceIndexMatch(int LeftIndex, int RightIndex);
 
     private static Dictionary<string, string> RestoreMetadataMapMutation(
         IReadOnlyDictionary<string, string> current,

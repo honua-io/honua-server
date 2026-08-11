@@ -639,7 +639,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             PolicyIds = ["policy-failed", "policy-concurrent"],
-            StyleResourceIds = ["style-failed", "style-concurrent"],
+            StyleResourceIds = ["style-concurrent", "style-failed"],
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["concurrent-writer"] },
             Temporal = new MetadataV2ResourceTemporal { TrackIdField = "concurrent_track" },
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
@@ -690,7 +690,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);
         resource.PolicyIds.Should().Equal("policy-original", "policy-concurrent");
-        resource.StyleResourceIds.Should().Equal("style-original", "style-concurrent");
+        resource.StyleResourceIds.Should().Equal("style-concurrent", "style-original");
         resource.AccessPolicy!.AllowAnonymous.Should().BeFalse();
         resource.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();
         resource.AccessPolicy.AllowedRoles.Should().Equal("reader");
@@ -705,6 +705,51 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Spatial.StorageCrs.Should().Be(previousResource.Spatial.StorageCrs);
         resource.Spatial.Bbox.Should().Be(concurrentBbox, "a later edit to the same field wins");
         resource.Status.Should().Be(previousResource.Status);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresAbsentSpatialMembersIndependently()
+    {
+        var persistedSpatial = new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.Point,
+            Bbox = new MetadataV2Bbox { West = 1, South = 2, East = 3, North = 4 },
+            PrimaryGeometryField = "failed_shape",
+            SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+            StorageCrs = MetadataV2SpatialReference.Wgs84,
+            StorageCrsCoordinateEpoch = 2020,
+        };
+        var concurrentBbox = new MetadataV2Bbox { West = 10, South = 20, East = 30, North = 40 };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-spatial-null-baseline" },
+            Spatial = null,
+        };
+        var persistedResource = previousResource with { Spatial = persistedSpatial };
+        var currentResource = persistedResource with
+        {
+            Spatial = persistedSpatial with { Bbox = concurrentBbox },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var spatial = compensation.Resources.Should().ContainSingle().Which.Spatial;
+        spatial.Should().NotBeNull();
+        spatial!.SpatialReference.Should().BeNull();
+        spatial.GeometryType.Should().Be(MetadataV2GeometryType.None);
+        spatial.Bbox.Should().Be(concurrentBbox);
+        spatial.PrimaryGeometryField.Should().BeNull();
+        spatial.SupportedCrs.Should().BeEmpty();
+        spatial.StorageCrs.Should().BeNull();
+        spatial.StorageCrsCoordinateEpoch.Should().BeNull();
     }
 
     [Fact]
