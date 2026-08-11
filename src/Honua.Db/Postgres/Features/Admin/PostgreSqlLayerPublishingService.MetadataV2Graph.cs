@@ -360,6 +360,46 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Select(item => item.Metadata.Id)
             .Where(id => !previousPublicationIds.Contains(id))
             .ToHashSet(StringComparer.Ordinal);
+        var previousResourceIdsForPublicationCleanup = previousGraph.Resources
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedResourceIdsForPublicationCleanup = persistedGraph.Resources
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousResourceIdsForPublicationCleanup.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var persistedResourcesForPublicationCleanup = persistedGraph.Resources
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var currentResourcesForPublicationCleanup = currentGraph.Resources
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var previousBindingIdsForPublicationCleanup = previousGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedBindingIdsForPublicationCleanup = persistedGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousBindingIdsForPublicationCleanup.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var persistedBindingsForPublicationCleanup = persistedGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+        var currentBindingsForPublicationCleanup = currentGraph.StorageBindings
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
+
+        bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
+        {
+            var usesFailedResource = addedResourceIdsForPublicationCleanup.Contains(publication.ResourceId) &&
+                (!currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource) ||
+                 !persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource) ||
+                 !HasResourceBeenRepurposed(
+                     currentResource,
+                     persistedResource,
+                     addedBindingIdsForPublicationCleanup));
+            var usesFailedBinding = publication.StorageBindingId is { } bindingId &&
+                addedBindingIdsForPublicationCleanup.Contains(bindingId) &&
+                (!currentBindingsForPublicationCleanup.TryGetValue(bindingId, out var currentBinding) ||
+                 !persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) ||
+                 !HasStorageBindingBeenRepurposed(currentBinding, persistedBinding));
+            return usesFailedResource || usesFailedBinding;
+        }
+
         var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
         foreach (var previous in previousGraph.Publications.Where(previous =>
                      !persistedPublicationsById.ContainsKey(previous.Metadata.Id)))
@@ -391,12 +431,22 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 continue;
             }
 
+            if (!previousPublicationIds.Contains(current.Metadata.Id) &&
+                !persistedPublicationsById.ContainsKey(current.Metadata.Id) &&
+                UsesUnrepurposedFailedDataTarget(current))
+            {
+                continue;
+            }
+
             publications.Add(
                 previousPublicationsById.TryGetValue(current.Metadata.Id, out var previous) &&
                 persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persisted)
                     ? RestorePublicationMutation(current, previous, persisted)
                     : current);
         }
+        var retainedPublicationIds = publications
+            .Select(publication => publication.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
 
         var previousServiceIds = previousGraph.Services
             .Select(item => item.Metadata.Id)
@@ -419,7 +469,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 return restored with
                 {
                     PublicationIds = restored.PublicationIds
-                        .Where(id => !addedPublicationIds.Contains(id))
+                        .Where(retainedPublicationIds.Contains)
                         .ToArray()
                 };
             })

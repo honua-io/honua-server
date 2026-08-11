@@ -186,6 +186,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             "binding-concurrent",
             3,
             MetadataV2PublicationType.EsriFeatureLayer);
+        var coupledConcurrentPublication = CreatePublication(
+            "pub-concurrent-coupled",
+            "service-shared",
+            "resource-failed",
+            "binding-failed",
+            4,
+            MetadataV2PublicationType.EsriFeatureLayer);
         var current = persisted with
         {
             Revision = 9,
@@ -193,7 +200,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             [
                 persisted.Services[0] with
                 {
-                    PublicationIds = ["pub-original", "pub-failed", "pub-concurrent"],
+                    PublicationIds =
+                    [
+                        "pub-original",
+                        "pub-failed",
+                        "pub-concurrent",
+                        "pub-concurrent-coupled",
+                    ],
                 },
             ],
             Resources =
@@ -218,6 +231,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = persisted.Publications[1].Metadata with { Title = "Concurrent title" },
                 },
                 concurrentPublication,
+                coupledConcurrentPublication,
             ],
         };
 
@@ -449,13 +463,19 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             StorageBindingIds = [],
             PrimaryStorageBindingId = null,
         };
+        var repurposedPublication = failedPublication with
+        {
+            Metadata = failedPublication.Metadata with { Id = "pub-concurrent-document" },
+            StorageBindingId = null,
+            PublicationType = MetadataV2PublicationType.OgcCollection,
+        };
         var current = persisted with
         {
             Revision = 9,
-            Services = [previousService],
+            Services = [previousService with { PublicationIds = [repurposedPublication.Metadata.Id] }],
             Resources = [repurposedResource],
             StorageBindings = [],
-            Publications = [],
+            Publications = [repurposedPublication],
         };
 
         var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
@@ -470,7 +490,9 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         retainedResource.StorageBindingIds.Should().BeEmpty();
         retainedResource.PrimaryStorageBindingId.Should().BeNull();
         compensation.StorageBindings.Should().BeEmpty();
-        compensation.Publications.Should().BeEmpty();
+        compensation.Publications.Should().ContainSingle().Which.Should().Be(repurposedPublication);
+        compensation.Services.Should().ContainSingle().Which.PublicationIds
+            .Should().Equal(repurposedPublication.Metadata.Id);
     }
 
     [Fact]

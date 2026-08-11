@@ -28,6 +28,32 @@ internal static class StacResourceExtensions
     private const string StacExtensionKey = "stac";
 
     /// <summary>
+    /// Applies service governance defaults without inheriting service license metadata when
+    /// the resource declares its license through the STAC extension.
+    /// </summary>
+    public static MetadataV2ObjectMetadata WithStacServiceGovernanceFallbacks(
+        this MetadataV2Resource resource,
+        MetadataV2ObjectMetadata serviceMetadata)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(serviceMetadata);
+
+        if (string.IsNullOrWhiteSpace(ReadString(resource, "license")))
+        {
+            return resource.Metadata.WithServiceGovernanceFallbacks(serviceMetadata);
+        }
+
+        var nonLicenseFallbacks = serviceMetadata with
+        {
+            License = null,
+            Links = serviceMetadata.Links
+                .Where(link => !string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase))
+                .ToArray(),
+        };
+        return resource.Metadata.WithServiceGovernanceFallbacks(nonLicenseFallbacks);
+    }
+
+    /// <summary>
     /// Resolves the SPDX or STAC-recognized license identifier for a resource. Returns
     /// <c>"various"</c> for link-only declarations and <c>"proprietary"</c> when no
     /// license is declared (matches the v1 default).

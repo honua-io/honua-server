@@ -27,9 +27,22 @@ public sealed class StacResourceExtensionsTests
             },
         };
         var undeclaredResource = new MetadataV2Resource();
-        var serviceMetadata = new MetadataV2ObjectMetadata { License = "MIT" };
+        var serviceMetadata = new MetadataV2ObjectMetadata
+        {
+            License = "MIT",
+            Links =
+            [
+                new MetadataV2Link { Rel = "license", Href = "https://example.test/service-license" },
+                new MetadataV2Link { Rel = "describedby", Href = "https://example.test/service-description" },
+            ],
+        };
 
         extensionResource.ResolveLicense(serviceMetadata).Should().Be("CC0-1.0");
+        var extensionGovernanceLinks = extensionResource.WithStacServiceGovernanceFallbacks(serviceMetadata).Links;
+        extensionGovernanceLinks.Should().NotContain(link =>
+            string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase));
+        extensionGovernanceLinks.Should().ContainSingle(link =>
+            string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase));
         linkResource.ResolveLicense(serviceMetadata).Should().Be("various");
         undeclaredResource.ResolveLicense(serviceMetadata).Should().Be("MIT");
     }

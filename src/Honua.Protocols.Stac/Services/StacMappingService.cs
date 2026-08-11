@@ -66,7 +66,7 @@ internal sealed class StacMappingService
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
         var stacBase = $"{baseUrl}/stac";
         var displayName = ResolveDisplayName(publication, resource, layerIndex);
-        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
+        var governance = resource.WithStacServiceGovernanceFallbacks(service.Metadata);
 
         var links = ImmutableArray.CreateBuilder<Link>();
 
