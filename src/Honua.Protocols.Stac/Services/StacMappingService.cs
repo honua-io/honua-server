@@ -159,7 +159,10 @@ internal sealed class StacMappingService
         var contactUrl = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
             ? null
             : metadata.ContactPoint.Url.Trim();
-        var contactName = authoredContactName ?? ResolveContactProviderName(contactUrl);
+        var contactEmail = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Email)
+            ? null
+            : metadata.ContactPoint.Email.Trim();
+        var contactName = authoredContactName ?? ResolveContactProviderName(contactUrl, contactEmail);
         var contactMatchesPublisher = publisher is not null && string.Equals(
             publisher,
             contactName,
@@ -201,17 +204,26 @@ internal sealed class StacMappingService
         return providers.Count == 0 ? null : providers.ToImmutable();
     }
 
-    private static string? ResolveContactProviderName(string? contactUrl)
+    private static string? ResolveContactProviderName(string? contactUrl, string? contactEmail)
     {
-        if (contactUrl is null ||
-            !Uri.TryCreate(contactUrl, UriKind.Absolute, out var parsedContactUrl) ||
-            (!string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
-             !string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        if (contactUrl is not null &&
+            Uri.TryCreate(contactUrl, UriKind.Absolute, out var parsedContactUrl) &&
+            (string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+            string.IsNullOrEmpty(parsedContactUrl.UserInfo))
+        {
+            return parsedContactUrl.Host;
+        }
+
+        if (contactEmail is null)
         {
             return null;
         }
 
-        return parsedContactUrl.Host;
+        var separator = contactEmail.LastIndexOf('@');
+        return separator >= 0 && separator < contactEmail.Length - 1
+            ? contactEmail[(separator + 1)..]
+            : contactEmail;
     }
 
     internal static string ResolveDisplayName(

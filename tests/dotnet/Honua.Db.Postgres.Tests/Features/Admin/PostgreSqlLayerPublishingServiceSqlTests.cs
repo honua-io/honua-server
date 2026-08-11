@@ -23,6 +23,25 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public async Task RetryUnresolvedTransactionObservation_WaitsForTerminalOutcome()
+    {
+        var attempts = 0;
+        var delays = new List<TimeSpan>();
+
+        var result = await PostgresTransactionOutcomeObserver.RetryUnresolvedObservationAsync(
+            () => Task.FromResult<bool?>(++attempts == 3 ? true : null),
+            delay =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+
+        result.Should().BeTrue();
+        attempts.Should().Be(3);
+        delays.Should().Equal(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
     public void BuildCompensatingMetadataV2Graph_RestoresContentAtANewRevision()
     {
         var original = new MetadataV2Graph

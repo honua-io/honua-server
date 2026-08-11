@@ -29,58 +29,81 @@ internal static class PostgresTransactionOutcomeObserver
     public static async Task<bool?> TryObserveCommitAsync(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         string transactionId)
-    {
-        try
+        => await RetryUnresolvedObservationAsync(async () =>
         {
-            await using var connection = await connectionProvider
-                .OpenNpgsqlConnectionAsync(CancellationToken.None)
-                .ConfigureAwait(false);
-            return await ObserveCommitAsync(connection, transactionId).ConfigureAwait(false);
-        }
-        catch (DbException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
+            try
+            {
+                await using var connection = await connectionProvider
+                    .OpenNpgsqlConnectionAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+                return await ObserveCommitAsync(connection, transactionId).ConfigureAwait(false);
+            }
+            catch (DbException)
+            {
+                return null;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
+            }
+        }).ConfigureAwait(false);
 
     public static async Task<bool?> TryObserveCommitAsync(
         string connectionString,
         string transactionId)
+        => await RetryUnresolvedObservationAsync(async () =>
+        {
+            try
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
+                return await ObserveCommitAsync(connection, transactionId).ConfigureAwait(false);
+            }
+            catch (DbException)
+            {
+                return null;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
+            }
+        }).ConfigureAwait(false);
+
+    internal static async Task<bool?> RetryUnresolvedObservationAsync(
+        Func<Task<bool?>> observeAsync,
+        Func<TimeSpan, Task>? delayAsync = null)
     {
-        try
+        const int maxAttempts = 6;
+        delayAsync ??= static delay => Task.Delay(delay, CancellationToken.None);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
-            return await ObserveCommitAsync(connection, transactionId).ConfigureAwait(false);
+            var observed = await observeAsync().ConfigureAwait(false);
+            if (observed.HasValue || attempt == maxAttempts)
+            {
+                return observed;
+            }
+
+            var delayMilliseconds = Math.Min(100 * (1 << (attempt - 1)), 1_000);
+            await delayAsync(TimeSpan.FromMilliseconds(delayMilliseconds)).ConfigureAwait(false);
         }
-        catch (DbException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
+
+        return null;
     }
 
     internal static bool? InterpretStatus(string? status) => status switch

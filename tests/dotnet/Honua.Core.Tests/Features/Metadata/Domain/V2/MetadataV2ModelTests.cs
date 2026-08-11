@@ -440,7 +440,40 @@ public sealed class MetadataV2ModelTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle(error =>
-            error.Contains("metadata.contactPoint.url 'not a URL' must be an absolute HTTP(S) URL", StringComparison.Ordinal));
+            error.Contains(
+                "metadata.contactPoint.url 'not a URL' must be an absolute HTTP(S) URL without credentials",
+                StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithCredentialBearingContactUrl_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint
+                        {
+                            Name = "Unsafe contact",
+                            Url = "https://user:secret@example.test/contact"
+                        }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains("must be an absolute HTTP(S) URL without credentials", StringComparison.Ordinal));
     }
 
     [UnitTest]
