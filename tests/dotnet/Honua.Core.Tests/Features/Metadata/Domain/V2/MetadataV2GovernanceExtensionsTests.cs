@@ -94,4 +94,23 @@ public sealed class MetadataV2GovernanceExtensionsTests
         effective.License.Should().Be("MIT");
         effective.Links.Should().ContainSingle().Which.Should().BeSameAs(serviceLicenseLink);
     }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void WithServiceGovernanceFallbacks_MissingResourcePublisher_DoesNotInheritServiceOperator()
+    {
+        var serviceMetadata = new MetadataV2ObjectMetadata
+        {
+            License = "MIT",
+            Attribution = "Service attribution",
+            Publisher = "Service operator",
+        };
+
+        var effective = new MetadataV2ObjectMetadata()
+            .WithServiceGovernanceFallbacks(serviceMetadata);
+
+        effective.License.Should().Be("MIT");
+        effective.Attribution.Should().Be("Service attribution");
+        effective.Publisher.Should().BeNull();
+    }
 }

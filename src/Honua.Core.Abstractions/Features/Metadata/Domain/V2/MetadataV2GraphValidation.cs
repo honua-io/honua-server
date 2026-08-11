@@ -644,10 +644,7 @@ public static class MetadataV2GraphValidator
         }
         if (metadata.ContactPoint is { Url: { } contactUrl } &&
             !string.IsNullOrWhiteSpace(contactUrl) &&
-            (!Uri.TryCreate(contactUrl.Trim(), UriKind.Absolute, out var parsedContactUrl) ||
-             (!string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
-              !string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) ||
-             !string.IsNullOrEmpty(parsedContactUrl.UserInfo)))
+            !IsSafePublicHttpUrl(contactUrl))
         {
             errors.Add(
                 $"{ownerLabel} metadata.contactPoint.url '{contactUrl}' must be an absolute HTTP(S) URL without credentials.");
@@ -664,8 +661,22 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add($"{ownerLabel} metadata.links[{i}].rel is required.");
             }
+            if (!string.IsNullOrWhiteSpace(link.Href) &&
+                (string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase)) &&
+                !IsSafePublicHttpUrl(link.Href))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href '{link.Href}' must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
+            }
         }
     }
+
+    private static bool IsSafePublicHttpUrl(string value)
+        => Uri.TryCreate(value.Trim(), UriKind.Absolute, out var parsedUrl) &&
+           (string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+           string.IsNullOrEmpty(parsedUrl.UserInfo);
 
     private static void ValidateServices(
         List<string> errors,

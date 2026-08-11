@@ -9,9 +9,10 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public static class MetadataV2GovernanceExtensions
 {
     /// <summary>
-    /// Returns the resource metadata with missing governance fields inherited from the publishing
-    /// service. Resource values remain authoritative; service links are appended after resource links
-    /// and exact duplicates are removed.
+    /// Returns the resource metadata with missing license, attribution, and contact fields inherited
+    /// from the publishing service. Publisher is resource-scoped provenance and is never inferred from
+    /// the service operator. Resource values remain authoritative; service links are appended after
+    /// resource links and exact duplicates are removed.
     /// </summary>
     public static MetadataV2ObjectMetadata WithServiceGovernanceFallbacks(
         this MetadataV2ObjectMetadata resourceMetadata,
@@ -27,7 +28,6 @@ public static class MetadataV2GovernanceExtensions
         {
             License = FirstDefined(resourceMetadata.License, serviceMetadata.License),
             Attribution = FirstDefined(resourceMetadata.Attribution, serviceMetadata.Attribution),
-            Publisher = FirstDefined(resourceMetadata.Publisher, serviceMetadata.Publisher),
             ContactPoint = resourceMetadata.ContactPoint ?? serviceMetadata.ContactPoint,
             Links = MergeLinks(
                 resourceMetadata.Links,
