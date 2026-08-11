@@ -84,6 +84,10 @@ internal static class StacV2Lookups
             {
                 continue;
             }
+            if (!IsRoutable(pub, resource))
+            {
+                continue;
+            }
 
             if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
             {
@@ -161,6 +165,10 @@ internal static class StacV2Lookups
             {
                 continue;
             }
+            if (!IsRoutable(pub, resource))
+            {
+                continue;
+            }
 
             if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service))
             {
@@ -194,6 +202,10 @@ internal static class StacV2Lookups
 
     private static bool IsStacCollectionPublication(MetadataV2Publication publication)
         => publication.PublicationType == MetadataV2PublicationType.StacCollection;
+
+    private static bool IsRoutable(MetadataV2Publication publication, MetadataV2Resource resource)
+        => publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+           resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired;
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,
