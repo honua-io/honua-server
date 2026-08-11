@@ -2271,7 +2271,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void IndexSourceGovernanceByStorageLayer_WithActiveAndRetiredSameNameServices_PrefersActive()
+    public void IndexSourceGovernanceByStorageLayer_WithActiveAndNonServingSameNameServices_PrefersActive()
     {
         var retiredMetadata = new MetadataV2ObjectMetadata { Id = "resource-retired", License = "MIT" };
         var activeMetadata = new MetadataV2ObjectMetadata { Id = "resource-active", License = "CC-BY-4.0" };
@@ -2346,6 +2346,20 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
 
         result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(8, activeMetadata));
+
+        var draftStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
+        var draftGraph = graph with
+        {
+            Resources = [graph.Resources[0] with { Status = draftStatus }, graph.Resources[1]],
+            Publications = [graph.Publications[0] with { Status = draftStatus }, graph.Publications[1]],
+        };
+
+        var draftResult = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(
+            draftGraph,
+            "shared");
+
+        draftResult.Should().ContainSingle().Which.Should().Be(
             new KeyValuePair<int, MetadataV2ObjectMetadata>(8, activeMetadata));
     }
 
@@ -2563,6 +2577,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     public void IndexSourceGovernanceByStorageLayer_WithProtocolAggregateAndDedicatedFeatureServices_UsesDedicatedFeatureResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
         var graph = new MetadataV2Graph
         {
             Services =
@@ -2580,8 +2595,12 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ],
             Resources =
             [
-                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-aggregate", License = "MIT" } },
-                new MetadataV2Resource { Metadata = featureMetadata }
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-aggregate", License = "MIT" },
+                    Status = activeStatus,
+                },
+                new MetadataV2Resource { Metadata = featureMetadata, Status = activeStatus }
             ],
             StorageBindings =
             [
@@ -2600,8 +2619,20 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ],
             Publications =
             [
-                CreatePublication("pub-aggregate", "service-aggregate", "resource-aggregate", "binding-aggregate", 7, MetadataV2PublicationType.OgcCollection),
-                CreatePublication("pub-feature", "service-feature", "resource-feature", "binding-feature", 7, MetadataV2PublicationType.EsriFeatureLayer)
+                CreatePublication(
+                    "pub-aggregate",
+                    "service-aggregate",
+                    "resource-aggregate",
+                    "binding-aggregate",
+                    7,
+                    MetadataV2PublicationType.OgcCollection) with { Status = activeStatus },
+                CreatePublication(
+                    "pub-feature",
+                    "service-feature",
+                    "resource-feature",
+                    "binding-feature",
+                    7,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = activeStatus }
             ]
         };
 

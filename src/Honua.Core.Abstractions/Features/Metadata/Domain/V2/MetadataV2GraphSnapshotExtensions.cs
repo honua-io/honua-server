@@ -170,7 +170,8 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
-    /// Returns publications on the given service whose route segment or service-local id matches the provided key.
+    /// Returns the first routable publication on the given service whose route segment
+    /// or service-local id matches the provided key.
     /// </summary>
     public static MetadataV2Publication? FindPublicationOnService(
         this MetadataV2GraphSnapshot snapshot,
@@ -183,10 +184,11 @@ public static class MetadataV2GraphSnapshotExtensions
             return null;
         }
         foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub =>
-            string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)))
+            snapshot.IsRoutable(pub) &&
+            (string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+             || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase))))
         {
             return pub;
         }
@@ -194,7 +196,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
-    /// Finds a publication on a service by its service-local layer index.
+    /// Finds the first routable publication on a service by its service-local layer index.
     /// </summary>
     public static MetadataV2Publication? FindPublicationByLayerIndex(
         this MetadataV2GraphSnapshot snapshot,
@@ -202,7 +204,8 @@ public static class MetadataV2GraphSnapshotExtensions
         int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub => pub.LayerIndex == layerIndex))
+        foreach (var pub in snapshot.Index.PublicationsByService[serviceId]
+                     .Where(pub => pub.LayerIndex == layerIndex && snapshot.IsRoutable(pub)))
         {
             return pub;
         }

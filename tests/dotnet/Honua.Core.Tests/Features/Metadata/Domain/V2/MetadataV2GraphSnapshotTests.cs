@@ -68,6 +68,28 @@ public sealed class MetadataV2GraphSnapshotTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void Extensions_FindPublication_SkipsUnroutableDuplicate()
+    {
+        var graph = SampleGraph();
+        var active = graph.Publications.Single();
+        var draft = active with
+        {
+            Metadata = active.Metadata with { Id = "pub.parcels.draft" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            graph with { Publications = [draft, active] },
+            "\"duplicates\"",
+            DateTimeOffset.UtcNow);
+
+        snapshot.FindPublicationOnService("service.features", "parcels")
+            .Should().BeSameAs(active);
+        snapshot.FindPublicationByLayerIndex("service.features", 0)
+            .Should().BeSameAs(active);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void Extensions_ResolveStorageBinding_PrefersPublicationOverride()
     {
         var graph = SampleGraph() with { };
@@ -179,6 +201,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     StorageBindingIds = ["storage.parcels.postgis"],
 
                     SchemaFields =
@@ -193,6 +216,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels.postgis", Name = "parcels-postgis" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = "resource.parcels",
                     ConnectionId = "conn.postgres",
                     StorageType = MetadataV2StorageType.RelationalTable,
@@ -214,6 +238,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels.features", Name = "parcels" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = "resource.parcels",
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",

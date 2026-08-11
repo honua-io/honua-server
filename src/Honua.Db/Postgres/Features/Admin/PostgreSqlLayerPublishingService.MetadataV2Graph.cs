@@ -2703,32 +2703,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Service? service = null;
         if (matchingFeatureServices.Length > 1)
         {
-            var activeResourceIds = graph.Resources
-                .Where(resource => resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
-                .Select(resource => resource.Metadata.Id)
-                .ToHashSet(StringComparer.Ordinal);
+            var resourcesById = graph.Resources.ToDictionary(
+                resource => resource.Metadata.Id,
+                StringComparer.Ordinal);
             var preferredFeatureServices = matchingFeatureServices
                 .Where(candidate => graph.Publications.Any(publication =>
                     string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&
-                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
                     MetadataV2ServiceProtocols.IsPreferredPublicationType(
                         MetadataV2ServiceProtocols.FeatureServer,
                         publication.PublicationType) &&
-                    activeResourceIds.Contains(publication.ResourceId)))
+                    publication.IsRoutable(resourcesById.GetValueOrDefault(publication.ResourceId))))
                 .ToArray();
             service = preferredFeatureServices.Length == 1 ? preferredFeatureServices[0] : null;
-        }
-
-        if (service is null && matchingFeatureServices.Length > 1)
-        {
-            var publishedFeatureServices = matchingFeatureServices
-                .Where(candidate => graph.Publications.Any(publication =>
-                    string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&
-                    MetadataV2ServiceProtocols.IsPreferredPublicationType(
-                        MetadataV2ServiceProtocols.FeatureServer,
-                        publication.PublicationType)))
-                .ToArray();
-            service = publishedFeatureServices.Length == 1 ? publishedFeatureServices[0] : null;
         }
 
         service ??= matchingFeatureServices.Length == 1 ? matchingFeatureServices[0] : null;
