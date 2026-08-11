@@ -182,19 +182,22 @@ public sealed class ResourceValidator : IResourceValidator
         string serviceId,
         string requiredProtocol)
     {
-        var candidates = snapshot.Graph.Services
+        var matchingServices = snapshot.Graph.Services
             .Where(service =>
                 string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
             .ToArray();
 
-        var exactId = candidates.FirstOrDefault(service =>
+        var exactId = matchingServices.FirstOrDefault(service =>
             string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
         if (exactId is not null)
         {
-            return exactId;
+            return ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol) ? exactId : null;
         }
+
+        var candidates = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
 
         if (string.Equals(requiredProtocol, ServiceProtocols.GPServer, StringComparison.OrdinalIgnoreCase))
         {
@@ -323,22 +326,26 @@ public sealed class ResourceValidator : IResourceValidator
         // Resolve against the publication surface requested by the route instead of the
         // first-wins ServicesByName index, otherwise a preceding aggregate/OGC service can
         // make a FeatureServer request serve the wrong resource.
-        var protocolServices = snapshot.Graph.Services
+        var matchingServices = snapshot.Graph.Services
             .Where(service =>
                 string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
             .ToArray();
 
         // An exact graph identity has the same precedence as the service-root route. Select it
-        // before filtering by layer publication so an absent layer remains a 404 on that service
-        // instead of falling through to a different service whose display name collides with the id.
-        var exactId = protocolServices.FirstOrDefault(service =>
+        // before protocol and layer filtering so a disabled protocol or absent layer remains a 404
+        // on that service instead of falling through to a different service whose display name
+        // collides with the id.
+        var exactId = matchingServices.FirstOrDefault(service =>
             string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
         if (exactId is not null)
         {
-            return exactId;
+            return ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol) ? exactId : null;
         }
+
+        var protocolServices = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            .ToArray();
 
         var candidates = protocolServices
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]

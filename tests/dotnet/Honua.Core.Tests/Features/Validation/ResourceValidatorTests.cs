@@ -183,6 +183,21 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceLayerV2Async_ExactServiceIdWithDisabledProtocol_DoesNotFallThroughToNameMatch()
+    {
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(ExactIdProtocolCollisionGraph()));
+
+        var result = await validator.ValidateServiceLayerV2Async(
+            "route-token",
+            7,
+            ServiceProtocols.FeatureServer);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceV2Async_WithSharedName_ResolvesProtocolSpecificService()
     {
         var graph = MixedProtocolPublicationGraph();
@@ -217,6 +232,20 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_ExactServiceIdWithDisabledProtocol_DoesNotFallThroughToNameMatch()
+    {
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(ExactIdProtocolCollisionGraph()));
+
+        var result = await validator.ValidateServiceV2Async(
+            "route-token",
+            ServiceProtocols.FeatureServer);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceV2Async_WithSharedGpServerName_PrefersGeoprocessingService()
     {
         var graph = new MetadataV2Graph
@@ -245,6 +274,31 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource!.Metadata.Id.Should().Be("service-gp");
+    }
+
+    private static MetadataV2Graph ExactIdProtocolCollisionGraph()
+    {
+        var graph = MixedProtocolPublicationGraph();
+        var exactIdService = graph.Services[0] with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "route-token", Name = "exact-service" },
+            Protocols = [ServiceProtocols.OgcFeatures],
+            PublicationIds = [],
+        };
+        var nameMatchedService = exactIdService with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-by-name", Name = "route-token" },
+            Protocols = [ServiceProtocols.FeatureServer],
+            PublicationIds = ["pub-feature"],
+        };
+        return graph with
+        {
+            Services = [exactIdService, nameMatchedService],
+            Publications =
+            [
+                graph.Publications[1] with { ServiceId = nameMatchedService.Metadata.Id },
+            ],
+        };
     }
 
     private static MetadataV2Graph MixedProtocolPublicationGraph()
