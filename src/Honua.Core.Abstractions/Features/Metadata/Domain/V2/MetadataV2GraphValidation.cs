@@ -695,7 +695,8 @@ public static class MetadataV2GraphValidator
                separator == value.LastIndexOf('@') &&
                separator < value.Length - 1 &&
                !string.IsNullOrWhiteSpace(value[..separator]) &&
-               !string.IsNullOrWhiteSpace(value[(separator + 1)..]);
+               !string.IsNullOrWhiteSpace(value[(separator + 1)..]) &&
+               value.All(character => !char.IsWhiteSpace(character) && !char.IsControl(character));
     }
 
     private static void ValidateServices(

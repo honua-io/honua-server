@@ -499,6 +499,9 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
         var previousField = new MetadataV2Field { Name = "legacy_id", Type = MetadataV2FieldType.BigInteger };
         var persistedField = new MetadataV2Field { Name = "published_id", Type = MetadataV2FieldType.Integer };
+        var previousLink = new MetadataV2Link { Href = "https://example.test/original", Rel = "describedby" };
+        var persistedLink = new MetadataV2Link { Href = "https://example.test/failed", Rel = "describedby" };
+        var concurrentLink = new MetadataV2Link { Href = "https://example.test/concurrent", Rel = "related" };
         var previousResource = new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -508,6 +511,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Publisher = "Original publisher",
                 CreatedAt = originalAt,
                 UpdatedAt = originalAt,
+                Links = [previousLink],
             },
             StorageBindingIds = ["binding-imported"],
             PrimaryStorageBindingId = "binding-imported",
@@ -534,6 +538,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Name = "Published resource",
                 Publisher = null,
                 UpdatedAt = publishedAt,
+                Links = [persistedLink],
             },
             StorageBindingIds = ["binding-generated"],
             PrimaryStorageBindingId = "binding-generated",
@@ -556,7 +561,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var concurrentBbox = new MetadataV2Bbox { West = 100, South = 200, East = 300, North = 400 };
         var currentResource = persistedResource with
         {
-            Metadata = persistedResource.Metadata with { Publisher = "Concurrent Data Office" },
+            Metadata = persistedResource.Metadata with
+            {
+                Publisher = "Concurrent Data Office",
+                Links = [persistedLink, concurrentLink],
+            },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
@@ -574,6 +583,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
+        resource.Metadata.Links.Should().Equal(previousLink, concurrentLink);
         resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);

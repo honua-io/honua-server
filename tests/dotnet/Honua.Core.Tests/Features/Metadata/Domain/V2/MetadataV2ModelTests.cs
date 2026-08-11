@@ -450,6 +450,9 @@ public sealed class MetadataV2ModelTests
     [InlineData("a@")]
     [InlineData("@")]
     [InlineData("a@@example.test")]
+    [InlineData("a@example .test")]
+    [InlineData("a@exam\tple.test")]
+    [InlineData("a@exam\u0001ple.test")]
     [Operation(Operations.Query)]
     public void Validate_WithMalformedContactEmail_ReturnsValidationError(string email)
     {

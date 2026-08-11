@@ -827,11 +827,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Attribution = RestoreMutationValue(current.Attribution, previous.Attribution, persisted.Attribution),
             Publisher = RestoreMutationValue(current.Publisher, previous.Publisher, persisted.Publisher),
             ContactPoint = RestoreMutationValue(current.ContactPoint, previous.ContactPoint, persisted.ContactPoint),
-            Links = RestoreMetadataMutationValue(
+            Links = RestoreMutationSequence(
                 current.Links,
                 previous.Links,
-                persisted.Links,
-                static value => new MetadataV2ObjectMetadata { Links = value }),
+                persisted.Links),
         };
 
     private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
