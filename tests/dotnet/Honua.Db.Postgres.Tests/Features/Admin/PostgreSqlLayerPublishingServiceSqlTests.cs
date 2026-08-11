@@ -976,7 +976,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             101,
             "Governed parcels",
             4326,
-            DateTimeOffset.Parse("2026-08-11T08:00:00Z", CultureInfo.InvariantCulture));
+            DateTimeOffset.Parse("2026-08-11T08:00:00Z", CultureInfo.InvariantCulture),
+            enabled: false);
 
         updated.Publications.Should().ContainSingle(publication =>
             publication.Metadata.Id == "pub-ogc-101" &&
@@ -987,6 +988,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             publication.StorageBindingId == "binding-alpha" &&
             publication.LayerIndex == 101 &&
             publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        updated.Resources.Single(resource => resource.Metadata.Id == "resource-alpha").Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        updated.Publications.Single(publication =>
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer)
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
     }
 
     [Fact]
@@ -1059,7 +1065,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         updated.Should().NotBeNull();
         updated!.Revision.Should().Be(8);
         updated.GeneratedAt.Should().Be(now);
-        updated.Publications.Should().ContainSingle().Which.Should().BeSameAs(existingPublication);
+        var updatedPublication = updated.Publications.Should().ContainSingle().Which;
+        updatedPublication.Should().BeEquivalentTo(
+            existingPublication,
+            options => options.Excluding(publication => publication.Status));
+        updatedPublication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        updatedPublication.Status.State.Should().Be(MetadataV2OperationalState.Ready);
+        updatedPublication.Status.ObservedAt.Should().Be(now);
         var updatedService = updated.Services.Should().ContainSingle().Which;
         updatedService.Metadata.Should().BeSameAs(authoredService.Metadata);
         updatedService.ServiceType.Should().Be(authoredService.ServiceType);

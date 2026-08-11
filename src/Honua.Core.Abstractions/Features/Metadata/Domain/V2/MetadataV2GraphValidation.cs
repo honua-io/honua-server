@@ -677,6 +677,7 @@ public static class MetadataV2GraphValidator
            Uri.TryCreate(value, UriKind.Absolute, out var parsedUrl) &&
            (string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+           !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
            string.IsNullOrEmpty(parsedUrl.UserInfo);
 
     private static void ValidateServices(

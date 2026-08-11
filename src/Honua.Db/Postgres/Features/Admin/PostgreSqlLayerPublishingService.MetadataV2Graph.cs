@@ -168,7 +168,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layer.LayerId,
             layer.LayerName,
             layer.Srid,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            layer.Enabled);
 
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
         if (!validation.IsValid)
@@ -842,7 +843,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         string layerName,
         int srid,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool enabled = true)
     {
         var storageLayerBindings = graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
@@ -879,6 +881,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 layerId);
         }
 
+        var linkedStatus = LayerReadyStatus(enabled, now);
+        resource = resource with { Status = linkedStatus };
+
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
         service ??= BuildPublishedService(graph, serviceName, srid, now);
         var existingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
@@ -889,7 +894,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Publication featurePublication;
         if (existingFeaturePublication is not null)
         {
-            featurePublication = existingFeaturePublication;
+            featurePublication = existingFeaturePublication with { Status = linkedStatus };
         }
         else
         {
@@ -917,7 +922,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 MetadataV2PublicationType.EsriFeatureLayer,
                 isPrimary: true,
                 idPrefix: "pub",
-                now);
+                now) with
+            { Status = linkedStatus };
         }
         service = service with
         {
@@ -932,6 +938,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
+            Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
             Publications = UpsertPublication(graph.Publications, featurePublication)
         };
     }
@@ -1512,9 +1519,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
 
     private static MetadataV2Status ActiveReadyStatus(DateTimeOffset now)
+        => LayerReadyStatus(enabled: true, now);
+
+    private static MetadataV2Status LayerReadyStatus(bool enabled, DateTimeOffset now)
         => new()
         {
-            Lifecycle = MetadataV2LifecycleStatus.Active,
+            Lifecycle = enabled
+                ? MetadataV2LifecycleStatus.Active
+                : MetadataV2LifecycleStatus.Retired,
             State = MetadataV2OperationalState.Ready,
             ObservedAt = now
         };
