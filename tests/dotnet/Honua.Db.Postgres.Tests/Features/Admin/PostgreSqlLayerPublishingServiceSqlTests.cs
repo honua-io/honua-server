@@ -2746,6 +2746,82 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_ReactivatesPublicationsAcrossServices()
+    {
+        var retiredStatus = new MetadataV2Status
+        {
+            Lifecycle = MetadataV2LifecycleStatus.Retired,
+            State = MetadataV2OperationalState.Ready,
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
+                    PublicationIds = ["pub-alpha"],
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
+                    PublicationIds = ["pub-beta"],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
+                    StorageBindingIds = ["binding-shared"],
+                    PrimaryStorageBindingId = "binding-shared",
+                    Status = retiredStatus,
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-shared" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 101,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication("pub-alpha", "service-alpha", "resource-shared", "binding-shared", 101,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = retiredStatus },
+                CreatePublication("pub-beta", "service-beta", "resource-shared", "binding-shared", 101,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = retiredStatus },
+            ],
+        };
+        var enabledAt = DateTimeOffset.Parse("2026-08-11T18:10:00Z", CultureInfo.InvariantCulture);
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Shared layer",
+            4326,
+            enabledAt,
+            enabled: true);
+
+        updated.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        updated.Publications.Should().HaveCount(2);
+        updated.Publications.Should().AllSatisfy(publication =>
+        {
+            publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+            publication.Status.ObservedAt.Should().Be(enabledAt);
+        });
+    }
+
+    [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithExistingPublication_PreservesAuthoredIdentityAndSettings()
     {
         var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);

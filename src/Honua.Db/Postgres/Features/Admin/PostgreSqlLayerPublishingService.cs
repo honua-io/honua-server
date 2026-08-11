@@ -721,7 +721,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         try
         {
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
         }
         catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
         {

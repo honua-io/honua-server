@@ -2453,6 +2453,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
         };
+        var synchronizedPublications = graph.Publications
+            .Select(publication =>
+                string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) ||
+                string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)
+                    ? publication with { Status = linkedStatus }
+                    : publication)
+            .ToArray();
 
         return graph with
         {
@@ -2460,7 +2467,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
-            Publications = UpsertPublication(graph.Publications, featurePublication)
+            Publications = UpsertPublication(synchronizedPublications, featurePublication)
         };
     }
 
