@@ -149,6 +149,7 @@ BEGIN
              || 'FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes()';
     ELSIF existing_trigger.tgfoid <> 'honua.track_feature_changes()'::regprocedure::oid
        OR existing_trigger.tgtype <> 29
+       OR existing_trigger.tgattr <> ''::int2vector
        OR existing_trigger.tgenabled <> 'O'
        OR existing_trigger.tgnargs <> 0
        OR existing_trigger.tgqual IS NOT NULL

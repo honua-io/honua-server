@@ -36,6 +36,12 @@
     <None Include="..\..\..\src\Honua.Server\Migrations\105_AddChangeLogPublicObjectId.sql" Link="Migrations\105_AddChangeLogPublicObjectId.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\001_CreateHonuaSchema.sql" Link="Migrations\001_CreateHonuaSchema.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\018_AddPerformanceIndexes.sql" Link="Migrations\018_AddPerformanceIndexes.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Features/Import/Fixtures/ArcGis/*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

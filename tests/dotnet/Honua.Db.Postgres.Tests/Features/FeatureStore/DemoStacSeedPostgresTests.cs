@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -48,6 +49,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(ExpectedIndexNames);
             (await ScalarStringAsync(dataSource, IndexShapeSql))
                 .Should().Be("btree:5,gin:4,gist:5,partial:5");
+            await CreateMigrationIndexContractAsync(dataSource);
+            (await ScalarInt64Async(dataSource, IndexDefinitionMismatchCountSql))
+                .Should().Be(0, "every recovered index must match the current migration-owned definition");
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1);
             var firstTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
@@ -88,6 +92,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(firstPublicationIdentity);
             (await ScalarInt64Async(dataSource, TriggerCountSql)).Should().Be(1);
 
+            await AssertColumnRestrictedTriggerRejectedAsync(dataSource, seed);
+            await ExecuteAsync(dataSource, RestoreCanonicalTriggerSql);
             await AssertHostileTriggerRejectedAsync(dataSource, seed);
         }
         finally
@@ -154,6 +160,34 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         await ExecuteAsync(dataSource, migration[contractStart..contractEnd]);
     }
 
+    private static async Task CreateMigrationIndexContractAsync(NpgsqlDataSource dataSource)
+    {
+        var statements = new List<string>();
+        foreach (var migrationName in new[] { "001_CreateHonuaSchema.sql", "018_AddPerformanceIndexes.sql" })
+        {
+            var migrationPath = Path.Join(AppContext.BaseDirectory, "Migrations", migrationName);
+            var migration = File.ReadAllText(migrationPath);
+            statements.AddRange(Regex.Matches(
+                    migration,
+                    @"(?ms)^CREATE INDEX IF NOT EXISTS idx_features_[a-z0-9_]+\b.*?;")
+                .Select(match => Regex.Replace(
+                    match.Value,
+                    @"\bON\s+(?:honua\.)?features\b",
+                    "ON migration_index_contract.features",
+                    RegexOptions.IgnoreCase)));
+        }
+
+        if (statements.Count != 13)
+        {
+            throw new InvalidOperationException(
+                $"Expected 13 migration-owned secondary feature indexes, found {statements.Count}.");
+        }
+
+        await ExecuteAsync(
+            dataSource,
+            MigrationIndexReferenceTableSql + Environment.NewLine + string.Join(Environment.NewLine, statements));
+    }
+
     private static async Task AssertChangeTrackingAsync(NpgsqlDataSource dataSource)
     {
         await ExecuteAsync(dataSource, ChangeTrackingExerciseSql);
@@ -176,6 +210,29 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         (await ScalarInt64Async(dataSource, TriggerOidSql)).Should().Be(hostileTriggerOid);
         (await ScalarStringAsync(dataSource, TriggerFunctionSql))
             .Should().Be("honua.hostile_track_feature_changes()");
+        (await ScalarStringAsync(dataSource, FeatureStateSql)).Should().Be(stableFeatureState);
+        (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(stableChangeState);
+    }
+
+    private static async Task AssertColumnRestrictedTriggerRejectedAsync(
+        NpgsqlDataSource dataSource,
+        string seed)
+    {
+        var stableFeatureState = await ScalarStringAsync(dataSource, FeatureStateSql);
+        var stableChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+        await ExecuteAsync(dataSource, ReplaceTriggerWithColumnRestrictedDefinitionSql);
+        var restrictedTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
+
+        (await ScalarInt64Async(dataSource, TriggerTypeSql)).Should().Be(29);
+        (await ScalarStringAsync(dataSource, TriggerFunctionSql))
+            .Should().Be("honua.track_feature_changes()");
+        (await ScalarStringAsync(dataSource, TriggerAttributesSql))
+            .Should().NotBeNullOrWhiteSpace("UPDATE OF objectid must be visible in pg_trigger.tgattr");
+
+        Func<Task> applyWithRestrictedTrigger = () => ExecuteAsync(dataSource, seed);
+        var failure = await applyWithRestrictedTrigger.Should().ThrowAsync<PostgresException>();
+        failure.Which.SqlState.Should().Be("55000");
+        (await ScalarInt64Async(dataSource, TriggerOidSql)).Should().Be(restrictedTriggerOid);
         (await ScalarStringAsync(dataSource, FeatureStateSql)).Should().Be(stableFeatureState);
         (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(stableChangeState);
     }
@@ -261,6 +318,62 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
            AND table_relation.relname = 'features'
         """;
 
+    private const string MigrationIndexReferenceTableSql =
+        """
+        CREATE SCHEMA migration_index_contract;
+        CREATE TABLE migration_index_contract.features (
+            objectid BIGSERIAL PRIMARY KEY,
+            layer_id INT NOT NULL,
+            geometry GEOMETRY,
+            attributes JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        """;
+
+    private const string IndexDefinitionMismatchCountSql =
+        """
+        WITH recovered AS (
+            SELECT index_relation.relname AS index_name,
+                   regexp_replace(
+                       regexp_replace(
+                           pg_get_indexdef(index_relation.oid),
+                           '(honua|migration_index_contract)\.',
+                           '{schema}.',
+                           'g'),
+                       '[[:space:]]+',
+                       ' ',
+                       'g') AS definition
+              FROM pg_index AS index
+              JOIN pg_class AS index_relation ON index_relation.oid = index.indexrelid
+              JOIN pg_class AS table_relation ON table_relation.oid = index.indrelid
+              JOIN pg_namespace AS namespace ON namespace.oid = table_relation.relnamespace
+             WHERE namespace.nspname = 'honua'
+               AND table_relation.relname = 'features'
+        ), expected AS (
+            SELECT index_relation.relname AS index_name,
+                   regexp_replace(
+                       regexp_replace(
+                           pg_get_indexdef(index_relation.oid),
+                           '(honua|migration_index_contract)\.',
+                           '{schema}.',
+                           'g'),
+                       '[[:space:]]+',
+                       ' ',
+                       'g') AS definition
+              FROM pg_index AS index
+              JOIN pg_class AS index_relation ON index_relation.oid = index.indexrelid
+              JOIN pg_class AS table_relation ON table_relation.oid = index.indrelid
+              JOIN pg_namespace AS namespace ON namespace.oid = table_relation.relnamespace
+             WHERE namespace.nspname = 'migration_index_contract'
+               AND table_relation.relname = 'features'
+        )
+        SELECT count(*)
+          FROM recovered
+          FULL JOIN expected USING (index_name)
+         WHERE recovered.definition IS DISTINCT FROM expected.definition
+        """;
+
     private const string TriggerCountSql =
         """
         SELECT count(*)
@@ -286,6 +399,42 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
          WHERE tgrelid = 'honua.features'::regclass
            AND tgname = 'trigger_track_feature_changes'
            AND NOT tgisinternal
+        """;
+
+    private const string TriggerTypeSql =
+        """
+        SELECT tgtype::bigint
+          FROM pg_trigger
+         WHERE tgrelid = 'honua.features'::regclass
+           AND tgname = 'trigger_track_feature_changes'
+           AND NOT tgisinternal
+        """;
+
+    private const string TriggerAttributesSql =
+        """
+        SELECT tgattr::text
+          FROM pg_trigger
+         WHERE tgrelid = 'honua.features'::regclass
+           AND tgname = 'trigger_track_feature_changes'
+           AND NOT tgisinternal
+        """;
+
+    private const string ReplaceTriggerWithColumnRestrictedDefinitionSql =
+        """
+        DROP TRIGGER trigger_track_feature_changes ON honua.features;
+        CREATE TRIGGER trigger_track_feature_changes
+            AFTER INSERT OR DELETE OR UPDATE OF objectid ON honua.features
+            FOR EACH ROW
+            EXECUTE FUNCTION honua.track_feature_changes();
+        """;
+
+    private const string RestoreCanonicalTriggerSql =
+        """
+        DROP TRIGGER trigger_track_feature_changes ON honua.features;
+        CREATE TRIGGER trigger_track_feature_changes
+            AFTER INSERT OR UPDATE OR DELETE ON honua.features
+            FOR EACH ROW
+            EXECUTE FUNCTION honua.track_feature_changes();
         """;
 
     private const string ReplaceTriggerWithHostileDefinitionSql =
