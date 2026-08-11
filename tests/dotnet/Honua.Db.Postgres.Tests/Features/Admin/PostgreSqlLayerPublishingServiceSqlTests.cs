@@ -544,6 +544,69 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresSchemaFieldsIndependently()
+    {
+        var previousField = new MetadataV2Field
+        {
+            SemanticId = "field.resource-layer-7.objectid",
+            Name = "objectid",
+            Type = MetadataV2FieldType.BigInteger,
+            Title = "Original identifier",
+        };
+        var persistedField = previousField with
+        {
+            Type = MetadataV2FieldType.Integer,
+            Title = "Published identifier",
+        };
+        var failedAddedField = new MetadataV2Field
+        {
+            Name = "publish_only",
+            Type = MetadataV2FieldType.String,
+            Title = "Publish-only field",
+        };
+        var concurrentField = new MetadataV2Field
+        {
+            Name = "concurrent_only",
+            Type = MetadataV2FieldType.DateTime,
+        };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-layer-7", Name = "Layer 7" },
+            SchemaFields = [previousField],
+        };
+        var persistedResource = previousResource with
+        {
+            SchemaFields = [persistedField, failedAddedField],
+        };
+        var currentResource = persistedResource with
+        {
+            SchemaFields =
+            [
+                persistedField with { Title = "Concurrent identifier title" },
+                failedAddedField with { Title = "Concurrent publish-only title" },
+                concurrentField,
+            ],
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var fields = compensation.Resources.Should().ContainSingle().Which.SchemaFields;
+        fields.Should().HaveCount(2);
+        var restoredField = fields.Single(field => field.Name == previousField.Name);
+        restoredField.Type.Should().Be(previousField.Type);
+        restoredField.Title.Should().Be("Concurrent identifier title");
+        fields.Should().NotContain(field => field.Name == failedAddedField.Name);
+        fields.Should().ContainSingle(field => field.Name == concurrentField.Name).Which.Should().Be(concurrentField);
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresBindingAndConnectionFieldsThreeWay()
     {
         var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);

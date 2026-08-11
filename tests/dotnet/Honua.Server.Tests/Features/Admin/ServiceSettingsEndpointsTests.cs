@@ -383,6 +383,53 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WhenFeatureLayerIsRelinked_DoesNotMutateEitherResource()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == 0);
+        var originalResource = snapshot.Graph.Resources.Single(candidate =>
+            string.Equals(candidate.Metadata.Id, publication.ResourceId, StringComparison.Ordinal));
+        var relinkedResource = originalResource with
+        {
+            Metadata = originalResource.Metadata with
+            {
+                Id = "resource-test-concurrent-relink",
+                License = "MIT",
+            },
+            StorageBindingIds = [],
+            PrimaryStorageBindingId = null,
+        };
+        var activatedGraph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Append(relinkedResource).ToArray(),
+            Publications = snapshot.Graph.Publications.Select(candidate =>
+                candidate.Metadata.Id == publication.Metadata.Id
+                    ? candidate with
+                    {
+                        ResourceId = relinkedResource.Metadata.Id,
+                        StorageBindingId = null,
+                    }
+                    : candidate).ToArray(),
+        };
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.ActivateAfterNextRead(activatedGraph);
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var current = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        current.Resources.Single(resource => resource.Metadata.Id == originalResource.Metadata.Id)
+            .Metadata.License.Should().Be(originalResource.Metadata.License);
+        current.Resources.Single(resource => resource.Metadata.Id == relinkedResource.Metadata.Id)
+            .Metadata.License.Should().Be("MIT");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithDisabledSameNameFeatureService_IgnoresDisabledPublication()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();

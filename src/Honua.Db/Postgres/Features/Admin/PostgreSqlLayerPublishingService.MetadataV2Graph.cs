@@ -552,11 +552,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.PrimaryStorageBindingId,
                 previous.PrimaryStorageBindingId,
                 persisted.PrimaryStorageBindingId),
-            SchemaFields = RestoreResourceMutationValue(
+            SchemaFields = RestoreSchemaFieldsMutation(
                 current.SchemaFields,
                 previous.SchemaFields,
-                persisted.SchemaFields,
-                static value => new MetadataV2Resource { SchemaFields = value }),
+                persisted.SchemaFields),
             PolicyIds = RestoreResourceMutationValue(
                 current.PolicyIds,
                 previous.PolicyIds,
@@ -639,6 +638,93 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.Extensions,
                 persisted.Extensions,
                 static value => new MetadataV2Resource { Extensions = value }),
+        };
+
+    private static List<MetadataV2Field> RestoreSchemaFieldsMutation(
+        IReadOnlyList<MetadataV2Field> current,
+        IReadOnlyList<MetadataV2Field> previous,
+        IReadOnlyList<MetadataV2Field> persisted)
+    {
+        var restored = new List<MetadataV2Field>(previous.Count + current.Count);
+        foreach (var previousField in previous)
+        {
+            var persistedField = persisted.FirstOrDefault(candidate =>
+                HasSameSchemaFieldIdentity(candidate, previousField));
+            var currentField = current.FirstOrDefault(candidate =>
+                HasSameSchemaFieldIdentity(candidate, previousField));
+
+            if (persistedField is null)
+            {
+                // Restore fields removed by the failed mutation, unless a later writer already
+                // recreated that identity with its own definition.
+                restored.Add(currentField ?? previousField);
+            }
+            else if (currentField is not null)
+            {
+                // A later removal wins. Otherwise invert only the properties written by the
+                // failed mutation so concurrent edits to this field survive.
+                restored.Add(RestoreSchemaFieldMutation(currentField, previousField, persistedField));
+            }
+        }
+
+        foreach (var currentField in current.Where(currentField =>
+                     !previous.Any(previousField => HasSameSchemaFieldIdentity(previousField, currentField)) &&
+                     !persisted.Any(persistedField => HasSameSchemaFieldIdentity(persistedField, currentField))))
+        {
+            // Preserve fields introduced by a later writer. Fields introduced by the failed
+            // publication are omitted even when their descriptive properties changed later,
+            // because the paired SQL column never committed.
+            restored.Add(currentField);
+        }
+
+        return restored;
+    }
+
+    private static bool HasSameSchemaFieldIdentity(MetadataV2Field left, MetadataV2Field right)
+        => (!string.IsNullOrWhiteSpace(left.SemanticId) &&
+            !string.IsNullOrWhiteSpace(right.SemanticId) &&
+            string.Equals(left.SemanticId.Trim(), right.SemanticId.Trim(), StringComparison.Ordinal)) ||
+           string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+
+    private static MetadataV2Field RestoreSchemaFieldMutation(
+        MetadataV2Field current,
+        MetadataV2Field previous,
+        MetadataV2Field persisted)
+        => current with
+        {
+            SemanticId = RestoreMutationValue(current.SemanticId, previous.SemanticId, persisted.SemanticId),
+            Name = RestoreMutationValue(current.Name, previous.Name, persisted.Name),
+            Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
+            Title = RestoreMutationValue(current.Title, previous.Title, persisted.Title),
+            Description = RestoreMutationValue(current.Description, previous.Description, persisted.Description),
+            Nullable = RestoreMutationValue(current.Nullable, previous.Nullable, persisted.Nullable),
+            SemanticRoles = RestoreMutationSequence(
+                current.SemanticRoles,
+                previous.SemanticRoles,
+                persisted.SemanticRoles),
+            Alias = RestoreMutationValue(current.Alias, previous.Alias, persisted.Alias),
+            EditableValue = RestoreMutationValue(
+                current.EditableValue,
+                previous.EditableValue,
+                persisted.EditableValue),
+            Length = RestoreMutationValue(current.Length, previous.Length, persisted.Length),
+            DefaultValue = RestoreSchemaFieldMutationValue(
+                current.DefaultValue,
+                previous.DefaultValue,
+                persisted.DefaultValue,
+                static value => new MetadataV2Field { DefaultValue = value }),
+            Domain = RestoreSchemaFieldMutationValue(
+                current.Domain,
+                previous.Domain,
+                persisted.Domain,
+                static value => new MetadataV2Field { Domain = value }),
+            Hidden = RestoreMutationValue(current.Hidden, previous.Hidden, persisted.Hidden),
+            SqlType = RestoreMutationValue(current.SqlType, previous.SqlType, persisted.SqlType),
+            Extensions = RestoreSchemaFieldMutationValue(
+                current.Extensions,
+                previous.Extensions,
+                persisted.Extensions,
+                static value => new MetadataV2Field { Extensions = value }),
         };
 
     private static MetadataV2StorageBinding RestoreStorageBindingMutation(
@@ -821,6 +907,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
             persisted,
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Publication);
+
+    private static T RestoreSchemaFieldMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2Field> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2Field);
 
     private static T RestoreStorageBindingMutationValue<T>(
         T current,

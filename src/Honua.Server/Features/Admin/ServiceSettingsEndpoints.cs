@@ -427,8 +427,10 @@ internal static class ServiceSettingsEndpoints
                 updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
-            var persistedResource = await MutateResourceByIdAsync(
+            var mutation = await MutateResourceByIdAsync(
                 graphStore,
+                serviceName,
+                layerId,
                 resource.Metadata.Id,
                 next =>
                 {
@@ -485,6 +487,15 @@ internal static class ServiceSettingsEndpoints
                     return next;
                 },
                 context.RequestAborted).ConfigureAwait(false);
+            if (mutation.BindingConflict)
+            {
+                return TypedResults.Problem(
+                    title: "FeatureServer layer changed during update",
+                    detail: $"Layer {layerId} in service '{serviceName}' was relinked while its metadata was being updated.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var persistedResource = mutation.Resource;
             if (persistedResource is null)
             {
                 return TypedResults.NotFound(
@@ -871,11 +882,14 @@ internal static class ServiceSettingsEndpoints
     /// <summary>
     /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to the
     /// uniquely resolved canonical resource, and persists the result. The immutable
-    /// resource id is carried across optimistic-concurrency retries so same-name protocol
-    /// services cannot redirect a patch to another resource.
+    /// resource id is carried across optimistic-concurrency retries, and the current
+    /// FeatureServer publication is revalidated before each attempt so a relink cannot
+    /// redirect or orphan the patch.
     /// </summary>
-    private static async Task<MetadataV2Resource?> MutateResourceByIdAsync(
+    private static async Task<(MetadataV2Resource? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
+        string serviceName,
+        int layerId,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
@@ -883,12 +897,26 @@ internal static class ServiceSettingsEndpoints
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var bindingState = ResolveFeatureLayerBindingState(
+                snapshot.Graph,
+                serviceName,
+                layerId,
+                resourceId);
+            if (bindingState == FeatureLayerBindingState.Conflict)
+            {
+                return (null, true);
+            }
+            if (bindingState == FeatureLayerBindingState.NotFound)
+            {
+                return (null, false);
+            }
+
             var resources = snapshot.Graph.Resources.ToArray();
             var resourceIndex = Array.FindIndex(resources, resource =>
                 string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
             if (resourceIndex < 0)
             {
-                return null;
+                return (null, false);
             }
 
             var mutatedResource = mutate(resources[resourceIndex]);
@@ -903,13 +931,72 @@ internal static class ServiceSettingsEndpoints
             try
             {
                 _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return mutatedResource;
+                return (mutatedResource, false);
             }
             catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
             {
                 // Concurrent etag bump — re-read and re-apply against the fresh snapshot.
             }
         }
+    }
+
+    private static FeatureLayerBindingState ResolveFeatureLayerBindingState(
+        MetadataV2Graph graph,
+        string serviceName,
+        int layerId,
+        string expectedResourceId)
+    {
+        var matchingServices = graph.Services
+            .Where(service => string.Equals(
+                service.Metadata.Name,
+                serviceName,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matchingServices.Length == 0)
+        {
+            return FeatureLayerBindingState.NotFound;
+        }
+
+        var featureServiceIds = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+            .Where(service => IsFeatureServerService(graph, service))
+            .Select(service => service.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (featureServiceIds.Count == 0)
+        {
+            return FeatureLayerBindingState.Conflict;
+        }
+
+        var currentResourceIds = graph.Publications
+            .Where(publication =>
+                featureServiceIds.Contains(publication.ServiceId) &&
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.Identifier.IsNumeric &&
+                publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (currentResourceIds.Length == 0)
+        {
+            return FeatureLayerBindingState.NotFound;
+        }
+        if (currentResourceIds.Length != 1 ||
+            !string.Equals(currentResourceIds[0], expectedResourceId, StringComparison.Ordinal))
+        {
+            return FeatureLayerBindingState.Conflict;
+        }
+
+        return graph.Resources.Any(resource =>
+            string.Equals(resource.Metadata.Id, expectedResourceId, StringComparison.Ordinal))
+            ? FeatureLayerBindingState.Bound
+            : FeatureLayerBindingState.NotFound;
+    }
+
+    private enum FeatureLayerBindingState
+    {
+        Bound,
+        NotFound,
+        Conflict,
     }
 
     /// <summary>
