@@ -29,6 +29,16 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
                 .Should().BeNull("the regression must start from the live failure state");
 
+            await ExecuteAsync(dataSource, "CREATE SCHEMA tenant");
+            var unsupportedSchemaSeed = RenderSeed(injectFailure: false, schema: "tenant");
+            Func<Task> applyToUnsupportedSchema = () => ExecuteAsync(dataSource, unsupportedSchemaSeed);
+            var schemaFailure = await applyToUnsupportedSchema.Should().ThrowAsync<PostgresException>();
+            schemaFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('tenant.features')::text"))
+                .Should().BeNull("an unsupported schema must fail before relation recovery");
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.metadata_v2_snapshots"))
+                .Should().Be(0, "an unsupported schema must not publish metadata");
+
             var seed = RenderSeed(injectFailure: false);
             Func<Task> applyWithoutCurrentMigrations = () => ExecuteAsync(dataSource, seed);
             var prerequisiteFailure = await applyWithoutCurrentMigrations.Should().ThrowAsync<PostgresException>();
@@ -102,7 +112,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
     }
 
-    private static string RenderSeed(bool injectFailure)
+    private static string RenderSeed(bool injectFailure, string schema = "honua")
     {
         var seedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
         var source = File.ReadAllText(seedPath);
@@ -113,8 +123,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
 
         var rendered = source[(begin + 1)..]
-            .Replace(":\"schema\"", "\"honua\"", StringComparison.Ordinal)
-            .Replace(":'schema'", "'honua'", StringComparison.Ordinal)
+            .Replace(":\"schema\"", $"\"{schema}\"", StringComparison.Ordinal)
+            .Replace(":'schema'", $"'{schema}'", StringComparison.Ordinal)
             .Replace(":'env'", "'seed-regression'", StringComparison.Ordinal);
         if (rendered.Contains("\\set", StringComparison.Ordinal) || rendered.Contains(":'", StringComparison.Ordinal))
         {

@@ -31,7 +31,9 @@
 -- PARAMETERS (psql -v):
 --   env        Metadata v2 environment id. MUST match the server's
 --              Metadata__Environment / Environment setting (default "default").
---   schema     Honua metadata schema (default "honua").
+--   schema     Honua migration schema (default and only supported value "honua").
+--              The current migration-owned tracking functions are honua-scoped;
+--              fail closed rather than publishing an untracked custom relation.
 --
 -- USAGE:
 --   psql -v ON_ERROR_STOP=1 -v env=default -v schema=honua -f demo-stac-imagery-v1.sql
@@ -59,6 +61,16 @@ SET search_path TO :"schema", public;
 -- cannot see psql :vars) can read them via current_setting().
 SELECT set_config('honua.seed_env', :'env', false);
 SELECT set_config('honua.seed_schema', :'schema', false);
+
+DO $schema_contract$
+BEGIN
+    IF current_setting('honua.seed_schema', true) IS DISTINCT FROM 'honua' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Demo STAC seed requires the migration-owned honua schema';
+    END IF;
+END
+$schema_contract$;
 
 -- ---------------------------------------------------------------------------
 -- 1. Scene features in the shared honua.features table (layer_id discriminated).
