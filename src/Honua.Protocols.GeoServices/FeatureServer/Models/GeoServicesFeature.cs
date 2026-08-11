@@ -40,4 +40,12 @@ public sealed class GeoServicesFeature
     /// </summary>
     [JsonIgnore]
     internal bool ClearGeometry { get; init; }
+
+    /// <summary>
+    /// Internal complete-state intent: replace the stored attribute bag instead of applying the
+    /// ordinary sparse-update overlay. Used only when conflict resolution restores a captured full
+    /// server snapshot.
+    /// </summary>
+    [JsonIgnore]
+    internal bool ReplaceAttributes { get; init; }
 }

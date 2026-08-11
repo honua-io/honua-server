@@ -1577,8 +1577,9 @@ internal sealed class FeatureServerEditsHandler(
                 SanitizeEditErrorMessage(attributesResult.ErrorMessage, "Invalid attributes."));
         }
 
-        var attributes = existingFeature?.Attributes.ToBuilder()
-            ?? ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var attributes = existingFeature is not null && !feature.ReplaceAttributes
+            ? existingFeature.Value.Attributes.ToBuilder()
+            : ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in attributesResult.Value!)
         {
             attributes[key] = value;

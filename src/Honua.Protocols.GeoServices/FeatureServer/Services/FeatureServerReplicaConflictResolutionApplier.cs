@@ -96,7 +96,11 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
 
                 request = new ApplyEditsRequest
                 {
-                    Updates = [PinToConflictFeature(feature, identity, command.ObjectId)],
+                    Updates = [PinToConflictFeature(
+                        feature,
+                        identity,
+                        command.ObjectId,
+                        command.ReplaceAttributes)],
                     RollbackOnFailure = true,
                     RollbackOnFailureExplicitlySet = true,
                 };
@@ -249,7 +253,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     private static GeoServicesFeature PinToConflictFeature(
         GeoServicesFeature feature,
         LayerIdentity identity,
-        long objectId)
+        long objectId,
+        bool replaceAttributes)
     {
         var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var entry in feature.Attributes.Where(entry => !IsObjectIdKey(entry.Key, identity)))
@@ -266,6 +271,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             Centroid = feature.Centroid,
             IncludeGeometry = feature.IncludeGeometry,
             ClearGeometry = feature.IncludeGeometry && feature.Geometry is null,
+            ReplaceAttributes = replaceAttributes,
         };
     }
 

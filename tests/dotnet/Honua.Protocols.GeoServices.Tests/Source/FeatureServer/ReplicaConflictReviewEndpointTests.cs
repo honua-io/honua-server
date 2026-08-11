@@ -169,6 +169,33 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
+    private async Task UpdateFeatureDescriptionAsync(long objectId, string description)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            updates = new[]
+            {
+                new
+                {
+                    attributes = new Dictionary<string, object?>
+                    {
+                        ["objectid"] = objectId,
+                        ["description"] = description,
+                    },
+                },
+            },
+            f = "json",
+        });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
+            content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
     private async Task UpdateFeatureGeometryAsync(long objectId)
     {
         var payload = JsonSerializer.Serialize(new
@@ -230,6 +257,17 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         return features.GetArrayLength() == 0
             ? null
             : features[0].GetProperty("attributes").GetProperty("name").GetString();
+    }
+
+    private async Task<JsonElement> ReadFeatureAttributesAsync(long objectId)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?objectIds={objectId}&returnGeometry=false&outFields=*&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("features")[0].GetProperty("attributes").Clone();
     }
 
     private static async Task<ApiResponse<ReplicaConflictListResponse>?> ReadListAsync(HttpResponseMessage response)
@@ -479,6 +517,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         // client value and keeping the server is the action that has to write (#2430).
         var seeded = await SeedConflictAsync(replicaId, clientEditApplied: true);
         await UpdateFeatureNameAsync(seeded.ObjectId, "client");
+        await UpdateFeatureDescriptionAsync(seeded.ObjectId, "client-only");
+        (await ReadFeatureAttributesAsync(seeded.ObjectId)).TryGetProperty("description", out _).Should().BeTrue();
 
         var response = await _fixture.Client.PostAsync(
             ResolvePath(WebAppFixture.TestServiceId, replicaId, seeded.ConflictId),
@@ -494,6 +534,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         (await ReadFeatureNameAsync(seeded.ObjectId)).Should().Be(
             "server",
             "keeping the server after a last-write-wins sync must restore the captured pre-conflict state");
+        (await ReadFeatureAttributesAsync(seeded.ObjectId)).TryGetProperty("description", out _).Should().BeFalse(
+            "a complete captured server snapshot must remove attributes introduced only by the client edit");
     }
 
     [IntegrationTest]

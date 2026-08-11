@@ -80,6 +80,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.WriteFeatureState);
         plan.CommittedNewServerState.Should().BeTrue();
         plan.FeatureStateJson.Should().Contain("server");
+        plan.ReplaceAttributes.Should().BeTrue("the captured server envelope is a complete snapshot");
     }
 
     [Fact]
@@ -382,6 +383,22 @@ public sealed class ReplicaConflictResolutionPlannerTests
             new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: "server"));
 
         plan.Rejection.Should().Be(ReplicaConflictResolutionRejection.NotApplicable);
+    }
+
+    [Fact]
+    public void Plan_ChooseGeometryWithExplicitNull_WritesTheGeometryClearIntent()
+    {
+        var plan = ReplicaConflictResolutionPlanner.Plan(
+            Conflict(
+                ReplicaConflictType.Geometry,
+                clientEditApplied: true,
+                serverState: """{"attributes":{"objectid":1,"name":"server"},"geometry":null}"""),
+            ReplicaConflictResolutionAction.ChooseGeometry,
+            new ReplicaConflictResolutionInputs(FieldValues: null, GeometrySource: "server"));
+
+        plan.IsAccepted.Should().BeTrue();
+        using var document = JsonDocument.Parse(plan.FeatureStateJson!);
+        document.RootElement.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Theory]

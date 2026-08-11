@@ -1090,7 +1090,10 @@ internal sealed partial class ReplicaConflictResolutionService
                 plan.FeatureStateJson,
                 conflict.StorageLayerId,
                 expectedStateToken,
-                expectedRowAbsent),
+                expectedRowAbsent)
+            {
+                ReplaceAttributes = plan.ReplaceAttributes
+            },
             cancellationToken);
 
     /// <summary>

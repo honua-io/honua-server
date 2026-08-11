@@ -156,7 +156,7 @@ public static class ReplicaConflictResolutionPlanner
                 "No pre-conflict server state was captured for this conflict, so the server state cannot be restored.");
         }
 
-        return Write(conflict.ServerStateJson);
+        return Write(conflict.ServerStateJson, replaceAttributes: true);
     }
 
     private static ReplicaConflictResolutionPlan PlanMergeFields(
@@ -367,7 +367,7 @@ public static class ReplicaConflictResolutionPlanner
     private static JsonElement? TryGetGeometry(JsonElement envelope)
         => envelope.ValueKind == JsonValueKind.Object &&
             envelope.TryGetProperty(GeometryProperty, out var geometry) &&
-            geometry.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined
+            geometry.ValueKind is not JsonValueKind.Undefined
             ? geometry.Clone()
             : null;
 
@@ -385,12 +385,18 @@ public static class ReplicaConflictResolutionPlanner
         ReplicaConflictResolutionRejection.None,
         RejectionMessage: null);
 
-    private static ReplicaConflictResolutionPlan Write(string featureStateJson) => new(
-        ReplicaConflictResolutionEffect.WriteFeatureState,
-        featureStateJson,
-        CommittedNewServerState: true,
-        ReplicaConflictResolutionRejection.None,
-        RejectionMessage: null);
+    private static ReplicaConflictResolutionPlan Write(
+        string featureStateJson,
+        bool replaceAttributes = false)
+        => new ReplicaConflictResolutionPlan(
+            ReplicaConflictResolutionEffect.WriteFeatureState,
+            featureStateJson,
+            CommittedNewServerState: true,
+            ReplicaConflictResolutionRejection.None,
+            RejectionMessage: null)
+        {
+            ReplaceAttributes = replaceAttributes
+        };
 
     private static ReplicaConflictResolutionPlan Invalid(string message) => new(
         ReplicaConflictResolutionEffect.None,

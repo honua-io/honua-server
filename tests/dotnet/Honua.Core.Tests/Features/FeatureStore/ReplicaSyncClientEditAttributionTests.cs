@@ -309,6 +309,34 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_ManualReview_ConfirmsOnlyTheWithheldConflictTargets()
+    {
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: 42))
+        {
+            Generations = new Queue<long>([50L, 60L]),
+        };
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+
+        await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 42, Payload: null),
+                    new ReplicaUploadEdit(FeatureEditOperationKind.Update, ObjectId: 7, Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            new PartialFailureEditApplier(committedEditIndexes: [0], failed: false),
+            serverStateCapturer: new TokenCapturer());
+
+        repository.DetectionUpdates
+            .Select(update => update.ResolutionBaseGeneration)
+            .Should().Equal(
+                [50, 60],
+                "the non-conflicting edit's token is not part of the withheld snapshot confirmation");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_WhenTheSnapshotMovedDuringCapture_FallsBackToThePreCaptureCursor()
     {
         // The envelope would otherwise be older than the cursor it is paired with, and a later

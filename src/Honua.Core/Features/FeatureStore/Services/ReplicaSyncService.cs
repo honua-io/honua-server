@@ -298,8 +298,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 {
                     var confirmation = await serverStateCapturer
                         .CaptureTokensAsync(targets, cancellationToken).ConfigureAwait(false);
-                    var stableSnapshot = preconditionTokens.Count == confirmation.Count
-                        && preconditionTokens.All(entry =>
+                    var targetObjectIds = targets.Select(target => target.ObjectId).ToHashSet();
+                    var targetPreconditionTokens = preconditionTokens
+                        .Where(entry => targetObjectIds.Contains(entry.Key))
+                        .ToArray();
+                    var stableSnapshot = targetPreconditionTokens.Length == confirmation.Count
+                        && targetPreconditionTokens.All(entry =>
                             confirmation.TryGetValue(entry.Key, out var token)
                             && string.Equals(token, entry.Value, StringComparison.Ordinal));
                     withheldBaseGeneration = stableSnapshot ? postCaptureGeneration : preBatchGeneration;

@@ -837,6 +837,7 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         applier.LastCommand!.Value.StorageLayerId.Should().Be(10);
         applier.LastCommand!.Value.ExpectedStateToken.Should().Be("token-1");
+        applier.LastCommand!.Value.ReplaceAttributes.Should().BeTrue();
         applier.Trace.Should().Equal("capture", "apply");
     }
 

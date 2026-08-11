@@ -89,6 +89,13 @@ public readonly record struct ReplicaConflictResolutionPlan(
 {
     /// <summary>True when the plan can be applied.</summary>
     public bool IsAccepted => Rejection == ReplicaConflictResolutionRejection.None;
+
+    /// <summary>
+    /// True when <see cref="FeatureStateJson"/> is a complete captured state whose attributes must
+    /// replace the current row rather than overlay it. Server snapshots are complete; client update
+    /// envelopes and partial operator resolutions are not.
+    /// </summary>
+    public bool ReplaceAttributes { get; init; }
 }
 
 /// <summary>
@@ -125,7 +132,14 @@ public readonly record struct ReplicaConflictResolutionCommand(
     string? FeatureStateJson,
     int? StorageLayerId = null,
     string? ExpectedStateToken = null,
-    bool ExpectedRowAbsent = false);
+    bool ExpectedRowAbsent = false)
+{
+    /// <summary>
+    /// True when the state envelope's attributes replace the current row instead of overlaying it.
+    /// Internal shared-pipeline intent; never part of the GeoServices wire contract.
+    /// </summary>
+    public bool ReplaceAttributes { get; init; }
+}
 
 /// <summary>
 /// Outcome of applying a planned conflict resolution through the shared edit pipeline.
