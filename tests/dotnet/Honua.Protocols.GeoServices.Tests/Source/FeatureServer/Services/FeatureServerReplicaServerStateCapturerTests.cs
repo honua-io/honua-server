@@ -87,7 +87,9 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
         var states = await sut.CaptureAsync(
             [new ReplicaConflictCaptureTarget(publicLayerId, storageLayerId, objectId)]);
 
-        using var envelope = JsonDocument.Parse(states[(publicLayerId, objectId)]);
+        var capture = states[(publicLayerId, objectId)];
+        capture.StateToken.Should().Be(FeatureStateToken.Compute(stored));
+        using var envelope = JsonDocument.Parse(capture.StateJson);
         envelope.RootElement.TryGetProperty("geometry", out var geometry).Should().BeTrue();
         geometry.ValueKind.Should().Be(JsonValueKind.Null);
     }

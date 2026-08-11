@@ -261,9 +261,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
                 var captured = await serverStateCapturer.CaptureAsync(targets, cancellationToken)
                     .ConfigureAwait(false);
+                var capturedTokens = new Dictionary<long, string>();
                 foreach (var entry in captured)
                 {
-                    serverStates[entry.Key] = entry.Value;
+                    serverStates[entry.Key] = entry.Value.StateJson;
+                    capturedTokens[entry.Key.ObjectId] = entry.Value.StateToken;
                 }
 
                 // The conflict record already exists, so make each captured envelope and a safe
@@ -298,12 +300,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 {
                     var confirmation = await serverStateCapturer
                         .CaptureTokensAsync(targets, cancellationToken).ConfigureAwait(false);
-                    var targetObjectIds = targets.Select(target => target.ObjectId).ToHashSet();
-                    var targetPreconditionTokens = preconditionTokens
-                        .Where(entry => targetObjectIds.Contains(entry.Key))
-                        .ToArray();
-                    var stableSnapshot = targetPreconditionTokens.Length == confirmation.Count
-                        && targetPreconditionTokens.All(entry =>
+                    var stableSnapshot = capturedTokens.Count == confirmation.Count
+                        && capturedTokens.All(entry =>
                             confirmation.TryGetValue(entry.Key, out var token)
                             && string.Equals(token, entry.Value, StringComparison.Ordinal));
                     withheldBaseGeneration = stableSnapshot ? postCaptureGeneration : preBatchGeneration;

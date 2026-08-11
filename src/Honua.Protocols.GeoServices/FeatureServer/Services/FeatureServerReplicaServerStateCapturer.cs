@@ -39,11 +39,11 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
             ?? throw new ArgumentNullException(nameof(resourcesByPublicLayerId));
     }
 
-    public async Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+    public async Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default)
     {
-        var states = new Dictionary<(int PublicLayerId, long ObjectId), string>();
+        var states = new Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>();
         if (targets.IsDefaultOrEmpty)
         {
             return states;
@@ -60,7 +60,9 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
             var feature = await ResolveAsync(target, cancellationToken).ConfigureAwait(false);
             if (feature is { } found)
             {
-                states[key] = FeatureServerEndpoints.CaptureStateEnvelope(found);
+                states[key] = new ReplicaConflictServerStateCapture(
+                    FeatureServerEndpoints.CaptureStateEnvelope(found),
+                    FeatureStateToken.Compute(found));
             }
         }
 

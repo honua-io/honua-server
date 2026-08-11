@@ -1599,12 +1599,10 @@ internal sealed class FeatureServerEditsHandler(
             : ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (existingFeature is not null && feature.ReplaceAttributes)
         {
-            foreach (var field in nonEditableFields)
+            foreach (var field in nonEditableFields.Where(field =>
+                         existingFeature.Value.Attributes.ContainsKey(field.Name)))
             {
-                if (existingFeature.Value.Attributes.TryGetValue(field.Name, out var value))
-                {
-                    attributes[field.Name] = value;
-                }
+                attributes[field.Name] = existingFeature.Value.Attributes[field.Name];
             }
         }
         foreach (var (key, value) in attributesResult.Value!)

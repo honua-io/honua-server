@@ -337,7 +337,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
-    public async Task ApplyUpload_ManualReview_WhenTheSnapshotMovedDuringCapture_FallsBackToThePreCaptureCursor()
+    public async Task ApplyUpload_ManualReview_WhenTheSnapshotChangesAndReturns_FallsBackToThePreCaptureCursor()
     {
         // The envelope would otherwise be older than the cursor it is paired with, and a later
         // keepServer would see no post-base change and overwrite the newer state with the stale
@@ -357,7 +357,7 @@ public sealed class ReplicaSyncClientEditAttributionTests
                 LastWriteWins = false,
             },
             new PartialFailureEditApplier(committedEditIndexes: [], failed: false),
-            serverStateCapturer: new ShiftingTokenCapturer());
+            serverStateCapturer: new AbaTokenCapturer());
 
         repository.DetectionUpdates
             .Select(update => update.ResolutionBaseGeneration)
@@ -415,35 +415,40 @@ public sealed class ReplicaSyncClientEditAttributionTests
         applier.Preconditions.Should().BeEmpty();
     }
 
-    /// <summary>Capturer whose second token pass reports a different value, as a concurrent edit does.</summary>
-    private sealed class ShiftingTokenCapturer : IReplicaServerStateCapturer
+    /// <summary>Capturer that models A -&gt; B -&gt; A around the envelope read.</summary>
+    private sealed class AbaTokenCapturer : IReplicaServerStateCapturer
     {
-        private int _passes;
-
-        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
-                new Dictionary<(int, long), string>());
+            => Task.FromResult<IReadOnlyDictionary<(int, long), ReplicaConflictServerStateCapture>>(
+                targets.ToDictionary(
+                    target => (target.PublicLayerId, target.ObjectId),
+                    target => new ReplicaConflictServerStateCapture(
+                        $"server-envelope-B-{target.ObjectId}",
+                        $"token-B-{target.ObjectId}")));
 
         public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-        {
-            var pass = Interlocked.Increment(ref _passes);
-            return Task.FromResult<IReadOnlyDictionary<long, string>>(
-                targets.ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}-pass{pass}"));
-        }
+            => Task.FromResult<IReadOnlyDictionary<long, string>>(
+                targets.ToDictionary(t => t.ObjectId, t => $"token-A-{t.ObjectId}"));
     }
 
     /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
     private sealed class TokenCapturer(params long[] absentObjectIds) : IReplicaServerStateCapturer
     {
-        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
-                new Dictionary<(int, long), string>());
+            => Task.FromResult<IReadOnlyDictionary<(int, long), ReplicaConflictServerStateCapture>>(
+                targets
+                    .Where(t => !absentObjectIds.Contains(t.ObjectId))
+                    .ToDictionary(
+                        target => (target.PublicLayerId, target.ObjectId),
+                        target => new ReplicaConflictServerStateCapture(
+                            $"server-envelope-{target.ObjectId}",
+                            $"token-{target.ObjectId}")));
 
         public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
@@ -559,13 +564,15 @@ public sealed class ReplicaSyncClientEditAttributionTests
 
     private sealed class StateCapturer : IReplicaServerStateCapturer
     {
-        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<(int, long), string>>(
+            => Task.FromResult<IReadOnlyDictionary<(int, long), ReplicaConflictServerStateCapture>>(
                 targets.ToDictionary(
                     target => (target.PublicLayerId, target.ObjectId),
-                    target => $"server-envelope-{target.ObjectId}"));
+                    target => new ReplicaConflictServerStateCapture(
+                        $"server-envelope-{target.ObjectId}",
+                        $"token-{target.ObjectId}")));
 
         public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,

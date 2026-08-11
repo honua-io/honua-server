@@ -27,7 +27,7 @@ public interface IReplicaServerStateCapturer
     /// </summary>
     /// <param name="targets">The conflicting features to capture.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
+    Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default);
 
@@ -46,6 +46,15 @@ public interface IReplicaServerStateCapturer
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// An adapter-shaped server-state envelope and the optimistic-concurrency token computed from the
+/// same feature read. Keeping them together lets the sync service prove the captured envelope still
+/// describes the confirmed server state even if the row changes and later returns to an earlier value.
+/// </summary>
+/// <param name="StateJson">Serialized server-state envelope.</param>
+/// <param name="StateToken">Optimistic-concurrency token for the captured feature.</param>
+public readonly record struct ReplicaConflictServerStateCapture(string StateJson, string StateToken);
 
 /// <summary>
 /// A feature whose server state should be captured for a durable conflict record.
