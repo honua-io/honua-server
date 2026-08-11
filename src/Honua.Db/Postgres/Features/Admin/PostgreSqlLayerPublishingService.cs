@@ -337,23 +337,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // layer row). Doing it first means a projection failure leaves the layer transaction uncommitted and
         // rolled back on dispose â€” instead of committing an orphaned layer that then blocks re-publish with
         // "Layer already exists". (Publish is atomic from the caller's perspective.)
-        await UpsertPublishedLayerMetadataV2Async(
-                serviceName,
-                request,
-                layerId,
-                schema,
-                table,
-                primaryKeyColumn.Name,
-                geometryColumn,
-                geometryType,
-                srid,
-                storageSrid,
-                fields,
-                extent,
-                cancellationToken)
-            .ConfigureAwait(false);
+        MetadataV2GraphMutation? metadataMutation = null;
+        try
+        {
+            metadataMutation = await UpsertPublishedLayerMetadataV2Async(
+                    serviceName,
+                    request,
+                    layerId,
+                    schema,
+                    table,
+                    primaryKeyColumn.Name,
+                    geometryColumn,
+                    geometryType,
+                    srid,
+                    storageSrid,
+                    fields,
+                    extent,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        await transaction.CommitSafelyAsync(cancellationToken);
+            await transaction.CommitSafelyAsync(cancellationToken);
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
+        }
 
         return new PublishedLayerSummary
         {
@@ -414,13 +423,26 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var linkedLayer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken)
             .ConfigureAwait(false);
 
-        if (linkedLayer is not null)
+        MetadataV2GraphMutation? metadataMutation = null;
+        try
         {
-            await UpsertLinkedLayerMetadataV2Async(normalizedService, linkedLayer, cancellationToken)
-                .ConfigureAwait(false);
+            if (linkedLayer is not null)
+            {
+                metadataMutation = await UpsertLinkedLayerMetadataV2Async(
+                        normalizedService,
+                        linkedLayer,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await transaction.CommitSafelyAsync(cancellationToken);
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
         }
 
-        await transaction.CommitSafelyAsync(cancellationToken);
         return await HydrateSourceGovernanceAsync(linkedLayer, normalizedService, cancellationToken).ConfigureAwait(false);
     }
 
@@ -707,4 +729,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string? PrimaryKey,
         int? ServiceSrid,
         int? TargetSrid);
+
+    private sealed record MetadataV2GraphMutation(
+        MetadataV2Graph PreviousGraph,
+        long PersistedRevision,
+        string PersistedEtag);
 }

@@ -38,7 +38,7 @@ internal sealed partial class LayerPublishingStorageOptionJsonContext : JsonSeri
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private async Task UpsertPublishedLayerMetadataV2Async(
+    private async Task<MetadataV2GraphMutation> UpsertPublishedLayerMetadataV2Async(
         string serviceName,
         LayerPublishRequest request,
         int layerId,
@@ -148,10 +148,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
+        var persisted = await _metadataGraphStore
+            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+            .ConfigureAwait(false);
+        return new MetadataV2GraphMutation(graph, persisted.Revision, persisted.Etag);
     }
 
-    private async Task UpsertLinkedLayerMetadataV2Async(
+    private async Task<MetadataV2GraphMutation?> UpsertLinkedLayerMetadataV2Async(
         string serviceName,
         PublishedLayerSummary layer,
         CancellationToken cancellationToken)
@@ -166,7 +169,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             DateTimeOffset.UtcNow);
         if (updatedGraph is null)
         {
-            return;
+            return null;
         }
 
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
@@ -176,7 +179,46 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Linked layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
+        var persisted = await _metadataGraphStore
+            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+            .ConfigureAwait(false);
+        return new MetadataV2GraphMutation(graph, persisted.Revision, persisted.Etag);
+    }
+
+    private async Task CompensateMetadataV2MutationAsync(
+        MetadataV2GraphMutation mutation,
+        Exception commitException)
+    {
+        try
+        {
+            var compensatingGraph = BuildCompensatingMetadataV2Graph(
+                mutation.PreviousGraph,
+                mutation.PersistedRevision,
+                DateTimeOffset.UtcNow);
+            await _metadataGraphStore
+                .SaveAsync(compensatingGraph, mutation.PersistedEtag, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception compensationException)
+        {
+            throw new AggregateException(
+                "The layer transaction failed after Metadata v2 persistence, and the compensating graph write also failed.",
+                commitException,
+                compensationException);
+        }
+    }
+
+    internal static MetadataV2Graph BuildCompensatingMetadataV2Graph(
+        MetadataV2Graph previousGraph,
+        long persistedRevision,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(previousGraph);
+        return previousGraph with
+        {
+            Revision = Math.Max(persistedRevision + 1, previousGraph.Revision + 1),
+            GeneratedAt = now
+        };
     }
 
     internal static MetadataV2Graph? BuildLinkedLayerMetadataV2Graph(

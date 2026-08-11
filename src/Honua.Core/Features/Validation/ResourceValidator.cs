@@ -176,21 +176,27 @@ public sealed class ResourceValidator : IResourceValidator
         string? requiredProtocol,
         CancellationToken cancellationToken)
     {
-        var serviceResult = await ValidateServiceV2Async(serviceId, cancellationToken).ConfigureAwait(false);
-        if (!serviceResult.IsValid)
+        if (string.IsNullOrWhiteSpace(serviceId))
         {
-            var message = serviceResult.ErrorMessage ?? ErrorMessages.NotFound.FormatService(serviceId);
-            return serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? ResourceValidationResult.InvalidIdentifier<MetadataV2ServiceLayerTriple>(message)
-                : ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(message);
+            return ResourceValidationResult.InvalidIdentifier<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.Validation.ServiceIdRequired);
         }
-        var service = serviceResult.Resource!;
+
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var service = ResolveServiceForLayer(snapshot, serviceId, layerId, requiredProtocol);
+        if (service is null)
+        {
+            return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
+                ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
+        }
+
         foreach (var candidate in snapshot.Index.PublicationsByService[service.Metadata.Id]
                      .Where(pub => pub.LayerIndex == layerId &&
-                                   pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
-                     .OrderByDescending(pub =>
-                         ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
+                                   pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                                   (requiredProtocol is null ||
+                                    ServiceProtocols.IsPreferredPublicationType(
+                                        requiredProtocol,
+                                        pub.PublicationType)))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
                      .Where(candidate =>
                          candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
@@ -203,6 +209,44 @@ public sealed class ResourceValidator : IResourceValidator
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
+    }
+
+    private static MetadataV2Service? ResolveServiceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        int layerId,
+        string? requiredProtocol)
+    {
+        if (requiredProtocol is null)
+        {
+            if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+            {
+                return byName;
+            }
+
+            return snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) ? byId : null;
+        }
+
+        // Several protocol-specific services may intentionally share one public route name.
+        // Resolve against the publication surface requested by the route instead of the
+        // first-wins ServicesByName index, otherwise a preceding aggregate/OGC service can
+        // make a FeatureServer request serve the wrong resource.
+        var candidates = snapshot.Graph.Services
+            .Where(service =>
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.LayerIndex == layerId &&
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
+                    snapshot.ResolveResource(publication) is
+                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+            .ToArray();
+
+        var exactId = candidates.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
+        return exactId ?? (candidates.Length == 1 ? candidates[0] : null);
     }
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)

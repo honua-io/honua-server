@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
@@ -54,12 +55,7 @@ internal static class StacResourceExtensions
             return true;
         }
 
-        return !license.Any(char.IsWhiteSpace) &&
-            !license.Contains('(') &&
-            !license.Contains(')') &&
-            !license.Contains('+') &&
-            !license.StartsWith("LicenseRef-", StringComparison.Ordinal) &&
-            !license.StartsWith("DocumentRef-", StringComparison.Ordinal);
+        return LayerSourceGovernance.IsSpdxLicenseIdentifier(license);
     }
 
     /// <summary>

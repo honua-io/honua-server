@@ -12,6 +12,38 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
     [Fact]
+    public void BuildCompensatingMetadataV2Graph_RestoresContentAtANewRevision()
+    {
+        var original = new MetadataV2Graph
+        {
+            Revision = 7,
+            Environment = "Production",
+            GeneratedAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture),
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "Resource 1" },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                },
+            ],
+        };
+        var compensatedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
+
+        var compensation = PostgreSqlLayerPublishingService.BuildCompensatingMetadataV2Graph(
+            original,
+            persistedRevision: 8,
+            compensatedAt);
+
+        compensation.Revision.Should().Be(9);
+        compensation.GeneratedAt.Should().Be(compensatedAt);
+        compensation.Resources.Should().BeEquivalentTo(original.Resources);
+        compensation.Services.Should().BeEquivalentTo(original.Services);
+        compensation.Publications.Should().BeEquivalentTo(original.Publications);
+        compensation.StorageBindings.Should().BeEquivalentTo(original.StorageBindings);
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithSameServiceIndex_UsesGlobalStorageIdentity()
     {
         var graph = new MetadataV2Graph

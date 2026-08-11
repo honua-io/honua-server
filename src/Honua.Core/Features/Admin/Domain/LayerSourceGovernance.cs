@@ -123,6 +123,16 @@ public sealed record LayerSourceGovernance
         return true;
     }
 
+    /// <summary>
+    /// Determines whether a value is one standalone identifier from the embedded SPDX
+    /// License List snapshot. Expressions, custom references, and exception identifiers
+    /// are not standalone STAC license identifiers.
+    /// </summary>
+    /// <param name="license">Candidate SPDX license identifier.</param>
+    /// <returns><see langword="true"/> only for a cataloged SPDX license identifier.</returns>
+    public static bool IsSpdxLicenseIdentifier(string? license)
+        => !string.IsNullOrWhiteSpace(license) && SpdxIdentifiers.Licenses.Contains(license);
+
     /// <summary>Builds canonical Metadata v2 license/source links for this value.</summary>
     /// <returns>Zero to two canonical external links.</returns>
     public IReadOnlyList<MetadataV2Link> ToMetadataLinks()

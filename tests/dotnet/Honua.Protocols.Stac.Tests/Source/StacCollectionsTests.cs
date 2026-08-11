@@ -167,6 +167,23 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithUnknownStandaloneLicense_UsesVariousLicenseToken()
+    {
+        UpdateGovernanceMetadata(
+            license: "Unknown-Public-License-1.0",
+            attribution: null,
+            publisher: null);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("license").GetString().Should().Be("various");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithAttributionOnly_PreservesAttributionAsProvider()
     {
         const string attribution = "Example community contributors";

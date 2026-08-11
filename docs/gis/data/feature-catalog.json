@@ -12129,6 +12129,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithAttributionOnly_PreservesAttributionAsProvider",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithCompoundSpdxLicense_UsesVariousLicenseToken",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithUnknownStandaloneLicense_UsesVariousLicenseToken",
         "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink"
       ],
       "proof_ledger_surface": "stac-api",
