@@ -63,10 +63,10 @@ The publish request accepts these optional source-governance fields:
 | `license` | 256 characters; SPDX expression syntax or literal `proprietary` | Metadata v2 license; GeoServices license metadata |
 | `attribution` | 512 characters; no control characters | GeoServices `copyrightText`; OGC collection `attribution` |
 | `publisher` | 256 characters; no control characters | Metadata v2 publisher; additive GeoServices publisher metadata |
-| `licenseUrl` | 2,048 characters; absolute HTTP(S), no embedded credentials | Metadata v2 and protocol link with `rel=license` |
+| `licenseUrl` | 2,048 characters; absolute HTTP(S), no embedded credentials | Optional override for the Metadata v2 and protocol link with `rel=license` |
 | `sourceUrl` | 2,048 characters; absolute HTTP(S), no embedded credentials | Metadata v2 and protocol link with `rel=describedby` |
 
-All fields are optional and absent by default. Honua does not derive license rights, attribution, publisher identity, or documentation URLs from other values.
+All fields are optional and absent by default. Honua does not infer license rights, attribution, or publisher identity. When `license` is one standalone SPDX identifier and `licenseUrl` is omitted, Honua derives its canonical `https://spdx.org/licenses/{identifier}.html` documentation link. Explicit `licenseUrl` values override the derived URL; compound SPDX expressions and `proprietary` do not produce a derived link.
 
 ## Service and layer settings
 
@@ -82,7 +82,7 @@ All fields are optional and absent by default. Honua does not derive license rig
 
 Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
 
-The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
+The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). A license-only patch derives or refreshes the canonical link for a standalone SPDX identifier unless an explicit custom license URL already exists. Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
 
 Run `PUT /api/v1/admin/services/city/access-policy` with `{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}`.
 

@@ -196,6 +196,22 @@ public sealed class ResourceValidator : IResourceValidator
             return exactId;
         }
 
+        if (string.Equals(requiredProtocol, ServiceProtocols.GPServer, StringComparison.OrdinalIgnoreCase))
+        {
+            var geoprocessingServices = candidates
+                .Where(IsDedicatedGpService)
+                .ToArray();
+            if (geoprocessingServices.Length == 1)
+            {
+                return geoprocessingServices[0];
+            }
+
+            if (geoprocessingServices.Length > 1)
+            {
+                candidates = geoprocessingServices;
+            }
+        }
+
         var preferred = candidates
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
@@ -224,6 +240,9 @@ public sealed class ResourceValidator : IResourceValidator
 
         return candidates.Length == 1 ? candidates[0] : null;
     }
+
+    private static bool IsDedicatedGpService(MetadataV2Service service)
+        => service.Route?.TrimEnd('/').EndsWith("/GPServer", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <inheritdoc />
     public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(

@@ -215,6 +215,38 @@ public sealed class ResourceValidatorTests
         result.Resource!.Metadata.Id.Should().Be("service-feature");
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_WithSharedGpServerName_PrefersGeoprocessingService()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Route = "/rest/services/shared/FeatureServer",
+                    Protocols = ServiceProtocols.All,
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-gp", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.Custom,
+                    Route = "/rest/services/shared/GPServer",
+                    Protocols = [ServiceProtocols.GPServer],
+                },
+            ],
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(graph));
+
+        var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.GPServer);
+
+        result.IsValid.Should().BeTrue();
+        result.Resource!.Metadata.Id.Should().Be("service-gp");
+    }
+
     private static MetadataV2Graph MixedProtocolPublicationGraph()
     {
         return new MetadataV2Graph
