@@ -18,6 +18,7 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
@@ -565,11 +566,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.Relationships,
                 persisted.Relationships,
                 static value => new MetadataV2Resource { Relationships = value }),
-            AccessPolicy = RestoreResourceMutationValue(
+            AccessPolicy = RestoreAccessPolicyMutation(
                 current.AccessPolicy,
                 previous.AccessPolicy,
-                persisted.AccessPolicy,
-                static value => new MetadataV2Resource { AccessPolicy = value }),
+                persisted.AccessPolicy),
             Spatial = RestoreResourceSpatialMutation(current.Spatial, previous.Spatial, persisted.Spatial),
             Temporal = RestoreResourceMutationValue(
                 current.Temporal,
@@ -1064,6 +1064,58 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
+    private static AccessPolicy? RestoreAccessPolicyMutation(
+        AccessPolicy? current,
+        AccessPolicy? previous,
+        AccessPolicy? persisted)
+    {
+        if (current is null || previous is null || persisted is null)
+        {
+            return RestoreResourceMutationValue(
+                current,
+                previous,
+                persisted,
+                static value => new MetadataV2Resource { AccessPolicy = value });
+        }
+
+        return current with
+        {
+            AllowAnonymous = RestoreMutationValue(
+                current.AllowAnonymous,
+                previous.AllowAnonymous,
+                persisted.AllowAnonymous),
+            AllowAnonymousWrite = RestoreMutationValue(
+                current.AllowAnonymousWrite,
+                previous.AllowAnonymousWrite,
+                persisted.AllowAnonymousWrite),
+            AllowedRoles = RestoreAccessPolicyRolesMutation(
+                current.AllowedRoles,
+                previous.AllowedRoles,
+                persisted.AllowedRoles),
+            AllowedWriteRoles = RestoreAccessPolicyRolesMutation(
+                current.AllowedWriteRoles,
+                previous.AllowedWriteRoles,
+                persisted.AllowedWriteRoles),
+        };
+    }
+
+    private static string[]? RestoreAccessPolicyRolesMutation(
+        string[]? current,
+        string[]? previous,
+        string[]? persisted)
+    {
+        if (current is not null && previous is not null && persisted is not null)
+        {
+            return RestoreMutationSequence(current, previous, persisted).ToArray();
+        }
+
+        var mutationChanged = !NullableSequenceEqual(previous, persisted);
+        return mutationChanged && NullableSequenceEqual(current, persisted) ? previous : current;
+    }
+
+    private static bool NullableSequenceEqual<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
+        => left is null ? right is null : right is not null && left.SequenceEqual(right);
+
     private static T RestoreResourceMutationValue<T>(
         T current,
         T previous,
@@ -1241,7 +1293,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return restored;
     }
 
-    private static IReadOnlyDictionary<string, string> RestoreMetadataMapMutation(
+    private static Dictionary<string, string> RestoreMetadataMapMutation(
         IReadOnlyDictionary<string, string> current,
         IReadOnlyDictionary<string, string> previous,
         IReadOnlyDictionary<string, string> persisted)

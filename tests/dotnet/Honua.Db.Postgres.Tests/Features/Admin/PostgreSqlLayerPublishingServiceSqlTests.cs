@@ -539,6 +539,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             PrimaryStorageBindingId = "binding-imported",
             SchemaFields = [previousField],
             StyleResourceIds = ["style-original"],
+            AccessPolicy = new AccessPolicy
+            {
+                AllowAnonymous = false,
+                AllowAnonymousWrite = false,
+                AllowedRoles = ["reader"],
+                AllowedWriteRoles = ["editor"],
+            },
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -569,6 +576,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             PrimaryStorageBindingId = "binding-generated",
             SchemaFields = [persistedField],
             StyleResourceIds = ["style-failed"],
+            AccessPolicy = new AccessPolicy
+            {
+                AllowAnonymous = true,
+                AllowAnonymousWrite = true,
+                AllowedRoles = null,
+                AllowedWriteRoles = ["failed-writer"],
+            },
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
@@ -600,6 +614,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             StyleResourceIds = ["style-failed", "style-concurrent"],
+            AccessPolicy = persistedResource.AccessPolicy! with { AllowedWriteRoles = ["concurrent-writer"] },
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
         var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
@@ -639,6 +654,10 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);
         resource.StyleResourceIds.Should().Equal("style-original", "style-concurrent");
+        resource.AccessPolicy!.AllowAnonymous.Should().BeFalse();
+        resource.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();
+        resource.AccessPolicy.AllowedRoles.Should().Equal("reader");
+        resource.AccessPolicy.AllowedWriteRoles.Should().Equal("concurrent-writer");
         resource.Spatial!.SpatialReference.Should().Be(previousResource.Spatial!.SpatialReference);
         resource.Spatial.GeometryType.Should().Be(previousResource.Spatial.GeometryType);
         resource.Spatial.PrimaryGeometryField.Should().Be(previousResource.Spatial.PrimaryGeometryField);
