@@ -1566,9 +1566,26 @@ internal sealed class FeatureServerEditsHandler(
             geometry = geometryValidation.Geometry;
         }
 
+        IReadOnlyDictionary<string, object?> attributesToValidate = feature.Attributes;
+        MetadataV2Field[] nonEditableFields = [];
+        if (existingFeature is not null && feature.ReplaceAttributes)
+        {
+            // A complete server snapshot contains the row's read-only fields as well as its editable
+            // business state. They are not an operator mutation: keep the values from the currently
+            // addressed row, and validate/replace only fields clients are allowed to edit. This also
+            // keeps a custom non-editable id.primary available after rebuilding the attribute bag.
+            nonEditableFields = resource.SchemaFields.Where(field => !field.Editable).ToArray();
+            var nonEditableNames = nonEditableFields
+                .Select(field => field.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            attributesToValidate = feature.Attributes
+                .Where(entry => !nonEditableNames.Contains(entry.Key))
+                .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
-            feature.Attributes,
+            attributesToValidate,
             ValidationExtensions.AttributeValidationMode.GeoServices,
             isUpdate: existingFeature is not null);
         if (!attributesResult.IsValid)
@@ -1580,6 +1597,16 @@ internal sealed class FeatureServerEditsHandler(
         var attributes = existingFeature is not null && !feature.ReplaceAttributes
             ? existingFeature.Value.Attributes.ToBuilder()
             : ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (existingFeature is not null && feature.ReplaceAttributes)
+        {
+            foreach (var field in nonEditableFields)
+            {
+                if (existingFeature.Value.Attributes.TryGetValue(field.Name, out var value))
+                {
+                    attributes[field.Name] = value;
+                }
+            }
+        }
         foreach (var (key, value) in attributesResult.Value!)
         {
             attributes[key] = value;

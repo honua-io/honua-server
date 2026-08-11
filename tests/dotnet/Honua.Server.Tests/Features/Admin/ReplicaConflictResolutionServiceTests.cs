@@ -1099,6 +1099,34 @@ public sealed class ReplicaConflictResolutionServiceTests
             ReplicaConflictType.UpdateDelete, "a client edit against a server deletion owes no server envelope");
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_RebaselineCompletedClientDelete_AsDeleteDelete()
+    {
+        var expired = Conflict(clientEditApplied: false) with
+        {
+            ConflictType = ReplicaConflictType.DeleteUpdate,
+            ClientStateJson = null,
+            Status = ReplicaConflictStatus.Resolved,
+            ResolutionAction = ReplicaConflictResolutionAction.AcceptClient,
+            ResolvedBy = "operator-1",
+            ResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinalizationPending = true,
+            WriteCommitted = false,
+            PreWriteStateToken = "token-at-claim",
+        };
+        var repository = new FakeConflictRepository(expired) { ClaimSucceeds = false };
+        var service = CreateService(repository, new AbsentRowPreconditionFailingApplier());
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.AcceptClient));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        repository.Current.Status.Should().Be(ReplicaConflictStatus.Pending);
+        repository.Current.ConflictType.Should().Be(ReplicaConflictType.DeleteDelete,
+            "an absent row after a client delete represents the same deletion on both sides");
+        repository.Current.ClientStateJson.Should().BeNull();
+        repository.Current.ServerStateJson.Should().BeNull();
+    }
+
     /// <summary>Applier whose precondition fails and whose row has since been deleted.</summary>
     private sealed class AbsentRowPreconditionFailingApplier : IReplicaConflictResolutionApplier
     {

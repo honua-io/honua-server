@@ -18,6 +18,7 @@ using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -223,6 +224,32 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    private async Task MarkObjectIdFieldNonEditableAsync()
+    {
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var resources = snapshot.Graph.Resources
+            .Select(resource => resource.Metadata.Id == $"res-layer-{WebAppFixture.TestLayerId}"
+                ? resource with
+                {
+                    SchemaFields = resource.SchemaFields
+                        .Select(field => field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+                            ? field with { Editable = false }
+                            : field)
+                        .ToArray(),
+                }
+                : resource)
+            .ToArray();
+
+        provider.SetGraph(
+            snapshot.Graph with
+            {
+                Revision = snapshot.Graph.Revision + 1,
+                Resources = resources,
+            },
+            schema: _fixture.CurrentSchema);
     }
 
     private async Task<JsonValueKind> ReadFeatureGeometryKindAsync(long objectId)
@@ -519,6 +546,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         await UpdateFeatureNameAsync(seeded.ObjectId, "client");
         await UpdateFeatureDescriptionAsync(seeded.ObjectId, "client-only");
         (await ReadFeatureAttributesAsync(seeded.ObjectId)).TryGetProperty("description", out _).Should().BeTrue();
+        await MarkObjectIdFieldNonEditableAsync();
 
         var response = await _fixture.Client.PostAsync(
             ResolvePath(WebAppFixture.TestServiceId, replicaId, seeded.ConflictId),
@@ -534,8 +562,11 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         (await ReadFeatureNameAsync(seeded.ObjectId)).Should().Be(
             "server",
             "keeping the server after a last-write-wins sync must restore the captured pre-conflict state");
-        (await ReadFeatureAttributesAsync(seeded.ObjectId)).TryGetProperty("description", out _).Should().BeFalse(
+        var restoredAttributes = await ReadFeatureAttributesAsync(seeded.ObjectId);
+        restoredAttributes.TryGetProperty("description", out _).Should().BeFalse(
             "a complete captured server snapshot must remove attributes introduced only by the client edit");
+        restoredAttributes.GetProperty("objectid").GetInt64().Should().Be(seeded.ObjectId,
+            "complete-state replacement must preserve the addressed row's non-editable identity");
     }
 
     [IntegrationTest]

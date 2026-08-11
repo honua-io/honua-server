@@ -984,10 +984,10 @@ internal sealed partial class ReplicaConflictResolutionService
             await _conflictRepository.TryUpdateDetectionStateAsync(
                     new ReplicaConflictDetectionUpdate(
                         conflict.ConflictId,
-                        // A row that is gone makes this a client edit against a server deletion, and that
-                        // classification is what stops the record from owing a server envelope it can
-                        // never have.
-                        ConflictType: snapshot.Exists ? null : ReplicaConflictType.UpdateDelete,
+                        // A row that is gone is either a completed client delete (delete/delete) or a
+                        // client update against a server deletion. Both classifications stop the record
+                        // from owing a server envelope it can never have.
+                        ConflictType: snapshot.Exists ? null : ClassifyAbsentRebaseline(conflict.ConflictType),
                         ClientStateJson: null,
                         ServerStateJson: snapshot.StateJson,
                         // The refreshed envelope IS the current server side, so the attribution flags
@@ -1010,6 +1010,11 @@ internal sealed partial class ReplicaConflictResolutionService
             Log.ResolutionRebaselineFailed(_logger, conflict.ConflictId, ex);
         }
     }
+
+    private static ReplicaConflictType ClassifyAbsentRebaseline(ReplicaConflictType conflictType)
+        => conflictType is ReplicaConflictType.DeleteUpdate or ReplicaConflictType.DeleteDelete
+            ? ReplicaConflictType.DeleteDelete
+            : ReplicaConflictType.UpdateDelete;
 
     /// <summary>
     /// Back-dates a retained claim past its lease so the operator's own retry can resume it at once.
