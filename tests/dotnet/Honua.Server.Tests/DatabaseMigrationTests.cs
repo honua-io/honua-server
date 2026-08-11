@@ -255,6 +255,36 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             exception.MessageText.Should().Contain("Cannot change the public id.primary");
         }
 
+        await using (var deleteBranchCreatedCustomIdCmd = connection.CreateCommand())
+        {
+            deleteBranchCreatedCustomIdCmd.CommandText = """
+                INSERT INTO honua.version_edits
+                    (version_id, layer_id, objectid, operation, attributes)
+                VALUES
+                    ('00000000-0000-0000-0000-000000990105', 990105, 190109, 1,
+                     '{"asset_id": 700109}'::jsonb);
+
+                UPDATE honua.version_edits
+                SET operation = 3,
+                    attributes = NULL
+                WHERE version_id = '00000000-0000-0000-0000-000000990105'
+                  AND layer_id = 990105
+                  AND objectid = 190109;
+
+                SELECT public_objectid
+                FROM honua.feature_changes
+                WHERE version_id = '00000000-0000-0000-0000-000000990105'
+                  AND layer_id = 990105
+                  AND objectid = 190109
+                  AND operation = 3
+                ORDER BY generation DESC
+                LIMIT 1;
+                """;
+            var deletedBranchPublicObjectId = (long)(await deleteBranchCreatedCustomIdCmd.ExecuteScalarAsync())!;
+            deletedBranchPublicObjectId.Should().Be(700109,
+                "a branch-created delete should retain the custom id from its prior branch row");
+        }
+
         // A pre-migration custom-id delete has no surviving row image from which migration 105 can
         // recover its public alias. Invalidate only replicas whose cursors precede that unsafe
         // delete, forcing those clients to create a fresh replica instead of silently missing it.

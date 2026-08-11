@@ -187,6 +187,7 @@ DECLARE
     gen BIGINT;
     public_oid BIGINT;
     previous_public_oid BIGINT;
+    row_attributes JSONB;
     attr_actor TEXT;
     attr_source SMALLINT;
     attr_operation TEXT;
@@ -197,10 +198,18 @@ BEGIN
         RETURN OLD;
     END IF;
 
+    row_attributes := COALESCE(NEW.attributes, NEW.base_attributes);
+    IF TG_OP = 'UPDATE'
+       AND NEW.operation = 3
+       AND row_attributes IS NULL THEN
+        -- A branch-created row has no DEFAULT base image. Its delete overlay clears NEW.attributes,
+        -- so retain the public identity from the branch row being replaced.
+        row_attributes := COALESCE(OLD.attributes, OLD.base_attributes);
+    END IF;
     public_oid := honua.resolve_feature_public_objectid(
         NEW.layer_id,
         NEW.objectid,
-        COALESCE(NEW.attributes, NEW.base_attributes));
+        row_attributes);
     IF TG_OP = 'UPDATE' THEN
         previous_public_oid := honua.resolve_feature_public_objectid(
             OLD.layer_id,
