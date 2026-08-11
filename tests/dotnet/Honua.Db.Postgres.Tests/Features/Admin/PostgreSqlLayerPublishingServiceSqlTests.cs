@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -831,6 +832,355 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 previousRemovedRule,
             },
             options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresCompositeResourceMembersIndependently()
+    {
+        var previousRelationships = new[]
+        {
+            new MetadataV2Relationship
+            {
+                Id = "relationship-a",
+                Name = "Original relationship",
+                Description = "Original description",
+                RelatedResourceId = "resource-related-a",
+                Role = "origin",
+                OriginField = "legacy_id",
+                DestinationField = "legacy_parent_id",
+            },
+            new MetadataV2Relationship
+            {
+                Id = "relationship-b",
+                Name = "Stable relationship",
+                RelatedResourceId = "resource-related-b",
+                Role = "destination",
+                OriginField = "legacy_parent_id",
+                DestinationField = "legacy_id",
+            },
+        };
+        var failedRelationships = new[]
+        {
+            previousRelationships[0] with
+            {
+                Name = "Failed relationship",
+                OriginField = "failed_id",
+            },
+            previousRelationships[1],
+        };
+        var concurrentRelationship = new MetadataV2Relationship
+        {
+            Id = "relationship-concurrent",
+            Name = "Concurrent relationship",
+            RelatedResourceId = "resource-related-c",
+            Role = "origin",
+            OriginField = "concurrent_id",
+            DestinationField = "concurrent_parent_id",
+        };
+        var previousStyleEncoding = new MetadataV2StyleEncoding
+        {
+            Encoding = "mapbox-style",
+            Body = "original-style",
+            ContentType = "application/json",
+        };
+        var failedStyleEncoding = previousStyleEncoding with { Body = "failed-style" };
+        var previousRule = new Symbology3DRule
+        {
+            Attribute = "category",
+            Comparison = Symbology3DComparison.Equals,
+            Value = "original",
+            Opacity = 0.5,
+            Visible = true,
+        };
+        var failedRule = previousRule with { Value = "failed", Visible = false };
+        var previousSubtype = new MetadataV2Subtype
+        {
+            Code = JsonSerializer.SerializeToElement(1),
+            Name = "Original subtype",
+        };
+        var failedSubtype = previousSubtype with { Name = "Failed subtype" };
+        var previousContingentValue = new MetadataV2ContingentValue
+        {
+            Id = 1,
+            SubtypeCode = JsonSerializer.SerializeToElement(1),
+            Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["status"] = new MetadataV2ContingentFieldValue
+                {
+                    Type = "code",
+                    Code = JsonSerializer.SerializeToElement("original"),
+                },
+            },
+        };
+        var failedContingentValue = previousContingentValue with
+        {
+            SubtypeCode = JsonSerializer.SerializeToElement(2),
+            Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["status"] = new MetadataV2ContingentFieldValue
+                {
+                    Type = "code",
+                    Code = JsonSerializer.SerializeToElement("failed"),
+                },
+            },
+        };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-composites" },
+            Relationships = previousRelationships,
+            PermanentFilter = new MetadataV2PermanentFilter
+            {
+                Expression = "status = 'original'",
+                Language = MetadataV2PermanentFilterLanguages.ArcGisSql,
+            },
+            Subtypes = new MetadataV2Subtypes
+            {
+                SubtypeField = "original_type",
+                DefaultSubtypeCode = JsonSerializer.SerializeToElement(1),
+                Subtypes = [previousSubtype],
+            },
+            ContingentValueGroups =
+            [
+                new MetadataV2ContingentValueGroup
+                {
+                    Name = "status-group",
+                    Restrictive = true,
+                    Fields = ["status", "category"],
+                    ContingentValues = [previousContingentValue],
+                },
+            ],
+            OwnerEditPolicy = new MetadataV2OwnerEditPolicy
+            {
+                Enabled = true,
+                OwnerField = "original_owner",
+                StampOwnerOnInsert = true,
+            },
+            Extrusion = new MetadataV2ExtrusionInfo
+            {
+                HeightField = "original_height",
+                BaseHeightField = "original_base",
+                Unit = MetadataV2VerticalUnits.Meters,
+                DefaultHeight = 1,
+                MaterialHint = "original-material",
+            },
+            Symbology3D = new Symbology3D
+            {
+                DefaultColor = new Symbology3DColor(1, 2, 3),
+                DefaultOpacity = 0.25,
+                Rules = [previousRule],
+            },
+            Style = new MetadataV2ResourceStyle
+            {
+                Title = "Original style",
+                Abstract = "Original abstract",
+                StyleVersion = 1,
+                Encodings = [previousStyleEncoding],
+            },
+            Display = new MetadataV2ResourceDisplay
+            {
+                MinScale = 100,
+                MaxScale = 1_000,
+                DefaultVisibility = true,
+                DisplayField = "original_name",
+                Queryable = true,
+                HasZ = false,
+                HasM = false,
+            },
+            Editing = new MetadataV2ResourceEditing
+            {
+                GlobalIdField = "original_global_id",
+                CreatorField = "original_creator",
+                CreatedAtField = "original_created_at",
+                EditorField = "original_editor",
+                UpdatedAtField = "original_updated_at",
+                CanModify = true,
+                SupportsAttachments = false,
+                SupportsRelatedRecords = true,
+            },
+        };
+        var persistedResource = previousResource with
+        {
+            Relationships = failedRelationships,
+            PermanentFilter = previousResource.PermanentFilter! with
+            {
+                Expression = "status = 'failed'",
+                Language = MetadataV2PermanentFilterLanguages.Cql2Text,
+            },
+            Subtypes = previousResource.Subtypes! with
+            {
+                SubtypeField = "failed_type",
+                DefaultSubtypeCode = JsonSerializer.SerializeToElement(2),
+                Subtypes = [failedSubtype],
+            },
+            ContingentValueGroups =
+            [
+                previousResource.ContingentValueGroups[0] with
+                {
+                    Restrictive = false,
+                    Fields = ["status"],
+                    ContingentValues = [failedContingentValue],
+                },
+            ],
+            OwnerEditPolicy = previousResource.OwnerEditPolicy! with
+            {
+                OwnerField = "failed_owner",
+                StampOwnerOnInsert = false,
+            },
+            Extrusion = previousResource.Extrusion! with
+            {
+                HeightField = "failed_height",
+                BaseHeightField = "failed_base",
+                Unit = MetadataV2VerticalUnits.Feet,
+                DefaultHeight = 2,
+                MaterialHint = "failed-material",
+            },
+            Symbology3D = previousResource.Symbology3D! with
+            {
+                DefaultOpacity = 0.75,
+                Rules = [failedRule],
+            },
+            Style = previousResource.Style! with
+            {
+                Title = "Failed style",
+                Abstract = "Failed abstract",
+                StyleVersion = 2,
+                Encodings = [failedStyleEncoding],
+            },
+            Display = previousResource.Display! with
+            {
+                MinScale = 200,
+                MaxScale = 2_000,
+                DefaultVisibility = false,
+                DisplayField = "failed_name",
+                Queryable = false,
+                HasZ = true,
+                HasM = true,
+            },
+            Editing = previousResource.Editing! with
+            {
+                GlobalIdField = "failed_global_id",
+                CreatorField = "failed_creator",
+                CreatedAtField = "failed_created_at",
+                EditorField = "failed_editor",
+                UpdatedAtField = "failed_updated_at",
+                CanModify = false,
+                SupportsAttachments = true,
+                SupportsRelatedRecords = false,
+            },
+        };
+        var currentResource = persistedResource with
+        {
+            Relationships =
+            [
+                failedRelationships[0],
+                failedRelationships[1] with { Description = "Concurrent description" },
+                concurrentRelationship,
+            ],
+            PermanentFilter = persistedResource.PermanentFilter! with { Language = "concurrent-language" },
+            Subtypes = persistedResource.Subtypes! with
+            {
+                Subtypes =
+                [
+                    failedSubtype with
+                    {
+                        FieldOverrides = new Dictionary<string, MetadataV2SubtypeFieldOverride>(
+                            StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["concurrent_field"] = new MetadataV2SubtypeFieldOverride
+                            {
+                                DefaultValue = JsonSerializer.SerializeToElement("concurrent"),
+                            },
+                        },
+                    },
+                ],
+            },
+            ContingentValueGroups =
+            [
+                persistedResource.ContingentValueGroups[0] with
+                {
+                    ContingentValues =
+                    [
+                        failedContingentValue with
+                        {
+                            Values = new Dictionary<string, MetadataV2ContingentFieldValue>(
+                                failedContingentValue.Values,
+                                StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["concurrent_field"] = new MetadataV2ContingentFieldValue { Type = "any" },
+                            },
+                        },
+                    ],
+                },
+            ],
+            OwnerEditPolicy = persistedResource.OwnerEditPolicy! with { Enabled = false },
+            Extrusion = persistedResource.Extrusion! with { MaterialHint = "concurrent-material" },
+            Symbology3D = persistedResource.Symbology3D! with
+            {
+                DefaultColor = new Symbology3DColor(10, 20, 30),
+                Rules = [failedRule with { Opacity = 0.9 }],
+            },
+            Style = persistedResource.Style! with
+            {
+                Abstract = "Concurrent abstract",
+                Encodings = [failedStyleEncoding with { ContentType = "application/vnd.concurrent+json" }],
+            },
+            Display = persistedResource.Display! with { MinScale = 300 },
+            Editing = persistedResource.Editing! with { CreatorField = "concurrent_creator" },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var resource = compensation.Resources.Should().ContainSingle().Which;
+        resource.Relationships.Should().BeEquivalentTo(
+            new[]
+            {
+                previousRelationships[0],
+                previousRelationships[1] with { Description = "Concurrent description" },
+                concurrentRelationship,
+            },
+            options => options.WithStrictOrdering());
+        resource.PermanentFilter.Should().Be(new MetadataV2PermanentFilter
+        {
+            Expression = "status = 'original'",
+            Language = "concurrent-language",
+        });
+        resource.Subtypes!.SubtypeField.Should().Be("original_type");
+        resource.Subtypes.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+        var subtype = resource.Subtypes.Subtypes.Should().ContainSingle().Which;
+        subtype.Name.Should().Be("Original subtype");
+        subtype.FieldOverrides.Should().ContainSingle().Which.Key.Should().Be("concurrent_field");
+        subtype.FieldOverrides["concurrent_field"].DefaultValue!.Value.GetString().Should().Be("concurrent");
+        var contingentGroup = resource.ContingentValueGroups.Should().ContainSingle().Which;
+        contingentGroup.Restrictive.Should().BeTrue();
+        contingentGroup.Fields.Should().Equal("status", "category");
+        var contingentValue = contingentGroup.ContingentValues.Should().ContainSingle().Which;
+        contingentValue.SubtypeCode!.Value.GetInt32().Should().Be(1);
+        contingentValue.Values["status"].Code!.Value.GetString().Should().Be("original");
+        contingentValue.Values.Should().ContainKey("concurrent_field");
+        resource.OwnerEditPolicy.Should().Be(previousResource.OwnerEditPolicy with { Enabled = false });
+        resource.Extrusion.Should().Be(previousResource.Extrusion with { MaterialHint = "concurrent-material" });
+        resource.Symbology3D!.DefaultColor.Should().Be(new Symbology3DColor(10, 20, 30));
+        resource.Symbology3D.DefaultOpacity.Should().Be(0.25);
+        resource.Symbology3D.Rules.Should().ContainSingle().Which.Should().Be(
+            previousRule with { Opacity = 0.9 });
+        resource.Style.Should().BeEquivalentTo(
+            previousResource.Style! with
+            {
+                Abstract = "Concurrent abstract",
+                Encodings =
+                [
+                    previousStyleEncoding with { ContentType = "application/vnd.concurrent+json" },
+                ],
+            });
+        resource.Display.Should().Be(previousResource.Display with { MinScale = 300 });
+        resource.Editing.Should().Be(previousResource.Editing with { CreatorField = "concurrent_creator" });
     }
 
     [Fact]

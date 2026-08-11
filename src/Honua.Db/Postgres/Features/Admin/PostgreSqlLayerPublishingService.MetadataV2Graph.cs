@@ -13,6 +13,7 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Admin.Domain;
@@ -561,7 +562,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Relationships,
                 previous.Relationships,
                 persisted.Relationships,
-                static value => new MetadataV2Resource { Relationships = value }),
+                static value => new MetadataV2Resource { Relationships = value },
+                static resource => resource.Relationships),
             AccessPolicy = RestoreAccessPolicyMutation(
                 current.AccessPolicy,
                 previous.AccessPolicy,
@@ -575,12 +577,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.PermanentFilter,
                 previous.PermanentFilter,
                 persisted.PermanentFilter,
-                static value => new MetadataV2Resource { PermanentFilter = value }),
+                static value => new MetadataV2Resource { PermanentFilter = value },
+                static resource => resource.PermanentFilter),
             Subtypes = RestoreResourceMutationValue(
                 current.Subtypes,
                 previous.Subtypes,
                 persisted.Subtypes,
-                static value => new MetadataV2Resource { Subtypes = value }),
+                static value => new MetadataV2Resource { Subtypes = value },
+                static resource => resource.Subtypes),
             AttributeRules = RestoreAttributeRulesMutation(
                 current.AttributeRules,
                 previous.AttributeRules,
@@ -589,22 +593,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.ContingentValueGroups,
                 previous.ContingentValueGroups,
                 persisted.ContingentValueGroups,
-                static value => new MetadataV2Resource { ContingentValueGroups = value }),
+                static value => new MetadataV2Resource { ContingentValueGroups = value },
+                static resource => resource.ContingentValueGroups),
             OwnerEditPolicy = RestoreResourceMutationValue(
                 current.OwnerEditPolicy,
                 previous.OwnerEditPolicy,
                 persisted.OwnerEditPolicy,
-                static value => new MetadataV2Resource { OwnerEditPolicy = value }),
+                static value => new MetadataV2Resource { OwnerEditPolicy = value },
+                static resource => resource.OwnerEditPolicy),
             Extrusion = RestoreResourceMutationValue(
                 current.Extrusion,
                 previous.Extrusion,
                 persisted.Extrusion,
-                static value => new MetadataV2Resource { Extrusion = value }),
+                static value => new MetadataV2Resource { Extrusion = value },
+                static resource => resource.Extrusion),
             Symbology3D = RestoreResourceMutationValue(
                 current.Symbology3D,
                 previous.Symbology3D,
                 persisted.Symbology3D,
-                static value => new MetadataV2Resource { Symbology3D = value }),
+                static value => new MetadataV2Resource { Symbology3D = value },
+                static resource => resource.Symbology3D),
             StyleResourceIds = RestoreMutationSequence(
                 current.StyleResourceIds,
                 previous.StyleResourceIds,
@@ -613,17 +621,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Style,
                 previous.Style,
                 persisted.Style,
-                static value => new MetadataV2Resource { Style = value }),
+                static value => new MetadataV2Resource { Style = value },
+                static resource => resource.Style),
             Display = RestoreResourceMutationValue(
                 current.Display,
                 previous.Display,
                 persisted.Display,
-                static value => new MetadataV2Resource { Display = value }),
+                static value => new MetadataV2Resource { Display = value },
+                static resource => resource.Display),
             Editing = RestoreResourceMutationValue(
                 current.Editing,
                 previous.Editing,
                 persisted.Editing,
-                static value => new MetadataV2Resource { Editing = value }),
+                static value => new MetadataV2Resource { Editing = value },
+                static resource => resource.Editing),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
             Extensions = RestoreJsonMapMutation(
                 current.Extensions,
@@ -1569,13 +1580,266 @@ internal sealed partial class PostgreSqlLayerPublishingService
         T current,
         T previous,
         T persisted,
-        Func<T, MetadataV2Resource> containerFactory)
-        => RestoreJsonMutationValue(
-            current,
-            previous,
-            persisted,
-            containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2Resource);
+        Func<T, MetadataV2Resource> containerFactory,
+        Func<MetadataV2Resource, T> valueSelector)
+    {
+        var typeInfo = MetadataV2JsonContext.Default.MetadataV2Resource;
+        var currentNode = JsonSerializer.SerializeToNode(containerFactory(current), typeInfo);
+        var previousNode = JsonSerializer.SerializeToNode(containerFactory(previous), typeInfo);
+        var persistedNode = JsonSerializer.SerializeToNode(containerFactory(persisted), typeInfo);
+        var restoredNode = RestoreJsonNodeMutation(
+            new OptionalJsonNode(true, currentNode),
+            new OptionalJsonNode(true, previousNode),
+            new OptionalJsonNode(true, persistedNode));
+        var restoredContainer = JsonSerializer.Deserialize(restoredNode.Node!.ToJsonString(), typeInfo)
+            ?? throw new InvalidOperationException("Resource compensation produced invalid metadata JSON.");
+        return valueSelector(restoredContainer);
+    }
+
+    private static OptionalJsonNode RestoreJsonNodeMutation(
+        OptionalJsonNode current,
+        OptionalJsonNode previous,
+        OptionalJsonNode persisted)
+    {
+        if (JsonNodesEquivalent(previous, persisted))
+        {
+            return current.DeepClone();
+        }
+
+        if (JsonNodesEquivalent(current, persisted))
+        {
+            return previous.DeepClone();
+        }
+
+        if (current.Node is JsonObject currentObject &&
+            IsJsonObjectOrEmpty(previous) &&
+            IsJsonObjectOrEmpty(persisted))
+        {
+            return new OptionalJsonNode(
+                true,
+                RestoreJsonObjectMutation(
+                    currentObject,
+                    previous.Node as JsonObject,
+                    persisted.Node as JsonObject));
+        }
+
+        if (current.Node is JsonArray currentArray &&
+            previous.Node is JsonArray previousArray &&
+            persisted.Node is JsonArray persistedArray)
+        {
+            return new OptionalJsonNode(
+                true,
+                RestoreJsonArrayMutation(currentArray, previousArray, persistedArray));
+        }
+
+        return current.DeepClone();
+    }
+
+    private static JsonObject RestoreJsonObjectMutation(
+        JsonObject current,
+        JsonObject? previous,
+        JsonObject? persisted)
+    {
+        var propertyNames = current.Select(property => property.Key)
+            .Concat(previous?.Select(property => property.Key) ?? [])
+            .Concat(persisted?.Select(property => property.Key) ?? [])
+            .Distinct(StringComparer.Ordinal);
+        var restored = new JsonObject();
+        foreach (var propertyName in propertyNames)
+        {
+            var restoredProperty = RestoreJsonNodeMutation(
+                GetOptionalJsonProperty(current, propertyName),
+                GetOptionalJsonProperty(previous, propertyName),
+                GetOptionalJsonProperty(persisted, propertyName));
+            if (restoredProperty.Exists)
+            {
+                restored[propertyName] = restoredProperty.Node;
+            }
+        }
+
+        return restored;
+    }
+
+    private static JsonArray RestoreJsonArrayMutation(
+        JsonArray current,
+        JsonArray previous,
+        JsonArray persisted)
+    {
+        if (TryGetStableJsonArrayIdentity(current, previous, persisted, out var identityProperty))
+        {
+            return RestoreIdentifiedJsonArrayMutation(
+                current,
+                previous,
+                persisted,
+                identityProperty);
+        }
+
+        var restoredJson = RestoreMutationSequence(
+            current.Select(JsonNodeText).ToArray(),
+            previous.Select(JsonNodeText).ToArray(),
+            persisted.Select(JsonNodeText).ToArray());
+        var restored = new JsonArray();
+        foreach (var json in restoredJson)
+        {
+            restored.Add(JsonNode.Parse(json));
+        }
+
+        return restored;
+    }
+
+    private static JsonArray RestoreIdentifiedJsonArrayMutation(
+        JsonArray current,
+        JsonArray previous,
+        JsonArray persisted,
+        string identityProperty)
+    {
+        var identityComparer = GetJsonArrayIdentityComparer(identityProperty);
+        var previousIndices = IndexJsonArrayByIdentity(previous, identityProperty, identityComparer);
+        var persistedIndices = IndexJsonArrayByIdentity(persisted, identityProperty, identityComparer);
+        var restored = new List<RestoredJsonArrayItem>(previous.Count + current.Count);
+        for (var currentIndex = 0; currentIndex < current.Count; currentIndex++)
+        {
+            var currentItem = current[currentIndex]!;
+            var identity = GetJsonArrayIdentity(currentItem, identityProperty);
+            if (!persistedIndices.TryGetValue(identity, out var persistedIndex))
+            {
+                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null));
+                continue;
+            }
+
+            var persistedItem = persisted[persistedIndex]!;
+            if (previousIndices.TryGetValue(identity, out var previousIndex))
+            {
+                var restoredItem = RestoreJsonNodeMutation(
+                    new OptionalJsonNode(true, currentItem),
+                    new OptionalJsonNode(true, previous[previousIndex]),
+                    new OptionalJsonNode(true, persistedItem));
+                restored.Add(new RestoredJsonArrayItem(restoredItem.Node, previousIndex));
+            }
+            else if (!JsonNode.DeepEquals(currentItem, persistedItem))
+            {
+                restored.Add(new RestoredJsonArrayItem(currentItem.DeepClone(), null));
+            }
+            // Items introduced only by the failed mutation are otherwise omitted.
+        }
+
+        for (var previousIndex = 0; previousIndex < previous.Count; previousIndex++)
+        {
+            var previousItem = previous[previousIndex]!;
+            var identity = GetJsonArrayIdentity(previousItem, identityProperty);
+            if (persistedIndices.ContainsKey(identity))
+            {
+                continue;
+            }
+
+            var recreatedIndex = restored.FindIndex(item =>
+                item.PreviousIndex is null &&
+                item.Node is not null &&
+                identityComparer.Equals(
+                    GetJsonArrayIdentity(item.Node, identityProperty),
+                    identity));
+            if (recreatedIndex >= 0)
+            {
+                restored[recreatedIndex] = restored[recreatedIndex] with { PreviousIndex = previousIndex };
+                continue;
+            }
+
+            var insertionIndex = restored.FindIndex(item => item.PreviousIndex > previousIndex);
+            restored.Insert(
+                insertionIndex >= 0 ? insertionIndex : restored.Count,
+                new RestoredJsonArrayItem(previousItem.DeepClone(), previousIndex));
+        }
+
+        var restoredArray = new JsonArray();
+        foreach (var item in restored)
+        {
+            restoredArray.Add(item.Node);
+        }
+
+        return restoredArray;
+    }
+
+    private static bool TryGetStableJsonArrayIdentity(
+        JsonArray current,
+        JsonArray previous,
+        JsonArray persisted,
+        out string identityProperty)
+    {
+        string[] identityProperties = ["id", "code", "name", "encoding", "attribute"];
+        foreach (var candidate in identityProperties)
+        {
+            if (HasUniqueJsonArrayIdentity(current, candidate) &&
+                HasUniqueJsonArrayIdentity(previous, candidate) &&
+                HasUniqueJsonArrayIdentity(persisted, candidate) &&
+                current.Concat(previous).Concat(persisted).Any())
+            {
+                identityProperty = candidate;
+                return true;
+            }
+        }
+
+        identityProperty = string.Empty;
+        return false;
+    }
+
+    private static bool HasUniqueJsonArrayIdentity(JsonArray array, string identityProperty)
+    {
+        var identities = new HashSet<string>(GetJsonArrayIdentityComparer(identityProperty));
+        foreach (var item in array)
+        {
+            if (item is not JsonObject itemObject ||
+                !itemObject.TryGetPropertyValue(identityProperty, out var identityNode) ||
+                identityNode is null ||
+                !identities.Add(JsonNodeText(identityNode)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, int> IndexJsonArrayByIdentity(
+        JsonArray array,
+        string identityProperty,
+        StringComparer identityComparer)
+        => array.Select((item, index) => new
+        {
+            Identity = GetJsonArrayIdentity(item!, identityProperty),
+            Index = index,
+        })
+            .ToDictionary(item => item.Identity, item => item.Index, identityComparer);
+
+    private static StringComparer GetJsonArrayIdentityComparer(string identityProperty)
+        => identityProperty is "name" or "encoding" or "attribute"
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+    private static string GetJsonArrayIdentity(JsonNode item, string identityProperty)
+        => JsonNodeText(item[identityProperty]!);
+
+    private static string JsonNodeText(JsonNode? node)
+        => node?.ToJsonString() ?? "null";
+
+    private static bool IsJsonObjectOrEmpty(OptionalJsonNode value)
+        => !value.Exists || value.Node is null || value.Node is JsonObject;
+
+    private static OptionalJsonNode GetOptionalJsonProperty(JsonObject? value, string propertyName)
+        => value is not null && value.TryGetPropertyValue(propertyName, out var propertyValue)
+            ? new OptionalJsonNode(true, propertyValue)
+            : new OptionalJsonNode(false, null);
+
+    private static bool JsonNodesEquivalent(OptionalJsonNode left, OptionalJsonNode right)
+        => left.Exists == right.Exists &&
+           (!left.Exists || JsonNode.DeepEquals(left.Node, right.Node));
+
+    private readonly record struct OptionalJsonNode(bool Exists, JsonNode? Node)
+    {
+        public OptionalJsonNode DeepClone()
+            => new(Exists, Node?.DeepClone());
+    }
+
+    private readonly record struct RestoredJsonArrayItem(JsonNode? Node, int? PreviousIndex);
 
     private static T RestorePublicationMutationValue<T>(
         T current,
