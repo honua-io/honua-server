@@ -571,11 +571,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.AccessPolicy,
                 persisted.AccessPolicy),
             Spatial = RestoreResourceSpatialMutation(current.Spatial, previous.Spatial, persisted.Spatial),
-            Temporal = RestoreResourceMutationValue(
+            Temporal = RestoreResourceTemporalMutation(
                 current.Temporal,
                 previous.Temporal,
-                persisted.Temporal,
-                static value => new MetadataV2Resource { Temporal = value }),
+                persisted.Temporal),
             PermanentFilter = RestoreResourceMutationValue(
                 current.PermanentFilter,
                 previous.PermanentFilter,
@@ -1103,18 +1102,71 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string[]? current,
         string[]? previous,
         string[]? persisted)
-    {
-        if (current is not null && previous is not null && persisted is not null)
-        {
-            return RestoreMutationSequence(current, previous, persisted).ToArray();
-        }
-
-        var mutationChanged = !NullableSequenceEqual(previous, persisted);
-        return mutationChanged && NullableSequenceEqual(current, persisted) ? previous : current;
-    }
+        => !NullableSequenceEqual(previous, persisted) && NullableSequenceEqual(current, persisted)
+            ? previous
+            : current;
 
     private static bool NullableSequenceEqual<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
         => left is null ? right is null : right is not null && left.SequenceEqual(right);
+
+    private static MetadataV2ResourceTemporal? RestoreResourceTemporalMutation(
+        MetadataV2ResourceTemporal? current,
+        MetadataV2ResourceTemporal? previous,
+        MetadataV2ResourceTemporal? persisted)
+    {
+        if (current is null)
+        {
+            return persisted is null && previous is not null ? previous : null;
+        }
+
+        var previousValue = previous ?? new MetadataV2ResourceTemporal();
+        var persistedValue = persisted ?? new MetadataV2ResourceTemporal();
+        var restored = current with
+        {
+            StartTimeField = RestoreMutationValue(
+                current.StartTimeField,
+                previousValue.StartTimeField,
+                persistedValue.StartTimeField),
+            EndTimeField = RestoreMutationValue(
+                current.EndTimeField,
+                previousValue.EndTimeField,
+                persistedValue.EndTimeField),
+            TrackIdField = RestoreMutationValue(
+                current.TrackIdField,
+                previousValue.TrackIdField,
+                persistedValue.TrackIdField),
+            Extent = RestoreTimeRangeMutation(current.Extent, previousValue.Extent, persistedValue.Extent),
+        };
+
+        return previous is null &&
+               restored.StartTimeField is null &&
+               restored.EndTimeField is null &&
+               restored.TrackIdField is null &&
+               restored.Extent is null
+            ? null
+            : restored;
+    }
+
+    private static MetadataV2TimeRange? RestoreTimeRangeMutation(
+        MetadataV2TimeRange? current,
+        MetadataV2TimeRange? previous,
+        MetadataV2TimeRange? persisted)
+    {
+        if (current is null)
+        {
+            return persisted is null && previous is not null ? previous : null;
+        }
+
+        var previousValue = previous ?? new MetadataV2TimeRange();
+        var persistedValue = persisted ?? new MetadataV2TimeRange();
+        var restored = current with
+        {
+            Start = RestoreMutationValue(current.Start, previousValue.Start, persistedValue.Start),
+            End = RestoreMutationValue(current.End, previousValue.End, persistedValue.End),
+        };
+
+        return previous is null && restored.Start is null && restored.End is null ? null : restored;
+    }
 
     private static T RestoreResourceMutationValue<T>(
         T current,
@@ -1482,13 +1534,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 candidate,
                 MetadataV2ServiceProtocols.FeatureServer))
             .ToArray();
-        if (protocolEnabledServices.Length > 0)
-        {
-            // Protocol-disabled compatibility candidates can retain FeatureServer-shaped
-            // publications. Remove them from name-based resolution so graph mutation and
-            // governance hydration resolve the same enabled service as runtime routing.
-            matchingFeatureServices = protocolEnabledServices;
-        }
+        // Protocol-disabled compatibility candidates can retain FeatureServer-shaped
+        // publications. Exclude them from name-based resolution even when none remain,
+        // so graph mutation and governance hydration match runtime routing.
+        matchingFeatureServices = protocolEnabledServices;
 
         MetadataV2Service? service = null;
         if (matchingFeatureServices.Length > 1)

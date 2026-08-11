@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
 
@@ -546,6 +547,16 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 AllowedRoles = ["reader"],
                 AllowedWriteRoles = ["editor"],
             },
+            Temporal = new MetadataV2ResourceTemporal
+            {
+                StartTimeField = "started_at",
+                EndTimeField = "ended_at",
+                Extent = new MetadataV2TimeRange
+                {
+                    Start = DateTimeOffset.Parse("2025-01-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    End = DateTimeOffset.Parse("2025-12-31T00:00:00Z", CultureInfo.InvariantCulture),
+                },
+            },
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -583,6 +594,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 AllowedRoles = null,
                 AllowedWriteRoles = ["failed-writer"],
             },
+            Temporal = null,
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
@@ -615,6 +627,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             StyleResourceIds = ["style-failed", "style-concurrent"],
             AccessPolicy = persistedResource.AccessPolicy! with { AllowedWriteRoles = ["concurrent-writer"] },
+            Temporal = new MetadataV2ResourceTemporal { TrackIdField = "concurrent_track" },
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
         var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
@@ -658,6 +671,10 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();
         resource.AccessPolicy.AllowedRoles.Should().Equal("reader");
         resource.AccessPolicy.AllowedWriteRoles.Should().Equal("concurrent-writer");
+        resource.Temporal!.StartTimeField.Should().Be("started_at");
+        resource.Temporal.EndTimeField.Should().Be("ended_at");
+        resource.Temporal.TrackIdField.Should().Be("concurrent_track");
+        resource.Temporal.Extent.Should().Be(previousResource.Temporal!.Extent);
         resource.Spatial!.SpatialReference.Should().Be(previousResource.Spatial!.SpatialReference);
         resource.Spatial.GeometryType.Should().Be(previousResource.Spatial.GeometryType);
         resource.Spatial.PrimaryGeometryField.Should().Be(previousResource.Spatial.PrimaryGeometryField);
@@ -895,12 +912,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
@@ -1005,6 +1024,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-parcels", Name = "parcels" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
@@ -1071,7 +1091,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
@@ -1219,6 +1240,52 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void IndexSourceGovernanceByStorageLayer_WithDisabledNameOnly_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-disabled", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-disabled" } },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-disabled" },
+                    ResourceId = "resource-disabled",
+                    StorageLayerId = 7,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication(
+                    "pub-disabled",
+                    "service-disabled",
+                    "resource-disabled",
+                    "binding-disabled",
+                    0,
+                    MetadataV2PublicationType.EsriFeatureLayer),
+            ],
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolAggregateAndDedicatedFeatureServices_UsesDedicatedFeatureResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
@@ -1281,7 +1348,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
@@ -1343,6 +1411,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                     PublicationIds = ["pub-beta-101"]
                 }
             ],
@@ -1433,6 +1502,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                     PublicationIds = ["pub-ogc-101"],
                 },
             ],
@@ -1599,7 +1669,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
@@ -1685,7 +1756,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-beta", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ]
         };
@@ -1747,7 +1819,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "beta" },
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Route = "/custom/beta/FeatureServer"
+            Route = "/custom/beta/FeatureServer",
+            Protocols = [ServiceProtocols.FeatureServer],
         };
         var graph = new MetadataV2Graph
         {
@@ -1834,6 +1907,49 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithDisabledNameOnly_ReturnsConflict()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-disabled", Name = "beta" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
+                    ResourceId = "resource-alpha",
+                    StorageLayerId = 101,
+                },
+            ],
+        };
+
+        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "beta",
+            101,
+            "Parcels",
+            4326,
+            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
+
+        var exception = action.Should().Throw<LayerPublishingException>().Which;
+        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
+        exception.LayerId.Should().Be(101);
+        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
+    }
+
+    [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithAmbiguousFeatureServerName_ReturnsConflict()
     {
         var graph = new MetadataV2Graph
@@ -1843,12 +1959,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature-a", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature-b", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
             Resources =
