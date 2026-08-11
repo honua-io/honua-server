@@ -24,6 +24,7 @@ public sealed class LayerSourceGovernanceTests
 
         accepted.Should().BeTrue();
         error.Should().BeNull();
+        governance.EffectiveLicenseUrl.Should().Be("https://spdx.org/licenses/MIT.html");
         link.Href.Should().Be("https://spdx.org/licenses/MIT.html");
         link.Rel.Should().Be("license");
         link.Title.Should().Be("MIT");
@@ -44,7 +45,8 @@ public sealed class LayerSourceGovernanceTests
 
         accepted.Should().BeTrue();
         error.Should().BeNull();
-        governance!.ToMetadataLinks().Should().BeEmpty();
+        governance!.EffectiveLicenseUrl.Should().BeNull();
+        governance.ToMetadataLinks().Should().BeEmpty();
     }
 
     [Theory]

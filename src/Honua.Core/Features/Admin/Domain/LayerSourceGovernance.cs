@@ -61,6 +61,12 @@ public sealed record LayerSourceGovernance
     public string? SourceUrl { get; }
 
     /// <summary>
+    /// Effective license documentation URL, including the canonical SPDX URL derived for a
+    /// standalone cataloged license identifier when no explicit URL was authored.
+    /// </summary>
+    public string? EffectiveLicenseUrl => LicenseUrl ?? GetSpdxLicenseUrl(License);
+
+    /// <summary>
     /// Validates and normalizes optional source-governance input without deriving any rights or credits.
     /// </summary>
     /// <param name="license">SPDX expression or <c>proprietary</c>.</param>
@@ -133,22 +139,24 @@ public sealed record LayerSourceGovernance
     public static bool IsSpdxLicenseIdentifier(string? license)
         => !string.IsNullOrWhiteSpace(license) && SpdxIdentifiers.Licenses.Contains(license);
 
+    /// <summary>Returns the canonical SPDX documentation URL for a standalone license identifier.</summary>
+    /// <param name="license">Candidate SPDX license identifier.</param>
+    /// <returns>The canonical URL, or <see langword="null"/> for expressions and non-cataloged values.</returns>
+    public static string? GetSpdxLicenseUrl(string? license)
+        => IsSpdxLicenseIdentifier(license)
+            ? $"https://spdx.org/licenses/{license}.html"
+            : null;
+
     /// <summary>Builds canonical Metadata v2 license/source links for this value.</summary>
     /// <returns>Zero to two canonical external links.</returns>
     public IReadOnlyList<MetadataV2Link> ToMetadataLinks()
     {
         var links = new List<MetadataV2Link>(2);
-        var resolvedLicenseUrl = LicenseUrl;
-        if (resolvedLicenseUrl is null && IsSpdxLicenseIdentifier(License))
-        {
-            resolvedLicenseUrl = $"https://spdx.org/licenses/{License}.html";
-        }
-
-        if (resolvedLicenseUrl is not null)
+        if (EffectiveLicenseUrl is { } effectiveLicenseUrl)
         {
             links.Add(new MetadataV2Link
             {
-                Href = resolvedLicenseUrl,
+                Href = effectiveLicenseUrl,
                 Rel = "license",
                 Title = License,
                 ManagedBy = LinkManager

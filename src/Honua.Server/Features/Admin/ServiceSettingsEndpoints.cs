@@ -630,12 +630,25 @@ internal static class ServiceSettingsEndpoints
         var effectiveLicense = request.License is null ? current.License : normalized?.License;
         var currentLicenseUrl = FindGovernanceLink(current, "license");
         var currentSourceUrl = FindGovernanceLink(current, "describedby");
+        var requestedLicenseUrl = request.LicenseUrl;
+        var normalizedLicenseUrl = normalized?.LicenseUrl;
+        if (request.License is not null && request.LicenseUrl is null)
+        {
+            var previousDerivedLicenseUrl = LayerSourceGovernance.GetSpdxLicenseUrl(current.License);
+            if (currentLicenseUrl is null ||
+                string.Equals(currentLicenseUrl, previousDerivedLicenseUrl, StringComparison.Ordinal))
+            {
+                normalizedLicenseUrl = normalized?.EffectiveLicenseUrl;
+                requestedLicenseUrl = normalizedLicenseUrl ?? string.Empty;
+            }
+        }
+
         var links = current.Links.ToList();
         PatchGovernanceLink(
             links,
             currentLicenseUrl,
-            request.LicenseUrl,
-            normalized?.LicenseUrl,
+            requestedLicenseUrl,
+            normalizedLicenseUrl,
             "license",
             effectiveLicense,
             refreshTitle: request.License is not null);

@@ -395,7 +395,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             License = request.SourceGovernance?.License,
             Attribution = request.SourceGovernance?.Attribution,
             Publisher = request.SourceGovernance?.Publisher,
-            LicenseUrl = request.SourceGovernance?.LicenseUrl,
+            LicenseUrl = request.SourceGovernance?.EffectiveLicenseUrl,
             SourceUrl = request.SourceGovernance?.SourceUrl,
             Schema = schema,
             Table = table,

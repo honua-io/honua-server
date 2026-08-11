@@ -153,6 +153,42 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WithStandaloneSpdxLicense_ReturnsDerivedLicenseUrl()
+    {
+        const string license = "MIT";
+        const string expectedLicenseUrl = "https://spdx.org/licenses/MIT.html";
+
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            License = license,
+        });
+        _layerId = published.LayerId;
+
+        published.License.Should().Be(license);
+        published.LicenseUrl.Should().Be(expectedLicenseUrl);
+
+        var listResponse = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
+        listResponse.Be200Ok();
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await listResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        listApi!.Data!.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
+            .Should().Be(expectedLicenseUrl);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
     [Operation(Operations.Query)]
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]

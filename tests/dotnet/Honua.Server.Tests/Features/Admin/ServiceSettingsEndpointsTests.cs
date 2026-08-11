@@ -485,6 +485,32 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithStandaloneSpdxLicense_DerivesManagedLicenseLink()
+    {
+        const string expectedLicenseUrl = "https://spdx.org/licenses/MIT.html";
+        await SetLayerGovernanceMetadataAsync(layerId: 0, license: null, links: []);
+
+        using var content = new StringContent("""{"license":"MIT"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.Be200Ok();
+        using (var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("license").GetString().Should().Be("MIT");
+            data.GetProperty("licenseUrl").GetString().Should().Be(expectedLicenseUrl);
+        }
+
+        var metadata = GetLayerMetadata(0);
+        metadata.Links.Should().ContainSingle(link =>
+            link.Rel == "license" &&
+            link.Href == expectedLicenseUrl &&
+            link.Title == "MIT" &&
+            link.ManagedBy == LayerSourceGovernance.LinkManager);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_GovernancePatch_PreservesUnrelatedLinksAndRefreshesLicenseTitle()
     {
         const string oldLicenseUrl = "https://example.test/licenses/cc-by-4.0";
@@ -683,7 +709,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     private Task SetLayerGovernanceMetadataAsync(
         int layerId,
-        string license,
+        string? license,
         IReadOnlyList<MetadataV2Link> links)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
