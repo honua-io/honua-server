@@ -204,6 +204,60 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithContactOnly_ProjectsHostProvider()
+    {
+        const string contactName = "Example data host";
+        const string contactUrl = "https://example.test/contact";
+        UpdateGovernanceMetadata(
+            license: "MIT",
+            attribution: null,
+            publisher: null,
+            contactPoint: new MetadataV2ContactPoint { Name = contactName, Url = contactUrl });
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
+        provider.GetProperty("name").GetString().Should().Be(contactName);
+        provider.GetProperty("url").GetString().Should().Be(contactUrl);
+        provider.GetProperty("roles").EnumerateArray()
+            .Select(static role => role.GetString())
+            .Should().Equal("host");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithPublisherAndContact_ProjectsProducerAndHostProviders()
+    {
+        UpdateGovernanceMetadata(
+            license: "MIT",
+            attribution: null,
+            publisher: "Example producer",
+            contactPoint: new MetadataV2ContactPoint
+            {
+                Name = "Example data host",
+                Url = "https://example.test/contact"
+            });
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
+        providers.Should().HaveCount(2);
+        providers.Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == "Example producer" &&
+            provider.GetProperty("roles")[0].GetString() == "producer");
+        providers.Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == "Example data host" &&
+            provider.GetProperty("roles")[0].GetString() == "host");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
@@ -301,13 +355,18 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         bbox[3].GetDouble().Should().NotBe(90d);
     }
 
-    private void UpdateGovernanceMetadata(string? license, string? attribution, string? publisher)
+    private void UpdateGovernanceMetadata(
+        string? license,
+        string? attribution,
+        string? publisher,
+        MetadataV2ContactPoint? contactPoint = null)
         => _fixture.MutateV2ResourceObjectMetadata(
             WebAppFixture.TestLayerId,
             metadata => metadata with
             {
                 License = license,
                 Attribution = attribution,
-                Publisher = publisher
+                Publisher = publisher,
+                ContactPoint = contactPoint
             });
 }

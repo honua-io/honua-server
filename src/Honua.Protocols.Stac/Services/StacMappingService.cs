@@ -153,19 +153,51 @@ internal sealed class StacMappingService
         var attribution = string.IsNullOrWhiteSpace(metadata.Attribution)
             ? null
             : metadata.Attribution.Trim();
-        if (publisher is null)
+        var contactName = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Name)
+            ? null
+            : metadata.ContactPoint.Name.Trim();
+        var contactUrl = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
+            ? null
+            : metadata.ContactPoint.Url.Trim();
+        var contactMatchesPublisher = publisher is not null && string.Equals(
+            publisher,
+            contactName,
+            StringComparison.OrdinalIgnoreCase);
+        var providers = ImmutableArray.CreateBuilder<StacProvider>();
+
+        if (publisher is not null)
         {
-            return attribution is null
-                ? null
-                : ImmutableArray.Create(new StacProvider { Name = attribution });
+            providers.Add(new StacProvider
+            {
+                Name = publisher,
+                Roles = contactMatchesPublisher
+                    ? ImmutableArray.Create(
+                        StacConstants.ProviderRoles.Producer,
+                        StacConstants.ProviderRoles.Host)
+                    : ImmutableArray.Create(StacConstants.ProviderRoles.Producer),
+                Description = attribution,
+                Url = contactMatchesPublisher ? contactUrl : null
+            });
+        }
+        else if (attribution is not null && !string.Equals(
+                     attribution,
+                     contactName,
+                     StringComparison.OrdinalIgnoreCase))
+        {
+            providers.Add(new StacProvider { Name = attribution });
         }
 
-        return ImmutableArray.Create(new StacProvider
+        if (contactName is not null && !contactMatchesPublisher)
         {
-            Name = publisher,
-            Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Producer),
-            Description = attribution
-        });
+            providers.Add(new StacProvider
+            {
+                Name = contactName,
+                Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Host),
+                Url = contactUrl
+            });
+        }
+
+        return providers.Count == 0 ? null : providers.ToImmutable();
     }
 
     internal static string ResolveDisplayName(

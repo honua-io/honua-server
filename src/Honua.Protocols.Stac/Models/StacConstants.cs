@@ -72,6 +72,7 @@ internal static class StacConstants
     internal static class ProviderRoles
     {
         public const string Producer = "producer";
+        public const string Host = "host";
     }
 
     /// <summary>
