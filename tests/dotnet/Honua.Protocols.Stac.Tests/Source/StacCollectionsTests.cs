@@ -184,6 +184,30 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithLicenseLinkOnly_UsesVariousLicenseToken()
+    {
+        const string licenseUrl = "https://example.test/license";
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with
+            {
+                License = null,
+                Links = [new MetadataV2Link { Href = licenseUrl, Rel = "license" }],
+            });
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("license").GetString().Should().Be("various");
+        json.RootElement.GetProperty("links").EnumerateArray().Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "license" &&
+            link.GetProperty("href").GetString() == licenseUrl);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithAttributionOnly_PreservesAttributionAsProvider()
     {
         const string attribution = "Example community contributors";

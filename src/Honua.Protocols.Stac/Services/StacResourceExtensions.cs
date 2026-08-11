@@ -29,7 +29,8 @@ internal static class StacResourceExtensions
 
     /// <summary>
     /// Resolves the SPDX or STAC-recognized license identifier for a resource. Returns
-    /// <c>"proprietary"</c> when no license is declared (matches the v1 default).
+    /// <c>"various"</c> for link-only declarations and <c>"proprietary"</c> when no
+    /// license is declared (matches the v1 default).
     /// </summary>
     public static string ResolveLicense(this MetadataV2Resource resource)
     {
@@ -39,7 +40,11 @@ internal static class StacResourceExtensions
             : ReadString(resource, "license")?.Trim();
         if (string.IsNullOrWhiteSpace(declared))
         {
-            return "proprietary";
+            return resource.Metadata.Links.Any(link =>
+                string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(link.Href))
+                ? "various"
+                : "proprietary";
         }
 
         return IsSingleStacLicenseToken(declared)

@@ -53,7 +53,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
                      string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer))
+                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer)
+                 .OrderByDescending(publication =>
+                     publication.Status.Lifecycle == MetadataV2LifecycleStatus.Active &&
+                     resourcesById.TryGetValue(publication.ResourceId, out var resource) &&
+                     resource.Status.Lifecycle == MetadataV2LifecycleStatus.Active))
         {
             if (!resourcesById.TryGetValue(publication.ResourceId, out var resource))
             {

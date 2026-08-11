@@ -1317,6 +1317,95 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void IndexSourceGovernanceByStorageLayer_WithActiveAndRetiredPublications_PrefersActive()
+    {
+        var retiredMetadata = new MetadataV2ObjectMetadata { Id = "resource-retired", License = "MIT" };
+        var activeMetadata = new MetadataV2ObjectMetadata { Id = "resource-active", License = "CC-BY-4.0" };
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-parcels", Name = "parcels" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = retiredMetadata,
+                    PrimaryStorageBindingId = "binding-retired",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                },
+                new MetadataV2Resource
+                {
+                    Metadata = activeMetadata,
+                    PrimaryStorageBindingId = "binding-active",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-retired" },
+                    ResourceId = retiredMetadata.Id,
+                    StorageLayerId = 7,
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-active" },
+                    ResourceId = activeMetadata.Id,
+                    StorageLayerId = 7,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication(
+                    "publication-retired",
+                    "service-parcels",
+                    retiredMetadata.Id,
+                    "binding-retired",
+                    7,
+                    MetadataV2PublicationType.EsriFeatureLayer) with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                },
+                CreatePublication(
+                    "publication-active",
+                    "service-parcels",
+                    activeMetadata.Id,
+                    "binding-active",
+                    7,
+                    MetadataV2PublicationType.EsriFeatureLayer) with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                },
+            ],
+        };
+
+        var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "parcels");
+
+        result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, activeMetadata));
+
+        var retiredOnlyGraph = graph with
+        {
+            Resources = [graph.Resources[0]],
+            StorageBindings = [graph.StorageBindings[0]],
+            Publications = [graph.Publications[0]],
+        };
+        var retiredOnlyResult = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(
+            retiredOnlyGraph,
+            "parcels");
+        retiredOnlyResult.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, retiredMetadata));
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolSpecificNameCollision_UsesFeatureServerResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
