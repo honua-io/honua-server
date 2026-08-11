@@ -26,7 +26,7 @@ public static class MetadataV2GovernanceExtensions
 
         return resourceMetadata with
         {
-            License = FirstDefined(resourceMetadata.License, serviceMetadata.License),
+            License = ResolveLicense(resourceMetadata, serviceMetadata),
             Attribution = FirstDefined(resourceMetadata.Attribution, serviceMetadata.Attribution),
             ContactPoint = IsDefined(resourceMetadata.ContactPoint)
                 ? resourceMetadata.ContactPoint
@@ -41,6 +41,14 @@ public static class MetadataV2GovernanceExtensions
 
     private static string? FirstDefined(string? resourceValue, string? serviceValue)
         => !string.IsNullOrWhiteSpace(resourceValue) ? resourceValue : serviceValue;
+
+    private static string? ResolveLicense(
+        MetadataV2ObjectMetadata resourceMetadata,
+        MetadataV2ObjectMetadata serviceMetadata)
+        => !string.IsNullOrWhiteSpace(resourceMetadata.License) ||
+           resourceMetadata.Links.Any(IsLicenseLink)
+            ? resourceMetadata.License
+            : serviceMetadata.License;
 
     private static bool IsDefined(MetadataV2ContactPoint? contactPoint)
         => contactPoint is not null &&

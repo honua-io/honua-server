@@ -70,6 +70,7 @@ public sealed class MetadataV2GovernanceExtensionsTests
 
         var effective = resourceMetadata.WithServiceGovernanceFallbacks(serviceMetadata);
 
+        effective.License.Should().BeNull();
         effective.Links.Should().ContainSingle().Which.Should().BeSameAs(resourceLicenseLink);
     }
 
