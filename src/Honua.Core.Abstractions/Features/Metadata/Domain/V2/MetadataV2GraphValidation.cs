@@ -638,6 +638,12 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
     {
+        if (!SpdxLicensePolicy.IsValidCanonicalValue(metadata.License))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
+        }
+
         if (metadata.ContactPoint is { Email: { } email } && !string.IsNullOrWhiteSpace(email) && !email.Contains('@'))
         {
             errors.Add($"{ownerLabel} metadata.contactPoint.email '{email}' must contain '@'.");

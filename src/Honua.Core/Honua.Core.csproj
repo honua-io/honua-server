@@ -47,8 +47,6 @@
     <EmbeddedResource Include="Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json" />
     <!-- CRS feature: authoritative PROJJSON catalog for GeoParquet non-4326 output CRS metadata. -->
     <EmbeddedResource Include="Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json" />
-    <!-- Admin source governance: SPDX License List identifier snapshot used for expression validation. -->
-    <EmbeddedResource Include="Features/Admin/Domain/spdx-identifiers.json" />
   </ItemGroup>
 
   <ItemGroup>

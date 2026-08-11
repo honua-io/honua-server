@@ -584,6 +584,34 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("Not-A-License")]
+    [InlineData(" MIT ")]
+    [InlineData("MIT\n")]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidCanonicalLicense_ReturnsValidationError(string license)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with { License = license }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            "metadata.license must be a canonical SPDX expression or the literal 'proprietary'",
+            StringComparison.Ordinal));
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     public void Validate_WithNullDeserializedResourceStorageBindingIds_ReturnsValidationError()
