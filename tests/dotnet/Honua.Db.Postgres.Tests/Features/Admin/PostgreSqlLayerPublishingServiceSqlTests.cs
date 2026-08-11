@@ -2980,6 +2980,84 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildLinkedLayerMetadataV2Graph_WithSharedResource_OnlyRetiresTargetBinding()
+    {
+        var activeStatus = new MetadataV2Status
+        {
+            Lifecycle = MetadataV2LifecycleStatus.Active,
+            State = MetadataV2OperationalState.Ready,
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-alpha", Name = "alpha" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer],
+                    PublicationIds = ["pub-7", "pub-8"],
+                },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
+                    StorageBindingIds = ["binding-7", "binding-8"],
+                    PrimaryStorageBindingId = "binding-7",
+                    Status = activeStatus,
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-7" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 7,
+                    Status = activeStatus,
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-8" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 8,
+                    Status = activeStatus,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication("pub-7", "service-alpha", "resource-shared", "binding-7", 7,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = activeStatus },
+                CreatePublication("pub-8", "service-alpha", "resource-shared", "binding-8", 8,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = activeStatus },
+            ],
+        };
+
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+            graph,
+            "alpha",
+            7,
+            "Primary layer",
+            4326,
+            DateTimeOffset.Parse("2026-08-11T19:30:00Z", CultureInfo.InvariantCulture),
+            enabled: false);
+
+        updated.StorageBindings.Single(binding => binding.Metadata.Id == "binding-7")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+        updated.StorageBindings.Single(binding => binding.Metadata.Id == "binding-8")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        updated.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        updated.Publications.Single(publication => publication.Metadata.Id == "pub-7")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+        updated.Publications.Single(publication => publication.Metadata.Id == "pub-8")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+    }
+
+    [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithExistingPublication_PreservesAuthoredIdentityAndSettings()
     {
         var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);

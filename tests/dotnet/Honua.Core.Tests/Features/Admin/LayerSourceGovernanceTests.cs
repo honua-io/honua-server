@@ -118,4 +118,24 @@ public sealed class LayerSourceGovernanceTests
         governance!.License.Should().Be(license);
         error.Should().BeNull();
     }
+
+    [Fact]
+    public void TryCreate_WithUrlExpandedBeyondLimitByNormalization_RejectsUrl()
+    {
+        var rawUrl = "https://example.test/" + new string('\u00e9', 400);
+
+        var accepted = LayerSourceGovernance.TryCreate(
+            license: null,
+            attribution: null,
+            publisher: null,
+            licenseUrl: rawUrl,
+            sourceUrl: null,
+            out var governance,
+            out var error);
+
+        rawUrl.Length.Should().BeLessThan(LayerSourceGovernance.MaxUrlLength);
+        accepted.Should().BeFalse();
+        governance.Should().BeNull();
+        error.Should().Be($"licenseUrl must not exceed {LayerSourceGovernance.MaxUrlLength} characters.");
+    }
 }

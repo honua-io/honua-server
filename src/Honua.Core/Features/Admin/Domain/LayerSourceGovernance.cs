@@ -227,6 +227,13 @@ public sealed record LayerSourceGovernance
         }
 
         normalized = uri.AbsoluteUri;
+        if (normalized.Length > MaxUrlLength)
+        {
+            error = $"{fieldName} must not exceed {MaxUrlLength} characters.";
+            normalized = null;
+            return false;
+        }
+
         return true;
     }
 

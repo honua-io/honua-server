@@ -2403,7 +2403,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var linkedStatus = LayerReadyStatus(enabled, now);
-        resource = resource with { Status = linkedStatus };
+        binding = binding with { Status = linkedStatus };
+        var storageBindings = UpsertById(
+            graph.StorageBindings,
+            binding,
+            static item => item.Metadata.Id);
+        var hasEnabledBinding = storageBindings.Any(candidate =>
+            string.Equals(candidate.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+            candidate.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
+        resource = resource with { Status = LayerReadyStatus(hasEnabledBinding, now) };
 
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
         service ??= BuildPublishedService(graph, serviceName, srid, now);
@@ -2455,10 +2463,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
         var synchronizedPublications = graph.Publications
             .Select(publication =>
-                string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) ||
-                string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)
+            {
+                var publicationBindingId = publication.StorageBindingId;
+                if (publicationBindingId is null &&
+                    string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+                {
+                    publicationBindingId = resource.PrimaryStorageBindingId;
+                }
+
+                return string.Equals(publicationBindingId, binding.Metadata.Id, StringComparison.Ordinal)
                     ? publication with { Status = linkedStatus }
-                    : publication)
+                    : publication;
+            })
             .ToArray();
 
         return graph with
@@ -2467,6 +2483,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
+            StorageBindings = storageBindings,
             Publications = UpsertPublication(synchronizedPublications, featurePublication)
         };
     }
