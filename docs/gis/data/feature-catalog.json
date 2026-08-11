@@ -15477,6 +15477,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_ChooseGeometryWithoutSource_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterCommittedClientDelete_ReturnsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterLastWriteWins_RestoresCapturedServerState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServer_RestoresCapturedNullGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsCannotRetargetAnotherFeature",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsWithoutFieldValues_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WhenAlreadyResolved_ReturnsConflict",
