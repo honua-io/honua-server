@@ -653,7 +653,7 @@ public static class MetadataV2GraphValidator
             !IsSafePublicHttpUrl(contactUrl))
         {
             errors.Add(
-                $"{ownerLabel} metadata.contactPoint.url '{contactUrl}' must be an absolute HTTP(S) URL without credentials.");
+                $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
         }
 
         for (var i = 0; i < metadata.Links.Count; i++)
@@ -673,7 +673,7 @@ public static class MetadataV2GraphValidator
                 !IsSafePublicHttpUrl(link.Href))
             {
                 errors.Add(
-                    $"{ownerLabel} metadata.links[{i}].href '{link.Href}' must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
+                    $"{ownerLabel} metadata.links[{i}].href must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
             }
         }
     }

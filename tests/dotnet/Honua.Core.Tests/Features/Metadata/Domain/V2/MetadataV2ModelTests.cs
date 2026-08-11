@@ -441,7 +441,7 @@ public sealed class MetadataV2ModelTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle(error =>
             error.Contains(
-                "metadata.contactPoint.url 'not a URL' must be an absolute HTTP(S) URL without credentials",
+                "metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials",
                 StringComparison.Ordinal));
     }
 
@@ -474,6 +474,8 @@ public sealed class MetadataV2ModelTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle(error =>
             error.Contains("must be an absolute HTTP(S) URL without credentials", StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error =>
+            error.Contains("user:secret", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -510,6 +512,8 @@ public sealed class MetadataV2ModelTests
             error.Contains(
                 "must be an absolute HTTP(S) URL without credentials for relation 'license'",
                 StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error =>
+            error.Contains("user:secret", StringComparison.Ordinal));
     }
 
     [UnitTest]
