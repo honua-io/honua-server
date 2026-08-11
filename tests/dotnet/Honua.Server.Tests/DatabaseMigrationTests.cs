@@ -193,6 +193,48 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             deletedPublicObjectId.Should().Be(700105,
                 "the delete trigger should persist the configured public id.primary from OLD attributes");
         }
+
+        // A pre-migration custom-id delete has no surviving row image from which migration 105 can
+        // recover its public alias. Invalidate only replicas whose cursors include that unsafe layer,
+        // forcing those clients to create a fresh replica instead of silently missing the delete.
+        await using (var arrangeLegacyDeleteCmd = connection.CreateCommand())
+        {
+            arrangeLegacyDeleteCmd.CommandText = """
+                INSERT INTO honua.replicas
+                    (replica_id, replica_name, service_id, sync_model, layer_ids)
+                VALUES
+                    ('legacy-custom-id', 'legacy custom id', 'test', 'perReplica', ARRAY[990105]),
+                    ('ordinary-id', 'ordinary id', 'test', 'perReplica', ARRAY[0]);
+
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, public_objectid, operation)
+                VALUES
+                    (nextval('honua.sync_generation'), 990105, 190106, NULL, 3);
+                """;
+            await arrangeLegacyDeleteCmd.ExecuteNonQueryAsync();
+        }
+
+        var publicIdMigrationSql = await ReadEmbeddedMigrationAsync("105_AddChangeLogPublicObjectId.sql");
+        await using (var reapplyPublicIdMigrationCmd = connection.CreateCommand())
+        {
+            reapplyPublicIdMigrationCmd.CommandText = publicIdMigrationSql;
+            await reapplyPublicIdMigrationCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var invalidatedReplicaCmd = connection.CreateCommand())
+        {
+            invalidatedReplicaCmd.CommandText = """
+                SELECT replica_id
+                FROM honua.replicas
+                WHERE replica_id IN ('legacy-custom-id', 'ordinary-id')
+                ORDER BY replica_id;
+                """;
+            await using var reader = await invalidatedReplicaCmd.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("ordinary-id");
+            (await reader.ReadAsync()).Should().BeFalse(
+                "only the replica exposed to the irrecoverable custom-id delete is invalidated");
+        }
     }
 
     [Fact]

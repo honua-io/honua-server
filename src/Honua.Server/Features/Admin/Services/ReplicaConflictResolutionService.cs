@@ -362,6 +362,15 @@ internal sealed partial class ReplicaConflictResolutionService
             // The feature moved after this conflict was recorded, so the captured conflict-time state
             // is no longer a safe thing to write: applying it would silently clobber that newer edit.
             await ReleaseClaimAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+            if (claimed.ClientEditOutcomeUnknown)
+            {
+                // The post-base change may be the originating upload itself: its lost acknowledgement
+                // is exactly why this record cannot classify the outcome. Releasing it unchanged would
+                // make every retry rediscover that same change and answer Stale forever. Re-point the
+                // now-pending record at a stable snapshot of the state that actually exists, clear the
+                // ambiguous attribution, and require the operator to review that current state once.
+                await RebaselineAsync(claimed, CancellationToken.None).ConfigureAwait(false);
+            }
             Log.ResolutionStale(
                 _logger, claimed.ConflictId, claimed.ServiceId, claimed.LayerId, claimed.ObjectId);
             activity?.SetStatus(ActivityStatusCode.Error, "stale");

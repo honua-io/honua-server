@@ -12,9 +12,24 @@
 ALTER TABLE honua.feature_changes
     ADD COLUMN IF NOT EXISTS public_objectid BIGINT;
 
--- Historical ordinary-id rows continue to match through objectid. Historical custom-id deletes
--- cannot be reconstructed after their source row is gone, but every change written after this
--- migration carries the durable alias without rewriting the existing change-log history.
+-- Historical ordinary-id rows continue to match through objectid. A custom-id delete that predates
+-- this migration cannot be reconstructed after its source row is gone. Replicas whose cursors span
+-- one of those irrecoverable deletes are therefore invalidated: their next sync fails as not-found
+-- and the client must create a fresh replica rather than silently miss the delete or retry an
+-- unguardable upload forever. Replicas on ordinary-id layers and custom-id layers with no historical
+-- delete are preserved.
+WITH affected_custom_id_layers AS (
+    SELECT DISTINCT changes.layer_id
+    FROM honua.feature_changes AS changes
+    INNER JOIN honua.layers AS layers
+        ON layers.layer_id = changes.layer_id
+    WHERE changes.operation = 3
+      AND changes.public_objectid IS NULL
+      AND lower(COALESCE(NULLIF(layers.primary_key_column, ''), 'objectid')) <> 'objectid'
+)
+DELETE FROM honua.replicas AS replicas
+USING affected_custom_id_layers AS affected
+WHERE affected.layer_id = ANY(replicas.layer_ids);
 
 CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_public_objectid
     ON honua.feature_changes(layer_id, public_objectid, generation);

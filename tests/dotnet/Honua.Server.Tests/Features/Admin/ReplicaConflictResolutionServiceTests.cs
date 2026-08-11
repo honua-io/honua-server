@@ -120,6 +120,32 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_UnknownUploadOutcomeWithAPostBaseChange_RebaselinesForReview()
+    {
+        // The post-base change may be the upload whose commit acknowledgement was lost. Returning
+        // Stale without moving the base makes every retry rediscover the same change forever.
+        var conflict = Conflict(clientEditApplied: false) with { ClientEditOutcomeUnknown = true };
+        var repository = new FakeConflictRepository(conflict);
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(Change(generation: 55));
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var first = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+        var reviewed = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        first.Status.Should().Be(ReplicaConflictResolutionStatus.Stale,
+            "the operator must review the state that survived the ambiguous upload");
+        repository.DetectionUpdates.Should().ContainSingle()
+            .Which.ResolutionBaseGeneration.Should().Be(FakeChangeTracker.Generation);
+        repository.Current.ClientEditOutcomeUnknown.Should().BeFalse();
+        reviewed.Status.Should().Be(ReplicaConflictResolutionStatus.Applied,
+            "the same originating change must not strand every later resolution as stale");
+        applier.Calls.Should().Be(0,
+            "keepServer becomes a no-op after the record is re-pointed at the current server state");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_CustomPublicObjectId_ProbesStoredChangeLogIdentity()
     {
         const long publicObjectId = 7001;
