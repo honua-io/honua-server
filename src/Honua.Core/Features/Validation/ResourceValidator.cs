@@ -194,9 +194,9 @@ public sealed class ResourceValidator : IResourceValidator
                      .Where(pub => pub.LayerIndex == layerId &&
                                    pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
                                    (requiredProtocol is null ||
-                                    ServiceProtocols.IsPreferredPublicationType(
-                                        requiredProtocol,
-                                        pub.PublicationType)))
+                                    IsPublicationTypeCompatible(requiredProtocol, pub.PublicationType)))
+                     .OrderByDescending(pub => requiredProtocol is not null &&
+                         ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
                      .Where(candidate =>
                          candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
@@ -239,15 +239,41 @@ public sealed class ResourceValidator : IResourceValidator
                 .Any(publication =>
                     publication.LayerIndex == layerId &&
                     publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType) &&
                     snapshot.ResolveResource(publication) is
                     { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
             .ToArray();
 
         var exactId = candidates.FirstOrDefault(service =>
             string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
-        return exactId ?? (candidates.Length == 1 ? candidates[0] : null);
+        if (exactId is not null)
+        {
+            return exactId;
+        }
+
+        // Prefer a service with the protocol's canonical publication type when one exists.
+        // MapServer also serves feature publications created by the standard admin publish path,
+        // but that compatibility fallback must not eclipse a dedicated map publication sharing the
+        // same public service name.
+        var preferred = candidates
+            .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication =>
+                    publication.LayerIndex == layerId &&
+                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
+                    snapshot.ResolveResource(publication) is
+                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+            .ToArray();
+        var scopedCandidates = preferred.Length > 0 ? preferred : candidates;
+        return scopedCandidates.Length == 1 ? scopedCandidates[0] : null;
     }
+
+    private static bool IsPublicationTypeCompatible(
+        string protocol,
+        MetadataV2PublicationType publicationType)
+        => ServiceProtocols.IsPreferredPublicationType(protocol, publicationType) ||
+           (string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) &&
+            publicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {

@@ -72,6 +72,33 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceLayerV2Async_MapServer_UsesFeaturePublicationFallback()
+    {
+        var graph = MixedProtocolPublicationGraph();
+        graph = graph with
+        {
+            Services =
+            [
+                graph.Services[0] with
+                {
+                    Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],
+                },
+            ],
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(graph));
+
+        var result = await validator.ValidateServiceLayerV2Async(
+            "mixed-service",
+            7,
+            ServiceProtocols.MapServer);
+
+        result.IsValid.Should().BeTrue();
+        result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceLayerV2Async_WithSharedName_ResolvesProtocolSpecificService()
     {
         var graph = MixedProtocolPublicationGraph();
