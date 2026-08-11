@@ -559,16 +559,38 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             };
         }
 
-        if (current is null || current.IsDeleted)
+        if (current is null)
         {
-            // Delete of an already-absent feature is idempotently applied.
-            var version = current?.Version + 1 ?? 1L;
+            // The feature never existed on the server, so a delete is vacuously satisfied.
             return new FieldCollectionPushResult
             {
                 ChangeId = request.ChangeId,
                 Outcome = FieldCollectionPushOutcome.Applied,
                 ServerGeneration = 0,
-                Version = version,
+                Version = 1L,
+            };
+        }
+
+        if (current.IsDeleted)
+        {
+            // Someone else already deleted the feature. This is the delete-vs-delete conflict the wire
+            // contract has always declared and never produced (#2430): it was previously reported as an
+            // idempotently-applied delete, hiding the divergence from the field client.
+            //
+            // A genuine retry of the client's OWN delete never reaches here — replays are served from
+            // the (client_id, change_id) idempotency record before conflict resolution runs — so there
+            // is deliberately no version-adjacency heuristic here. Guessing "the tombstone is one
+            // version ahead, so it must be my own delete" would silently swallow the ordinary case of
+            // two clients deleting from the same base version, which is exactly the conflict an
+            // operator needs to see.
+            return new FieldCollectionPushResult
+            {
+                ChangeId = request.ChangeId,
+                Outcome = FieldCollectionPushOutcome.Conflict,
+                ServerGeneration = 0,
+                ConflictType = FieldCollectionConflictType.DeleteDelete,
+                ServerVersion = current.Version,
+                ServerFeaturePayloadJson = current.PayloadJson,
             };
         }
 

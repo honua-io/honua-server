@@ -5634,7 +5634,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6069,7 +6069,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -6352,7 +6352,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -12973,7 +12973,7 @@
           "Services"
         ],
         "summary": "List Service Replicas",
-        "description": "Lists named disconnected-sync replicas registered against a feature service, with a derived status of `active` or `expired` (no successful sync in the last 7 days). This surface is gated by the experimental `sync.offline` capability and returns 404 when that capability is disabled.",
+        "description": "Lists named disconnected-sync replicas registered against a feature service, with a derived status of `active` or `expired` (no successful sync in the last 7 days).",
         "operationId": "listServiceReplicas",
         "parameters": [
           {
@@ -13002,6 +13002,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "The Pro `fieldops.offline-sync` entitlement is not active for this deployment. Disconnected-sync replica and conflict review are Pro-edition features; admin authorization alone does not grant them.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -13056,6 +13066,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "The Pro `fieldops.offline-sync` entitlement is not active for this deployment. Disconnected-sync replica and conflict review are Pro-edition features; admin authorization alone does not grant them.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -13124,6 +13144,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "description": "The Pro `fieldops.offline-sync` entitlement is not active for this deployment. Disconnected-sync replica and conflict review are Pro-edition features; admin authorization alone does not grant them.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -13198,6 +13228,16 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "description": "The Pro `fieldops.offline-sync` entitlement is not active for this deployment. Disconnected-sync replica and conflict review are Pro-edition features; admin authorization alone does not grant them.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -13223,7 +13263,7 @@
           "Services"
         ],
         "summary": "Resolve Replica Conflict",
-        "description": "Applies an operator-selected resolution to a pending or deferred conflict and records audit evidence. `acceptClient`, `mergeFields`, and `chooseGeometry` commit a new server state and advance the server generation cursor; `keepServer`, `rejectClient`, and `defer` do not. An already-resolved conflict is rejected with 409.",
+        "description": "Applies an operator-selected resolution to a pending or deferred conflict, committing the resolved feature state through the shared edit pipeline before recording audit evidence. Which action produces a new committed server state depends on whether the conflicting client edit was already applied (`clientEditApplied`): under last-write-wins the client edit is already committed, so `acceptClient` is a no-op and `keepServer` restores the captured pre-conflict server state; under `conflictHandling=manualReview` the polarity is reversed. `mergeFields` requires `fieldValues` and `chooseGeometry` requires `geometry`, otherwise 400. An already-resolved conflict, or an action that does not apply to the conflict's recorded state (for example keeping the server after the client's delete already committed), is rejected with 409. When the storage layer cannot say whether the write committed, the resolution stays claimed and the call returns 503; retrying the same request resumes it idempotently. A conflict whose own uploaded edit had an indeterminate commit outcome carries `clientEditOutcomeUnknown`, and both `acceptClient` and `keepServer` then perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went.",
         "operationId": "resolveServiceReplicaConflict",
         "parameters": [
           {
@@ -13281,6 +13321,16 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "description": "The Pro `fieldops.offline-sync` entitlement is not active for this deployment. Disconnected-sync replica and conflict review are Pro-edition features; admin authorization alone does not grant them.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -13291,7 +13341,27 @@
             "$ref": "#/components/responses/Conflict"
           },
           "501": {
-            "description": "Conflict review is not supported by this service's data provider.",
+            "description": "Conflict review is not supported by this service's data provider, or the resolution requires committing a feature state and no replica-capable edit pipeline is registered.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The resolved feature state could not be committed through the shared edit pipeline; the conflict is left pending and reviewable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareAdminProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The shared edit pipeline could not determine whether the resolved feature state committed - the storage layer did not acknowledge the transaction. The resolution stays claimed with its write not yet marked committed, which is the resumable state; retry the same request (same operator, action, and inputs) to complete it. The conflict is deliberately not returned to the reviewable pool, because releasing it would let the next attempt see this resolution's own change as a post-conflict edit and reject it as stale forever.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38845,7 +38915,8 @@
               "updateDelete",
               "duplicateInsert",
               "attachment",
-              "relationship"
+              "relationship",
+              "deleteDelete"
             ]
           },
           "status": {
@@ -38859,6 +38930,18 @@
           "serverGeneration": {
             "type": "integer",
             "format": "int64"
+          },
+          "clientEditApplied": {
+            "type": "boolean",
+            "description": "Whether the conflicting client edit was still committed to the layer (last-write-wins) or withheld for manual review. Determines what resolving the conflict has to write."
+          },
+          "clientEditOutcomeUnknown": {
+            "type": "boolean",
+            "description": "Whether the storage layer could not say if the conflicting client edit committed - the transaction's commit acknowledgement was lost. When true, clientEditApplied is not trustworthy in either direction and both acceptClient and keepServer perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went."
+          },
+          "clientEditSuperseded": {
+            "type": "boolean",
+            "description": "Whether this conflict's own client edit committed but was superseded by a later edit in the same upload to the same feature. clientEditApplied is false for such a record, but the row holds neither this edit's state nor the captured server state, so keepServer performs a real restore rather than a no-op."
           },
           "detectedAt": {
             "type": "string",
@@ -38920,7 +39003,8 @@
               "updateDelete",
               "duplicateInsert",
               "attachment",
-              "relationship"
+              "relationship",
+              "deleteDelete"
             ]
           },
           "status": {
@@ -38947,11 +39031,23 @@
             "type": "integer",
             "format": "int64"
           },
+          "clientEditApplied": {
+            "type": "boolean",
+            "description": "Whether the conflicting client edit was still committed to the layer (last-write-wins) or withheld for manual review. Accepting the client is a no-op when the edit already landed; keeping the server then restores the captured pre-conflict server state."
+          },
+          "clientEditOutcomeUnknown": {
+            "type": "boolean",
+            "description": "Whether the storage layer could not say if the conflicting client edit committed - the transaction's commit acknowledgement was lost. When true, clientEditApplied is not trustworthy in either direction and both acceptClient and keepServer perform a real write rather than a no-op, so the row matches the operator's decision whichever way the ambiguous write went."
+          },
+          "clientEditSuperseded": {
+            "type": "boolean",
+            "description": "Whether this conflict's own client edit committed but was superseded by a later edit in the same upload to the same feature. clientEditApplied is false for such a record, but the row holds neither this edit's state nor the captured server state, so keepServer performs a real restore rather than a no-op."
+          },
           "baseState": {
             "type": "object",
             "additionalProperties": true,
             "nullable": true,
-            "description": "Opaque base/common-ancestor feature state; omitted when unknown or unparsable."
+            "description": "Opaque base/common-ancestor feature state; omitted when unknown or unparsable. The GeoServices replica path leaves it unset because the change log carries no per-change value snapshot, so the review diff degrades to a two-way client-vs-server comparison."
           },
           "clientState": {
             "type": "object",
@@ -39055,19 +39151,43 @@
               "defer"
             ],
             "description": "Resolution action, parsed case-insensitively."
+          },
+          "fieldValues": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "Operator-selected attribute values applied over the currently committed feature state. Required for `mergeFields` (a request without it is a 400) and ignored by every other action. Field names are matched case-insensitively against the captured attributes."
+          },
+          "geometry": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "client",
+              "server"
+            ],
+            "description": "Which captured state supplies the winning geometry. Required for `chooseGeometry` (a request without it is a 400) and ignored by every other action."
           }
         }
       },
       "ReplicaConflictResolutionResponse": {
         "type": "object",
-        "description": "Result of applying a conflict resolution.",
+        "description": "Result of applying a conflict resolution. The resolved feature state is committed through the shared edit pipeline before the resolution is recorded, so a resolution that cannot be committed leaves the conflict pending (502) rather than reporting a state that never landed. An action that does not apply to the conflict's recorded state (for example keeping the server after the client's delete already committed) is a 409.",
         "properties": {
           "conflict": {
             "$ref": "#/components/schemas/ReplicaConflictDetail"
           },
           "committedNewServerState": {
             "type": "boolean",
-            "description": "True for acceptClient, mergeFields, and chooseGeometry; false for keepServer, rejectClient, and defer."
+            "description": "Whether the resolution produced a new committed server state. This reflects what was written, not the action name: accepting a client edit that last-write-wins already committed produces no new state, while keeping the server after such a sync does."
+          },
+          "effect": {
+            "type": "string",
+            "enum": [
+              "none",
+              "writeFeatureState",
+              "deleteFeature"
+            ],
+            "description": "The feature-store effect the resolution applied."
           }
         }
       },

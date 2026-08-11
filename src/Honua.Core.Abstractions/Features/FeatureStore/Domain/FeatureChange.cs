@@ -29,6 +29,13 @@ public readonly record struct FeatureChange
     public required long ObjectId { get; init; }
 
     /// <summary>
+    /// Protocol-facing object ID captured from the layer's configured primary-id field when the
+    /// change was written. This remains available after the feature row is deleted and can differ
+    /// from <see cref="ObjectId"/>, which is the internal storage identity.
+    /// </summary>
+    public long? PublicObjectId { get; init; }
+
+    /// <summary>
     /// Type of change that occurred
     /// </summary>
     public required FeatureChangeOperation Operation { get; init; }

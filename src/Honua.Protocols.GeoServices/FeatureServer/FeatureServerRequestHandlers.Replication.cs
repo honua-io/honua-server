@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Configuration;
 using System.Collections.Immutable;
 using Honua.Infrastructure.Licensing;
@@ -22,6 +23,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 // Behavior reference: Replication durability (#383)
 // Uses IChangeTracker for monotonic generation counters and incremental delta extraction
@@ -35,6 +37,65 @@ internal static partial class FeatureServerEndpoints
             context,
             FeatureCatalog.FieldOpsOfflineSyncKey,
             "GeoServices offline sync");
+
+    /// <summary>
+    /// Validates a replica upload against the shared edit limits before the sync pipeline runs.
+    /// Returns the client-facing message when a limit is exceeded, or <c>null</c> when the upload is
+    /// within limits.
+    /// </summary>
+    /// <remarks>
+    /// The whole upload must be checked here because under manual review the conflicting rows never
+    /// reach <c>FeatureServerEditsHandler</c> — and if every row conflicts it is not called at all —
+    /// so its own limit checks would let an oversized payload through while still persisting one
+    /// durable conflict per edit. The per-operation counting mirrors
+    /// <c>FeatureServerEditsHandler.ValidateEditLimits</c>, which applies <c>MaxFeaturesPerEdit</c>
+    /// separately to adds/updates/deletes; a combined per-layer count would reject uploads the shared
+    /// pipeline accepts (#2430).
+    /// </remarks>
+    internal static string? ValidateUploadEditLimits(
+        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
+        EditLimits editLimits)
+    {
+        var uploadedEditCount = layerEdits
+            .Where(layer => !layer.Edits.IsDefault)
+            .Sum(layer => layer.Edits.Length);
+
+        if (uploadedEditCount > editLimits.MaxEditsPerTransaction)
+        {
+            return $"Uploaded replica edits exceed the maximum of {editLimits.MaxEditsPerTransaction} edits per transaction.";
+        }
+
+        foreach (var layer in layerEdits.Where(layer => !layer.Edits.IsDefault))
+        {
+            var adds = 0;
+            var updates = 0;
+            var deletes = 0;
+            foreach (var edit in layer.Edits)
+            {
+                switch (edit.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        adds++;
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updates++;
+                        break;
+                    default:
+                        deletes++;
+                        break;
+                }
+            }
+
+            if (adds > editLimits.MaxFeaturesPerEdit ||
+                updates > editLimits.MaxFeaturesPerEdit ||
+                deletes > editLimits.MaxFeaturesPerEdit)
+            {
+                return $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per operation.";
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Rejects replica write operations (createReplica / synchronizeReplica / unRegisterReplica) on
@@ -1004,6 +1065,19 @@ internal static partial class FeatureServerEndpoints
                 [rollbackError ?? "rollbackOnFailure must be a boolean value."]);
         }
 
+        // Honua extension parameter (#2430): conflictHandling selects what happens to an uploaded edit
+        // that collides with a concurrent server edit. `lastWriteWins` (the default, and the historical
+        // behavior) still commits the client edit and records the conflict as advisory review evidence;
+        // `manualReview` withholds the conflicting edit so the durable conflict record is the only
+        // carrier of the client intent until an operator resolves it. Both modes require a provider that
+        // can persist conflicts; without one the canonical sync service falls back to last-write-wins.
+        if (!TryParseConflictHandling(values, out var lastWriteWins, out var conflictHandlingError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid conflictHandling parameter",
+                [conflictHandlingError!]);
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
 
         SynchronizeReplicaConflict[]? conflicts = null;
@@ -1026,18 +1100,35 @@ internal static partial class FeatureServerEndpoints
 
             if (!layerEdits.IsDefaultOrEmpty)
             {
+                var editLimits = context.RequestServices
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
+                    .Value.Edits;
+                var limitError = ValidateUploadEditLimits(layerEdits, editLimits);
+                if (limitError is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, limitError);
+                }
+
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
                 var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
-                // Snapshot the pre-apply server state of every uploaded update/delete target so durable
-                // conflict records can carry the server side of the comparison for the review API
-                // (#1287). Captured before apply because last-write-wins overwrites the conflicting row.
+                // The server side of each conflict is snapshotted by the canonical sync service through
+                // the capturer below — after detection, before the edits apply. Capturing here, ahead of
+                // the whole pipeline, meant a server edit landing in between was flagged as the conflict
+                // yet missing from the snapshot, so a later keep-server resolution silently discarded it
+                // (#2430).
                 var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-                var serverConflictStates = await CaptureServerConflictStatesAsync(
-                    featureReader, layerEdits, cancellationToken);
+                var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+                var resourcesByPublicLayerId = replicaLayers
+                    .DistinctBy(static layer => layer.PublicLayerId)
+                    .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
+                var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(
+                    featureReader,
+                    filterExpressionService,
+                    resourcesByPublicLayerId);
 
                 var syncRequest = new ReplicaSyncRequest(
                     ReplicaId: replicaId,
@@ -1047,11 +1138,58 @@ internal static partial class FeatureServerEndpoints
                         : ReplicaSyncDirection.Bidirectional,
                     BaseGeneration: replica.LastSyncGeneration,
                     LayerEdits: layerEdits,
-                    LastWriteWins: true,
+                    LastWriteWins: lastWriteWins,
                     SyncOperationId: context.TraceIdentifier,
                     RollbackOnFailure: rollbackOnFailure);
 
-                var report = await syncService.ApplyUploadAsync(syncRequest, applier, cancellationToken);
+                var report = await syncService.ApplyUploadAsync(
+                    syncRequest,
+                    applier,
+                    serverStateCapturer,
+                    FeatureServerReplicaClientStateSerializer.Instance,
+                    cancellationToken);
+                var serverConflictStates = report.ServerStates
+                    ?? new Dictionary<(int PublicLayerId, long ObjectId), string>();
+
+                conflicts = MapSyncConflicts(report.Conflicts);
+
+                // Attach the client (uploaded) and pre-apply server state snapshots to the durable
+                // conflict records the sync service wrote, so the operator conflict-review API can
+                // render the field/geometry comparison (#1287).
+                //
+                // This runs BEFORE the batch-failure return (#2430). With rollbackOnFailure=false an
+                // unrelated row can fail while a conflicting edit commits, and under manualReview the
+                // conflicting edit is withheld deliberately — in both cases report.Success can be false
+                // while durable conflicts exist. Returning first left those records with no envelopes,
+                // so every later acceptClient/keepServer resolved to NotApplicable and the recorded
+                // client intent became unresolvable.
+                if (!report.Conflicts.IsDefaultOrEmpty)
+                {
+                    var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
+                    // Uncancellable: the conflicts are already durable at this point, and under
+                    // manualReview the record is the ONLY copy of the withheld client edit. A client
+                    // disconnect here left the record with no client-state envelope, so after the
+                    // settle window acceptClient had nothing to apply and the edit was permanently
+                    // unresolvable (#2430).
+                    var refinedTypes = await AttachConflictStatesAsync(
+                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, CancellationToken.None);
+
+                    // Mirror the refined classification onto the transient synchronize response so the
+                    // wire hint matches the durable conflict record the review API returns (#1287).
+                    if (conflicts is not null && refinedTypes.Count > 0)
+                    {
+                        // Keyed by request slot: several occurrences of the same object can refine
+                        // differently (one geometry-only, another attribute-changing), and collapsing
+                        // them by object id gave every wire conflict one type while the durable records
+                        // were refined individually (#2430).
+                        foreach (var wireConflict in conflicts.Where(
+                            c => refinedTypes.ContainsKey((c.LayerId, c.EditIndex))))
+                        {
+                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.EditIndex)];
+                        }
+                    }
+                }
+
                 if (!report.Success)
                 {
                     return StandardErrorHelpers.CreateBadRequest(
@@ -1062,30 +1200,8 @@ internal static partial class FeatureServerEndpoints
                 appliedAdds = report.AppliedAdds;
                 appliedUpdates = report.AppliedUpdates;
                 appliedDeletes = report.AppliedDeletes;
-                conflicts = MapSyncConflicts(report.Conflicts);
                 uploadServerGen = report.ServerGeneration;
                 didUpload = true;
-
-                // Attach the client (uploaded) and pre-apply server state snapshots to the durable
-                // conflict records the sync service wrote, so the operator conflict-review API can
-                // render the field/geometry comparison (#1287).
-                if (!report.Conflicts.IsDefaultOrEmpty)
-                {
-                    var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
-                    var refinedTypes = await AttachConflictStatesAsync(
-                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, cancellationToken);
-
-                    // Mirror the refined classification onto the transient synchronize response so the
-                    // wire hint matches the durable conflict record the review API returns (#1287).
-                    if (conflicts is not null && refinedTypes.Count > 0)
-                    {
-                        foreach (var wireConflict in conflicts.Where(
-                            c => refinedTypes.ContainsKey((c.LayerId, c.ObjectId))))
-                        {
-                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.ObjectId)];
-                        }
-                    }
-                }
             }
         }
 
@@ -1194,6 +1310,41 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
+    /// Parses the Honua <c>conflictHandling</c> extension parameter for <c>synchronizeReplica</c> into
+    /// the canonical last-write-wins flag (#2430). Accepts <c>lastWriteWins</c> (default) and
+    /// <c>manualReview</c>; anything else is a bad request rather than a silent fallback, so a client
+    /// that misspells the mode never believes its edits are being withheld for review when they are
+    /// being committed.
+    /// </summary>
+    private static bool TryParseConflictHandling(
+        IReadOnlyDictionary<string, StringValues> values,
+        out bool lastWriteWins,
+        out string? error)
+    {
+        lastWriteWins = true;
+        error = null;
+
+        var raw = GetValueString(values, "conflictHandling");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        switch (raw.Trim().ToLowerInvariant())
+        {
+            case "lastwritewins":
+                lastWriteWins = true;
+                return true;
+            case "manualreview":
+                lastWriteWins = false;
+                return true;
+            default:
+                error = "conflictHandling must be either 'lastWriteWins' or 'manualReview'.";
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Maps canonical sync conflicts to the wire conflict summary.
     /// </summary>
     private static SynchronizeReplicaConflict[]? MapSyncConflicts(
@@ -1214,7 +1365,8 @@ internal static partial class FeatureServerEndpoints
                 ObjectId = conflict.ObjectId,
                 ConflictType = (int)conflict.ConflictType,
                 Applied = conflict.Applied,
-                ConflictId = conflict.ConflictId
+                ConflictId = conflict.ConflictId,
+                EditIndex = conflict.EditIndex
             };
         }
 
@@ -1222,49 +1374,22 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Reads the current server state of every uploaded update/delete target, keyed by
-    /// (public layer id, object id), as a <c>{"attributes": {...}, "geometry": ...}</c> envelope. Must
-    /// run before the edits are applied so the captured server side is the pre-conflict state, not the
-    /// just-applied client value (#1287). The geometry is converted to GeoServices (Esri) JSON so it is
-    /// comparable to the uploaded client geometry. A target the server has already deleted yields no entry.
+    /// Serializes a stored feature into the conflict-review state envelope so the captured server
+    /// geometry is directly comparable to the uploaded client geometry (#1287).
     /// </summary>
-    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), string>> CaptureServerConflictStatesAsync(
-        IFeatureReader featureReader,
-        ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
-        CancellationToken cancellationToken)
+    /// <remarks>
+    /// Z and M are preserved deliberately. This snapshot is not display output: a keep-server, field
+    /// merge, or server-side geometry choice writes it back as an update payload, so dropping the
+    /// ordinates would flatten a 3D or measured feature to 2D and lose those values permanently
+    /// (#2430).
+    /// </remarks>
+    internal static string CaptureStateEnvelope(Honua.Core.Features.FeatureStore.Domain.Feature feature)
     {
-        var states = new Dictionary<(int, long), string>();
-        foreach (var layer in layerEdits)
-        {
-            var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
-            foreach (var edit in edits)
-            {
-                if (edit.Kind == FeatureEditOperationKind.Create || edit.ObjectId is not { } objectId)
-                {
-                    continue;
-                }
-
-                var key = (layer.PublicLayerId, objectId);
-                if (states.ContainsKey(key))
-                {
-                    continue;
-                }
-
-                var feature = await featureReader
-                    .GetAsync(layer.StorageLayerId, objectId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (feature is { } found)
-                {
-                    // Match the Z/M handling ConvertFeatureToGeoServices uses elsewhere so the captured
-                    // server geometry is the same shape the rest of the GeoServices surface emits.
-                    var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                        found.Geometry, srid: null, geometryLimits: null, includeZ: false, includeM: false);
-                    states[key] = SerializeStateEnvelope(found.Attributes, geometry);
-                }
-            }
-        }
-
-        return states;
+        var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+            feature.Geometry, srid: null, geometryLimits: null, includeZ: true, includeM: true);
+        // A stored feature is a complete snapshot. Preserve an explicit null geometry so a later
+        // keep-server resolution can clear a geometry that the client added after this snapshot.
+        return SerializeStateEnvelope(feature.Attributes, geometry, includeGeometry: true);
     }
 
     /// <summary>
@@ -1277,14 +1402,14 @@ internal static partial class FeatureServerEndpoints
     /// record cannot be loaded, or for which neither side has a captured state (e.g. delete-vs-delete),
     /// are left unchanged.
     /// </summary>
-    private static async Task<Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>> AttachConflictStatesAsync(
+    private static async Task<Dictionary<(int PublicLayerId, int EditIndex), ReplicaConflictType>> AttachConflictStatesAsync(
         IReplicaConflictRepository conflictRepository,
         ImmutableArray<ReplicaSyncConflict> conflicts,
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
-        Dictionary<(int PublicLayerId, long ObjectId), string> serverStates,
+        IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string> serverStates,
         CancellationToken cancellationToken)
     {
-        var refinedTypes = new Dictionary<(int PublicLayerId, long ObjectId), ReplicaConflictType>();
+        var refinedTypes = new Dictionary<(int PublicLayerId, int EditIndex), ReplicaConflictType>();
         var clientStates = BuildClientConflictStates(layerEdits);
         foreach (var conflict in conflicts)
         {
@@ -1294,7 +1419,11 @@ internal static partial class FeatureServerEndpoints
             }
 
             var key = (conflict.PublicLayerId, conflict.ObjectId);
-            clientStates.TryGetValue(key, out var clientState);
+            // Keyed by request slot, not by object id: a payload may carry several updates for the same
+            // object, and keying by id left every one of that object's records holding the LAST
+            // envelope — so accepting an earlier conflict wrote the later edit instead of the client
+            // intent the operator reviewed (#2430).
+            clientStates.TryGetValue((conflict.PublicLayerId, conflict.EditIndex), out var clientState);
             serverStates.TryGetValue(key, out var serverState);
             if (clientState is null && serverState is null)
             {
@@ -1312,16 +1441,19 @@ internal static partial class FeatureServerEndpoints
             var refinedType = ReplicaConflictClassifier.Refine(existing.ConflictType, clientState, serverState);
             if (refinedType != existing.ConflictType)
             {
-                refinedTypes[key] = refinedType;
+                refinedTypes[(conflict.PublicLayerId, conflict.EditIndex)] = refinedType;
             }
 
-            await conflictRepository.UpsertAsync(
-                existing with
-                {
-                    ConflictType = refinedType,
-                    ClientStateJson = clientState,
-                    ServerStateJson = serverState,
-                },
+            // Guarded, column-scoped update rather than a whole-record upsert: an operator can resolve
+            // this conflict the moment it is listed, while this post-processing is still running, and
+            // writing the record back from the read above would reopen that resolution (#2430).
+            await conflictRepository.TryUpdateDetectionStateAsync(
+                new ReplicaConflictDetectionUpdate(
+                    conflictId,
+                    refinedType,
+                    clientState,
+                    serverState,
+                    ClientEditApplied: null),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -1329,27 +1461,30 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id, object
-    /// id). Delete edits carry no client attributes and are omitted.
+    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id,
+    /// request slot). Delete edits carry no client attributes and are omitted.
     /// </summary>
-    private static Dictionary<(int PublicLayerId, long ObjectId), string> BuildClientConflictStates(
+    private static Dictionary<(int PublicLayerId, int EditIndex), string> BuildClientConflictStates(
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits)
     {
-        var states = new Dictionary<(int, long), string>();
+        var states = new Dictionary<(int, int), string>();
         foreach (var layer in layerEdits)
         {
             var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
-            // Not rewritten as .Where: the pattern-matched `objectId`/`feature` locals are bound
-            // by the filter condition itself and consumed in the loop body — a Where lambda's
-            // pattern variables do not escape to the outer foreach body.
+            // Keyed by request slot so several operations on the same object each keep their own
+            // envelope (#2430).
             foreach (var edit in edits
-                         .Select(edit => (
+                         .Select((edit, slot) => (
+                             Slot: slot,
                              ObjectId: edit.ObjectId,
                              Feature: edit.Payload as GeoServicesFeature))
                          .Where(edit => edit.ObjectId.HasValue && edit.Feature is not null))
             {
-                states[(layer.PublicLayerId, edit.ObjectId.GetValueOrDefault())] =
-                    SerializeStateEnvelope(edit.Feature!.Attributes, edit.Feature.Geometry);
+                states[(layer.PublicLayerId, edit.Slot)] =
+                    SerializeStateEnvelope(
+                        edit.Feature!.Attributes,
+                        edit.Feature.Geometry,
+                        edit.Feature.IncludeGeometry);
             }
         }
 
@@ -1361,18 +1496,25 @@ internal static partial class FeatureServerEndpoints
     /// <c>{"attributes": {...}, "geometry": ...}</c> consumed by the conflict-review diff and the
     /// geometry-conflict classifier, AOT-safely via the source-generated serializers. The geometry is
     /// emitted as GeoServices (Esri) JSON on both the client and server sides so the two are directly
-    /// comparable (#1287); it is omitted entirely when the feature has no geometry.
+    /// comparable (#1287). <paramref name="includeGeometry"/> distinguishes an attribute-only client
+    /// update (property omitted) from an explicit geometry clear (property present with null).
     /// </summary>
-    private static string SerializeStateEnvelope(
+    internal static string SerializeStateEnvelope(
         IReadOnlyDictionary<string, object?> attributes,
-        GeoServicesGeometry? geometry)
+        GeoServicesGeometry? geometry,
+        bool includeGeometry)
     {
         var attributeMap = attributes as Dictionary<string, object?> ?? new Dictionary<string, object?>(attributes);
         var attributesJson = System.Text.Json.JsonSerializer.Serialize(
             attributeMap, FeatureServerJsonContext.Default.DictionaryStringObject);
-        if (geometry is null)
+        if (!includeGeometry)
         {
             return $"{{\"attributes\":{attributesJson}}}";
+        }
+
+        if (geometry is null)
+        {
+            return $"{{\"attributes\":{attributesJson},\"geometry\":null}}";
         }
 
         var geometryJson = System.Text.Json.JsonSerializer.Serialize(
@@ -1439,11 +1581,24 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
+            // Each accepted entry becomes one ReplicaUploadLayerEdits whose edit slots restart at zero,
+            // and conflicts are keyed by (layerId, slot) for client-state attachment. A repeated layer
+            // id would therefore collide two entries' slots and attach both conflicts to the later
+            // payload, so a resolution could write the wrong client state. The Esri per-layer edits
+            // shape has no meaning for a repeated layer either, so reject it (#2430).
+            var seenLayerIds = new HashSet<int>();
+
             foreach (var entry in perLayer)
             {
                 if (!storageByPublicId.TryGetValue(entry.Id, out var storageLayerId))
                 {
                     error = $"edits reference layer {entry.Id} which is not part of this replica.";
+                    return false;
+                }
+
+                if (!seenLayerIds.Add(entry.Id))
+                {
+                    error = $"edits list layer {entry.Id} more than once; combine its edits into a single entry.";
                     return false;
                 }
 

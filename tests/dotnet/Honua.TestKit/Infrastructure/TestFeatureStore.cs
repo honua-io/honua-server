@@ -441,18 +441,19 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                         createdIds,
                         createResults,
                         cancellationToken),
-                    FeatureEditOperationKind.Update => CheckPrecondition(layerId, operation.Feature?.Id, preconditions, updateResults)
+                    FeatureEditOperationKind.Update => CheckPrecondition(
+                            layerId, operation.Feature?.Id, preconditions, updateResults, out _)
                         && await ApplyOrderedUpdateAsync(
                             layerId,
                             operation,
                             updateResults,
                             cancellationToken),
-                    FeatureEditOperationKind.Delete => CheckPrecondition(layerId, operation.ObjectId, preconditions, deleteResults)
-                        && await ApplyOrderedDeleteAsync(
-                            layerId,
-                            operation,
-                            deleteResults,
-                            cancellationToken),
+                    FeatureEditOperationKind.Delete => await ApplyOrderedDeleteWithPreconditionAsync(
+                        layerId,
+                        operation,
+                        preconditions,
+                        deleteResults,
+                        cancellationToken),
                     _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
                 };
 
@@ -504,7 +505,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var updatedCount = 0;
         foreach (var feature in editBatch.Updates)
         {
-            if (!CheckPrecondition(layerId, feature.Id, preconditions, updateResults))
+            if (!CheckPrecondition(layerId, feature.Id, preconditions, updateResults, out _))
             {
                 continue;
             }
@@ -527,8 +528,16 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var deletedCount = 0;
         foreach (var featureId in editBatch.Deletes)
         {
-            if (!CheckPrecondition(layerId, featureId, preconditions, deleteResults))
+            if (!CheckPrecondition(
+                    layerId, featureId, preconditions, deleteResults, out var targetAlreadyAbsent))
             {
+                continue;
+            }
+
+            if (targetAlreadyAbsent)
+            {
+                deletedCount++;
+                deleteResults.Add(EditOperationResult.Success(featureId));
                 continue;
             }
 
@@ -582,21 +591,19 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             deleteResults: deleteResults.ToImmutableArray());
     }
 
-    private static Dictionary<long, string>? BuildPreconditionMap(FeatureEditBatch editBatch)
+    private static Dictionary<long, FeatureEditPrecondition>? BuildPreconditionMap(FeatureEditBatch editBatch)
     {
         if (editBatch.Preconditions.IsDefaultOrEmpty)
         {
             return null;
         }
 
-        var map = new Dictionary<long, string>(editBatch.Preconditions.Length);
-        // Not rewritten to `.Where(...)`: moving the null-check into a separate LINQ
-        // predicate loses the null-state narrowing the compiler currently applies to
-        // ExpectedStateToken (a `string?`) inside this `if` body, which would reintroduce
-        // a nullable-assignment warning under this project's TreatWarningsAsErrors build.
-        foreach (var precondition in (editBatch.Preconditions).Where(precondition => !string.IsNullOrEmpty(precondition.ExpectedStateToken)))
+        var map = new Dictionary<long, FeatureEditPrecondition>(editBatch.Preconditions.Length);
+        foreach (var precondition in editBatch.Preconditions.Where(
+                     precondition => precondition.ExpectedRowAbsent ||
+                         !string.IsNullOrEmpty(precondition.ExpectedStateToken)))
         {
-            map[precondition.ObjectId] = precondition.ExpectedStateToken;
+            map[precondition.ObjectId] = precondition;
         }
 
         return map.Count == 0 ? null : map;
@@ -614,29 +621,38 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
     private bool CheckPrecondition(
         int layerId,
         long? objectId,
-        Dictionary<long, string>? preconditions,
-        List<EditOperationResult> results)
+        Dictionary<long, FeatureEditPrecondition>? preconditions,
+        List<EditOperationResult> results,
+        out bool targetAlreadyAbsent)
     {
+        targetAlreadyAbsent = false;
         if (preconditions is null ||
             objectId is not { } id ||
-            !preconditions.TryGetValue(id, out var expectedStateToken))
+            !preconditions.TryGetValue(id, out var precondition))
         {
             return true;
         }
 
         if (!_layerFeatures.TryGetValue(layerId, out var features))
         {
+            targetAlreadyAbsent = precondition.ExpectedRowAbsent;
             return true;
         }
 
         var index = features.FindIndex(f => f.Id == id);
         if (index == -1)
         {
-            // Missing rows surface as the regular not-found failure from the write path.
+            // Token-bound missing rows surface as the regular not-found failure from the write
+            // path. Expected absence is instead a successful idempotent delete no-op.
+            targetAlreadyAbsent = precondition.ExpectedRowAbsent;
             return true;
         }
 
-        if (string.Equals(FeatureStateToken.Compute(features[index]), expectedStateToken, StringComparison.Ordinal))
+        if (!precondition.ExpectedRowAbsent &&
+            string.Equals(
+                FeatureStateToken.Compute(features[index]),
+                precondition.ExpectedStateToken,
+                StringComparison.Ordinal))
         {
             return true;
         }
@@ -694,6 +710,28 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
             return false;
         }
+    }
+
+    private async Task<bool> ApplyOrderedDeleteWithPreconditionAsync(
+        int layerId,
+        FeatureEditOperation operation,
+        Dictionary<long, FeatureEditPrecondition>? preconditions,
+        List<EditOperationResult> deleteResults,
+        CancellationToken cancellationToken)
+    {
+        if (!CheckPrecondition(
+                layerId, operation.ObjectId, preconditions, deleteResults, out var targetAlreadyAbsent))
+        {
+            return false;
+        }
+
+        if (targetAlreadyAbsent)
+        {
+            deleteResults.Add(EditOperationResult.Success(operation.ObjectId!.Value));
+            return true;
+        }
+
+        return await ApplyOrderedDeleteAsync(layerId, operation, deleteResults, cancellationToken);
     }
 
     private async Task<bool> ApplyOrderedDeleteAsync(

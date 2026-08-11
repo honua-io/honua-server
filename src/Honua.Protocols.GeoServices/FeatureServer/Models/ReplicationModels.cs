@@ -573,6 +573,13 @@ public sealed class SynchronizeReplicaConflict
     public bool Applied { get; set; }
 
     /// <summary>
+    /// Position of the conflicting edit within its layer's uploaded edit array, so a client that sent
+    /// several operations for the same object can tell which one this conflict describes (#2430).
+    /// </summary>
+    [JsonPropertyName("editIndex")]
+    public int EditIndex { get; set; }
+
+    /// <summary>
     /// Durable conflict-record id when a record was written for review; null when conflict review is
     /// unsupported by the provider.
     /// </summary>

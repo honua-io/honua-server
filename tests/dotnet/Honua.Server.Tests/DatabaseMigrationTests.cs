@@ -164,6 +164,186 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var activeTopologyGenerations = (int)(await topologyGenerationCmd.ExecuteScalarAsync())!;
         activeTopologyGenerations.Should().Be(1,
             "a fresh database should preserve the default solve mapping as one active generation");
+
+        // A custom protocol id must remain recoverable from the change log after its feature row is
+        // deleted. Replica conflict detection can no longer resolve the live row at that point.
+        await using (var customIdChangeCmd = connection.CreateCommand())
+        {
+            customIdChangeCmd.CommandText = """
+                INSERT INTO honua.layers
+                    (layer_id, layer_name, table_name, primary_key_column, geometry_type)
+                VALUES
+                    (990105, 'migration_custom_id', 'features', 'asset_id', 'Point');
+
+                INSERT INTO features (objectid, layer_id, attributes)
+                VALUES (190105, 990105, '{"asset_id": 700105}'::jsonb);
+
+                DELETE FROM features
+                WHERE objectid = 190105;
+
+                SELECT public_objectid
+                FROM honua.feature_changes
+                WHERE layer_id = 990105
+                  AND objectid = 190105
+                  AND operation = 3
+                ORDER BY generation DESC
+                LIMIT 1;
+                """;
+            var deletedPublicObjectId = (long)(await customIdChangeCmd.ExecuteScalarAsync())!;
+            deletedPublicObjectId.Should().Be(700105,
+                "the delete trigger should persist the configured public id.primary from OLD attributes");
+        }
+
+        // A protocol-facing primary id is an object identity, not an ordinary editable attribute.
+        // Rejecting identity changes prevents the change log from losing the alias that an offline
+        // replica may still use to address the row.
+        await using (var arrangeImmutableCustomIdCmd = connection.CreateCommand())
+        {
+            arrangeImmutableCustomIdCmd.CommandText = """
+                INSERT INTO features (objectid, layer_id, attributes)
+                VALUES (190107, 990105, '{"asset_id": 700107}'::jsonb);
+                """;
+            await arrangeImmutableCustomIdCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var mutateCustomIdCmd = connection.CreateCommand())
+        {
+            mutateCustomIdCmd.CommandText = """
+                UPDATE features
+                SET attributes = jsonb_set(attributes, '{asset_id}', '700108'::jsonb)
+                WHERE objectid = 190107;
+                """;
+            var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(
+                () => mutateCustomIdCmd.ExecuteNonQueryAsync());
+            exception.SqlState.Should().Be(Npgsql.PostgresErrorCodes.CheckViolation);
+            exception.MessageText.Should().Contain("Cannot change the public id.primary");
+        }
+
+        await using (var preservedCustomIdCmd = connection.CreateCommand())
+        {
+            preservedCustomIdCmd.CommandText = """
+                SELECT attributes ->> 'asset_id'
+                FROM features
+                WHERE objectid = 190107;
+                """;
+            var preservedPublicObjectId = (string)(await preservedCustomIdCmd.ExecuteScalarAsync())!;
+            preservedPublicObjectId.Should().Be("700107",
+                "a rejected identity mutation must leave the original row and alias intact");
+        }
+
+        await using (var arrangeImmutableBranchIdCmd = connection.CreateCommand())
+        {
+            arrangeImmutableBranchIdCmd.CommandText = """
+                INSERT INTO honua.gdb_versions (version_id, version_name, owner)
+                VALUES ('00000000-0000-0000-0000-000000990105', 'migration-immutable-id', 'migration');
+                """;
+            await arrangeImmutableBranchIdCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var mutateBranchCustomIdCmd = connection.CreateCommand())
+        {
+            mutateBranchCustomIdCmd.CommandText = """
+                INSERT INTO honua.version_edits
+                    (version_id, layer_id, objectid, operation, attributes, base_attributes)
+                VALUES
+                    ('00000000-0000-0000-0000-000000990105', 990105, 190107, 2,
+                     '{"asset_id": 700108}'::jsonb, '{"asset_id": 700107}'::jsonb);
+                """;
+            var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(
+                () => mutateBranchCustomIdCmd.ExecuteNonQueryAsync());
+            exception.SqlState.Should().Be(Npgsql.PostgresErrorCodes.CheckViolation);
+            exception.MessageText.Should().Contain("Cannot change the public id.primary");
+        }
+
+        await using (var deleteBranchCreatedCustomIdCmd = connection.CreateCommand())
+        {
+            deleteBranchCreatedCustomIdCmd.CommandText = """
+                INSERT INTO honua.version_edits
+                    (version_id, layer_id, objectid, operation, attributes)
+                VALUES
+                    ('00000000-0000-0000-0000-000000990105', 990105, 190109, 1,
+                     '{"asset_id": 700109}'::jsonb);
+
+                UPDATE honua.version_edits
+                SET operation = 3,
+                    attributes = NULL
+                WHERE version_id = '00000000-0000-0000-0000-000000990105'
+                  AND layer_id = 990105
+                  AND objectid = 190109;
+
+                SELECT public_objectid
+                FROM honua.feature_changes
+                WHERE version_id = '00000000-0000-0000-0000-000000990105'
+                  AND layer_id = 990105
+                  AND objectid = 190109
+                  AND operation = 3
+                ORDER BY generation DESC
+                LIMIT 1;
+                """;
+            var deletedBranchPublicObjectId = (long)(await deleteBranchCreatedCustomIdCmd.ExecuteScalarAsync())!;
+            deletedBranchPublicObjectId.Should().Be(700109,
+                "a branch-created delete should retain the custom id from its prior branch row");
+        }
+
+        // A pre-migration custom-id delete has no surviving row image from which migration 105 can
+        // recover its public alias. Invalidate only replicas whose cursors precede that unsafe
+        // delete, forcing those clients to create a fresh replica instead of silently missing it.
+        await using (var arrangeLegacyDeleteCmd = connection.CreateCommand())
+        {
+            arrangeLegacyDeleteCmd.CommandText = """
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, public_objectid, operation)
+                VALUES
+                    (nextval('honua.sync_generation'), 990105, 190106, NULL, 3);
+
+                INSERT INTO honua.replicas
+                    (replica_id, replica_name, service_id, sync_model, layer_ids, last_sync_generation)
+                VALUES
+                    ('legacy-custom-id', 'legacy custom id', 'test', 'perReplica', ARRAY[990105], 0),
+                    ('caught-up-custom-id', 'caught up custom id', 'test', 'perReplica', ARRAY[990105],
+                        (SELECT MAX(generation) FROM honua.feature_changes
+                         WHERE layer_id = 990105 AND objectid = 190106 AND operation = 3)),
+                    ('transient-custom-id', 'transient custom id', 'test', 'perReplica', ARRAY[990105],
+                        (SELECT MAX(generation) FROM honua.feature_changes)),
+                    ('ordinary-id', 'ordinary id', 'test', 'perReplica', ARRAY[0], 0);
+
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, public_objectid, operation)
+                VALUES
+                    (nextval('honua.sync_generation'), 990105, 190110, NULL, 1),
+                    (nextval('honua.sync_generation'), 990105, 190110, NULL, 3);
+                """;
+            await arrangeLegacyDeleteCmd.ExecuteNonQueryAsync();
+        }
+
+        var publicIdMigrationSql = await ReadEmbeddedMigrationAsync("105_AddChangeLogPublicObjectId.sql");
+        await using (var reapplyPublicIdMigrationCmd = connection.CreateCommand())
+        {
+            reapplyPublicIdMigrationCmd.CommandText = publicIdMigrationSql;
+            await reapplyPublicIdMigrationCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var invalidatedReplicaCmd = connection.CreateCommand())
+        {
+            invalidatedReplicaCmd.CommandText = """
+                SELECT replica_id
+                FROM honua.replicas
+                WHERE replica_id IN (
+                    'legacy-custom-id',
+                    'caught-up-custom-id',
+                    'transient-custom-id',
+                    'ordinary-id')
+                ORDER BY replica_id;
+                """;
+            await using var reader = await invalidatedReplicaCmd.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("caught-up-custom-id");
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("ordinary-id");
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("transient-custom-id");
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
     }
 
     [Fact]

@@ -155,6 +155,7 @@ public sealed class ReplicaSyncServiceUploadFilterTests
             int publicLayerId,
             ImmutableArray<ReplicaUploadEdit> edits,
             bool rollbackOnFailure,
+            ImmutableArray<FeatureEditPrecondition> preconditions = default,
             CancellationToken cancellationToken = default)
         {
             LastRollbackOnFailure = rollbackOnFailure;
@@ -164,7 +165,10 @@ public sealed class ReplicaSyncServiceUploadFilterTests
                 AppliedUpdates: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Update),
                 AppliedDeletes: edits.Count(edit => edit.Kind == FeatureEditOperationKind.Delete),
                 Failed: false,
-                FailureMessage: null);
+                FailureMessage: null,
+                CommittedEditIndexes: Enumerable.Range(0, edits.Length)
+                    .Where(slot => edits[slot].Kind != FeatureEditOperationKind.Create)
+                    .ToImmutableArray());
             return Task.FromResult(result);
         }
     }
@@ -188,6 +192,33 @@ public sealed class ReplicaSyncServiceUploadFilterTests
 
         public Task<ReplicaConflictRecord?> GetAsync(string conflictId, CancellationToken cancellationToken = default)
             => Task.FromResult<ReplicaConflictRecord?>(null);
+
+        public Task<bool> TryUpdateDetectionStateAsync(
+            ReplicaConflictDetectionUpdate update,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryUpdateFinalizationStateAsync(
+            ReplicaConflictFinalizationUpdate update,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryTakeOverClaimAsync(
+            string conflictId,
+            string resolvedBy,
+            ReplicaConflictResolutionAction action,
+            DateTimeOffset expectedResolvedAt,
+            DateTimeOffset newResolvedAt,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryReleaseClaimAsync(
+            string conflictId,
+            string resolvedBy,
+            ReplicaConflictResolutionAction action,
+            DateTimeOffset resolvedAt,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task<ReplicaConflictResolutionOutcome> ResolveAsync(
             ReplicaConflictResolution resolution,

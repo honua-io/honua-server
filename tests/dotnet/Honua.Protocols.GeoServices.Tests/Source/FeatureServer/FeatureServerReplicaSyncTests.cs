@@ -116,6 +116,38 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_DuplicateLayerEntries_ReturnsBadRequest()
+    {
+        // Each per-layer entry becomes its own upload batch whose edit slots restart at zero, and
+        // conflicts are keyed by (layerId, slot) when the client-state envelope is attached. A repeated
+        // layer id collides two entries' slots, so both conflicts would be attached to the later
+        // payload and a resolution could write the wrong client state (#2430).
+        var replicaId = await CreateReplicaAsync("DuplicateLayerEntries", "0");
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new { id = 0, adds = new[] { new { attributes = new { name = "dup-a" } } } },
+            new { id = 0, adds = new[] { new { attributes = new { name = "dup-b" } } } },
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            edits,
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_UploadThenExtract_ExcludesOwnEdits()
     {
         var replicaId = await CreateReplicaAsync("RoundTrip", "0");
@@ -218,6 +250,121 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         // Last-write-wins: the client's value is the committed server state.
         var serverName = await ReadFeatureNameAsync(objectId);
         serverName.Should().Be("client-wins");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit()
+    {
+        // conflictHandling=manualReview (#2430) is the Honua extension that makes the previously dead
+        // manual-review branch reachable: the conflicting client edit is NOT committed, and the durable
+        // record is the only carrier of the client intent until an operator resolves it.
+        var objectId = await AddFeatureAsync("manual-review-base");
+        var replicaId = await CreateReplicaAsync("ManualReviewConflictTest", "0");
+        await SynchronizeDownloadAsync(replicaId);
+
+        await UpdateFeatureAsync(objectId, "server-value");
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                updates = new[]
+                {
+                    new { attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = "client-value" } }
+                }
+            }
+        });
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            conflictHandling = "manualReview",
+            edits,
+            f = "json"
+        });
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            requestContent);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.GetProperty("appliedUpdates").GetInt32().Should().Be(0, "the conflicting edit is withheld for review");
+
+        var conflicts = root.GetProperty("conflicts");
+        conflicts.GetArrayLength().Should().Be(1);
+        var conflict = conflicts[0];
+        conflict.GetProperty("applied").GetBoolean().Should().BeFalse();
+
+        var conflictId = conflict.GetProperty("conflictId").GetString();
+        var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
+        var record = await conflictRepo.GetAsync(conflictId!);
+        record.Should().NotBeNull();
+        record!.Value.ClientEditApplied.Should().BeFalse(
+            "the durable record must carry whether the client edit landed so resolution can be planned honestly");
+
+        var serverName = await ReadFeatureNameAsync(objectId);
+        serverName.Should().Be("server-value", "manual review must not overwrite the concurrent server edit");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_UnknownConflictHandling_ReturnsBadRequest()
+    {
+        var replicaId = await CreateReplicaAsync("BadConflictHandlingTest", "0");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            conflictHandling = "serverAlwaysWins",
+            edits = "[]",
+            f = "json"
+        });
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            requestContent);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_ConcurrentServerEdit_RecordsClientEditAsApplied()
+    {
+        var objectId = await AddFeatureAsync("lww-applied-base");
+        var replicaId = await CreateReplicaAsync("LastWriteWinsAppliedTest", "0");
+        await SynchronizeDownloadAsync(replicaId);
+
+        await UpdateFeatureAsync(objectId, "server-value");
+
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                updates = new[]
+                {
+                    new { attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = "client-value" } }
+                }
+            }
+        });
+        var root = await SynchronizeUploadAsync(replicaId, edits);
+
+        var conflictId = root.GetProperty("conflicts")[0].GetProperty("conflictId").GetString();
+        var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
+        var record = await conflictRepo.GetAsync(conflictId!);
+        record!.Value.ClientEditApplied.Should().BeTrue(
+            "under the default last-write-wins mode the conflicting client edit is committed, and the record must say so");
     }
 
     [IntegrationTest]

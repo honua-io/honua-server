@@ -42,6 +42,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         int publicLayerId,
         ImmutableArray<ReplicaUploadEdit> edits,
         bool rollbackOnFailure,
+        ImmutableArray<FeatureEditPrecondition> preconditions = default,
         CancellationToken cancellationToken = default)
     {
         if (edits.IsDefaultOrEmpty)
@@ -52,9 +53,14 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         var adds = new List<GeoServicesFeature>();
         var updates = new List<GeoServicesFeature>();
         var deletes = new List<object>();
+        // Request slot of each dispatched row, so per-row outcomes map back to the exact uploaded edit
+        // rather than to an object id that several edits may share (#2430).
+        var updateSlots = new List<int>();
+        var deleteSlots = new List<int>();
 
-        foreach (var edit in edits)
+        for (var slot = 0; slot < edits.Length; slot++)
         {
+            var edit = edits[slot];
             switch (edit.Kind)
             {
                 case FeatureEditOperationKind.Create when edit.Payload is GeoServicesFeature add:
@@ -62,9 +68,11 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
                     break;
                 case FeatureEditOperationKind.Update when edit.Payload is GeoServicesFeature update:
                     updates.Add(update);
+                    updateSlots.Add(slot);
                     break;
                 case FeatureEditOperationKind.Delete when edit.ObjectId is { } objectId:
                     deletes.Add(objectId);
+                    deleteSlots.Add(slot);
                     break;
                 default:
                     // A payload that does not match its declared kind is a programming error in the
@@ -82,6 +90,8 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             Deletes = deletes.Count > 0 ? deletes.ToArray() : null,
             RollbackOnFailure = rollbackOnFailure,
             RollbackOnFailureExplicitlySet = true,
+            // Server-side only: binds the rows detection judged non-conflicting to the state it saw.
+            Preconditions = preconditions,
         };
 
         var editResult = await _editsHandler.HandleApplyEditsAsync(
@@ -110,7 +120,60 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             appliedUpdates,
             appliedDeletes,
             Failed: failed,
-            FailureMessage: failed ? "Uploaded replica edits failed to apply." : null);
+            FailureMessage: failed ? "Uploaded replica edits failed to apply." : null,
+            CommittedEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: true),
+            IndeterminateEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: false));
+    }
+
+    /// <summary>
+    /// Collects the request slots of the update/delete rows that definitely committed
+    /// (<paramref name="committed"/> true), or those whose commit outcome the writer could not
+    /// determine (false). With <c>rollbackOnFailure=false</c> the shared pipeline commits rows
+    /// independently, so the layer-wide failed flag cannot tell a caller whether a <em>particular</em>
+    /// uploaded edit landed; the conflict recorder needs exactly that (#2430).
+    /// </summary>
+    /// <remarks>
+    /// The two sets are disjoint, and an indeterminate row belongs to neither "committed" nor
+    /// "did not commit": treating it as a definite failure recorded the conflict as
+    /// <c>ClientEditApplied=false</c>, and a later keepServer then planned a no-op while the client
+    /// overwrite may well have been in place.
+    /// <para>
+    /// Result arrays are index-aligned with the request arrays (Esri applyEdits semantics), so each
+    /// result maps back to the slot recorded when the row was dispatched. Adds are excluded: they mint
+    /// new server-assigned ids and can never be the target of an upload conflict.
+    /// </para>
+    /// </remarks>
+    private static ImmutableArray<int> CollectEditIndexes(
+        ApplyEditsResponse response,
+        List<int> updateSlots,
+        List<int> deleteSlots,
+        bool committed)
+    {
+        var slotsOut = ImmutableArray.CreateBuilder<int>();
+        Append(response.UpdateResults, updateSlots);
+        Append(response.DeleteResults, deleteSlots);
+        return slotsOut.ToImmutable();
+
+        void Append(EditResult[]? results, List<int> slots)
+        {
+            if (results is null)
+            {
+                return;
+            }
+
+            var count = Math.Min(results.Length, slots.Count);
+            for (var index = 0; index < count; index++)
+            {
+                var result = results[index];
+                var matches = committed
+                    ? result.Success
+                    : !result.Success && result.Error?.Code == GeoServicesEditErrorCodes.CommitOutcomeUnknown;
+                if (matches)
+                {
+                    slotsOut.Add(slots[index]);
+                }
+            }
+        }
     }
 
     private static int CountSuccessful(EditResult[]? results)

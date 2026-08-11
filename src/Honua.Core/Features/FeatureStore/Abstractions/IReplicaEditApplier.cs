@@ -30,6 +30,13 @@ public interface IReplicaEditApplier
     /// batch (leaving the layer's server state unchanged); when false, edits apply best-effort per row
     /// (#2136).
     /// </param>
+    /// <param name="preconditions">
+    /// Optimistic-concurrency preconditions to carry into the write transaction, keyed by object id.
+    /// Supplied under manual review, where the mode's contract is that a conflicting edit is withheld:
+    /// a server edit committing between conflict detection and this write would otherwise be silently
+    /// overwritten by an edit detection had judged non-conflicting. Empty leaves the write
+    /// unconditional (#2430).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The per-layer apply result.</returns>
     Task<ReplicaLayerApplyResult> ApplyAsync(
@@ -37,5 +44,6 @@ public interface IReplicaEditApplier
         int publicLayerId,
         ImmutableArray<ReplicaUploadEdit> edits,
         bool rollbackOnFailure,
+        ImmutableArray<FeatureEditPrecondition> preconditions = default,
         CancellationToken cancellationToken = default);
 }

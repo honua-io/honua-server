@@ -34,7 +34,8 @@ public interface IChangeTracker
 
     /// <summary>
     /// Gets collapsed changes since a given generation for the specified layers, restricted to a
-    /// set of object ids. Used by the replica-sync conflict probe so a long-offline replica's
+    /// set of object ids. A provider may match either the internal storage identity or a durable
+    /// public-id alias captured with the change. Used by the replica-sync conflict probe so a long-offline replica's
     /// upload only materializes the change history of the uploaded features rather than the entire
     /// change log since its base generation. The default implementation filters client-side over
     /// <see cref="GetChangesSinceAsync(long, int[], CancellationToken)"/>; providers that can push
@@ -65,6 +66,9 @@ public interface IChangeTracker
         }
 
         var changes = await GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken).ConfigureAwait(false);
-        return changes.Where(change => objectIds.Contains(change.ObjectId)).ToList();
+        return changes
+            .Where(change => objectIds.Contains(change.ObjectId)
+                || change.PublicObjectId is { } publicObjectId && objectIds.Contains(publicObjectId))
+            .ToList();
     }
 }

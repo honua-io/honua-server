@@ -213,6 +213,26 @@ ADR gives the registry, and the manifest lever the Console release gate
 > on the shared `Honua` meter) and a `FeatureStreamHealthCheck` surfacing
 > slow-consumer drops, session saturation, and cross-node broadcast backlog loss.
 
+> **Update (#2430).** **Disconnected-sync / replicas** (`sync.offline`,
+> `/api/v1/admin/services/{id}/replicas` + the conflict list/detail/resolution
+> surfaces) was promoted from `experimental` to `Implemented` (GA). That route
+> group drops its `WithCapabilityGate("sync.offline")` and ships on the default
+> first-release surface; the capability is no longer part of the registry-flag
+> experimental roster (a) — the **disconnected-sync / replicas** entry in the (a)
+> bullet list above is superseded by this note. Disconnected sync remains
+> **Pro-edition** gated (`fieldops.offline-sync` entitlement), so GA means no
+> longer hidden/unadvertised, not free-tier. GA-hardening made conflict
+> resolution a real edit rather than bookkeeping: a resolution now commits the
+> resolved feature state through the shared edit pipeline
+> (`IReplicaConflictResolutionApplier`) instead of only recording an action;
+> conflict records persist whether the client edit was applied
+> (`client_edit_applied`) so a keep-server resolution restores the captured
+> pre-conflict server state under last-write-wins instead of leaving the client
+> edit committed; a new `conflictHandling=manualReview` `synchronizeReplica`
+> extension withholds conflicting edits for operator review rather than forcing
+> last-write-wins; and delete-vs-delete field-collection conflicts are now
+> produced as conflicts instead of being silently treated as idempotent.
+
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a
 route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field

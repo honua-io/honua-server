@@ -622,24 +622,23 @@ public sealed class EditProcessor : IEditProcessor
     {
         Dictionary<long, FeatureEditPrecondition>? byObjectId = null;
 
-        static void Register(ref Dictionary<long, FeatureEditPrecondition>? map, long objectId, string expectedStateToken)
+        static void Register(
+            ref Dictionary<long, FeatureEditPrecondition>? map,
+            FeatureEditPrecondition precondition)
         {
             map ??= new Dictionary<long, FeatureEditPrecondition>();
-            if (!map.ContainsKey(objectId))
+            if (!map.ContainsKey(precondition.ObjectId))
             {
-                map[objectId] = new FeatureEditPrecondition
-                {
-                    ObjectId = objectId,
-                    ExpectedStateToken = expectedStateToken
-                };
+                map[precondition.ObjectId] = precondition;
             }
         }
 
         if (editRequest.Preconditions is { IsDefaultOrEmpty: false } requestPreconditions)
         {
-            foreach (var precondition in requestPreconditions.Where(p => !string.IsNullOrEmpty(p.ExpectedStateToken)))
+            foreach (var precondition in requestPreconditions.Where(
+                         p => p.ExpectedRowAbsent || !string.IsNullOrEmpty(p.ExpectedStateToken)))
             {
-                Register(ref byObjectId, precondition.ObjectId, precondition.ExpectedStateToken);
+                Register(ref byObjectId, precondition);
             }
         }
 
@@ -648,7 +647,11 @@ public sealed class EditProcessor : IEditProcessor
             foreach (var update in updates.Where(u =>
                 u.ObjectId is not null && u.Constraints?.ExpectedStateToken is { Length: > 0 }))
             {
-                Register(ref byObjectId, update.ObjectId!.Value, update.Constraints!.Value.ExpectedStateToken!);
+                Register(ref byObjectId, new FeatureEditPrecondition
+                {
+                    ObjectId = update.ObjectId!.Value,
+                    ExpectedStateToken = update.Constraints!.Value.ExpectedStateToken!,
+                });
             }
         }
 
@@ -662,7 +665,11 @@ public sealed class EditProcessor : IEditProcessor
                     Constraints: { ExpectedStateToken.Length: > 0 }
                 })).Select(operation => operation.Feature!.Value))
             {
-                Register(ref byObjectId, feature.ObjectId!.Value, feature.Constraints!.Value.ExpectedStateToken!);
+                Register(ref byObjectId, new FeatureEditPrecondition
+                {
+                    ObjectId = feature.ObjectId!.Value,
+                    ExpectedStateToken = feature.Constraints!.Value.ExpectedStateToken!,
+                });
             }
         }
 

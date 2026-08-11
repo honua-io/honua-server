@@ -3736,13 +3736,14 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminReplicaManagementDriftBackingTests.ListReplicas_ForSeededService_ReturnsOk",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ReplicasEndpoint_AfterGaPromotion_IsNotExperimentalGated",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_AfterCreate_ReturnsRegisteredReplica",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_ForUnknownService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WhenNoneRegistered_ReturnsEmptyCollection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental",
+      "maturity": "implemented",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3761,7 +3762,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.GetReplica_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental",
+      "maturity": "implemented",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3778,7 +3779,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ListConflicts_WhenProviderDoesNotSupportReview_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental",
+      "maturity": "implemented",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3790,10 +3791,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ForPendingConflict_ReturnsBaseClientServerStates",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ForResolvedConflict_ReturnsResolutionEvidence"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ForResolvedConflict_ReturnsResolutionEvidence",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ReportsWhetherClientEditWasApplied"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental",
+      "maturity": "implemented",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -15470,13 +15472,23 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_AcceptClientAfterLastWriteWins_ReportsNoNewServerState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_AcceptClientOnServerDeletedFeature_ReturnsConflict",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_ChooseGeometryWithoutSource_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterCommittedClientDelete_ReturnsConflict",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServerAfterLastWriteWins_RestoresCapturedServerState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_KeepServer_RestoresCapturedNullGeometry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsCannotRetargetAnotherFeature",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_MergeFieldsWithoutFieldValues_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WhenAlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithAcceptClient_CommitsNewServerStateAndMarksResolved",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithDefer_LeavesConflictReviewableAndWritesNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithKeepServer_DoesNotCommitNewServerState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithMergeFields_CommitsOperatorSelectedValues",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithUnknownAction_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "experimental",
+      "maturity": "implemented",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -16166,11 +16178,14 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_ConcurrentInsertsForSameAbsentFeature_OneAppliesOneConflicts",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_ConcurrentSameChangeId_BothReturnSameOutcome",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_ConflictingUpdate_ReturnsConflictWithServerFeature",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_DeleteOfConcurrentlyDeletedFeature_ReturnsDeleteDeleteConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_DeleteWithNonNullFeature_Returns400",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_InvalidRequest_Returns400",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_LoserAfterAdvisoryLockReplaysWinnerOutcomeWithoutDuplicateKeyError",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_NewInsert_ReturnsApplied",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_ReplayedDeleteChangeId_StaysIdempotentWithoutConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SameChangeId_ReturnsIdempotentOutcome",
+        "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_SecondDeleteFromSameBaseVersion_ReturnsDeleteDeleteConflict",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests.Push_UpdateMissingBaseVersion_ReturnsRejected",
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
@@ -18319,14 +18334,18 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_AttributeConflict_RemainsClassifiedAsAttribute",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_AppliesUploadAndDeliversServerDelta",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ConcurrentServerEdit_RecordsClientEditAsApplied",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ConcurrentServerEdit_RecordsConflictAndAppliesLastWriteWins",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_Download_DeliversPostReplicaChangesAndAdvancesServerGen",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_DuplicateLayerEntries_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormFailingEdit_ReturnsErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormUpload_AppliesEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_MultiLayerUpload_AppliesPerLayerEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_NoConcurrentServerEdit_AppliesWithoutConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_RollbackOnFailure_AbortsUploadLeavingStateUnchanged",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_UnknownConflictHandling_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_UploadThenExtract_ExcludesOwnEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_MissingReplicaId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_ValidReplica_ReturnsSuccess",

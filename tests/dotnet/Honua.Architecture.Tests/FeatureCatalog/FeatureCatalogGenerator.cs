@@ -260,12 +260,10 @@ internal static class FeatureCatalogGenerator
             return "security.mtls";
         }
 
-        // Disconnected-sync replica / conflict review — /api/v1/admin/services/{serviceId}/replicas/*
-        if (route.StartsWith("/api/v1/admin/services/", StringComparison.OrdinalIgnoreCase) &&
-            route.Contains("/replicas", StringComparison.OrdinalIgnoreCase))
-        {
-            return "sync.offline";
-        }
+        // Disconnected-sync replica / conflict review (/api/v1/admin/services/{serviceId}/replicas/*,
+        // including the conflict list/detail/resolve surfaces) was promoted to GA (Implemented)
+        // in #2430, so it is no longer a flipped experimental group: its routes fall through to
+        // the in-release surface (implemented) like any other GA capability.
 
         // Realtime feature streaming (/api/v1/streaming/features*, the admin
         // session-visibility and streaming-operations surfaces) was promoted to GA

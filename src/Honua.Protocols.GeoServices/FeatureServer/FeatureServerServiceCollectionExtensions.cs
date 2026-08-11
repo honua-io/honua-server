@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Infrastructure.Crs;
@@ -55,6 +56,13 @@ internal static class FeatureServerServiceCollectionExtensions
 
         services.AddScoped<FeatureServerEditsDependencies>();
         services.AddScoped<FeatureServerEditsHandler>();
+
+        // Disconnected-sync conflict resolution writes the resolved feature state through the same
+        // shared applyEdits pipeline as any other edit (#2430). Registering it here — rather than in
+        // the admin slice — keeps the admin conflict-review surface protocol-neutral: it depends on the
+        // canonical IReplicaConflictResolutionApplier abstraction and reports resolutions that need a
+        // write as not-supported on hosts without a replica-capable protocol adapter.
+        services.TryAddScoped<IReplicaConflictResolutionApplier, FeatureServerReplicaConflictResolutionApplier>();
 
         return services;
     }
