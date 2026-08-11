@@ -357,6 +357,76 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RemovesIncidentallyStyledFailedResource()
+    {
+        var styleResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "style-existing" },
+            Type = MetadataV2ResourceType.Style,
+        };
+        var previousService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = ServiceProtocols.All,
+        };
+        var failedPublication = CreatePublication(
+            "pub-failed",
+            previousService.Metadata.Id,
+            "resource-added",
+            "binding-added",
+            0,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var failedResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
+            StorageBindingIds = ["binding-added"],
+            PrimaryStorageBindingId = "binding-added",
+        };
+        var failedBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
+            ResourceId = failedResource.Metadata.Id,
+            Locator = "failed_table",
+            StorageLayerId = 0,
+        };
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services = [previousService],
+            Resources = [styleResource],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Services = [previousService with { PublicationIds = [failedPublication.Metadata.Id] }],
+            Resources = [styleResource, failedResource],
+            StorageBindings = [failedBinding],
+            Publications = [failedPublication],
+        };
+        var concurrentlyStyledResource = failedResource with
+        {
+            StyleResourceIds = [styleResource.Metadata.Id],
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            Resources = [styleResource, concurrentlyStyledResource],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:52:00Z", CultureInfo.InvariantCulture));
+
+        compensation.Resources.Should().ContainSingle().Which.Metadata.Id.Should().Be(styleResource.Metadata.Id);
+        compensation.StorageBindings.Should().BeEmpty();
+        compensation.Publications.Should().BeEmpty();
+        compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedBindingAndConnection()
     {
         var existingResource = new MetadataV2Resource

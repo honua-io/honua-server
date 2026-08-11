@@ -357,15 +357,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 };
             })
             .Where(service => !addedServiceIds.Contains(service.Metadata.Id) ||
-                HasServiceChangedOutsideFailedPublications(
+                HasServiceBeenRepurposed(
                     service,
-                    persistedServicesById[service.Metadata.Id],
-                    addedPublicationIds) ||
+                    persistedServicesById[service.Metadata.Id]) ||
                 publications.Any(publication =>
                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)) ||
                 service.PublicationIds.Count > 0)
             .ToArray();
 
+        var previousBindingIds = previousGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedBindingIds = persistedGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousBindingIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
         var previousResourceIds = previousGraph.Resources
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
@@ -383,10 +389,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 ? RestoreResourceMutation(resource, previous, persisted)
                 : resource)
             .Where(resource => !addedResourceIds.Contains(resource.Metadata.Id) ||
-                HasCurrentGraphWriterMutation(
+                HasResourceBeenRepurposed(
                     resource,
                     persistedResourcesById[resource.Metadata.Id],
-                    MetadataV2JsonContext.Default.MetadataV2Resource) ||
+                    addedBindingIds) ||
                 publications.Any(publication =>
                     string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)) ||
                 currentGraph.Resources.Any(other =>
@@ -394,27 +400,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     other.StyleResourceIds.Contains(resource.Metadata.Id, StringComparer.Ordinal)))
             .ToArray();
 
-        var previousBindingIds = previousGraph.StorageBindings
-            .Select(item => item.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
         var previousBindingsById = previousGraph.StorageBindings
             .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var persistedBindingsById = persistedGraph.StorageBindings
             .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
-        var addedBindingIds = persistedGraph.StorageBindings
-            .Select(item => item.Metadata.Id)
-            .Where(id => !previousBindingIds.Contains(id))
-            .ToHashSet(StringComparer.Ordinal);
         var bindings = currentGraph.StorageBindings
             .Select(binding => previousBindingsById.TryGetValue(binding.Metadata.Id, out var previous) &&
                                persistedBindingsById.TryGetValue(binding.Metadata.Id, out var persisted)
                 ? RestoreStorageBindingMutation(binding, previous, persisted)
                 : binding)
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
-                HasCurrentGraphWriterMutation(
-                    binding,
-                    persistedBindingsById[binding.Metadata.Id],
-                    MetadataV2JsonContext.Default.MetadataV2StorageBinding) ||
+                HasStorageBindingBeenRepurposed(binding, persistedBindingsById[binding.Metadata.Id]) &&
+                resources.Any(resource =>
+                    string.Equals(resource.Metadata.Id, binding.ResourceId, StringComparison.Ordinal)) ||
                 publications.Any(publication =>
                     string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)) ||
                 resources.Any(resource =>
@@ -439,10 +437,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 ? RestoreConnectionMutation(connection, previous, persisted)
                 : connection)
             .Where(connection => !addedConnectionIds.Contains(connection.Metadata.Id) ||
-                HasCurrentGraphWriterMutation(
-                    connection,
-                    persistedConnectionsById[connection.Metadata.Id],
-                    MetadataV2JsonContext.Default.MetadataV2Connection) ||
+                HasConnectionBeenRepurposed(connection, persistedConnectionsById[connection.Metadata.Id]) ||
                 bindings.Any(binding =>
                     string.Equals(binding.ConnectionId, connection.Metadata.Id, StringComparison.Ordinal)))
             .ToArray();
@@ -472,25 +467,106 @@ internal sealed partial class PostgreSqlLayerPublishingService
         => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) ||
            string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
 
-    private static bool HasServiceChangedOutsideFailedPublications(
+    private static bool HasServiceBeenRepurposed(
         MetadataV2Service current,
-        MetadataV2Service persisted,
-        HashSet<string> addedPublicationIds)
-    {
-        var persistedWithoutFailedPublications = persisted with
-        {
-            PublicationIds = persisted.PublicationIds
-                .Where(id => !addedPublicationIds.Contains(id))
-                .ToArray(),
-        };
-
-        return HasCurrentGraphWriterMutation(
-            current,
-            persistedWithoutFailedPublications,
+        MetadataV2Service persisted)
+        => HasTargetMutation(
+            new MetadataV2Service
+            {
+                ServiceType = current.ServiceType,
+                Route = current.Route,
+                AccessPolicy = current.AccessPolicy,
+                SpatialReference = current.SpatialReference,
+                Protocols = current.Protocols,
+                Options = current.Options,
+                Settings = current.Settings,
+            },
+            new MetadataV2Service
+            {
+                ServiceType = persisted.ServiceType,
+                Route = persisted.Route,
+                AccessPolicy = persisted.AccessPolicy,
+                SpatialReference = persisted.SpatialReference,
+                Protocols = persisted.Protocols,
+                Options = persisted.Options,
+                Settings = persisted.Settings,
+            },
             MetadataV2JsonContext.Default.MetadataV2Service);
+
+    private static bool HasResourceBeenRepurposed(
+        MetadataV2Resource current,
+        MetadataV2Resource persisted,
+        HashSet<string> addedBindingIds)
+    {
+        var failedBindingIds = persisted.StorageBindingIds
+            .Where(addedBindingIds.Contains)
+            .ToHashSet(StringComparer.Ordinal);
+        if (persisted.PrimaryStorageBindingId is { } primaryBindingId &&
+            addedBindingIds.Contains(primaryBindingId))
+        {
+            failedBindingIds.Add(primaryBindingId);
+        }
+
+        if (failedBindingIds.Count == 0 ||
+            current.StorageBindingIds.Any(failedBindingIds.Contains) ||
+            current.PrimaryStorageBindingId is { } currentPrimary && failedBindingIds.Contains(currentPrimary))
+        {
+            return false;
+        }
+
+        return current.Type != persisted.Type ||
+               current.StorageBindingIds.Any(id => !addedBindingIds.Contains(id)) ||
+               current.PrimaryStorageBindingId is { } independentPrimary &&
+               !addedBindingIds.Contains(independentPrimary);
     }
 
-    private static bool HasCurrentGraphWriterMutation<T>(
+    private static bool HasStorageBindingBeenRepurposed(
+        MetadataV2StorageBinding current,
+        MetadataV2StorageBinding persisted)
+        => HasTargetMutation(
+            new MetadataV2StorageBinding
+            {
+                ResourceId = current.ResourceId,
+                ConnectionId = current.ConnectionId,
+                StorageType = current.StorageType,
+                Locator = current.Locator,
+                StorageLayerId = current.StorageLayerId,
+                Options = current.Options,
+            },
+            new MetadataV2StorageBinding
+            {
+                ResourceId = persisted.ResourceId,
+                ConnectionId = persisted.ConnectionId,
+                StorageType = persisted.StorageType,
+                Locator = persisted.Locator,
+                StorageLayerId = persisted.StorageLayerId,
+                Options = persisted.Options,
+            },
+            MetadataV2JsonContext.Default.MetadataV2StorageBinding);
+
+    private static bool HasConnectionBeenRepurposed(
+        MetadataV2Connection current,
+        MetadataV2Connection persisted)
+        => HasTargetMutation(
+            new MetadataV2Connection
+            {
+                Type = current.Type,
+                Provider = current.Provider,
+                Endpoint = current.Endpoint,
+                SecretRef = current.SecretRef,
+                Options = current.Options,
+            },
+            new MetadataV2Connection
+            {
+                Type = persisted.Type,
+                Provider = persisted.Provider,
+                Endpoint = persisted.Endpoint,
+                SecretRef = persisted.SecretRef,
+                Options = persisted.Options,
+            },
+            MetadataV2JsonContext.Default.MetadataV2Connection);
+
+    private static bool HasTargetMutation<T>(
         T current,
         T persisted,
         JsonTypeInfo<T> typeInfo)
