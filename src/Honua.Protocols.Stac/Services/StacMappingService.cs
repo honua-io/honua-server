@@ -153,12 +153,13 @@ internal sealed class StacMappingService
         var attribution = string.IsNullOrWhiteSpace(metadata.Attribution)
             ? null
             : metadata.Attribution.Trim();
-        var contactName = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Name)
+        var authoredContactName = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Name)
             ? null
             : metadata.ContactPoint.Name.Trim();
         var contactUrl = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
             ? null
             : metadata.ContactPoint.Url.Trim();
+        var contactName = authoredContactName ?? ResolveContactProviderName(contactUrl);
         var contactMatchesPublisher = publisher is not null && string.Equals(
             publisher,
             contactName,
@@ -198,6 +199,19 @@ internal sealed class StacMappingService
         }
 
         return providers.Count == 0 ? null : providers.ToImmutable();
+    }
+
+    private static string? ResolveContactProviderName(string? contactUrl)
+    {
+        if (contactUrl is null ||
+            !Uri.TryCreate(contactUrl, UriKind.Absolute, out var parsedContactUrl) ||
+            (!string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        return parsedContactUrl.Host;
     }
 
     internal static string ResolveDisplayName(

@@ -418,6 +418,33 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithMalformedContactUrl_ReturnsValidationError()
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = "Invalid contact", Url = "not a URL" }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains("metadata.contactPoint.url 'not a URL' must be an absolute HTTP(S) URL", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithNullDeserializedResourceStorageBindingIds_ReturnsValidationError()
     {
         var json = JsonSerializer.Serialize(CreateValidGraph(), MetadataV2JsonContext.Default.MetadataV2Graph)

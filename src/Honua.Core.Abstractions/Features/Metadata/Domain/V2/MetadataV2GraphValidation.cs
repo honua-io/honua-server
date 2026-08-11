@@ -642,6 +642,15 @@ public static class MetadataV2GraphValidator
         {
             errors.Add($"{ownerLabel} metadata.contactPoint.email '{email}' must contain '@'.");
         }
+        if (metadata.ContactPoint is { Url: { } contactUrl } &&
+            !string.IsNullOrWhiteSpace(contactUrl) &&
+            (!Uri.TryCreate(contactUrl.Trim(), UriKind.Absolute, out var parsedContactUrl) ||
+             (!string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+              !string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.contactPoint.url '{contactUrl}' must be an absolute HTTP(S) URL.");
+        }
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
