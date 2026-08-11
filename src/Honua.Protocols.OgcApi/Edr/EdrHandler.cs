@@ -82,15 +82,16 @@ internal sealed class EdrHandler
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null || !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            if (!publication.IsRoutable(resource) ||
+                !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
             {
                 continue;
             }
 
-            if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+            if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
-                byResource[resource.Metadata.Id] = (publication, service, resource);
+                byResource[resource.Metadata.Id] = (publication, service, resource!);
             }
         }
 

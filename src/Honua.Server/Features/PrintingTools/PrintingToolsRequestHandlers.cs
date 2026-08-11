@@ -372,16 +372,16 @@ internal static class PrintingToolsRequestHandlers
             foreach (var publication in targetLayers)
             {
                 var resource = ResolveResource(snapshot, publication);
-                if (resource is null) continue;
+                if (!publication.IsRoutable(resource)) continue;
 
                 var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-                    ?? snapshot.ResolveStorageLayerId(resource);
+                    ?? snapshot.ResolveStorageLayerId(resource!);
                 if (!storageLayerId.HasValue) continue;
 
                 if (callerPrincipal is not null && accessPolicyEvaluator is not null &&
                     !accessPolicyEvaluator.Evaluate(
                         callerPrincipal,
-                        resource.AccessPolicy,
+                        resource!.AccessPolicy,
                         service.AccessPolicy).IsAllowed)
                     continue;
 
@@ -389,9 +389,9 @@ internal static class PrintingToolsRequestHandlers
                     opLayer,
                     service,
                     publication,
-                    resource,
+                    resource!,
                     storageLayerId.Value,
-                    resource.ReadGeometryType(),
+                    resource!.ReadGeometryType(),
                     []);
             }
         }

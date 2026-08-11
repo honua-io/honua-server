@@ -1794,6 +1794,7 @@ internal static partial class FeatureServerEndpoints
         return
         [
             ..snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
                 .Select(publication =>
                 {
                     var resource = snapshot.ResolveResource(publication);

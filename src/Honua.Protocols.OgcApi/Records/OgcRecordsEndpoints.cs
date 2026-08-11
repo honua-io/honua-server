@@ -331,7 +331,7 @@ internal static class OgcRecordsEndpoints
             var visiblePublications = services
                 .SelectMany(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
-                .Where(t => t.Resource is not null)
+                .Where(t => t.Publication.IsRoutable(t.Resource))
                 .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
                 .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
@@ -358,7 +358,9 @@ internal static class OgcRecordsEndpoints
         var resourceRecords = snapshot.Graph.Resources
             .Select(resource =>
             {
-                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id].ToArray();
+                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+                    .Where(publication => publication.IsRoutable(resource))
+                    .ToArray();
                 var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
                 var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;
                 var layerSort = primary is not null
@@ -366,6 +368,7 @@ internal static class OgcRecordsEndpoints
                     : int.MaxValue;
                 return (Resource: resource, Publications: publications, Primary: primary, LayerSort: layerSort, HasStorageLayer: storageLayerId.HasValue);
             })
+            .Where(item => item.Primary is not null)
             .OrderByDescending(item => item.HasStorageLayer)
             .ThenBy(item => item.LayerSort)
             .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);

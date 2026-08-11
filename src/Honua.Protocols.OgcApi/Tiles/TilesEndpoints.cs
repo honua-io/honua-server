@@ -1376,11 +1376,11 @@ internal static partial class TilesEndpoints
                 }
 
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!publication.IsRoutable(resource))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
@@ -1390,16 +1390,16 @@ internal static partial class TilesEndpoints
                 // both tile routes enforce the same authorization.
                 var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                     context,
-                    resource,
+                    resource!,
                     service,
                     AuthorizationOperation.Query,
                     cancellationToken).ConfigureAwait(false);
 
                 if (decision.IsAllowed)
                 {
-                    var layer = CreateTileRequestLayer(snapshot, publication, service, resource);
+                    var layer = CreateTileRequestLayer(snapshot, publication, service, resource!);
                     if (layer is not null &&
-                        (!accessibleLayersByResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                        (!accessibleLayersByResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
                          (publication.IsPrimary && !existing.Publication.IsPrimary)))
                     {
                         accessibleLayersByResource[resource.Metadata.Id] = layer;
@@ -1573,7 +1573,8 @@ internal static partial class TilesEndpoints
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
+            if (!publication.IsRoutable(resource) ||
+                !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
             {
                 continue;
             }

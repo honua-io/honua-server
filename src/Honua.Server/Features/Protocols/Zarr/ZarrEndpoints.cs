@@ -393,7 +393,8 @@ internal static class ZarrEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Graph.Publications.Any(publication => publication.LayerIndex == layerId);
+        return snapshot.Graph.Publications.Any(publication =>
+            publication.LayerIndex == layerId && snapshot.IsRoutable(publication));
     }
 
     private static ZarrRegistrationResponse ToResponse(ZarrRegistration registration)

@@ -145,15 +145,15 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!publication.IsRoutable(resource))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
-                canonicalByResource[resource.Metadata.Id] = (publication, service);
+                canonicalByResource[resource!.Metadata.Id] = (publication, service);
             }
 
             var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
@@ -168,15 +168,15 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!publication.IsRoutable(resource))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
                 {
                     continue;
                 }
@@ -186,23 +186,23 @@ internal static class CollectionsEndpoints
                 // canonical publication. Otherwise hide it (the resource may also be
                 // exposed via a secondary service the caller has access to, but
                 // surfacing it there would leak across canonical boundaries).
-                if (canonicalByResource.TryGetValue(resource.Metadata.Id, out var canonical))
+                if (canonicalByResource.TryGetValue(resource!.Metadata.Id, out var canonical))
                 {
-                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, canonical.Service))
+                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, canonical.Service))
                     {
                         continue;
                     }
-                    if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                    if (!publicationsByResource.ContainsKey(resource!.Metadata.Id))
                     {
-                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource);
+                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource!);
                     }
                     continue;
                 }
 
                 // No canonical publication exists for this resource — first match wins.
-                if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                if (!publicationsByResource.ContainsKey(resource!.Metadata.Id))
                 {
-                    publicationsByResource[resource.Metadata.Id] = (publication, service, resource);
+                    publicationsByResource[resource.Metadata.Id] = (publication, service, resource!);
                 }
             }
 

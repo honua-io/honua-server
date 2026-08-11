@@ -152,18 +152,19 @@ internal sealed class ResolveEntityTool : IMcpTool
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null || publication.LayerIndex is not { } layerIndex)
+            if (!publication.IsRoutable(resource) || publication.LayerIndex is not { } layerIndex)
             {
                 continue;
             }
+            var routableResource = resource!;
 
             var layerName = !string.IsNullOrWhiteSpace(publication.TitleOverride)
                 ? publication.TitleOverride!
-                : (!string.IsNullOrWhiteSpace(resource.Metadata.Title)
-                    ? resource.Metadata.Title!
-                    : resource.Metadata.Name);
+                : (!string.IsNullOrWhiteSpace(routableResource.Metadata.Title)
+                    ? routableResource.Metadata.Title!
+                    : routableResource.Metadata.Name);
 
-            var score = Score(text, layerName, resource.Metadata.Name, resource.Metadata.Description);
+            var score = Score(text, layerName, routableResource.Metadata.Name, routableResource.Metadata.Description);
             if (score <= 0)
             {
                 continue;
@@ -176,9 +177,9 @@ internal sealed class ResolveEntityTool : IMcpTool
                 ServiceName = service.Metadata.Name,
                 LayerId = layerIndex,
                 Name = layerName,
-                Type = resource.Type.ToString(),
-                GeometryType = (resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None).ToString(),
-                Description = resource.Metadata.Description,
+                Type = routableResource.Type.ToString(),
+                GeometryType = (routableResource.Spatial?.GeometryType ?? MetadataV2GeometryType.None).ToString(),
+                Description = routableResource.Metadata.Description,
                 Score = score
             });
         }

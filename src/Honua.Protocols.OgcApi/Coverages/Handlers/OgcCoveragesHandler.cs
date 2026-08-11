@@ -247,18 +247,18 @@ internal sealed class OgcCoveragesHandler
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!publication.IsRoutable(resource))
                 {
                     continue;
                 }
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
                 {
                     continue;
                 }
-                if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
                     (publication.IsPrimary && !existing.Publication.IsPrimary))
                 {
-                    byResource[resource.Metadata.Id] = (publication, service, resource);
+                    byResource[resource.Metadata.Id] = (publication, service, resource!);
                 }
             }
 

@@ -432,6 +432,7 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var candidates = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .Select(pub => snapshot.ResolveResource(pub))
             .Where(resource => resource is not null)
             .Select(resource => GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource!))
@@ -731,6 +732,7 @@ internal static partial class FeatureServerEndpoints
             var relatedLayerId = relatedResource is null
                 ? -1
                 : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
+                       .Where(publication => publication.IsRoutable(relatedResource))
                        .Select(pub => (int?)pub.LayerIndex)
                        .FirstOrDefault(idx => idx is not null)
                    ?? snapshot.ResolveStorageLayerId(relatedResource)

@@ -495,13 +495,13 @@ internal sealed partial class ODataSearchService
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+                ?? snapshot.ResolveStorageLayerId(resource!);
             if (!storageLayerId.HasValue)
             {
                 continue;
@@ -509,7 +509,7 @@ internal sealed partial class ODataSearchService
 
             return new ResolvedODataLayer(
                 publication,
-                resource,
+                resource!,
                 layerId,
                 storageLayerId.Value);
         }
@@ -532,6 +532,10 @@ internal sealed partial class ODataSearchService
                      .OrderByDescending(p => p.IsPrimary)
                      .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
         {
+            if (!publication.IsRoutable(resource))
+            {
+                continue;
+            }
             if (!publication.LayerIndex.HasValue)
             {
                 continue;

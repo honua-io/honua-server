@@ -34,6 +34,11 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
         var resource = publication is null
             ? null
             : snapshot.ResolveResource(publication);
+        if (publication is not null && !publication.IsRoutable(resource))
+        {
+            publication = null;
+            resource = null;
+        }
         var storageLayerId = publication is null
             ? null
             : snapshot.ResolveStorageLayerId(publication);

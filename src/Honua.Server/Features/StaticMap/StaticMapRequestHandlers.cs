@@ -728,12 +728,12 @@ internal static partial class StaticMapEndpoints
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
 
-            var geometryType = resource.ReadGeometryType();
+            var geometryType = resource!.ReadGeometryType();
             if (geometryType is MetadataV2GeometryType.None)
             {
                 continue;
@@ -741,14 +741,14 @@ internal static partial class StaticMapEndpoints
 
             var publicLayerId = publication.LayerIndex;
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+                ?? snapshot.ResolveStorageLayerId(resource!);
             if (!publicLayerId.HasValue || !storageLayerId.HasValue)
             {
                 continue;
             }
 
             yield return new StaticMapRenderLayer(
-                resource,
+                resource!,
                 publicLayerId.Value,
                 storageLayerId.Value,
                 geometryType);

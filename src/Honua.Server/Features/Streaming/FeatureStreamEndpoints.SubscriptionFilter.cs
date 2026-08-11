@@ -557,6 +557,7 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
         => snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .Select(publication => CreateStreamLayer(snapshot, publication, service))
             .OfType<StreamLayerDescriptor>();
 
@@ -565,7 +566,8 @@ internal static partial class FeatureStreamEndpoints
         foreach (var binding in snapshot.Index.StorageBindingsByStorageLayerId.Values)
         {
             if (!binding.StorageLayerId.HasValue ||
-                !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(binding.StorageLayerId.Value, out var resource))
+                !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(binding.StorageLayerId.Value, out var resource) ||
+                !binding.IsRoutable(resource))
             {
                 continue;
             }
@@ -591,13 +593,13 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
-        if (resource is null)
+        if (!publication.IsRoutable(resource))
         {
             return null;
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? snapshot.ResolveStorageLayerId(resource!)
             ?? publication.LayerIndex;
         if (!storageLayerId.HasValue)
         {
@@ -605,7 +607,7 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new StreamLayerDescriptor(
-            resource,
+            resource!,
             service,
             publication,
             storageLayerId.Value,
@@ -616,7 +618,9 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Resource resource)
         => snapshot.Graph.Publications
-            .Where(publication => string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            .Where(publication =>
+                string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                publication.IsRoutable(resource))
             .OrderByDescending(static publication => publication.IsPrimary)
             .ThenBy(publication =>
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)

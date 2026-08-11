@@ -11,6 +11,18 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public static class MetadataV2GraphSnapshotExtensions
 {
     /// <summary>
+    /// Returns whether a publication and its resolved canonical resource may be exposed
+    /// by a protocol adapter.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return publication.IsRoutable(snapshot.ResolveResource(publication));
+    }
+
+    /// <summary>
     /// Returns whether a publication and its canonical resource may be exposed by a
     /// protocol adapter. Retired graph entries remain addressable for administration
     /// and reconciliation, but must not be published on serving routes.

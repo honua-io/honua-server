@@ -81,6 +81,10 @@ internal static class OgcMapsResourceResolver
     {
         foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
         {
+            if (!publication.IsRoutable(resource))
+            {
+                continue;
+            }
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidate))
             {
                 continue;

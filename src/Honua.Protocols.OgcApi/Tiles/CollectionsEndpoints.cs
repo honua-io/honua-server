@@ -82,7 +82,7 @@ internal static class CollectionsEndpoints
             var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
             var requiresAuth = false;
             var hasDenied = false;
-            var totalPublications = snapshot.Graph.Publications.Count;
+            var totalPublications = snapshot.Graph.Publications.Count(snapshot.IsRoutable);
 
             foreach (var publication in snapshot.Graph.Publications)
             {
@@ -95,23 +95,23 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
+                if (!publication.IsRoutable(resource))
                 {
                     continue;
                 }
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource!, service))
                 {
                     continue;
                 }
 
-                var decision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource, service);
+                var decision = AccessPolicyHelpers.EvaluateResourceAccess(context, resource!, service);
 
                 if (decision.IsAllowed)
                 {
-                    if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                    if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
                         (publication.IsPrimary && !existing.Publication.IsPrimary))
                     {
-                        byResource[resource.Metadata.Id] = (publication, service, resource);
+                        byResource[resource.Metadata.Id] = (publication, service, resource!);
                     }
                     continue;
                 }

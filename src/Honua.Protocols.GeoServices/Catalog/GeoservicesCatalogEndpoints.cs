@@ -98,6 +98,7 @@ internal static class GeoservicesCatalogEndpoints
             // Project publications -> resources, filtering by access.
             var visibleResources = new List<MetadataV2Resource>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
                 .Select(snapshot.ResolveResource)
                 .OfType<MetadataV2Resource>())
             {
@@ -376,7 +377,7 @@ internal static class GeoservicesCatalogEndpoints
     {
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            if (publication.LayerIndex is not { } layerIndex)
+            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
             {
                 continue;
             }

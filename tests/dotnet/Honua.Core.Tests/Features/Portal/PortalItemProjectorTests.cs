@@ -157,6 +157,31 @@ public sealed class PortalItemProjectorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_RetiredPublication_OmitsItem()
+    {
+        var active = BuildSnapshot(
+            BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
+            resourceAccess: AnonymousPolicy());
+        var graph = active.Graph with
+        {
+            Publications =
+            [
+                active.Graph.Publications.Single() with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                }
+            ]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"retired\"", DateTimeOffset.UnixEpoch);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void ProjectItem_UnpermittedPrincipal_ReturnsNull()
     {
         var snapshot = BuildSnapshot(

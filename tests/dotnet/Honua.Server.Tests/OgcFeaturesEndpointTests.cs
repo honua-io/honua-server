@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Net.Http.Json;
 using System.Globalization;
 using FluentAssertions;
@@ -180,6 +181,28 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         firstCollection.Id.Should().NotBeNullOrEmpty();
         firstCollection.Links.Should().NotBeEmpty();
         firstCollection.ItemType.Should().Be("feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections")]
+    public async Task GetCollections_RetiredPublication_IsNotListedOrDirectlyAddressable()
+    {
+        _fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
+
+        var listResponse = await _fixture.Client.GetAsync("/ogc/features/collections");
+        var directResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{WebAppFixture.TestLayerId}");
+        var collections = await listResponse.Content.ReadFromJsonAsync<Collections>();
+
+        listResponse.Be200Ok();
+        collections.Should().NotBeNull();
+        collections!.CollectionList.Should().NotContain(collection =>
+            string.Equals(
+                collection.Id,
+                WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture),
+                StringComparison.OrdinalIgnoreCase));
+        directResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

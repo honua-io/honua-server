@@ -216,12 +216,12 @@ internal static partial class VectorTileServerEndpoints
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
             {
                 continue;
             }
@@ -229,7 +229,7 @@ internal static partial class VectorTileServerEndpoints
             if (best is null
                 || IsPreferredPublication(publication, best.Value.Publication))
             {
-                best = (publication, resource);
+                best = (publication, resource!);
             }
         }
 

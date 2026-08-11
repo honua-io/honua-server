@@ -55,23 +55,17 @@ public sealed class ResourceValidator : IResourceValidator
             // MetadataV2LifecycleStatus.Retired — skip them so disabled layers 404 on
             // every protocol surface that resolves layers by integer id (OGC
             // collections, Maps, OData), mirroring ValidateServiceLayerV2Async.
-            if (candidate.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
-            {
-                continue;
-            }
-
             var candidateResource = snapshot.ResolveResource(candidate);
-            if (candidateResource is null
-                || candidateResource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired)
+            if (!candidate.IsRoutable(candidateResource))
             {
                 continue;
             }
 
-            firstResource ??= candidateResource;
+            firstResource ??= candidateResource!;
 
             if (snapshot.ResolveStorageLayerId(candidate).HasValue)
             {
-                return ResourceValidationResult.Success(candidateResource);
+                return ResourceValidationResult.Success(candidateResource!);
             }
         }
 
@@ -218,10 +212,8 @@ public sealed class ResourceValidator : IResourceValidator
         var preferred = candidates
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
-                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
-                    snapshot.ResolveResource(publication) is
-                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                    snapshot.IsRoutable(publication) &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType)))
             .ToArray();
         if (preferred.Length == 1)
         {
@@ -231,10 +223,8 @@ public sealed class ResourceValidator : IResourceValidator
         var compatible = candidates
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
-                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType) &&
-                    snapshot.ResolveResource(publication) is
-                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                    snapshot.IsRoutable(publication) &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType)))
             .ToArray();
         if (compatible.Length == 1)
         {
@@ -287,14 +277,12 @@ public sealed class ResourceValidator : IResourceValidator
 
         foreach (var candidate in snapshot.Index.PublicationsByService[service.Metadata.Id]
                      .Where(pub => pub.LayerIndex == layerId &&
-                                   pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
                                    (requiredProtocol is null ||
                                     IsPublicationTypeCompatible(requiredProtocol, pub.PublicationType)))
                      .OrderByDescending(pub => requiredProtocol is not null &&
                          ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-                     .Where(candidate =>
-                         candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                     .Where(candidate => candidate.Publication.IsRoutable(candidate.Resource)))
         {
             // Disabled (admin-disabled) publications/resources are flipped to
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
@@ -351,10 +339,8 @@ public sealed class ResourceValidator : IResourceValidator
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
                     publication.LayerIndex == layerId &&
-                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType) &&
-                    snapshot.ResolveResource(publication) is
-                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                    snapshot.IsRoutable(publication) &&
+                    IsPublicationTypeCompatible(requiredProtocol, publication.PublicationType)))
             .ToArray();
 
         // Prefer a service with the protocol's canonical publication type when one exists.
@@ -365,10 +351,8 @@ public sealed class ResourceValidator : IResourceValidator
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
                     publication.LayerIndex == layerId &&
-                    publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType) &&
-                    snapshot.ResolveResource(publication) is
-                    { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
+                    snapshot.IsRoutable(publication) &&
+                    ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType)))
             .ToArray();
         var scopedCandidates = preferred.Length > 0 ? preferred : candidates;
         return scopedCandidates.Length == 1 ? scopedCandidates[0] : null;

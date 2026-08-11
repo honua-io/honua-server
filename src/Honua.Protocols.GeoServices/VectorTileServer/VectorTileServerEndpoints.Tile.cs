@@ -189,17 +189,17 @@ internal static partial class VectorTileServerEndpoints
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
 
             if (publication.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer)
             {
-                return (publication, resource);
+                return (publication, resource!);
             }
 
-            fallback ??= (publication, resource);
+            fallback ??= (publication, resource!);
         }
 
         return fallback;
