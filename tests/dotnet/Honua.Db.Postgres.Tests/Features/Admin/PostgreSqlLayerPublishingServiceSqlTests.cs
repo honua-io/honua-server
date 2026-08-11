@@ -233,6 +233,61 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedService()
+    {
+        var failedPublication = CreatePublication(
+            "pub-failed",
+            "service-added",
+            "resource-failed",
+            "binding-failed",
+            0,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var failedService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-added", Name = "failed-service" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = "/rest/services/failed/FeatureServer",
+            Protocols = ServiceProtocols.All,
+            PublicationIds = [failedPublication.Metadata.Id],
+        };
+        var previous = new MetadataV2Graph { Revision = 7 };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Services = [failedService],
+            Publications = [failedPublication],
+        };
+        var repurposedService = failedService with
+        {
+            Metadata = failedService.Metadata with { Name = "concurrent-ogc-service" },
+            ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+            Route = "/ogc/features",
+            Protocols = [ServiceProtocols.OgcFeatures],
+            PublicationIds = [],
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            Services = [repurposedService],
+            Publications = [],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:45:00Z", CultureInfo.InvariantCulture));
+
+        var retainedService = compensation.Services.Should().ContainSingle().Which;
+        retainedService.Metadata.Name.Should().Be("concurrent-ogc-service");
+        retainedService.ServiceType.Should().Be(MetadataV2ServiceType.OgcApiFeatures);
+        retainedService.Route.Should().Be("/ogc/features");
+        retainedService.Protocols.Should().Equal(ServiceProtocols.OgcFeatures);
+        retainedService.PublicationIds.Should().BeEmpty();
+        compensation.Publications.Should().BeEmpty();
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
     {
         var previousPublication = CreatePublication(

@@ -357,6 +357,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 };
             })
             .Where(service => !addedServiceIds.Contains(service.Metadata.Id) ||
+                HasServiceChangedOutsideFailedPublications(
+                    service,
+                    persistedServicesById[service.Metadata.Id],
+                    addedPublicationIds) ||
                 publications.Any(publication =>
                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)) ||
                 service.PublicationIds.Count > 0)
@@ -455,6 +459,24 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Publication persisted)
         => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) ||
            string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
+
+    private static bool HasServiceChangedOutsideFailedPublications(
+        MetadataV2Service current,
+        MetadataV2Service persisted,
+        HashSet<string> addedPublicationIds)
+    {
+        var persistedWithoutFailedPublications = persisted with
+        {
+            PublicationIds = persisted.PublicationIds
+                .Where(id => !addedPublicationIds.Contains(id))
+                .ToArray(),
+        };
+
+        return !JsonEquivalent(
+            current,
+            persistedWithoutFailedPublications,
+            MetadataV2JsonContext.Default.MetadataV2Service);
+    }
 
     private static MetadataV2Publication RestorePublicationMutation(
         MetadataV2Publication current,
@@ -1769,37 +1791,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
         out string identityProperty)
     {
         string[] identityProperties = ["id", "code", "name", "encoding", "attribute"];
-        foreach (var candidate in identityProperties)
+        if (!current.Concat(previous).Concat(persisted).Any())
         {
-            if (HasUniqueJsonArrayIdentity(current, candidate) &&
-                HasUniqueJsonArrayIdentity(previous, candidate) &&
-                HasUniqueJsonArrayIdentity(persisted, candidate) &&
-                current.Concat(previous).Concat(persisted).Any())
-            {
-                identityProperty = candidate;
-                return true;
-            }
+            identityProperty = string.Empty;
+            return false;
         }
 
-        identityProperty = string.Empty;
-        return false;
+        identityProperty = identityProperties.FirstOrDefault(candidate =>
+            HasUniqueJsonArrayIdentity(current, candidate) &&
+            HasUniqueJsonArrayIdentity(previous, candidate) &&
+            HasUniqueJsonArrayIdentity(persisted, candidate)) ?? string.Empty;
+        return identityProperty.Length > 0;
     }
 
     private static bool HasUniqueJsonArrayIdentity(JsonArray array, string identityProperty)
     {
         var identities = new HashSet<string>(GetJsonArrayIdentityComparer(identityProperty));
-        foreach (var item in array)
-        {
-            if (item is not JsonObject itemObject ||
-                !itemObject.TryGetPropertyValue(identityProperty, out var identityNode) ||
-                identityNode is null ||
-                !identities.Add(JsonNodeText(identityNode)))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return array.All(item =>
+            item is JsonObject itemObject &&
+            itemObject.TryGetPropertyValue(identityProperty, out var identityNode) &&
+            identityNode is not null &&
+            identities.Add(JsonNodeText(identityNode)));
     }
 
     private static Dictionary<string, int> IndexJsonArrayByIdentity(
