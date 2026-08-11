@@ -685,6 +685,44 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_GovernancePatch_ClearsUnmanagedCanonicalLinks()
+    {
+        const string licenseUrl = "https://example.test/licenses/mit";
+        const string sourceUrl = "https://example.test/source";
+        const string unrelatedUrl = "https://example.test/collection";
+        await SetLayerGovernanceMetadataAsync(
+            layerId: 0,
+            license: "MIT",
+            links:
+            [
+                new MetadataV2Link { Href = licenseUrl, Rel = "license", Title = "MIT" },
+                new MetadataV2Link { Href = sourceUrl, Rel = "describedby", Title = "Source documentation" },
+                new MetadataV2Link { Href = unrelatedUrl, Rel = "self" },
+            ]);
+
+        using var content = new StringContent(
+            """{"licenseUrl":"","sourceUrl":""}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.Be200Ok();
+        using (var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            var data = document.RootElement.GetProperty("data");
+            AssertAbsentOrNull(data, "licenseUrl");
+            AssertAbsentOrNull(data, "sourceUrl");
+        }
+
+        var metadata = GetLayerMetadata(0);
+        metadata.Links.Should().NotContain(link =>
+            string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase));
+        metadata.Links.Should().ContainSingle(link => link.Rel == "self" && link.Href == unrelatedUrl);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest()
     {
         var body = """

@@ -639,8 +639,9 @@ internal static class ServiceSettingsEndpoints
         DateTimeOffset updatedAt)
     {
         var effectiveLicense = request.License is null ? current.License : normalized?.License;
-        var currentLicenseUrl = FindGovernanceLink(current, "license");
-        var currentSourceUrl = FindGovernanceLink(current, "describedby");
+        var currentLicenseUrl = FindGovernanceLink(current, "license") ??
+            current.Links.FirstOrDefault(link =>
+                string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase))?.Href;
         var requestedLicenseUrl = request.LicenseUrl;
         var normalizedLicenseUrl = normalized?.LicenseUrl;
         if (request.License is not null && request.LicenseUrl is null)
@@ -657,7 +658,6 @@ internal static class ServiceSettingsEndpoints
         var links = current.Links.ToList();
         PatchGovernanceLink(
             links,
-            currentLicenseUrl,
             requestedLicenseUrl,
             normalizedLicenseUrl,
             "license",
@@ -665,7 +665,6 @@ internal static class ServiceSettingsEndpoints
             refreshTitle: request.License is not null);
         PatchGovernanceLink(
             links,
-            currentSourceUrl,
             request.SourceUrl,
             normalized?.SourceUrl,
             "describedby",
@@ -685,19 +684,13 @@ internal static class ServiceSettingsEndpoints
 
     private static void PatchGovernanceLink(
         List<MetadataV2Link> links,
-        string? currentValue,
         string? requestedValue,
         string? normalizedValue,
         string relation,
         string? title,
         bool refreshTitle = false)
     {
-        var currentIndex = currentValue is null
-            ? -1
-            : links.FindIndex(link =>
-                string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(link.Href, currentValue, StringComparison.Ordinal) &&
-                string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal));
+        var currentIndex = FindGovernanceLinkIndex(links, relation);
 
         if (requestedValue is null)
         {
@@ -730,7 +723,8 @@ internal static class ServiceSettingsEndpoints
                 {
                     Href = normalizedValue,
                     Rel = relation,
-                    Title = title
+                    Title = title,
+                    ManagedBy = LayerSourceGovernance.LinkManager
                 };
             if (currentIndex >= 0)
             {
@@ -747,6 +741,29 @@ internal static class ServiceSettingsEndpoints
         => metadata.Links.FirstOrDefault(link =>
             string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal))?.Href;
+
+    private static int FindGovernanceLinkIndex(List<MetadataV2Link> links, string relation)
+    {
+        var relationIndex = -1;
+        for (var i = 0; i < links.Count; i++)
+        {
+            if (!string.Equals(links[i].Rel, relation, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            relationIndex = relationIndex < 0 ? i : relationIndex;
+            if (string.Equals(
+                    links[i].ManagedBy,
+                    LayerSourceGovernance.LinkManager,
+                    StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return relationIndex;
+    }
 
     /// <summary>
     /// Validates a raster mosaic merge strategy against the canonical set and normalizes to
