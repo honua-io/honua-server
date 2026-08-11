@@ -282,9 +282,9 @@ internal static partial class MapServerEndpoints
             DocumentInfo = new MapServerDocumentInfo
             {
                 Title = service.Metadata.Name ?? "",
-                Author = service.Metadata.Publisher ?? "",
+                Author = service.Metadata.ContactPoint?.Name ?? "",
                 Comments = service.Metadata.Description ?? "",
-                Subject = service.Metadata.Description ?? ""
+                Subject = service.Metadata.Publisher ?? ""
             },
             TileInfo = BuildTileInfo(maxTileZoom)
         };
