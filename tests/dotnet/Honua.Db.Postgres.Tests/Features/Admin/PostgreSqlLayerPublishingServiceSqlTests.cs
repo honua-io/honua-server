@@ -891,6 +891,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Options = new Dictionary<string, JsonElement>
             {
                 ["source"] = JsonSerializer.SerializeToElement("legacy"),
+                ["schemaName"] = JsonSerializer.SerializeToElement("legacy_schema"),
             },
             Status = new MetadataV2Status
             {
@@ -919,6 +920,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Options = new Dictionary<string, JsonElement>
             {
                 ["schemaName"] = JsonSerializer.SerializeToElement("honua"),
+                ["tableName"] = JsonSerializer.SerializeToElement("features"),
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["failed"] = JsonSerializer.SerializeToElement(true),
             },
             Status = new MetadataV2Status
             {
@@ -930,8 +936,16 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var currentBinding = persistedBinding with
         {
             Locator = "concurrent.table",
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["schemaName"] = JsonSerializer.SerializeToElement("honua"),
+                ["tableName"] = JsonSerializer.SerializeToElement("features"),
+                ["source"] = JsonSerializer.SerializeToElement("concurrent-source"),
+                ["concurrent"] = JsonSerializer.SerializeToElement(true),
+            },
             Extensions = new Dictionary<string, JsonElement>
             {
+                ["failed"] = JsonSerializer.SerializeToElement(true),
                 ["concurrent"] = JsonSerializer.SerializeToElement(true),
             },
         };
@@ -968,6 +982,10 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Provider = "postgis",
             Endpoint = null,
             Options = new Dictionary<string, JsonElement>(),
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["failed"] = JsonSerializer.SerializeToElement(true),
+            },
             Status = new MetadataV2Status
             {
                 Lifecycle = MetadataV2LifecycleStatus.Active,
@@ -975,7 +993,19 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 ObservedAt = publishedAt,
             },
         };
-        var currentConnection = persistedConnection with { SecretRef = "concurrent-secret" };
+        var currentConnection = persistedConnection with
+        {
+            SecretRef = "concurrent-secret",
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["concurrent"] = JsonSerializer.SerializeToElement(true),
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["failed"] = JsonSerializer.SerializeToElement(true),
+                ["concurrent"] = JsonSerializer.SerializeToElement(true),
+            },
+        };
         var previous = new MetadataV2Graph
         {
             Revision = 7,
@@ -1010,9 +1040,13 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         binding.Locator.Should().Be("concurrent.table", "a later edit to the same field wins");
         binding.StorageLayerId.Should().Be(previousBinding.StorageLayerId);
         binding.Capabilities.Should().Equal(previousBinding.Capabilities);
-        binding.Options.Should().BeEquivalentTo(previousBinding.Options);
+        binding.Options.Should().ContainKey("schemaName").WhoseValue.GetString().Should().Be("legacy_schema");
+        binding.Options.Should().ContainKey("source").WhoseValue.GetString().Should().Be("concurrent-source");
+        binding.Options.Should().ContainKey("concurrent").WhoseValue.GetBoolean().Should().BeTrue();
+        binding.Options.Should().NotContainKey("tableName");
         binding.Status.Should().Be(previousBinding.Status);
         binding.Extensions.Should().ContainKey("concurrent");
+        binding.Extensions.Should().NotContainKey("failed");
 
         var connection = compensation.Connections.Should().ContainSingle().Which;
         connection.Metadata.Title.Should().Be(previousConnection.Metadata.Title);
@@ -1021,8 +1055,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         connection.Provider.Should().Be(previousConnection.Provider);
         connection.Endpoint.Should().Be(previousConnection.Endpoint);
         connection.SecretRef.Should().Be("concurrent-secret", "a later edit to the same field wins");
-        connection.Options.Should().BeEquivalentTo(previousConnection.Options);
+        connection.Options.Should().ContainKey("mode").WhoseValue.GetString().Should().Be("legacy");
+        connection.Options.Should().ContainKey("concurrent").WhoseValue.GetBoolean().Should().BeTrue();
         connection.Status.Should().Be(previousConnection.Status);
+        connection.Extensions.Should().ContainKey("concurrent");
+        connection.Extensions.Should().NotContainKey("failed");
     }
 
     [Fact]

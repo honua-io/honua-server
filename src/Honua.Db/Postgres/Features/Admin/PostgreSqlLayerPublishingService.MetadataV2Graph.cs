@@ -492,26 +492,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.SupportedFormats,
                 previous.SupportedFormats,
                 persisted.SupportedFormats),
-            FieldAliases = RestorePublicationMutationValue(
+            FieldAliases = RestoreMetadataMapMutation(
                 current.FieldAliases,
                 previous.FieldAliases,
-                persisted.FieldAliases,
-                static value => new MetadataV2Publication { FieldAliases = value }),
+                persisted.FieldAliases),
             Capabilities = RestoreMutationSequence(
                 current.Capabilities,
                 previous.Capabilities,
                 persisted.Capabilities),
-            Options = RestorePublicationMutationValue(
+            Options = RestoreJsonMapMutation(
                 current.Options,
                 previous.Options,
-                persisted.Options,
-                static value => new MetadataV2Publication { Options = value }),
+                persisted.Options),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
-            Extensions = RestorePublicationMutationValue(
+            Extensions = RestoreJsonMapMutation(
                 current.Extensions,
                 previous.Extensions,
-                persisted.Extensions,
-                static value => new MetadataV2Publication { Extensions = value }),
+                persisted.Extensions),
         };
 
     /// <summary>
@@ -629,11 +626,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 persisted.Editing,
                 static value => new MetadataV2Resource { Editing = value }),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
-            Extensions = RestoreResourceMutationValue(
+            Extensions = RestoreJsonMapMutation(
                 current.Extensions,
                 previous.Extensions,
-                persisted.Extensions,
-                static value => new MetadataV2Resource { Extensions = value }),
+                persisted.Extensions),
         };
 
     private static List<MetadataV2Field> RestoreSchemaFieldsMutation(
@@ -937,11 +933,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 static value => new MetadataV2Field { Domain = value }),
             Hidden = RestoreMutationValue(current.Hidden, previous.Hidden, persisted.Hidden),
             SqlType = RestoreMutationValue(current.SqlType, previous.SqlType, persisted.SqlType),
-            Extensions = RestoreSchemaFieldMutationValue(
+            Extensions = RestoreJsonMapMutation(
                 current.Extensions,
                 previous.Extensions,
-                persisted.Extensions,
-                static value => new MetadataV2Field { Extensions = value }),
+                persisted.Extensions),
         };
     }
 
@@ -964,17 +959,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Capabilities,
                 previous.Capabilities,
                 persisted.Capabilities),
-            Options = RestoreStorageBindingMutationValue(
+            Options = RestoreJsonMapMutation(
                 current.Options,
                 previous.Options,
-                persisted.Options,
-                static value => new MetadataV2StorageBinding { Options = value }),
+                persisted.Options),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
-            Extensions = RestoreStorageBindingMutationValue(
+            Extensions = RestoreJsonMapMutation(
                 current.Extensions,
                 previous.Extensions,
-                persisted.Extensions,
-                static value => new MetadataV2StorageBinding { Extensions = value }),
+                persisted.Extensions),
         };
 
     private static MetadataV2Connection RestoreConnectionMutation(
@@ -988,17 +981,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Provider = RestoreMutationValue(current.Provider, previous.Provider, persisted.Provider),
             Endpoint = RestoreMutationValue(current.Endpoint, previous.Endpoint, persisted.Endpoint),
             SecretRef = RestoreMutationValue(current.SecretRef, previous.SecretRef, persisted.SecretRef),
-            Options = RestoreConnectionMutationValue(
+            Options = RestoreJsonMapMutation(
                 current.Options,
                 previous.Options,
-                persisted.Options,
-                static value => new MetadataV2Connection { Options = value }),
+                persisted.Options),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
-            Extensions = RestoreConnectionMutationValue(
+            Extensions = RestoreJsonMapMutation(
                 current.Extensions,
                 previous.Extensions,
-                persisted.Extensions,
-                static value => new MetadataV2Connection { Extensions = value }),
+                persisted.Extensions),
         };
 
     private static MetadataV2ObjectMetadata RestoreObjectMetadataMutation(
@@ -1491,30 +1482,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Field);
 
-    private static T RestoreStorageBindingMutationValue<T>(
-        T current,
-        T previous,
-        T persisted,
-        Func<T, MetadataV2StorageBinding> containerFactory)
-        => RestoreJsonMutationValue(
-            current,
-            previous,
-            persisted,
-            containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2StorageBinding);
-
-    private static T RestoreConnectionMutationValue<T>(
-        T current,
-        T previous,
-        T persisted,
-        Func<T, MetadataV2Connection> containerFactory)
-        => RestoreJsonMutationValue(
-            current,
-            previous,
-            persisted,
-            containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2Connection);
-
     private static T RestoreJsonMutationValue<T, TContainer>(
         T current,
         T previous,
@@ -1796,6 +1763,49 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 if (hadPrevious)
                 {
                     restored[key] = previousValue!;
+                }
+                else
+                {
+                    restored.Remove(key);
+                }
+            }
+        }
+
+        return restored;
+    }
+
+    private static Dictionary<string, JsonElement> RestoreJsonMapMutation(
+        IReadOnlyDictionary<string, JsonElement> current,
+        IReadOnlyDictionary<string, JsonElement> previous,
+        IReadOnlyDictionary<string, JsonElement> persisted)
+    {
+        var restored = new Dictionary<string, JsonElement>(current, StringComparer.Ordinal);
+        foreach (var key in previous.Keys.Concat(persisted.Keys).Distinct(StringComparer.Ordinal))
+        {
+            var hadPrevious = previous.TryGetValue(key, out var previousValue);
+            var wasPersisted = persisted.TryGetValue(key, out var persistedValue);
+            if (hadPrevious == wasPersisted &&
+                (!hadPrevious || JsonElement.DeepEquals(previousValue, persistedValue)))
+            {
+                continue;
+            }
+
+            var hasCurrent = current.TryGetValue(key, out var currentValue);
+            if (!wasPersisted)
+            {
+                if (hadPrevious && !hasCurrent)
+                {
+                    restored[key] = previousValue;
+                }
+
+                continue;
+            }
+
+            if (hasCurrent && JsonElement.DeepEquals(currentValue, persistedValue))
+            {
+                if (hadPrevious)
+                {
+                    restored[key] = previousValue;
                 }
                 else
                 {
