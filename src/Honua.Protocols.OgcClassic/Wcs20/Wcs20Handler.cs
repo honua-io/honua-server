@@ -569,7 +569,7 @@ internal sealed class Wcs20Handler
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
@@ -658,7 +658,7 @@ internal sealed class Wcs20Handler
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (!publication.IsRoutable(resource) ||
+        if (!snapshot.IsRoutable(publication) ||
             !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service.Service))
         {
             return new CoverageResolutionResult(null, null);
@@ -730,7 +730,7 @@ internal sealed class Wcs20Handler
         var resolved = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
             .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(candidate => candidate.Publication.IsRoutable(candidate.Resource))
+            .FirstOrDefault(candidate => snapshot.IsRoutable(candidate.Publication))
             .Resource;
         if (resolved is not null)
         {

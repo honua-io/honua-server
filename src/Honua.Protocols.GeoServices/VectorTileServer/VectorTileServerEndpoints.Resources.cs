@@ -216,7 +216,7 @@ internal static partial class VectorTileServerEndpoints
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }

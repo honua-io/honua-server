@@ -593,7 +593,7 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
-        if (!publication.IsRoutable(resource))
+        if (!snapshot.IsRoutable(publication))
         {
             return null;
         }
@@ -620,7 +620,7 @@ internal static partial class FeatureStreamEndpoints
         => snapshot.Graph.Publications
             .Where(publication =>
                 string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
-                publication.IsRoutable(resource))
+                snapshot.IsRoutable(publication))
             .OrderByDescending(static publication => publication.IsPrimary)
             .ThenBy(publication =>
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)

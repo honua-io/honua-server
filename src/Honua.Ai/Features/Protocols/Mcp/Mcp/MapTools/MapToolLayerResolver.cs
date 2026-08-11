@@ -60,7 +60,7 @@ internal static class MapToolLayerResolver
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (!publication.IsRoutable(resource))
+        if (!snapshot.IsRoutable(publication))
         {
             throw new GeoprocessingNotFoundException(
                 $"Layer {resolvedLayerId} on service '{service.Metadata.Name}' has no backing resource.");

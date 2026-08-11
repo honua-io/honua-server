@@ -84,7 +84,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (!pub.IsRoutable(resource))
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }
@@ -165,7 +165,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (!pub.IsRoutable(resource))
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }

@@ -70,7 +70,7 @@ internal static class ODataV2Lookups
             }
 
             var resource = snapshot.ResolveResource(pub);
-            if (!pub.IsRoutable(resource))
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }
@@ -128,7 +128,7 @@ internal static class ODataV2Lookups
             }
 
             var resource = snapshot.ResolveResource(pub);
-            if (!pub.IsRoutable(resource))
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }

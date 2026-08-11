@@ -372,7 +372,7 @@ internal static class PrintingToolsRequestHandlers
             foreach (var publication in targetLayers)
             {
                 var resource = ResolveResource(snapshot, publication);
-                if (!publication.IsRoutable(resource)) continue;
+                if (!snapshot.IsRoutable(publication)) continue;
 
                 var storageLayerId = snapshot.ResolveStorageLayerId(publication)
                     ?? snapshot.ResolveStorageLayerId(resource!);

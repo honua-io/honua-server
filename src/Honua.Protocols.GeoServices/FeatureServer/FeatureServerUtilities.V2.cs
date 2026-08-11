@@ -618,7 +618,7 @@ internal static partial class FeatureServerEndpoints
         // against it with stable layer-id resolution.
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Publication.IsRoutable(pair.Resource))
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -683,17 +683,19 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
         HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(layers);
 
         return
         [
             ..layers.Where(pair =>
-                pair.Publication.IsRoutable(pair.Resource) &&
+                snapshot.IsRoutable(pair.Publication) &&
                 AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
         ];
     }
@@ -732,7 +734,7 @@ internal static partial class FeatureServerEndpoints
             var relatedLayerId = relatedResource is null
                 ? -1
                 : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
-                       .Where(publication => publication.IsRoutable(relatedResource))
+                       .Where(snapshot.IsRoutable)
                        .Select(pub => (int?)pub.LayerIndex)
                        .FirstOrDefault(idx => idx is not null)
                    ?? snapshot.ResolveStorageLayerId(relatedResource)

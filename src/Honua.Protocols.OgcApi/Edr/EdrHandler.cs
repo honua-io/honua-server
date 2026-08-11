@@ -82,7 +82,7 @@ internal sealed class EdrHandler
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource) ||
+            if (!snapshot.IsRoutable(publication) ||
                 !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
             {
                 continue;

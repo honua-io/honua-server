@@ -150,7 +150,7 @@ internal sealed partial class Wfs20Handler
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource) ||
+            if (!snapshot.IsRoutable(publication) ||
                 !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     resource!,

@@ -829,7 +829,7 @@ internal sealed class ODataCrudHandler(
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }

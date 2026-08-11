@@ -2703,16 +2703,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2Service? service = null;
         if (matchingFeatureServices.Length > 1)
         {
-            var resourcesById = graph.Resources.ToDictionary(
-                resource => resource.Metadata.Id,
-                StringComparer.Ordinal);
+            var snapshot = new MetadataV2GraphSnapshot(graph, "\"admin-resolution\"", DateTimeOffset.UtcNow);
             var preferredFeatureServices = matchingFeatureServices
                 .Where(candidate => graph.Publications.Any(publication =>
                     string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&
                     MetadataV2ServiceProtocols.IsPreferredPublicationType(
                         MetadataV2ServiceProtocols.FeatureServer,
                         publication.PublicationType) &&
-                    publication.IsRoutable(resourcesById.GetValueOrDefault(publication.ResourceId))))
+                    snapshot.IsRoutable(publication)))
                 .ToArray();
             service = preferredFeatureServices.Length == 1 ? preferredFeatureServices[0] : null;
         }

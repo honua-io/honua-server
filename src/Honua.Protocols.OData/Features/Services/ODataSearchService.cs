@@ -495,7 +495,7 @@ internal sealed partial class ODataSearchService
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
@@ -532,7 +532,7 @@ internal sealed partial class ODataSearchService
                      .OrderByDescending(p => p.IsPrimary)
                      .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
         {
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }

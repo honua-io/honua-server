@@ -184,7 +184,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || !publication.IsRoutable(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             var msg = $"Layer {layerId} not found";
             var error = protocol switch
@@ -247,7 +247,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || !publication.IsRoutable(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
             return new MetadataV2ValidationResult(false, null, null, null, error);
@@ -331,7 +331,7 @@ internal static class LayerValidationHelpers
         {
             var matchedResource = snapshot.ResolveResource(p);
             var matchedService = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) ? s : null;
-            return p.IsRoutable(matchedResource) &&
+            return snapshot.IsRoutable(p) &&
                 TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
@@ -374,7 +374,7 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
         }
 
-        if (!publication.IsRoutable(resource))
+        if (!snapshot.IsRoutable(publication))
         {
             return new MetadataV2ValidationResult(
                 false,
@@ -445,7 +445,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
-        if (publication is null || !publication.IsRoutable(resource))
+        if (publication is null || !snapshot.IsRoutable(publication))
         {
             return new LayerReadAccessResult(NotFound: true, default, null, null);
         }
@@ -607,7 +607,7 @@ internal static class LayerValidationHelpers
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (!publication.IsRoutable(resource) ||
+        if (!snapshot.IsRoutable(publication) ||
             !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
         {
             return null;
@@ -1026,7 +1026,7 @@ internal static class LayerValidationHelpers
         foreach (var pub in publications)
         {
             var resource = snapshot.ResolveResource(pub);
-            if (!pub.IsRoutable(resource))
+            if (!snapshot.IsRoutable(pub))
             {
                 continue;
             }

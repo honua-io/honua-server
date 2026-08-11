@@ -145,7 +145,7 @@ public sealed class FeatureServerLayerListParsingTests
     }
 
     [Fact]
-    public void FilterAccessibleLayersV2_RetiredPublicationOrResource_IsNotVisible()
+    public void FilterAccessibleLayersV2_NonServingPublicationResourceOrBinding_IsNotVisible()
     {
         var context = new DefaultHttpContext
         {
@@ -159,6 +159,7 @@ public sealed class FeatureServerLayerListParsingTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service-a" },
         };
         var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var draftStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
         var activeResource = new MetadataV2Resource
         {
@@ -169,6 +170,11 @@ public sealed class FeatureServerLayerListParsingTests
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-retired" },
             Status = retiredStatus,
+        };
+        var draftBindingResource = activeResource with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-draft-binding" },
+            StorageBindingIds = ["binding-draft"],
         };
         var activePublication = new MetadataV2Publication
         {
@@ -182,14 +188,49 @@ public sealed class FeatureServerLayerListParsingTests
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-retired" },
             Status = retiredStatus,
         };
+        var retiredResourcePublication = activePublication with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-retired-resource" },
+            ResourceId = retiredResource.Metadata.Id,
+        };
+        var draftBindingPublication = activePublication with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-draft-binding" },
+            ResourceId = draftBindingResource.Metadata.Id,
+            StorageBindingId = "binding-draft",
+        };
+        var draftBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-draft" },
+            ResourceId = draftBindingResource.Metadata.Id,
+            Status = draftStatus,
+        };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph
+            {
+                Services = [service],
+                Resources = [activeResource, retiredResource, draftBindingResource],
+                StorageBindings = [draftBinding],
+                Publications =
+                [
+                    activePublication,
+                    retiredPublication,
+                    retiredResourcePublication,
+                    draftBindingPublication,
+                ],
+            },
+            "\"filter-test\"",
+            DateTimeOffset.UtcNow);
 
         var visible = FeatureServerEndpoints.FilterAccessibleLayersV2(
             context,
+            snapshot,
             service,
             [
                 (activePublication, activeResource),
                 (retiredPublication, activeResource),
-                (activePublication, retiredResource),
+                (retiredResourcePublication, retiredResource),
+                (draftBindingPublication, draftBindingResource),
             ]);
 
         visible.Should().ContainSingle().Which.Should().Be((activePublication, activeResource));

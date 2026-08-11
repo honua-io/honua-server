@@ -247,7 +247,7 @@ internal static partial class FeatureServerEndpoints
 
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Publication.IsRoutable(pair.Resource))
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -287,7 +287,7 @@ internal static partial class FeatureServerEndpoints
 
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Publication.IsRoutable(pair.Resource))
+            .Where(pair => snapshot.IsRoutable(pair.Publication))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 

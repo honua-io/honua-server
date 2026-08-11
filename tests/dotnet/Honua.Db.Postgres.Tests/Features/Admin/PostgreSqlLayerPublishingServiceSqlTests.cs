@@ -2316,12 +2316,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-retired" },
                     ResourceId = retiredMetadata.Id,
                     StorageLayerId = 7,
+                    Status = retiredStatus,
                 },
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-active" },
                     ResourceId = activeMetadata.Id,
                     StorageLayerId = 8,
+                    Status = activeStatus,
                 },
             ],
             Publications =
@@ -2608,13 +2610,15 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-aggregate" },
                     ResourceId = "resource-aggregate",
-                    StorageLayerId = 7
+                    StorageLayerId = 7,
+                    Status = activeStatus,
                 },
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-feature" },
                     ResourceId = "resource-feature",
-                    StorageLayerId = 7
+                    StorageLayerId = 7,
+                    Status = activeStatus,
                 }
             ],
             Publications =

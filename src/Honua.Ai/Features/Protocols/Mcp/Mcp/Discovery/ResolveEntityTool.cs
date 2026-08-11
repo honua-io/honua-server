@@ -152,7 +152,7 @@ internal sealed class ResolveEntityTool : IMcpTool
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource) || publication.LayerIndex is not { } layerIndex)
+            if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
             {
                 continue;
             }

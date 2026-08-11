@@ -95,7 +95,7 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (!publication.IsRoutable(resource))
+                if (!snapshot.IsRoutable(publication))
                 {
                     continue;
                 }

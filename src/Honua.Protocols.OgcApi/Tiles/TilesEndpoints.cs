@@ -1376,7 +1376,7 @@ internal static partial class TilesEndpoints
                 }
 
                 var resource = snapshot.ResolveResource(publication);
-                if (!publication.IsRoutable(resource))
+                if (!snapshot.IsRoutable(publication))
                 {
                     continue;
                 }
@@ -1573,7 +1573,7 @@ internal static partial class TilesEndpoints
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource) ||
+            if (!snapshot.IsRoutable(publication) ||
                 !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
             {
                 continue;

@@ -282,7 +282,7 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (!publication.IsRoutable(resource))
+        if (!snapshot.IsRoutable(publication))
         {
             throw new TemporalLayerNotFoundException(
                 $"Layer '{layerId}' on service '{serviceId}' does not resolve to an active resource.");

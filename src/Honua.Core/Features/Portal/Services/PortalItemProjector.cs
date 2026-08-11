@@ -142,7 +142,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
         foreach (var publication in publications)
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource))
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }

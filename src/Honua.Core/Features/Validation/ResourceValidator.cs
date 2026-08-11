@@ -56,7 +56,7 @@ public sealed class ResourceValidator : IResourceValidator
             // every protocol surface that resolves layers by integer id (OGC
             // collections, Maps, OData), mirroring ValidateServiceLayerV2Async.
             var candidateResource = snapshot.ResolveResource(candidate);
-            if (!candidate.IsRoutable(candidateResource))
+            if (!snapshot.IsRoutable(candidate))
             {
                 continue;
             }
@@ -282,7 +282,7 @@ public sealed class ResourceValidator : IResourceValidator
                      .OrderByDescending(pub => requiredProtocol is not null &&
                          ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType))
                      .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-                     .Where(candidate => candidate.Publication.IsRoutable(candidate.Resource)))
+                     .Where(candidate => snapshot.IsRoutable(candidate.Publication)))
         {
             // Disabled (admin-disabled) publications/resources are flipped to
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes

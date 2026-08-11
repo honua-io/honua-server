@@ -34,7 +34,7 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
         var resource = publication is null
             ? null
             : snapshot.ResolveResource(publication);
-        if (publication is not null && !publication.IsRoutable(resource))
+        if (publication is not null && !snapshot.IsRoutable(publication))
         {
             publication = null;
             resource = null;

@@ -294,7 +294,7 @@ internal static partial class WmsRequestHandlers
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!publication.IsRoutable(resource) || !ResourceHasGeometry(resource!))
+            if (!snapshot.IsRoutable(publication) || !ResourceHasGeometry(resource!))
             {
                 continue;
             }

@@ -384,7 +384,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         publication = snapshot.PublicationsForService(service.Metadata.Id)
             .FirstOrDefault(pub =>
                 string.Equals(pub.ResourceId, relatedResourceId, StringComparison.OrdinalIgnoreCase) &&
-                pub.IsRoutable(relatedResource));
+                snapshot.IsRoutable(pub));
         if (publication is null)
         {
             return false;

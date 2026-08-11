@@ -247,7 +247,7 @@ internal sealed class OgcCoveragesHandler
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (!publication.IsRoutable(resource))
+                if (!snapshot.IsRoutable(publication))
                 {
                     continue;
                 }
