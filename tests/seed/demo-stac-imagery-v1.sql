@@ -98,13 +98,69 @@ CREATE TABLE IF NOT EXISTS features (
 
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
+CREATE INDEX IF NOT EXISTS idx_features_geography
+    ON features USING GIST ((ST_Transform(geometry, 4326)::geography));
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+CREATE INDEX IF NOT EXISTS idx_features_layer_objectid
+    ON features (layer_id, objectid);
+CREATE INDEX IF NOT EXISTS idx_features_attributes_gin
+    ON features USING GIN (attributes jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS idx_features_attributes_keys
+    ON features USING GIN ((attributes -> 'id'), (attributes -> 'objectid'), (attributes -> 'fid'));
+CREATE INDEX IF NOT EXISTS idx_features_geometry_nn
+    ON features USING GIST (geometry) WHERE geometry IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_features_geometry_3d
+    ON features USING GIST (geometry gist_geometry_ops_nd)
+    WHERE ST_NDims(geometry) > 2;
+CREATE INDEX IF NOT EXISTS idx_features_envelope
+    ON features USING GIST (ST_Envelope(geometry))
+    WHERE geometry IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_features_attr_dates
+    ON features USING BTREE ((attributes ->> 'created_date'))
+    WHERE (attributes ->> 'created_date') IS NOT NULL
+      AND (attributes ->> 'created_date') ~ '^\d{4}-\d{2}-\d{2}';
+CREATE INDEX IF NOT EXISTS idx_features_attr_timestamps
+    ON features USING BTREE ((attributes ->> 'updated_at'))
+    WHERE (attributes ->> 'updated_at') IS NOT NULL
+      AND (attributes ->> 'updated_at') ~ '^\d{4}-\d{2}-\d{2}';
+CREATE INDEX IF NOT EXISTS idx_features_temporal_attrs
+    ON features USING GIN (
+        (attributes -> 'date'),
+        (attributes -> 'created_at'),
+        (attributes -> 'updated_at'),
+        (attributes -> 'timestamp'),
+        (attributes -> 'datetime')
+    );
 
-DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;
-CREATE TRIGGER trigger_track_feature_changes
-    AFTER INSERT OR UPDATE OR DELETE ON features
-    FOR EACH ROW
-    EXECUTE FUNCTION honua.track_feature_changes();
+DO $tracking_trigger$
+DECLARE
+    existing_trigger pg_trigger%ROWTYPE;
+BEGIN
+    SELECT trigger.*
+      INTO existing_trigger
+      FROM pg_trigger AS trigger
+     WHERE trigger.tgrelid = 'honua.features'::regclass
+       AND trigger.tgname = 'trigger_track_feature_changes'
+       AND NOT trigger.tgisinternal;
+
+    IF NOT FOUND THEN
+        EXECUTE 'CREATE TRIGGER trigger_track_feature_changes '
+             || 'AFTER INSERT OR UPDATE OR DELETE ON honua.features '
+             || 'FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes()';
+    ELSIF existing_trigger.tgfoid <> 'honua.track_feature_changes()'::regprocedure::oid
+       OR existing_trigger.tgtype <> 29
+       OR existing_trigger.tgenabled <> 'O'
+       OR existing_trigger.tgnargs <> 0
+       OR existing_trigger.tgqual IS NOT NULL
+       OR existing_trigger.tgconstraint <> 0
+       OR existing_trigger.tgoldtable IS NOT NULL
+       OR existing_trigger.tgnewtable IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Existing trigger_track_feature_changes does not match the current Honua migration contract';
+    END IF;
+END
+$tracking_trigger$;
 
 DELETE FROM features WHERE layer_id IN (90810, 90820);
 

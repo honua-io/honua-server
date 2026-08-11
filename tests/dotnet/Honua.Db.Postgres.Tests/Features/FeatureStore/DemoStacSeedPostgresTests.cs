@@ -43,9 +43,14 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7);
             (await ScalarInt64Async(dataSource, RequiredIndexesSql))
-                .Should().Be(3);
+                .Should().Be(14);
+            (await ScalarStringAsync(dataSource, IndexNamesSql))
+                .Should().Be(ExpectedIndexNames);
+            (await ScalarStringAsync(dataSource, IndexShapeSql))
+                .Should().Be("btree:5,gin:4,gist:5,partial:5");
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1);
+            var firstTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
@@ -57,6 +62,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1, "reapplying the seed must not duplicate its migration-owned trigger");
+            (await ScalarInt64Async(dataSource, TriggerOidSql))
+                .Should().Be(firstTriggerOid, "an idempotent rerun must not drop and recreate the valid trigger");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity, "publication ids and bindings must remain stable");
 
@@ -80,6 +87,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity);
             (await ScalarInt64Async(dataSource, TriggerCountSql)).Should().Be(1);
+
+            await AssertHostileTriggerRejectedAsync(dataSource, seed);
         }
         finally
         {
@@ -154,6 +163,23 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             .Should().Be(0, "insert, update, and delete generations must be strictly increasing");
     }
 
+    private static async Task AssertHostileTriggerRejectedAsync(NpgsqlDataSource dataSource, string seed)
+    {
+        var stableFeatureState = await ScalarStringAsync(dataSource, FeatureStateSql);
+        var stableChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+        await ExecuteAsync(dataSource, ReplaceTriggerWithHostileDefinitionSql);
+        var hostileTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
+
+        Func<Task> applyWithHostileTrigger = () => ExecuteAsync(dataSource, seed);
+        var failure = await applyWithHostileTrigger.Should().ThrowAsync<PostgresException>();
+        failure.Which.SqlState.Should().Be("55000");
+        (await ScalarInt64Async(dataSource, TriggerOidSql)).Should().Be(hostileTriggerOid);
+        (await ScalarStringAsync(dataSource, TriggerFunctionSql))
+            .Should().Be("honua.hostile_track_feature_changes()");
+        (await ScalarStringAsync(dataSource, FeatureStateSql)).Should().Be(stableFeatureState);
+        (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(stableChangeState);
+    }
+
     private static async Task ExecuteAsync(NpgsqlDataSource dataSource, string sql)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -188,7 +214,51 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
           FROM pg_indexes
          WHERE schemaname = 'honua'
            AND tablename = 'features'
-           AND indexname IN ('idx_features_layer_id', 'idx_features_geometry', 'idx_features_attributes')
+           AND indexname IN (
+               'features_pkey',
+               'idx_features_layer_id',
+               'idx_features_geometry',
+               'idx_features_geography',
+               'idx_features_attributes',
+               'idx_features_layer_objectid',
+               'idx_features_attributes_gin',
+               'idx_features_attributes_keys',
+               'idx_features_geometry_nn',
+               'idx_features_geometry_3d',
+               'idx_features_envelope',
+               'idx_features_attr_dates',
+               'idx_features_attr_timestamps',
+               'idx_features_temporal_attrs')
+        """;
+
+    private const string IndexNamesSql =
+        """
+        SELECT string_agg(indexname, ',' ORDER BY indexname)
+          FROM pg_indexes
+         WHERE schemaname = 'honua' AND tablename = 'features'
+        """;
+
+    private const string ExpectedIndexNames =
+        "features_pkey,idx_features_attr_dates,idx_features_attr_timestamps,idx_features_attributes," +
+        "idx_features_attributes_gin,idx_features_attributes_keys,idx_features_envelope," +
+        "idx_features_geography,idx_features_geometry,idx_features_geometry_3d,idx_features_geometry_nn," +
+        "idx_features_layer_id,idx_features_layer_objectid,idx_features_temporal_attrs";
+
+    private const string IndexShapeSql =
+        """
+        SELECT format(
+                   'btree:%s,gin:%s,gist:%s,partial:%s',
+                   count(*) FILTER (WHERE access_method.amname = 'btree'),
+                   count(*) FILTER (WHERE access_method.amname = 'gin'),
+                   count(*) FILTER (WHERE access_method.amname = 'gist'),
+                   count(*) FILTER (WHERE index.indpred IS NOT NULL))
+          FROM pg_index AS index
+          JOIN pg_class AS index_relation ON index_relation.oid = index.indexrelid
+          JOIN pg_class AS table_relation ON table_relation.oid = index.indrelid
+          JOIN pg_namespace AS namespace ON namespace.oid = table_relation.relnamespace
+          JOIN pg_am AS access_method ON access_method.oid = index_relation.relam
+         WHERE namespace.nspname = 'honua'
+           AND table_relation.relname = 'features'
         """;
 
     private const string TriggerCountSql =
@@ -198,6 +268,39 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
          WHERE tgrelid = 'honua.features'::regclass
            AND tgname = 'trigger_track_feature_changes'
            AND NOT tgisinternal
+        """;
+
+    private const string TriggerOidSql =
+        """
+        SELECT oid::bigint
+          FROM pg_trigger
+         WHERE tgrelid = 'honua.features'::regclass
+           AND tgname = 'trigger_track_feature_changes'
+           AND NOT tgisinternal
+        """;
+
+    private const string TriggerFunctionSql =
+        """
+        SELECT tgfoid::regprocedure::text
+          FROM pg_trigger
+         WHERE tgrelid = 'honua.features'::regclass
+           AND tgname = 'trigger_track_feature_changes'
+           AND NOT tgisinternal
+        """;
+
+    private const string ReplaceTriggerWithHostileDefinitionSql =
+        """
+        CREATE OR REPLACE FUNCTION honua.hostile_track_feature_changes()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        DROP TRIGGER trigger_track_feature_changes ON honua.features;
+        CREATE TRIGGER trigger_track_feature_changes
+            AFTER INSERT OR UPDATE OR DELETE ON honua.features
+            FOR EACH ROW
+            EXECUTE FUNCTION honua.hostile_track_feature_changes();
         """;
 
     private const string PublicationIdentitySql =
