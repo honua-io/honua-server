@@ -18,21 +18,19 @@ ALTER TABLE honua.feature_changes
 -- and the client must create a fresh replica rather than silently miss the delete or retry an
 -- unguardable upload forever. Replicas on ordinary-id layers and custom-id layers with no historical
 -- delete are preserved.
-WITH irrecoverable_custom_id_deletes AS (
-    SELECT changes.layer_id, changes.generation
-    FROM honua.feature_changes AS changes
-    INNER JOIN honua.layers AS layers
-        ON layers.layer_id = changes.layer_id
-    WHERE changes.operation = 3
-      AND changes.public_objectid IS NULL
-      AND lower(COALESCE(NULLIF(layers.primary_key_column, ''), 'objectid')) <> 'objectid'
-)
 DELETE FROM honua.replicas AS replicas
 WHERE EXISTS (
     SELECT 1
-    FROM irrecoverable_custom_id_deletes AS affected
-    WHERE affected.layer_id = ANY(replicas.layer_ids)
-      AND replicas.last_sync_generation < affected.generation
+    FROM honua.feature_changes AS changes
+    INNER JOIN honua.layers AS layers
+        ON layers.layer_id = changes.layer_id
+    WHERE changes.generation > replicas.last_sync_generation
+      AND changes.layer_id = ANY(replicas.layer_ids)
+      AND lower(COALESCE(NULLIF(layers.primary_key_column, ''), 'objectid')) <> 'objectid'
+    GROUP BY changes.layer_id, changes.objectid
+    HAVING (array_agg(changes.operation ORDER BY changes.generation, changes.change_id))[1] <> 1
+       AND (array_agg(changes.operation ORDER BY changes.generation DESC, changes.change_id DESC))[1] = 3
+       AND (array_agg(changes.public_objectid ORDER BY changes.generation DESC, changes.change_id DESC))[1] IS NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_public_objectid

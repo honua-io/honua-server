@@ -303,7 +303,15 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                     ('caught-up-custom-id', 'caught up custom id', 'test', 'perReplica', ARRAY[990105],
                         (SELECT MAX(generation) FROM honua.feature_changes
                          WHERE layer_id = 990105 AND objectid = 190106 AND operation = 3)),
+                    ('transient-custom-id', 'transient custom id', 'test', 'perReplica', ARRAY[990105],
+                        (SELECT MAX(generation) FROM honua.feature_changes)),
                     ('ordinary-id', 'ordinary id', 'test', 'perReplica', ARRAY[0], 0);
+
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, public_objectid, operation)
+                VALUES
+                    (nextval('honua.sync_generation'), 990105, 190110, NULL, 1),
+                    (nextval('honua.sync_generation'), 990105, 190110, NULL, 3);
                 """;
             await arrangeLegacyDeleteCmd.ExecuteNonQueryAsync();
         }
@@ -320,7 +328,11 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             invalidatedReplicaCmd.CommandText = """
                 SELECT replica_id
                 FROM honua.replicas
-                WHERE replica_id IN ('legacy-custom-id', 'caught-up-custom-id', 'ordinary-id')
+                WHERE replica_id IN (
+                    'legacy-custom-id',
+                    'caught-up-custom-id',
+                    'transient-custom-id',
+                    'ordinary-id')
                 ORDER BY replica_id;
                 """;
             await using var reader = await invalidatedReplicaCmd.ExecuteReaderAsync();
@@ -328,6 +340,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(0).Should().Be("caught-up-custom-id");
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetString(0).Should().Be("ordinary-id");
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("transient-custom-id");
             (await reader.ReadAsync()).Should().BeFalse();
         }
     }
