@@ -1446,10 +1446,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
 
         return previous is null &&
-               restored.West == 0 &&
-               restored.South == 0 &&
-               restored.East == 0 &&
-               restored.North == 0
+               restored.West.Equals(0d) &&
+               restored.South.Equals(0d) &&
+               restored.East.Equals(0d) &&
+               restored.North.Equals(0d)
             ? null
             : restored;
     }
@@ -1721,13 +1721,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var matchedPersistedIndices = persistedToCurrent
             .Select(match => match.LeftIndex)
             .ToHashSet();
-        foreach (var mapping in persistedToPrevious)
+        foreach (var mapping in persistedToPrevious.Where(mapping =>
+                     !matchedPersistedIndices.Contains(mapping.Key) &&
+                     !EqualityComparer<T>.Default.Equals(previous[mapping.Value], persisted[mapping.Key])))
         {
-            if (!matchedPersistedIndices.Contains(mapping.Key) &&
-                !EqualityComparer<T>.Default.Equals(previous[mapping.Value], persisted[mapping.Key]))
-            {
-                pendingPrevious.Add((mapping.Key, mapping.Value));
-            }
+            pendingPrevious.Add((mapping.Key, mapping.Value));
         }
 
         var insertions = new Dictionary<int, List<int>>();
