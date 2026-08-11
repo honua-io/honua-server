@@ -673,7 +673,8 @@ public static class MetadataV2GraphValidator
     }
 
     private static bool IsSafePublicHttpUrl(string value)
-        => Uri.TryCreate(value.Trim(), UriKind.Absolute, out var parsedUrl) &&
+        => string.Equals(value, value.Trim(), StringComparison.Ordinal) &&
+           Uri.TryCreate(value, UriKind.Absolute, out var parsedUrl) &&
            (string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
            string.IsNullOrEmpty(parsedUrl.UserInfo);
