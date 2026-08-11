@@ -59,7 +59,9 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
             [new ReplicaConflictCaptureTarget(publicLayerId, storageLayerId, publicObjectId)]);
 
         tokens.Should().ContainSingle()
-            .Which.Should().Be(new KeyValuePair<long, string>(publicObjectId, FeatureStateToken.Compute(stored)));
+            .Which.Should().Be(new KeyValuePair<long, ReplicaConflictStateTokenCapture>(
+                publicObjectId,
+                new ReplicaConflictStateTokenCapture(FeatureStateToken.Compute(stored), internalObjectId)));
         await reader.DidNotReceive()
             .GetAsync(storageLayerId, publicObjectId, Arg.Any<CancellationToken>());
     }

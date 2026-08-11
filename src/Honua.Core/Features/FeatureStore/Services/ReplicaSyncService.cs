@@ -113,13 +113,15 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
                 .Select(edit => edit.ObjectId!.Value));
 
-            // Manual review binds the applied rows to the state DETECTION saw, so the tokens are read
-            // before the change-log probe, not after it. Capturing afterwards would describe a row a
-            // server edit had already changed, and the write would then accept it and overwrite the very
-            // edit this mode promises to withhold (#2430).
+            // Resolve each uploaded public object id to the internal id recorded by the storage change
+            // log. A custom id.primary can differ from Feature.Id; probing the log with the public value
+            // would miss the concurrent mutation and authorize its overwrite (#2430). The same read also
+            // captures the manual-review precondition token before detection.
             var preconditionTokens = new Dictionary<long, string>();
-            var bindManualReviewEdits = !request.LastWriteWins && serverStateCapturer is not null && uploadedObjectIds.Count > 0;
-            if (bindManualReviewEdits)
+            var storageObjectIdsByPublicId = uploadedObjectIds.ToDictionary(id => id, id => id);
+            var canCaptureUploadedIdentities = serverStateCapturer is not null && uploadedObjectIds.Count > 0;
+            var bindManualReviewEdits = !request.LastWriteWins && canCaptureUploadedIdentities;
+            if (canCaptureUploadedIdentities)
             {
                 var tokenTargets = uploadedObjectIds
                     .Select(objectId => new ReplicaConflictCaptureTarget(
@@ -128,7 +130,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 foreach (var entry in await serverStateCapturer!
                              .CaptureTokensAsync(tokenTargets, cancellationToken).ConfigureAwait(false))
                 {
-                    preconditionTokens[entry.Key] = entry.Value;
+                    storageObjectIdsByPublicId[entry.Key] = entry.Value.StorageObjectId;
+                    if (bindManualReviewEdits)
+                    {
+                        preconditionTokens[entry.Key] = entry.Value.StateToken;
+                    }
                 }
             }
 
@@ -139,12 +145,24 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var serverByObjectId = new Dictionary<long, FeatureChangeOperation>();
             if (uploadedObjectIds.Count > 0)
             {
+                var publicObjectIdsByStorageObjectId = storageObjectIdsByPublicId
+                    .GroupBy(entry => entry.Value)
+                    .ToDictionary(group => group.Key, group => group.Select(entry => entry.Key).ToArray());
+                var storageObjectIds = publicObjectIdsByStorageObjectId.Keys.ToHashSet();
                 var serverChanges = await _changeTracker
-                    .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], uploadedObjectIds, cancellationToken)
+                    .GetChangesSinceAsync(request.BaseGeneration, [layer.StorageLayerId], storageObjectIds, cancellationToken)
                     .ConfigureAwait(false);
                 foreach (var change in serverChanges)
                 {
-                    serverByObjectId[change.ObjectId] = change.Operation;
+                    if (!publicObjectIdsByStorageObjectId.TryGetValue(change.ObjectId, out var publicObjectIds))
+                    {
+                        continue;
+                    }
+
+                    foreach (var publicObjectId in publicObjectIds)
+                    {
+                        serverByObjectId[publicObjectId] = change.Operation;
+                    }
                 }
             }
 
@@ -190,6 +208,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                                 request,
                                 layer,
                                 objectId,
+                                storageObjectIdsByPublicId.GetValueOrDefault(objectId, objectId),
                                 conflictType,
                                 mustRecord: !applyConflicting,
                                 clientStateJson: clientStateSerializer?.Serialize(edit),
@@ -326,7 +345,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     var stableSnapshot = capturedTokens.Count == confirmation.Count
                         && capturedTokens.All(entry =>
                             confirmation.TryGetValue(entry.Key, out var token)
-                            && string.Equals(token, entry.Value, StringComparison.Ordinal));
+                            && string.Equals(token.StateToken, entry.Value, StringComparison.Ordinal));
                     withheldBaseGeneration = stableSnapshot ? postCaptureGeneration : preBatchGeneration;
                 }
                 else
@@ -446,7 +465,13 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             if (layerConflictCount > 0)
             {
                 var baseGenerations = await ResolveConflictBaseGenerationsAsync(
-                        layer, conflicts, layerConflictIndexes, preBatchGeneration, postBatchGeneration, CancellationToken.None)
+                        layer,
+                        conflicts,
+                        layerConflictIndexes,
+                        storageObjectIdsByPublicId,
+                        preBatchGeneration,
+                        postBatchGeneration,
+                        CancellationToken.None)
                     .ConfigureAwait(false);
                 // The edit batch has already committed at this point, so the detection state that
                 // describes it must not be abandoned if the client disconnects: a record left without
@@ -769,32 +794,39 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ReplicaUploadLayerEdits layer,
         ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
         List<int> layerConflictIndexes,
+        IReadOnlyDictionary<long, long> storageObjectIdsByPublicId,
         long preBatchGeneration,
         long postBatchGeneration,
         CancellationToken cancellationToken)
     {
-        var byObjectId = layerConflictIndexes
+        var byStorageObjectId = layerConflictIndexes
             .Select(index => conflicts[index])
             .Where(conflict => conflict.ConflictId is { Length: > 0 })
-            .GroupBy(conflict => conflict.ObjectId)
+            .GroupBy(conflict => storageObjectIdsByPublicId.GetValueOrDefault(
+                conflict.ObjectId,
+                conflict.ObjectId))
             .ToDictionary(group => group.Key, group => group.Select(conflict => conflict.ConflictId!).ToArray());
 
         var generations = new Dictionary<string, long>(StringComparer.Ordinal);
-        if (byObjectId.Count == 0)
+        if (byStorageObjectId.Count == 0)
         {
             return generations;
         }
 
         var changes = await _changeTracker
-            .GetChangesSinceAsync(preBatchGeneration, [layer.StorageLayerId], new HashSet<long>(byObjectId.Keys), cancellationToken)
+            .GetChangesSinceAsync(
+                preBatchGeneration,
+                [layer.StorageLayerId],
+                new HashSet<long>(byStorageObjectId.Keys),
+                cancellationToken)
             .ConfigureAwait(false);
 
         // Clamped to the post-batch watermark: the change feed collapses to the latest change per
         // object, so a foreign edit that landed after this batch committed would otherwise become the
         // conflict's base and hide itself from every later staleness check.
         var candidates = changes
-            .Where(change => byObjectId.ContainsKey(change.ObjectId))
-            .SelectMany(change => byObjectId[change.ObjectId]
+            .Where(change => byStorageObjectId.ContainsKey(change.ObjectId))
+            .SelectMany(change => byStorageObjectId[change.ObjectId]
                 .Select(conflictId => (conflictId, Generation: Math.Min(change.Generation, postBatchGeneration))))
             .Where(candidate => !generations.TryGetValue(candidate.conflictId, out var current)
                 || candidate.Generation > current);
@@ -818,6 +850,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         ReplicaSyncRequest request,
         ReplicaUploadLayerEdits layer,
         long objectId,
+        long storageObjectId,
         ReplicaConflictType conflictType,
         bool mustRecord,
         string? clientStateJson,
@@ -849,6 +882,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // Persisted so a later resolution can probe the change log for post-conflict edits without
             // re-resolving metadata (#2430).
             StorageLayerId = layer.StorageLayerId,
+            StorageObjectId = storageObjectId,
             DetectedAt = DateTimeOffset.UtcNow,
         };
 

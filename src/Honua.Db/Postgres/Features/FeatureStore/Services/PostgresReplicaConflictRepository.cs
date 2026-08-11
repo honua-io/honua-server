@@ -21,7 +21,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         resolution_action, resolved_by, resolved_at, resolved_server_generation,
         client_edit_applied, storage_layer_id, resolution_base_generation,
         write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown,
-        client_edit_superseded, pre_write_state_token, pre_write_row_absent
+        client_edit_superseded, pre_write_state_token, pre_write_row_absent, storage_objectid
         """;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -43,9 +43,9 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 resolution_action, resolved_by, resolved_at, resolved_server_generation,
                 client_edit_applied, storage_layer_id, resolution_base_generation,
                 write_committed, finalized, resolution_input_hash, client_edit_outcome_unknown,
-                client_edit_superseded, pre_write_state_token, pre_write_row_absent)
+                client_edit_superseded, pre_write_state_token, pre_write_row_absent, storage_objectid)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                    $21, $22, $23, $24, $25, $26, $27, $28, $29)
+                    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
             ON CONFLICT (conflict_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 conflict_type = EXCLUDED.conflict_type,
@@ -65,7 +65,8 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
                 client_edit_outcome_unknown = EXCLUDED.client_edit_outcome_unknown,
                 client_edit_superseded = EXCLUDED.client_edit_superseded,
                 pre_write_state_token = EXCLUDED.pre_write_state_token,
-                pre_write_row_absent = EXCLUDED.pre_write_row_absent
+                pre_write_row_absent = EXCLUDED.pre_write_row_absent,
+                storage_objectid = EXCLUDED.storage_objectid
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -100,6 +101,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         command.Parameters.AddWithValue(NpgsqlDbType.Boolean, record.ClientEditSuperseded);
         command.Parameters.Add(NullableText(record.PreWriteStateToken));
         command.Parameters.Add(NullableBoolean(record.PreWriteRowAbsent));
+        command.Parameters.Add(NullableBigint(record.StorageObjectId));
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -399,6 +401,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         ClientEditSuperseded = reader.GetBoolean(26),
         PreWriteStateToken = reader.IsDBNull(27) ? null : reader.GetString(27),
         PreWriteRowAbsent = reader.IsDBNull(28) ? null : reader.GetBoolean(28),
+        StorageObjectId = reader.IsDBNull(29) ? null : reader.GetInt64(29),
     };
 
     private static NpgsqlParameter NullableText(string? value) =>

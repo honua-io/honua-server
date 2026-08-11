@@ -109,6 +109,13 @@ public readonly record struct ReplicaConflictRecord
     /// </summary>
     public int? StorageLayerId { get; init; }
 
+    /// <summary>
+    /// Internal object id recorded by the storage change log. This can differ from
+    /// <see cref="ObjectId"/> when the public feature id comes from a custom <c>id.primary</c> field.
+    /// Null on legacy records, which fall back to <see cref="ObjectId"/>.
+    /// </summary>
+    public long? StorageObjectId { get; init; }
+
     /// <summary>Stable object id of the conflicting feature.</summary>
     public required long ObjectId { get; init; }
 

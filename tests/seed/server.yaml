@@ -1513,6 +1513,7 @@ sql:
           client_edit_superseded BOOLEAN NOT NULL DEFAULT FALSE,
           pre_write_state_token TEXT,
           pre_write_row_absent BOOLEAN,
+          storage_objectid BIGINT,
           detected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           resolution_action SMALLINT,
           resolved_by TEXT,

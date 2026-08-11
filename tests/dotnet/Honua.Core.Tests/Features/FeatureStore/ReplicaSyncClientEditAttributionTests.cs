@@ -258,6 +258,42 @@ public sealed class ReplicaSyncClientEditAttributionTests
     }
 
     [UnitTest]
+    public async Task ApplyUpload_CustomPublicObjectId_ProbesChangesWithResolvedStorageObjectId()
+    {
+        const long publicObjectId = 7001;
+        const long storageObjectId = 19;
+        var tracker = new RecordingChangeTracker(ServerChange(objectId: storageObjectId));
+        var repository = new RecordingConflictRepository();
+        var service = new ReplicaSyncService(tracker, repository, NullLogger<ReplicaSyncService>.Instance);
+        var applier = new PartialFailureEditApplier(committedEditIndexes: [], failed: false);
+
+        var report = await service.ApplyUploadAsync(
+            CreateRequest(
+                ImmutableArray.Create(
+                    new ReplicaUploadEdit(
+                        FeatureEditOperationKind.Update,
+                        ObjectId: publicObjectId,
+                        Payload: null))) with
+            {
+                LastWriteWins = false,
+            },
+            applier,
+            serverStateCapturer: new MappedTokenCapturer(publicObjectId, storageObjectId));
+
+        report.Conflicts.Should().ContainSingle()
+            .Which.ObjectId.Should().Be(publicObjectId,
+                "the internal change-log identity is translated back to the upload's public id");
+        applier.DispatchedEdits.IsDefaultOrEmpty.Should().BeTrue(
+            "manual review must withhold the edit whose internal stored row changed");
+        tracker.ObjectIdFilters.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo([storageObjectId],
+                "the change log records Feature.Id rather than the custom public id.primary value");
+        repository.Upserts.Should().ContainSingle()
+            .Which.StorageObjectId.Should().Be(storageObjectId,
+                "a later manual resolution must probe the same internal change-log identity");
+    }
+
+    [UnitTest]
     public async Task ApplyUpload_ManualReview_WithholdsEditsTargetingAnAbsentRow()
     {
         // Absence cannot be expressed as a precondition, so an edit whose target was gone at capture
@@ -457,11 +493,13 @@ public sealed class ReplicaSyncClientEditAttributionTests
                         $"server-envelope-B-{target.ObjectId}",
                         $"token-B-{target.ObjectId}")));
 
-        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+        public Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<long, string>>(
-                targets.ToDictionary(t => t.ObjectId, t => $"token-A-{t.ObjectId}"));
+            => Task.FromResult<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>>(
+                targets.ToDictionary(
+                    t => t.ObjectId,
+                    t => new ReplicaConflictStateTokenCapture($"token-A-{t.ObjectId}", t.ObjectId)));
     }
 
     /// <summary>Capturer that reports a token per requested feature, minus any it treats as absent.</summary>
@@ -479,13 +517,37 @@ public sealed class ReplicaSyncClientEditAttributionTests
                             $"server-envelope-{target.ObjectId}",
                             $"token-{target.ObjectId}")));
 
-        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+        public Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<long, string>>(
+            => Task.FromResult<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>>(
                 targets
                     .Where(t => !absentObjectIds.Contains(t.ObjectId))
-                    .ToDictionary(t => t.ObjectId, t => $"token-{t.ObjectId}"));
+                    .ToDictionary(
+                        t => t.ObjectId,
+                        t => new ReplicaConflictStateTokenCapture($"token-{t.ObjectId}", t.ObjectId)));
+    }
+
+    private sealed class MappedTokenCapturer(long publicObjectId, long storageObjectId) : IReplicaServerStateCapturer
+    {
+        public Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), ReplicaConflictServerStateCapture>> CaptureAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<(int, long), ReplicaConflictServerStateCapture>>(
+                targets.ToDictionary(
+                    target => (target.PublicLayerId, target.ObjectId),
+                    target => new ReplicaConflictServerStateCapture(
+                        $"server-envelope-{target.ObjectId}",
+                        $"token-{target.ObjectId}")));
+
+        public Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
+            ImmutableArray<ReplicaConflictCaptureTarget> targets,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>>(
+                new Dictionary<long, ReplicaConflictStateTokenCapture>
+                {
+                    [publicObjectId] = new($"token-{publicObjectId}", storageObjectId),
+                });
     }
 
     [UnitTest]
@@ -601,11 +663,15 @@ public sealed class ReplicaSyncClientEditAttributionTests
                         $"server-envelope-{target.ObjectId}",
                         $"token-{target.ObjectId}")));
 
-        public Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+        public Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
             ImmutableArray<ReplicaConflictCaptureTarget> targets,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<long, string>>(
-                targets.ToDictionary(target => target.ObjectId, target => $"token-{target.ObjectId}"));
+            => Task.FromResult<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>>(
+                targets.ToDictionary(
+                    target => target.ObjectId,
+                    target => new ReplicaConflictStateTokenCapture(
+                        $"token-{target.ObjectId}",
+                        target.ObjectId)));
     }
 
     [UnitTest]
@@ -707,6 +773,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         private long _lastGeneration = 99L;
         private int _generationReads;
 
+        public List<long[]> ObjectIdFilters { get; } = [];
+
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
         {
             if (Interlocked.Increment(ref _generationReads) == ThrowOnGenerationRead)
@@ -733,8 +801,11 @@ public sealed class ReplicaSyncClientEditAttributionTests
             int[] layerIds,
             IReadOnlySet<long>? objectIds,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FeatureChange>>(
+        {
+            ObjectIdFilters.Add(objectIds?.ToArray() ?? []);
+            return Task.FromResult<IReadOnlyList<FeatureChange>>(
                 objectIds is null ? changes : changes.Where(change => objectIds.Contains(change.ObjectId)).ToArray());
+        }
     }
 
     /// <summary>

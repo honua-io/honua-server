@@ -120,6 +120,38 @@ public sealed class ReplicaConflictResolutionServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_CustomPublicObjectId_ProbesStoredChangeLogIdentity()
+    {
+        const long publicObjectId = 7001;
+        const long storageObjectId = 19;
+        var repository = new FakeConflictRepository(Conflict(clientEditApplied: true) with
+        {
+            ObjectId = publicObjectId,
+            StorageObjectId = storageObjectId,
+        });
+        var tracker = new FakeChangeTracker();
+        tracker.ChangesSinceBase.Add(new FeatureChange
+        {
+            ChangeId = 1,
+            Generation = 55,
+            LayerId = 10,
+            ObjectId = storageObjectId,
+            Operation = FeatureChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UtcNow,
+        });
+        var applier = new RecordingApplier();
+        var service = CreateService(repository, applier, tracker);
+
+        var result = await service.ResolveAsync(Request(ReplicaConflictResolutionAction.KeepServer));
+
+        result.Status.Should().Be(ReplicaConflictResolutionStatus.Stale);
+        applier.Calls.Should().Be(0);
+        tracker.ObjectIdFilters.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo([storageObjectId],
+                "the change log stores Feature.Id, not the custom public id.primary value");
+    }
+
+    [UnitTest]
     public async Task ResolveAsync_WhenAnUnrelatedFeatureChanged_StillResolves()
     {
         // The probe is scoped to the conflicting feature: unrelated churn on the layer must not block
@@ -1316,6 +1348,9 @@ public sealed class ReplicaConflictResolutionServiceTests
         /// <summary>Changes the tracker reports for the staleness probe.</summary>
         public List<FeatureChange> ChangesSinceBase { get; } = [];
 
+        /// <summary>Object-id filters supplied to the scoped staleness probe.</summary>
+        public List<long[]> ObjectIdFilters { get; } = [];
+
         /// <summary>Makes the staleness probe fault, as a cancelled request or provider error would.</summary>
         public bool ThrowOnProbe { get; init; }
 
@@ -1333,15 +1368,19 @@ public sealed class ReplicaConflictResolutionServiceTests
             int[] layerIds,
             IReadOnlySet<long>? objectIds,
             CancellationToken cancellationToken = default)
+        {
+            ObjectIdFilters.Add(objectIds?.ToArray() ?? []);
+
             // Honour sinceGeneration as the real tracker does: the resolution preconditions probe
             // different windows and would otherwise see each other's changes.
-            => ThrowOnProbe
-            ? Task.FromException<IReadOnlyList<FeatureChange>>(new OperationCanceledException())
-            : Task.FromResult<IReadOnlyList<FeatureChange>>(
-                ChangesSinceBase
-                    .Where(c => c.Generation > sinceGeneration)
-                    .Where(c => objectIds is null || objectIds.Contains(c.ObjectId))
-                    .ToList());
+            return ThrowOnProbe
+                ? Task.FromException<IReadOnlyList<FeatureChange>>(new OperationCanceledException())
+                : Task.FromResult<IReadOnlyList<FeatureChange>>(
+                    ChangesSinceBase
+                        .Where(c => c.Generation > sinceGeneration)
+                        .Where(c => objectIds is null || objectIds.Contains(c.ObjectId))
+                        .ToList());
+        }
     }
 
     private sealed class NoOpAuditLog : IAuditLog

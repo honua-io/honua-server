@@ -32,8 +32,8 @@ public interface IReplicaServerStateCapturer
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads the optimistic-concurrency token of each requested feature, keyed by object id. Features
-    /// the server has already deleted yield no entry.
+    /// Reads the optimistic-concurrency token and storage identity of each requested feature, keyed by
+    /// its public object id. Features the server has already deleted yield no entry.
     /// </summary>
     /// <remarks>
     /// Used under manual review to bind the uploaded edits that detection judged non-conflicting to the
@@ -42,10 +42,18 @@ public interface IReplicaServerStateCapturer
     /// </remarks>
     /// <param name="targets">The features whose tokens should be read.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+    Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// An optimistic-concurrency token together with the internal object id used by the storage change
+/// log. The public id can come from a custom <c>id.primary</c> field and need not equal this value.
+/// </summary>
+/// <param name="StateToken">Token computed from the resolved stored feature.</param>
+/// <param name="StorageObjectId">Internal object id recorded by the storage change log.</param>
+public readonly record struct ReplicaConflictStateTokenCapture(string StateToken, long StorageObjectId);
 
 /// <summary>
 /// An adapter-shaped server-state envelope and the optimistic-concurrency token computed from the

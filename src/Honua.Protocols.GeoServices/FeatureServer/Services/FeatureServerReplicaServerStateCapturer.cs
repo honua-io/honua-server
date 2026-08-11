@@ -70,11 +70,11 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyDictionary<long, string>> CaptureTokensAsync(
+    public async Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default)
     {
-        var tokens = new Dictionary<long, string>();
+        var tokens = new Dictionary<long, ReplicaConflictStateTokenCapture>();
         if (targets.IsDefaultOrEmpty)
         {
             return tokens;
@@ -90,7 +90,9 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
             var feature = await ResolveAsync(target, cancellationToken).ConfigureAwait(false);
             if (feature is { } found)
             {
-                tokens[target.ObjectId] = FeatureStateToken.Compute(found);
+                tokens[target.ObjectId] = new ReplicaConflictStateTokenCapture(
+                    FeatureStateToken.Compute(found),
+                    found.Id);
             }
         }
 

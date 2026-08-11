@@ -1125,11 +1125,12 @@ internal sealed partial class ReplicaConflictResolutionService
             return false;
         }
 
+        var storageObjectId = conflict.StorageObjectId ?? conflict.ObjectId;
         var changes = await _changeTracker
-            .GetChangesSinceAsync(baseGeneration, [storageLayerId], new HashSet<long> { conflict.ObjectId }, cancellationToken)
+            .GetChangesSinceAsync(baseGeneration, [storageLayerId], new HashSet<long> { storageObjectId }, cancellationToken)
             .ConfigureAwait(false);
 
-        return changes.Any(change => change.ObjectId == conflict.ObjectId);
+        return changes.Any(change => change.ObjectId == storageObjectId);
     }
 
     /// <summary>
