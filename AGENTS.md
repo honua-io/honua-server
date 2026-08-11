@@ -89,6 +89,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
 | `honua-sdk-python` | Public | Python SDK for Honua. |
 | `honua-mobile` | Public | MAUI-first mobile SDK and GeoPackage/offline field-collection foundation. |
+| `honua-qgis` | Public | Active QGIS plugin home, including plugin sources, packaging, and registry submission. |
 | `honua-site` | Private | Honua public website. |
 | `honua-site-preview` | Private | Preview deployment repo for honua.io site changes. |
 | `honua-helm` | Public | Helm chart for deploying Honua. |
