@@ -340,6 +340,13 @@ public sealed record MetadataV2ContactPoint
 /// </summary>
 public sealed record MetadataV2Link
 {
+    /// <summary>
+    /// Maximum length of a canonical external governance link target.
+    /// Applies to <c>license</c> and <c>describedby</c> relations across every
+    /// Metadata v2 authoring and import path.
+    /// </summary>
+    public const int MaxGovernanceHrefLength = 2048;
+
     /// <summary>Target URL of the link. Required (non-empty) when emitted.</summary>
     [JsonPropertyName("href")]
     public string Href { get; init; } = string.Empty;

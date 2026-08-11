@@ -23,7 +23,7 @@ public sealed record LayerSourceGovernance
     public const int MaxPublisherLength = MetadataV2ObjectMetadata.MaxPublisherLength;
 
     /// <summary>Maximum documentation URL length.</summary>
-    public const int MaxUrlLength = 2048;
+    public const int MaxUrlLength = MetadataV2Link.MaxGovernanceHrefLength;
 
     private LayerSourceGovernance(
         string? license,

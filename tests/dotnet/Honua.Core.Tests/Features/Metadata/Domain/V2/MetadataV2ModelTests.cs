@@ -663,6 +663,41 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("license")]
+    [InlineData("describedby")]
+    [Operation(Operations.Query)]
+    public void Validate_WithOversizedGovernanceLink_ReturnsValidationError(string relation)
+    {
+        const string prefix = "https://example.test/";
+        var oversizedUrl = prefix + new string(
+            'x',
+            MetadataV2Link.MaxGovernanceHrefLength - prefix.Length + 1);
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Links = [new MetadataV2Link { Href = oversizedUrl, Rel = relation }],
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            $"must not exceed {MetadataV2Link.MaxGovernanceHrefLength} characters",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(oversizedUrl, StringComparison.Ordinal));
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     public void Validate_WithHostlessGovernanceLink_ReturnsValidationError()

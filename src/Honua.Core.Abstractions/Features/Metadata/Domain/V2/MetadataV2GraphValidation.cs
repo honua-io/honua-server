@@ -686,10 +686,19 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add($"{ownerLabel} metadata.links[{i}].rel is required.");
             }
-            if (!string.IsNullOrWhiteSpace(link.Href) &&
-                (string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase)) &&
-                !IsSafePublicHttpUrl(link.Href))
+            if (string.IsNullOrWhiteSpace(link.Href) ||
+                (!string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (link.Href.Length > MetadataV2Link.MaxGovernanceHrefLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href must not exceed {MetadataV2Link.MaxGovernanceHrefLength} characters for relation '{link.Rel}'.");
+            }
+            else if (!IsSafePublicHttpUrl(link.Href))
             {
                 errors.Add(
                     $"{ownerLabel} metadata.links[{i}].href must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
