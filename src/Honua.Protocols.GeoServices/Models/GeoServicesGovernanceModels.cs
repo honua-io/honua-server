@@ -51,8 +51,19 @@ internal static class GeoServicesGovernanceProjection
                 Title = link.Title,
                 HrefLang = link.Hreflang
             })
-            .ToArray();
+            .ToList();
 
-        return links.Length == 0 ? null : links;
+        if (!links.Any(link => string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase)) &&
+            SpdxLicensePolicy.GetLicenseUrl(metadata.License) is { } derivedLicenseUrl)
+        {
+            links.Add(new GeoServicesGovernanceLink
+            {
+                Href = derivedLicenseUrl,
+                Rel = "license",
+                Title = metadata.License
+            });
+        }
+
+        return links.Count == 0 ? null : [.. links];
     }
 }

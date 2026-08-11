@@ -357,7 +357,6 @@ internal static class ServiceSettingsEndpoints
                 .Where(publication =>
                     featureServiceIds.Contains(publication.ServiceId) &&
                     publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
-                    publication.Identifier.IsNumeric &&
                     publication.LayerIndex == layerId)
                 .Select(publication => publication.ResourceId)
                 .Distinct(StringComparer.Ordinal)
@@ -813,16 +812,16 @@ internal static class ServiceSettingsEndpoints
 
         try
         {
-            // V2 cutover: resolve the service's layer ids from numeric publications
-            // in the canonical graph. Layer ids come from the publication
-            // LayerIndex for every numeric publication on a matching service.
+            // V2 cutover: resolve the service's layer ids from the canonical graph.
+            // Reading LayerIndex also honors snapshots that predate Identifier and
+            // still carry only the legacy top-level layerIndex value.
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var serviceIds = snapshot.Graph.Services
                 .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId) && p.Identifier.IsNumeric)
+                .Where(p => serviceIds.Contains(p.ServiceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -993,7 +992,6 @@ internal static class ServiceSettingsEndpoints
             .Where(publication =>
                 featureServiceIds.Contains(publication.ServiceId) &&
                 publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
-                publication.Identifier.IsNumeric &&
                 publication.LayerIndex == layerId)
             .Select(publication => publication.ResourceId)
             .Distinct(StringComparer.Ordinal)

@@ -383,6 +383,35 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithLegacyLayerIndex_UpdatesFeatureResource()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == 0);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = snapshot.Graph.Publications.Select(candidate =>
+                candidate.Metadata.Id == publication.Metadata.Id
+                    ? candidate with
+                    {
+                        Identifier = new MetadataV2PublicationIdentifier(),
+                        LayerIndex = 0,
+                    }
+                    : candidate).ToArray(),
+        }, schema: _fixture.MetadataGraphSchema);
+
+        using var content = new StringContent("""{"license":"CC0-1.0"}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        GetLayerMetadata(0).License.Should().Be("CC0-1.0");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     public async Task UpdateLayerMetadata_WhenFeatureLayerIsRelinked_DoesNotMutateEitherResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
