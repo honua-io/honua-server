@@ -526,24 +526,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var restored = new List<T>(previous.Count + current.Count);
-        foreach (var previousItem in previous)
+        foreach (var previousItem in previous.Where(previousItem =>
+                     !persisted.Contains(previousItem) || current.Contains(previousItem)))
         {
             // Restore values removed by the failed mutation. Values the mutation retained are kept
             // only if the concurrent writer did not subsequently remove them.
-            if (!persisted.Contains(previousItem) || current.Contains(previousItem))
-            {
-                restored.Add(previousItem);
-            }
+            restored.Add(previousItem);
         }
 
-        foreach (var currentItem in current)
+        foreach (var currentItem in current.Where(currentItem =>
+                     !persisted.Contains(currentItem) && !restored.Contains(currentItem)))
         {
             // Preserve values introduced by a later writer, but omit values introduced only by the
             // failed mutation.
-            if (!persisted.Contains(currentItem) && !restored.Contains(currentItem))
-            {
-                restored.Add(currentItem);
-            }
+            restored.Add(currentItem);
         }
 
         return restored;
@@ -655,15 +651,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var matchingFeatureServices = matchingServices
             .Where(candidate => IsFeatureServerService(graph, candidate))
             .ToArray();
+        var protocolEnabledServices = matchingFeatureServices
+            .Where(candidate => MetadataV2ServiceProtocols.IsProtocolEnabled(
+                candidate,
+                MetadataV2ServiceProtocols.FeatureServer))
+            .ToArray();
+        if (protocolEnabledServices.Length > 0)
+        {
+            // Protocol-disabled compatibility candidates can retain FeatureServer-shaped
+            // publications. Remove them before exact-id precedence so graph mutation and
+            // governance hydration resolve the same enabled service as runtime routing.
+            matchingFeatureServices = protocolEnabledServices;
+        }
+
         var service = matchingFeatureServices.FirstOrDefault(candidate =>
             string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
         if (service is null && matchingFeatureServices.Length > 1)
         {
-            var protocolEnabledServices = matchingFeatureServices
-                .Where(candidate => MetadataV2ServiceProtocols.IsProtocolEnabled(
-                    candidate,
-                    MetadataV2ServiceProtocols.FeatureServer))
-                .ToArray();
             service = protocolEnabledServices.Length == 1 ? protocolEnabledServices[0] : null;
         }
 

@@ -29,7 +29,11 @@ public static class MetadataV2GovernanceExtensions
             Attribution = FirstDefined(resourceMetadata.Attribution, serviceMetadata.Attribution),
             Publisher = FirstDefined(resourceMetadata.Publisher, serviceMetadata.Publisher),
             ContactPoint = resourceMetadata.ContactPoint ?? serviceMetadata.ContactPoint,
-            Links = MergeLinks(resourceMetadata.Links, serviceMetadata.Links),
+            Links = MergeLinks(
+                resourceMetadata.Links,
+                serviceMetadata.Links,
+                inheritServiceLicenseLinks: string.IsNullOrWhiteSpace(resourceMetadata.License) &&
+                    !resourceMetadata.Links.Any(IsLicenseLink)),
         };
     }
 
@@ -38,7 +42,8 @@ public static class MetadataV2GovernanceExtensions
 
     private static IReadOnlyList<MetadataV2Link> MergeLinks(
         IReadOnlyList<MetadataV2Link> resourceLinks,
-        IReadOnlyList<MetadataV2Link> serviceLinks)
+        IReadOnlyList<MetadataV2Link> serviceLinks,
+        bool inheritServiceLicenseLinks)
     {
         if (serviceLinks.Count == 0)
         {
@@ -47,16 +52,18 @@ public static class MetadataV2GovernanceExtensions
 
         var links = new List<MetadataV2Link>(resourceLinks.Count + serviceLinks.Count);
         links.AddRange(resourceLinks);
-        foreach (var serviceLink in serviceLinks)
+        foreach (var serviceLink in serviceLinks.Where(serviceLink =>
+                     (inheritServiceLicenseLinks || !IsLicenseLink(serviceLink)) &&
+                     !links.Any(existing => LinksEqual(existing, serviceLink))))
         {
-            if (!links.Any(existing => LinksEqual(existing, serviceLink)))
-            {
-                links.Add(serviceLink);
-            }
+            links.Add(serviceLink);
         }
 
         return links;
     }
+
+    private static bool IsLicenseLink(MetadataV2Link link)
+        => string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase);
 
     private static bool LinksEqual(MetadataV2Link left, MetadataV2Link right)
         => string.Equals(left.Href, right.Href, StringComparison.Ordinal) &&
