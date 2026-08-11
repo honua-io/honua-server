@@ -186,6 +186,40 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
+    private async Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
+        HashSet<int> layerIds,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (layerIds.Count == 0)
+        {
+            return null;
+        }
+
+        var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        var updatedGraph = BuildLayerEnabledMetadataV2Graph(
+            graph,
+            layerIds,
+            enabled,
+            DateTimeOffset.UtcNow);
+        if (ReferenceEquals(updatedGraph, graph))
+        {
+            return null;
+        }
+
+        var validation = MetadataV2GraphValidator.Validate(updatedGraph);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Layer lifecycle metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
+        }
+
+        var persisted = await _metadataGraphStore
+            .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
+            .ConfigureAwait(false);
+        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
+    }
+
     private async Task CompensateMetadataV2MutationAsync(
         MetadataV2GraphMutation mutation,
         Exception commitException)
@@ -2427,6 +2461,78 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
             Publications = UpsertPublication(graph.Publications, featurePublication)
+        };
+    }
+
+    internal static MetadataV2Graph BuildLayerEnabledMetadataV2Graph(
+        MetadataV2Graph graph,
+        HashSet<int> layerIds,
+        bool enabled,
+        DateTimeOffset now)
+    {
+        var affectedBindingIds = graph.StorageBindings
+            .Where(binding => binding.StorageLayerId is { } storageLayerId && layerIds.Contains(storageLayerId))
+            .Select(binding => binding.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (affectedBindingIds.Count == 0)
+        {
+            return graph;
+        }
+
+        var affectedResourceIds = graph.StorageBindings
+            .Where(binding => affectedBindingIds.Contains(binding.Metadata.Id))
+            .Select(binding => binding.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var lifecycle = enabled
+            ? MetadataV2LifecycleStatus.Active
+            : MetadataV2LifecycleStatus.Retired;
+        var changed = false;
+        MetadataV2Status ToggleStatus(MetadataV2Status status)
+            => status with
+            {
+                Lifecycle = lifecycle,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = now,
+            };
+
+        var resources = graph.Resources
+            .Select(resource =>
+            {
+                if (!affectedResourceIds.Contains(resource.Metadata.Id))
+                {
+                    return resource;
+                }
+
+                changed = true;
+                return resource with { Status = ToggleStatus(resource.Status) };
+            })
+            .ToArray();
+        var publications = graph.Publications
+            .Select(publication =>
+            {
+                var usesAffectedBinding = publication.StorageBindingId is { } storageBindingId &&
+                    affectedBindingIds.Contains(storageBindingId);
+                if (!usesAffectedBinding &&
+                    !affectedResourceIds.Contains(publication.ResourceId))
+                {
+                    return publication;
+                }
+
+                changed = true;
+                return publication with { Status = ToggleStatus(publication.Status) };
+            })
+            .ToArray();
+        if (!changed)
+        {
+            return graph;
+        }
+
+        return graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = now,
+            Resources = resources,
+            Publications = publications,
         };
     }
 

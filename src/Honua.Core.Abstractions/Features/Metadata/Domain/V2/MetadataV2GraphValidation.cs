@@ -668,11 +668,18 @@ public static class MetadataV2GraphValidator
             errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
         }
         if (metadata.ContactPoint is { Url: { } contactUrl } &&
-            !string.IsNullOrWhiteSpace(contactUrl) &&
-            !IsSafePublicHttpUrl(contactUrl))
+            !string.IsNullOrWhiteSpace(contactUrl))
         {
-            errors.Add(
-                $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
+            if (contactUrl.Length > MetadataV2ContactPoint.MaxUrlLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
+            }
+            else if (!IsSafePublicHttpUrl(contactUrl))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
+            }
         }
 
         for (var i = 0; i < metadata.Links.Count; i++)

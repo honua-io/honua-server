@@ -445,6 +445,43 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithOversizedContactUrl_ReturnsValidationError()
+    {
+        const string prefix = "https://example.test/";
+        var oversizedUrl = prefix + new string(
+            'x',
+            MetadataV2ContactPoint.MaxUrlLength - prefix.Length + 1);
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint
+                        {
+                            Name = "Oversized contact",
+                            Url = oversizedUrl,
+                        },
+                    },
+                },
+            ],
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error => error.Contains(
+            $"metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters",
+            StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(oversizedUrl, StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("not-an-email")]
     [InlineData("a@")]

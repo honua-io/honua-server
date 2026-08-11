@@ -614,6 +614,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         var layer = await GetLayerSummaryAsync(connection, transaction, layerId, normalizedService, cancellationToken);
         if (layer == null)
@@ -632,7 +635,18 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         layer = CloneWithEnabled(layer, enabled);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
-        await transaction.CommitSafelyAsync(cancellationToken);
+        var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
+                [layerId],
+                enabled,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CommitLayerLifecycleTransactionAsync(
+                transaction,
+                connectionString,
+                transactionId,
+                metadataMutation,
+                cancellationToken)
+            .ConfigureAwait(false);
         return layer;
     }
 
@@ -649,6 +663,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        var layerIds = await ListServiceLayerIdsAsync(
+                connection,
+                transaction,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         const string updateSql = """
             UPDATE honua.layers
@@ -674,8 +697,53 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .ConfigureAwait(false);
         var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken)
             .ConfigureAwait(false);
-        await transaction.CommitSafelyAsync(cancellationToken);
+        var metadataMutation = await UpdateLayerLifecycleMetadataV2Async(
+                layerIds.ToHashSet(),
+                enabled,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await CommitLayerLifecycleTransactionAsync(
+                transaction,
+                connectionString,
+                transactionId,
+                metadataMutation,
+                cancellationToken)
+            .ConfigureAwait(false);
         return hydratedLayers;
+    }
+
+    private async Task CommitLayerLifecycleTransactionAsync(
+        NpgsqlTransaction transaction,
+        string connectionString,
+        string transactionId,
+        MetadataV2GraphMutation? metadataMutation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
+        }
+        catch (Exception commitException) when (metadataMutation is not null)
+        {
+            await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(

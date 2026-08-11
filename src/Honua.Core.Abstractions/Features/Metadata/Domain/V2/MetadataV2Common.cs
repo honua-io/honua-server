@@ -322,6 +322,9 @@ public sealed record MetadataV2ContactPoint
     /// <summary>Maximum public contact display-name length.</summary>
     public const int MaxNameLength = 256;
 
+    /// <summary>Maximum public contact URL length.</summary>
+    public const int MaxUrlLength = MetadataV2Link.MaxGovernanceHrefLength;
+
     /// <summary>Display name of the contact (person or organization).</summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
