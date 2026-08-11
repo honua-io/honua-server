@@ -380,11 +380,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resources = currentGraph.Resources
             .Select(resource => previousResourcesById.TryGetValue(resource.Metadata.Id, out var previous) &&
                                 persistedResourcesById.TryGetValue(resource.Metadata.Id, out var persisted)
-                ? RestoreUnchangedEntity(
-                    resource,
-                    previous,
-                    persisted,
-                    MetadataV2JsonContext.Default.MetadataV2Resource)
+                ? RestoreResourceMutation(resource, previous, persisted)
                 : resource)
             .Where(resource => !addedResourceIds.Contains(resource.Metadata.Id) ||
                 publications.Any(publication =>
@@ -498,6 +494,260 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Protocols = RestoreMutationSequence(current.Protocols, previous.Protocols, persisted.Protocols),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
         };
+
+    private static MetadataV2Resource RestoreResourceMutation(
+        MetadataV2Resource current,
+        MetadataV2Resource previous,
+        MetadataV2Resource persisted)
+        => current with
+        {
+            Metadata = RestoreResourceMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
+            Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
+            StorageBindingIds = RestoreResourceMutationValue(
+                current.StorageBindingIds,
+                previous.StorageBindingIds,
+                persisted.StorageBindingIds,
+                static value => new MetadataV2Resource { StorageBindingIds = value }),
+            PrimaryStorageBindingId = RestoreMutationValue(
+                current.PrimaryStorageBindingId,
+                previous.PrimaryStorageBindingId,
+                persisted.PrimaryStorageBindingId),
+            SchemaFields = RestoreResourceMutationValue(
+                current.SchemaFields,
+                previous.SchemaFields,
+                persisted.SchemaFields,
+                static value => new MetadataV2Resource { SchemaFields = value }),
+            PolicyIds = RestoreResourceMutationValue(
+                current.PolicyIds,
+                previous.PolicyIds,
+                persisted.PolicyIds,
+                static value => new MetadataV2Resource { PolicyIds = value }),
+            Relationships = RestoreResourceMutationValue(
+                current.Relationships,
+                previous.Relationships,
+                persisted.Relationships,
+                static value => new MetadataV2Resource { Relationships = value }),
+            AccessPolicy = RestoreResourceMutationValue(
+                current.AccessPolicy,
+                previous.AccessPolicy,
+                persisted.AccessPolicy,
+                static value => new MetadataV2Resource { AccessPolicy = value }),
+            Spatial = RestoreResourceSpatialMutation(current.Spatial, previous.Spatial, persisted.Spatial),
+            Temporal = RestoreResourceMutationValue(
+                current.Temporal,
+                previous.Temporal,
+                persisted.Temporal,
+                static value => new MetadataV2Resource { Temporal = value }),
+            PermanentFilter = RestoreResourceMutationValue(
+                current.PermanentFilter,
+                previous.PermanentFilter,
+                persisted.PermanentFilter,
+                static value => new MetadataV2Resource { PermanentFilter = value }),
+            Subtypes = RestoreResourceMutationValue(
+                current.Subtypes,
+                previous.Subtypes,
+                persisted.Subtypes,
+                static value => new MetadataV2Resource { Subtypes = value }),
+            AttributeRules = RestoreResourceMutationValue(
+                current.AttributeRules,
+                previous.AttributeRules,
+                persisted.AttributeRules,
+                static value => new MetadataV2Resource { AttributeRules = value }),
+            ContingentValueGroups = RestoreResourceMutationValue(
+                current.ContingentValueGroups,
+                previous.ContingentValueGroups,
+                persisted.ContingentValueGroups,
+                static value => new MetadataV2Resource { ContingentValueGroups = value }),
+            OwnerEditPolicy = RestoreResourceMutationValue(
+                current.OwnerEditPolicy,
+                previous.OwnerEditPolicy,
+                persisted.OwnerEditPolicy,
+                static value => new MetadataV2Resource { OwnerEditPolicy = value }),
+            Extrusion = RestoreResourceMutationValue(
+                current.Extrusion,
+                previous.Extrusion,
+                persisted.Extrusion,
+                static value => new MetadataV2Resource { Extrusion = value }),
+            Symbology3D = RestoreResourceMutationValue(
+                current.Symbology3D,
+                previous.Symbology3D,
+                persisted.Symbology3D,
+                static value => new MetadataV2Resource { Symbology3D = value }),
+            StyleResourceIds = RestoreResourceMutationValue(
+                current.StyleResourceIds,
+                previous.StyleResourceIds,
+                persisted.StyleResourceIds,
+                static value => new MetadataV2Resource { StyleResourceIds = value }),
+            Style = RestoreResourceMutationValue(
+                current.Style,
+                previous.Style,
+                persisted.Style,
+                static value => new MetadataV2Resource { Style = value }),
+            Display = RestoreResourceMutationValue(
+                current.Display,
+                previous.Display,
+                persisted.Display,
+                static value => new MetadataV2Resource { Display = value }),
+            Editing = RestoreResourceMutationValue(
+                current.Editing,
+                previous.Editing,
+                persisted.Editing,
+                static value => new MetadataV2Resource { Editing = value }),
+            Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
+            Extensions = RestoreResourceMutationValue(
+                current.Extensions,
+                previous.Extensions,
+                persisted.Extensions,
+                static value => new MetadataV2Resource { Extensions = value }),
+        };
+
+    private static MetadataV2ObjectMetadata RestoreResourceMetadataMutation(
+        MetadataV2ObjectMetadata current,
+        MetadataV2ObjectMetadata previous,
+        MetadataV2ObjectMetadata persisted)
+        => current with
+        {
+            Id = RestoreMutationValue(current.Id, previous.Id, persisted.Id),
+            Name = RestoreMutationValue(current.Name, previous.Name, persisted.Name),
+            Namespace = RestoreMutationValue(current.Namespace, previous.Namespace, persisted.Namespace),
+            Tenant = RestoreMutationValue(current.Tenant, previous.Tenant, persisted.Tenant),
+            Title = RestoreMutationValue(current.Title, previous.Title, persisted.Title),
+            Description = RestoreMutationValue(current.Description, previous.Description, persisted.Description),
+            Tags = RestoreMetadataMutationValue(
+                current.Tags,
+                previous.Tags,
+                persisted.Tags,
+                static value => new MetadataV2ObjectMetadata { Tags = value }),
+            Labels = RestoreMetadataMutationValue(
+                current.Labels,
+                previous.Labels,
+                persisted.Labels,
+                static value => new MetadataV2ObjectMetadata { Labels = value }),
+            Annotations = RestoreMetadataMutationValue(
+                current.Annotations,
+                previous.Annotations,
+                persisted.Annotations,
+                static value => new MetadataV2ObjectMetadata { Annotations = value }),
+            Generation = RestoreMutationValue(current.Generation, previous.Generation, persisted.Generation),
+            CreatedAt = RestoreMutationValue(current.CreatedAt, previous.CreatedAt, persisted.CreatedAt),
+            UpdatedAt = RestoreMutationValue(current.UpdatedAt, previous.UpdatedAt, persisted.UpdatedAt),
+            Keywords = RestoreMetadataMutationValue(
+                current.Keywords,
+                previous.Keywords,
+                persisted.Keywords,
+                static value => new MetadataV2ObjectMetadata { Keywords = value }),
+            Themes = RestoreMetadataMutationValue(
+                current.Themes,
+                previous.Themes,
+                persisted.Themes,
+                static value => new MetadataV2ObjectMetadata { Themes = value }),
+            Language = RestoreMutationValue(current.Language, previous.Language, persisted.Language),
+            License = RestoreMutationValue(current.License, previous.License, persisted.License),
+            Attribution = RestoreMutationValue(current.Attribution, previous.Attribution, persisted.Attribution),
+            Publisher = RestoreMutationValue(current.Publisher, previous.Publisher, persisted.Publisher),
+            ContactPoint = RestoreMutationValue(current.ContactPoint, previous.ContactPoint, persisted.ContactPoint),
+            Links = RestoreMetadataMutationValue(
+                current.Links,
+                previous.Links,
+                persisted.Links,
+                static value => new MetadataV2ObjectMetadata { Links = value }),
+        };
+
+    private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
+        MetadataV2ResourceSpatial? current,
+        MetadataV2ResourceSpatial? previous,
+        MetadataV2ResourceSpatial? persisted)
+    {
+        if (current is null || previous is null || persisted is null)
+        {
+            return RestoreResourceMutationValue(
+                current,
+                previous,
+                persisted,
+                static value => new MetadataV2Resource { Spatial = value });
+        }
+
+        return current with
+        {
+            SpatialReference = RestoreSpatialReferenceMutation(
+                current.SpatialReference,
+                previous.SpatialReference,
+                persisted.SpatialReference),
+            GeometryType = RestoreMutationValue(
+                current.GeometryType,
+                previous.GeometryType,
+                persisted.GeometryType),
+            Bbox = RestoreSpatialMutationValue(
+                current.Bbox,
+                previous.Bbox,
+                persisted.Bbox,
+                static value => new MetadataV2ResourceSpatial { Bbox = value }),
+            PrimaryGeometryField = RestoreMutationValue(
+                current.PrimaryGeometryField,
+                previous.PrimaryGeometryField,
+                persisted.PrimaryGeometryField),
+            SupportedCrs = RestoreSpatialMutationValue(
+                current.SupportedCrs,
+                previous.SupportedCrs,
+                persisted.SupportedCrs,
+                static value => new MetadataV2ResourceSpatial { SupportedCrs = value }),
+            StorageCrs = RestoreSpatialReferenceMutation(
+                current.StorageCrs,
+                previous.StorageCrs,
+                persisted.StorageCrs),
+            StorageCrsCoordinateEpoch = RestoreMutationValue(
+                current.StorageCrsCoordinateEpoch,
+                previous.StorageCrsCoordinateEpoch,
+                persisted.StorageCrsCoordinateEpoch),
+        };
+    }
+
+    private static T RestoreResourceMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2Resource> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2Resource);
+
+    private static T RestoreMetadataMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2ObjectMetadata> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2ObjectMetadata);
+
+    private static T RestoreSpatialMutationValue<T>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, MetadataV2ResourceSpatial> containerFactory)
+        => RestoreJsonMutationValue(
+            current,
+            previous,
+            persisted,
+            containerFactory,
+            MetadataV2JsonContext.Default.MetadataV2ResourceSpatial);
+
+    private static T RestoreJsonMutationValue<T, TContainer>(
+        T current,
+        T previous,
+        T persisted,
+        Func<T, TContainer> containerFactory,
+        JsonTypeInfo<TContainer> typeInfo)
+        => !JsonEquivalent(containerFactory(previous), containerFactory(persisted), typeInfo) &&
+           JsonEquivalent(containerFactory(current), containerFactory(persisted), typeInfo)
+            ? previous
+            : current;
 
     private static MetadataV2ObjectMetadata RestoreServiceMetadataMutation(
         MetadataV2ObjectMetadata current,

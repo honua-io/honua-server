@@ -434,6 +434,12 @@ internal sealed class MapServerDocumentInfo
     public string Subject { get; init; } = "";
 
     /// <summary>
+    /// Data attribution and credits.
+    /// </summary>
+    [JsonPropertyName("Credits")]
+    public string Credits { get; init; } = "";
+
+    /// <summary>
     /// Document category.
     /// </summary>
     [JsonPropertyName("Category")]

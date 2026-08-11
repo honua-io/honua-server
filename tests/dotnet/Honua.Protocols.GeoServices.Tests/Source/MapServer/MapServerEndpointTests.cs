@@ -77,7 +77,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
-    public async Task MapServer_Metadata_MapsContactAndPublisherToDocumentInfo()
+    public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync();
@@ -90,6 +90,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                         Metadata = service.Metadata with
                         {
                             Publisher = "Example Data Office",
+                            Attribution = "Example data contributors",
                             ContactPoint = new MetadataV2ContactPoint { Name = "Example Data Contact" },
                         },
                     }
@@ -108,6 +109,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var service = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.MapServerResponse);
         service!.DocumentInfo!.Author.Should().Be("Example Data Contact");
         service.DocumentInfo.Subject.Should().Be("Example Data Office");
+        service.DocumentInfo.Credits.Should().Be("Example data contributors");
     }
 
     [IntegrationTest]

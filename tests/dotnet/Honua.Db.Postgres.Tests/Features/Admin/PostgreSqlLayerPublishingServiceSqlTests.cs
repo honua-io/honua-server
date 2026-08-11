@@ -379,6 +379,98 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresExistingResourceFieldsThreeWay()
+    {
+        var originalAt = DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture);
+        var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
+        var previousField = new MetadataV2Field { Name = "legacy_id", Type = MetadataV2FieldType.BigInteger };
+        var persistedField = new MetadataV2Field { Name = "published_id", Type = MetadataV2FieldType.Integer };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "resource-layer-7",
+                Name = "Imported resource",
+                Publisher = "Original publisher",
+                CreatedAt = originalAt,
+                UpdatedAt = originalAt,
+            },
+            StorageBindingIds = ["binding-imported"],
+            PrimaryStorageBindingId = "binding-imported",
+            SchemaFields = [previousField],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                Bbox = new MetadataV2Bbox { West = 1, South = 2, East = 3, North = 4 },
+                PrimaryGeometryField = "legacy_shape",
+                StorageCrs = MetadataV2SpatialReference.Wgs84,
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Draft,
+                State = MetadataV2OperationalState.Unknown,
+                ObservedAt = originalAt,
+            },
+        };
+        var persistedResource = previousResource with
+        {
+            Metadata = previousResource.Metadata with
+            {
+                Name = "Published resource",
+                Publisher = null,
+                UpdatedAt = publishedAt,
+            },
+            StorageBindingIds = ["binding-generated"],
+            PrimaryStorageBindingId = "binding-generated",
+            SchemaFields = [persistedField],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.Polygon,
+                Bbox = new MetadataV2Bbox { West = 10, South = 20, East = 30, North = 40 },
+                PrimaryGeometryField = "published_shape",
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+            },
+            Status = new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+                ObservedAt = publishedAt,
+            },
+        };
+        var concurrentBbox = new MetadataV2Bbox { West = 100, South = 200, East = 300, North = 400 };
+        var currentResource = persistedResource with
+        {
+            Metadata = persistedResource.Metadata with { Publisher = "Concurrent Data Office" },
+            Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var resource = compensation.Resources.Should().ContainSingle().Which;
+        resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
+        resource.Metadata.UpdatedAt.Should().Be(originalAt);
+        resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
+        resource.StorageBindingIds.Should().Equal("binding-imported");
+        resource.PrimaryStorageBindingId.Should().Be("binding-imported");
+        resource.SchemaFields.Should().Equal(previousField);
+        resource.Spatial!.SpatialReference.Should().Be(previousResource.Spatial!.SpatialReference);
+        resource.Spatial.GeometryType.Should().Be(previousResource.Spatial.GeometryType);
+        resource.Spatial.PrimaryGeometryField.Should().Be(previousResource.Spatial.PrimaryGeometryField);
+        resource.Spatial.StorageCrs.Should().Be(previousResource.Spatial.StorageCrs);
+        resource.Spatial.Bbox.Should().Be(concurrentBbox, "a later edit to the same field wins");
+        resource.Status.Should().Be(previousResource.Status);
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithSameServiceIndex_UsesGlobalStorageIdentity()
     {
         var graph = new MetadataV2Graph

@@ -284,7 +284,8 @@ internal static partial class MapServerEndpoints
                 Title = service.Metadata.Name ?? "",
                 Author = service.Metadata.ContactPoint?.Name ?? "",
                 Comments = service.Metadata.Description ?? "",
-                Subject = service.Metadata.Publisher ?? ""
+                Subject = service.Metadata.Publisher ?? "",
+                Credits = service.Metadata.Attribution ?? ""
             },
             TileInfo = BuildTileInfo(maxTileZoom)
         };
