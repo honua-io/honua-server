@@ -33,6 +33,9 @@
     <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\105_AddChangeLogPublicObjectId.sql" Link="Migrations\105_AddChangeLogPublicObjectId.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Features/Import/Fixtures/ArcGis/*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

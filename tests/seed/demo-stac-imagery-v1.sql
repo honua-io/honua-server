@@ -67,6 +67,23 @@ SELECT set_config('honua.seed_schema', :'schema', false);
 --    share the Honua features table.
 -- ---------------------------------------------------------------------------
 
+-- The features trigger is migration-owned and required for replica sync and
+-- temporal history. Refuse to publish against a partially migrated database;
+-- the seed may reattach the current trigger but must not duplicate or replace
+-- the authoritative functions from migration 105.
+DO $change_tracking$
+BEGIN
+    IF to_regclass('honua.feature_changes') IS NULL
+       OR to_regclass('honua.sync_generation') IS NULL
+       OR to_regprocedure('honua.resolve_feature_public_objectid(integer,bigint,jsonb)') IS NULL
+       OR to_regprocedure('honua.track_feature_changes()') IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Demo STAC seed requires the current Honua change-tracking migrations';
+    END IF;
+END
+$change_tracking$;
+
 -- The metadata graph can outlive the physical demo relation across database
 -- resets or partial reseeds. Recreate the migration-compatible relation before
 -- publishing its binding so the seed never advertises a table that is absent.
@@ -82,6 +99,12 @@ CREATE TABLE IF NOT EXISTS features (
 CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
 CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
 CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
+
+DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;
+CREATE TRIGGER trigger_track_feature_changes
+    AFTER INSERT OR UPDATE OR DELETE ON features
+    FOR EACH ROW
+    EXECUTE FUNCTION honua.track_feature_changes();
 
 DELETE FROM features WHERE layer_id IN (90810, 90820);
 

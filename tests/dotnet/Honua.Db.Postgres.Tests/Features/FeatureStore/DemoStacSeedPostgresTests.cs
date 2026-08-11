@@ -23,11 +23,19 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         {
             await using var dataSource = NpgsqlDataSource.Create(connectionString);
             await CreateMetadataV2TablesAsync(dataSource);
+            await CreateChangeTrackingTablesAsync(dataSource);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
                 .Should().BeNull("the regression must start from the live failure state");
 
             var seed = RenderSeed(injectFailure: false);
+            Func<Task> applyWithoutCurrentMigrations = () => ExecuteAsync(dataSource, seed);
+            var prerequisiteFailure = await applyWithoutCurrentMigrations.Should().ThrowAsync<PostgresException>();
+            prerequisiteFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("a missing change-tracking contract must roll back relation recovery");
+
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
             await ExecuteAsync(dataSource, seed);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
@@ -36,6 +44,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(7);
             (await ScalarInt64Async(dataSource, RequiredIndexesSql))
                 .Should().Be(3);
+            (await ScalarInt64Async(dataSource, TriggerCountSql))
+                .Should().Be(1);
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
@@ -45,10 +55,14 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7, "reapplying the seed must replace, not duplicate, fixture rows");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
+            (await ScalarInt64Async(dataSource, TriggerCountSql))
+                .Should().Be(1, "reapplying the seed must not duplicate its migration-owned trigger");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity, "publication ids and bindings must remain stable");
 
+            await AssertChangeTrackingAsync(dataSource);
             var stableFeatureState = await ScalarStringAsync(dataSource, FeatureStateSql);
+            var stableChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
             var failingSeed = RenderSeed(injectFailure: true);
             Func<Task> applyFailure = () => ExecuteAsync(dataSource, failingSeed);
             var failure = await applyFailure.Should().ThrowAsync<PostgresException>();
@@ -61,8 +75,11 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(2, "the failed revision insert must roll back");
             (await ScalarStringAsync(dataSource, FeatureStateSql))
                 .Should().Be(stableFeatureState, "fixture row replacement must roll back with publication changes");
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql))
+                .Should().Be(stableChangeState, "trigger-produced change rows must roll back with the seed");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity);
+            (await ScalarInt64Async(dataSource, TriggerCountSql)).Should().Be(1);
         }
         finally
         {
@@ -106,6 +123,37 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     private static async Task CreateMetadataV2TablesAsync(NpgsqlDataSource dataSource)
         => await ExecuteAsync(dataSource, MetadataV2TablesSql);
 
+    private static async Task CreateChangeTrackingTablesAsync(NpgsqlDataSource dataSource)
+        => await ExecuteAsync(dataSource, ChangeTrackingTablesSql);
+
+    private static async Task InstallCurrentChangeTrackingFunctionsAsync(NpgsqlDataSource dataSource)
+    {
+        var migrationPath = Path.Join(AppContext.BaseDirectory, "Migrations", "105_AddChangeLogPublicObjectId.sql");
+        var migration = File.ReadAllText(migrationPath);
+        var contractStart = migration.IndexOf(
+            "CREATE OR REPLACE FUNCTION honua.resolve_feature_public_objectid(",
+            StringComparison.Ordinal);
+        var contractEnd = migration.IndexOf(
+            "CREATE OR REPLACE FUNCTION honua.track_version_edits()",
+            contractStart,
+            StringComparison.Ordinal);
+        if (contractStart < 0 || contractEnd < 0)
+        {
+            throw new InvalidOperationException("Migration 105 does not contain the current feature change-tracking contract.");
+        }
+
+        await ExecuteAsync(dataSource, migration[contractStart..contractEnd]);
+    }
+
+    private static async Task AssertChangeTrackingAsync(NpgsqlDataSource dataSource)
+    {
+        await ExecuteAsync(dataSource, ChangeTrackingExerciseSql);
+        (await ScalarStringAsync(dataSource, ChangeTrackingOperationsSql))
+            .Should().Be("1:990001,2:990001,3:990001");
+        (await ScalarInt64Async(dataSource, NonIncreasingChangeGenerationCountSql))
+            .Should().Be(0, "insert, update, and delete generations must be strictly increasing");
+    }
+
     private static async Task ExecuteAsync(NpgsqlDataSource dataSource, string sql)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -143,6 +191,15 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
            AND indexname IN ('idx_features_layer_id', 'idx_features_geometry', 'idx_features_attributes')
         """;
 
+    private const string TriggerCountSql =
+        """
+        SELECT count(*)
+          FROM pg_trigger
+         WHERE tgrelid = 'honua.features'::regclass
+           AND tgname = 'trigger_track_feature_changes'
+           AND NOT tgisinternal
+        """;
+
     private const string PublicationIdentitySql =
         """
         SELECT jsonb_agg(
@@ -167,6 +224,69 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                    objectid::text || '|' || layer_id::text || '|' || ST_AsEWKT(geometry) || '|' || attributes::text,
                    E'\n' ORDER BY objectid))
           FROM honua.features
+        """;
+
+    private const string FeatureChangeStateSql =
+        """
+        SELECT count(*)::text || ':' || COALESCE(md5(string_agg(
+                   change_id::text || '|' || generation::text || '|' || layer_id::text || '|' ||
+                   objectid::text || '|' || operation::text,
+                   E'\n' ORDER BY change_id)), '')
+          FROM honua.feature_changes
+        """;
+
+    private const string ChangeTrackingOperationsSql =
+        """
+        SELECT string_agg(operation::text || ':' || public_objectid::text, ',' ORDER BY change_id)
+          FROM honua.feature_changes
+         WHERE layer_id = 90999 AND objectid = 990001
+        """;
+
+    private const string NonIncreasingChangeGenerationCountSql =
+        """
+        SELECT count(*)
+          FROM (
+                SELECT generation,
+                       lag(generation) OVER (ORDER BY change_id) AS previous_generation
+                  FROM honua.feature_changes
+                 WHERE layer_id = 90999 AND objectid = 990001
+               ) changes
+         WHERE previous_generation IS NOT NULL
+           AND generation <= previous_generation
+        """;
+
+    private const string ChangeTrackingExerciseSql =
+        """
+        INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
+        VALUES (990001, 90999, ST_SetSRID(ST_MakePoint(-156.5, 20.8), 4326), '{"stage":"insert"}'::jsonb);
+        UPDATE honua.features
+           SET attributes = '{"stage":"update"}'::jsonb
+         WHERE objectid = 990001 AND layer_id = 90999;
+        DELETE FROM honua.features
+         WHERE objectid = 990001 AND layer_id = 90999;
+        """;
+
+    private const string ChangeTrackingTablesSql =
+        """
+        CREATE SEQUENCE honua.sync_generation;
+        CREATE TABLE honua.layers (
+            layer_id INT PRIMARY KEY,
+            primary_key_column TEXT
+        );
+        CREATE TABLE honua.feature_changes (
+            change_id BIGSERIAL PRIMARY KEY,
+            generation BIGINT NOT NULL,
+            layer_id INT NOT NULL,
+            objectid BIGINT NOT NULL,
+            operation SMALLINT NOT NULL,
+            changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            version_id UUID,
+            actor TEXT,
+            source SMALLINT,
+            operation_name TEXT,
+            source_id TEXT,
+            public_objectid BIGINT
+        );
         """;
 
     private const string MetadataV2TablesSql =
