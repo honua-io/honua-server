@@ -28,7 +28,9 @@ public static class MetadataV2GovernanceExtensions
         {
             License = FirstDefined(resourceMetadata.License, serviceMetadata.License),
             Attribution = FirstDefined(resourceMetadata.Attribution, serviceMetadata.Attribution),
-            ContactPoint = resourceMetadata.ContactPoint ?? serviceMetadata.ContactPoint,
+            ContactPoint = IsDefined(resourceMetadata.ContactPoint)
+                ? resourceMetadata.ContactPoint
+                : serviceMetadata.ContactPoint,
             Links = MergeLinks(
                 resourceMetadata.Links,
                 serviceMetadata.Links,
@@ -39,6 +41,12 @@ public static class MetadataV2GovernanceExtensions
 
     private static string? FirstDefined(string? resourceValue, string? serviceValue)
         => !string.IsNullOrWhiteSpace(resourceValue) ? resourceValue : serviceValue;
+
+    private static bool IsDefined(MetadataV2ContactPoint? contactPoint)
+        => contactPoint is not null &&
+           (!string.IsNullOrWhiteSpace(contactPoint.Name) ||
+            !string.IsNullOrWhiteSpace(contactPoint.Email) ||
+            !string.IsNullOrWhiteSpace(contactPoint.Url));
 
     private static IReadOnlyList<MetadataV2Link> MergeLinks(
         IReadOnlyList<MetadataV2Link> resourceLinks,

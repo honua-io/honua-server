@@ -113,4 +113,29 @@ public sealed class MetadataV2GovernanceExtensionsTests
         effective.Attribution.Should().Be("Service attribution");
         effective.Publisher.Should().BeNull();
     }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void WithServiceGovernanceFallbacks_EmptyResourceContact_InheritsServiceContact()
+    {
+        var serviceContact = new MetadataV2ContactPoint
+        {
+            Name = "Service contact",
+            Email = "support@example.test",
+        };
+        var resourceMetadata = new MetadataV2ObjectMetadata
+        {
+            ContactPoint = new MetadataV2ContactPoint
+            {
+                Name = " ",
+                Email = "\t",
+                Url = "\r\n",
+            },
+        };
+        var serviceMetadata = new MetadataV2ObjectMetadata { ContactPoint = serviceContact };
+
+        var effective = resourceMetadata.WithServiceGovernanceFallbacks(serviceMetadata);
+
+        effective.ContactPoint.Should().BeSameAs(serviceContact);
+    }
 }
