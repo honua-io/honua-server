@@ -18,8 +18,8 @@ ALTER TABLE honua.feature_changes
 -- and the client must create a fresh replica rather than silently miss the delete or retry an
 -- unguardable upload forever. Replicas on ordinary-id layers and custom-id layers with no historical
 -- delete are preserved.
-WITH affected_custom_id_layers AS (
-    SELECT DISTINCT changes.layer_id
+WITH irrecoverable_custom_id_deletes AS (
+    SELECT changes.layer_id, changes.generation
     FROM honua.feature_changes AS changes
     INNER JOIN honua.layers AS layers
         ON layers.layer_id = changes.layer_id
@@ -28,8 +28,12 @@ WITH affected_custom_id_layers AS (
       AND lower(COALESCE(NULLIF(layers.primary_key_column, ''), 'objectid')) <> 'objectid'
 )
 DELETE FROM honua.replicas AS replicas
-USING affected_custom_id_layers AS affected
-WHERE affected.layer_id = ANY(replicas.layer_ids);
+WHERE EXISTS (
+    SELECT 1
+    FROM irrecoverable_custom_id_deletes AS affected
+    WHERE affected.layer_id = ANY(replicas.layer_ids)
+      AND replicas.last_sync_generation < affected.generation
+);
 
 CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_public_objectid
     ON honua.feature_changes(layer_id, public_objectid, generation);
@@ -98,6 +102,7 @@ DECLARE
     lid INT;
     oid BIGINT;
     public_oid BIGINT;
+    previous_public_oid BIGINT;
     row_attributes JSONB;
     op SMALLINT;
     ver TEXT;
@@ -108,9 +113,6 @@ DECLARE
     attr_source_id TEXT;
     raw_source TEXT;
 BEGIN
-    PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
-    gen := nextval('honua.sync_generation');
-
     IF TG_OP = 'INSERT' THEN
         lid := NEW.layer_id;
         oid := NEW.objectid;
@@ -129,6 +131,22 @@ BEGIN
     END IF;
 
     public_oid := honua.resolve_feature_public_objectid(lid, oid, row_attributes);
+    IF TG_OP = 'UPDATE' THEN
+        previous_public_oid := honua.resolve_feature_public_objectid(
+            OLD.layer_id,
+            OLD.objectid,
+            OLD.attributes);
+        IF previous_public_oid IS DISTINCT FROM public_oid THEN
+            RAISE EXCEPTION
+                'Cannot change the public id.primary for layer % object % from % to %',
+                lid, oid, previous_public_oid, public_oid
+                USING ERRCODE = '23514',
+                      HINT = 'The protocol-facing primary object identifier is immutable.';
+        END IF;
+    END IF;
+
+    PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
+    gen := nextval('honua.sync_generation');
 
     ver := current_setting('honua.gdb_version', true);
     IF ver IS NULL OR ver = '' THEN
@@ -168,6 +186,7 @@ RETURNS TRIGGER AS $$
 DECLARE
     gen BIGINT;
     public_oid BIGINT;
+    previous_public_oid BIGINT;
     attr_actor TEXT;
     attr_source SMALLINT;
     attr_operation TEXT;
@@ -178,12 +197,33 @@ BEGIN
         RETURN OLD;
     END IF;
 
-    PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
-    gen := nextval('honua.sync_generation');
     public_oid := honua.resolve_feature_public_objectid(
         NEW.layer_id,
         NEW.objectid,
         COALESCE(NEW.attributes, NEW.base_attributes));
+    IF TG_OP = 'UPDATE' THEN
+        previous_public_oid := honua.resolve_feature_public_objectid(
+            OLD.layer_id,
+            OLD.objectid,
+            COALESCE(OLD.attributes, OLD.base_attributes));
+    ELSIF NEW.operation <> 1 AND NEW.base_attributes IS NOT NULL THEN
+        previous_public_oid := honua.resolve_feature_public_objectid(
+            NEW.layer_id,
+            NEW.objectid,
+            NEW.base_attributes);
+    END IF;
+
+    IF previous_public_oid IS NOT NULL
+       AND previous_public_oid IS DISTINCT FROM public_oid THEN
+        RAISE EXCEPTION
+            'Cannot change the public id.primary for layer % object % from % to %',
+            NEW.layer_id, NEW.objectid, previous_public_oid, public_oid
+            USING ERRCODE = '23514',
+                  HINT = 'The protocol-facing primary object identifier is immutable.';
+    END IF;
+
+    PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
+    gen := nextval('honua.sync_generation');
 
     attr_actor := NULLIF(current_setting('honua.temporal_actor', true), '');
     raw_source := NULLIF(current_setting('honua.temporal_source', true), '');

@@ -194,22 +194,86 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 "the delete trigger should persist the configured public id.primary from OLD attributes");
         }
 
+        // A protocol-facing primary id is an object identity, not an ordinary editable attribute.
+        // Rejecting identity changes prevents the change log from losing the alias that an offline
+        // replica may still use to address the row.
+        await using (var arrangeImmutableCustomIdCmd = connection.CreateCommand())
+        {
+            arrangeImmutableCustomIdCmd.CommandText = """
+                INSERT INTO features (objectid, layer_id, attributes)
+                VALUES (190107, 990105, '{"asset_id": 700107}'::jsonb);
+                """;
+            await arrangeImmutableCustomIdCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var mutateCustomIdCmd = connection.CreateCommand())
+        {
+            mutateCustomIdCmd.CommandText = """
+                UPDATE features
+                SET attributes = jsonb_set(attributes, '{asset_id}', '700108'::jsonb)
+                WHERE objectid = 190107;
+                """;
+            var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(
+                () => mutateCustomIdCmd.ExecuteNonQueryAsync());
+            exception.SqlState.Should().Be(Npgsql.PostgresErrorCodes.CheckViolation);
+            exception.MessageText.Should().Contain("Cannot change the public id.primary");
+        }
+
+        await using (var preservedCustomIdCmd = connection.CreateCommand())
+        {
+            preservedCustomIdCmd.CommandText = """
+                SELECT attributes ->> 'asset_id'
+                FROM features
+                WHERE objectid = 190107;
+                """;
+            var preservedPublicObjectId = (string)(await preservedCustomIdCmd.ExecuteScalarAsync())!;
+            preservedPublicObjectId.Should().Be("700107",
+                "a rejected identity mutation must leave the original row and alias intact");
+        }
+
+        await using (var arrangeImmutableBranchIdCmd = connection.CreateCommand())
+        {
+            arrangeImmutableBranchIdCmd.CommandText = """
+                INSERT INTO honua.gdb_versions (version_id, version_name, owner)
+                VALUES ('00000000-0000-0000-0000-000000990105', 'migration-immutable-id', 'migration');
+                """;
+            await arrangeImmutableBranchIdCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var mutateBranchCustomIdCmd = connection.CreateCommand())
+        {
+            mutateBranchCustomIdCmd.CommandText = """
+                INSERT INTO honua.version_edits
+                    (version_id, layer_id, objectid, operation, attributes, base_attributes)
+                VALUES
+                    ('00000000-0000-0000-0000-000000990105', 990105, 190107, 2,
+                     '{"asset_id": 700108}'::jsonb, '{"asset_id": 700107}'::jsonb);
+                """;
+            var exception = await Assert.ThrowsAsync<Npgsql.PostgresException>(
+                () => mutateBranchCustomIdCmd.ExecuteNonQueryAsync());
+            exception.SqlState.Should().Be(Npgsql.PostgresErrorCodes.CheckViolation);
+            exception.MessageText.Should().Contain("Cannot change the public id.primary");
+        }
+
         // A pre-migration custom-id delete has no surviving row image from which migration 105 can
-        // recover its public alias. Invalidate only replicas whose cursors include that unsafe layer,
-        // forcing those clients to create a fresh replica instead of silently missing the delete.
+        // recover its public alias. Invalidate only replicas whose cursors precede that unsafe
+        // delete, forcing those clients to create a fresh replica instead of silently missing it.
         await using (var arrangeLegacyDeleteCmd = connection.CreateCommand())
         {
             arrangeLegacyDeleteCmd.CommandText = """
-                INSERT INTO honua.replicas
-                    (replica_id, replica_name, service_id, sync_model, layer_ids)
-                VALUES
-                    ('legacy-custom-id', 'legacy custom id', 'test', 'perReplica', ARRAY[990105]),
-                    ('ordinary-id', 'ordinary id', 'test', 'perReplica', ARRAY[0]);
-
                 INSERT INTO honua.feature_changes
                     (generation, layer_id, objectid, public_objectid, operation)
                 VALUES
                     (nextval('honua.sync_generation'), 990105, 190106, NULL, 3);
+
+                INSERT INTO honua.replicas
+                    (replica_id, replica_name, service_id, sync_model, layer_ids, last_sync_generation)
+                VALUES
+                    ('legacy-custom-id', 'legacy custom id', 'test', 'perReplica', ARRAY[990105], 0),
+                    ('caught-up-custom-id', 'caught up custom id', 'test', 'perReplica', ARRAY[990105],
+                        (SELECT MAX(generation) FROM honua.feature_changes
+                         WHERE layer_id = 990105 AND objectid = 190106 AND operation = 3)),
+                    ('ordinary-id', 'ordinary id', 'test', 'perReplica', ARRAY[0], 0);
                 """;
             await arrangeLegacyDeleteCmd.ExecuteNonQueryAsync();
         }
@@ -226,14 +290,15 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             invalidatedReplicaCmd.CommandText = """
                 SELECT replica_id
                 FROM honua.replicas
-                WHERE replica_id IN ('legacy-custom-id', 'ordinary-id')
+                WHERE replica_id IN ('legacy-custom-id', 'caught-up-custom-id', 'ordinary-id')
                 ORDER BY replica_id;
                 """;
             await using var reader = await invalidatedReplicaCmd.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("caught-up-custom-id");
+            (await reader.ReadAsync()).Should().BeTrue();
             reader.GetString(0).Should().Be("ordinary-id");
-            (await reader.ReadAsync()).Should().BeFalse(
-                "only the replica exposed to the irrecoverable custom-id delete is invalidated");
+            (await reader.ReadAsync()).Should().BeFalse();
         }
     }
 
