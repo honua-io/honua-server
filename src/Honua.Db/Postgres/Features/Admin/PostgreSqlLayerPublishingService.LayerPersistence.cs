@@ -12,7 +12,6 @@
 // catalog-mutating SQL stays together and is easy to review for transactional consistency.
 
 using System.Globalization;
-using System.Data.Common;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 using NpgsqlTypes;
@@ -21,52 +20,6 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    /// <summary>
-    /// Reconciles an indeterminate layer-catalog COMMIT through a new connection. A visible
-    /// service-layer link is the transaction's durable success marker; an absent link proves rollback.
-    /// Null means the probe could not establish either outcome and compensation must not run.
-    /// </summary>
-    private static async Task<bool?> TryObserveServiceLayerAsync(
-        string connectionString,
-        string serviceName,
-        int layerId)
-    {
-        const string sql = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM honua.service_layers
-                WHERE service_name = @serviceName
-                    AND layer_id = @layerId
-            );
-            """;
-
-        try
-        {
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@serviceName", serviceName);
-            command.Parameters.AddWithValue("@layerId", layerId);
-            return (bool?)await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false) ?? false;
-        }
-        catch (DbException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
     /// <summary>
     /// Serializes concurrent publishes of the same source table for the duration of
     /// the transaction. honua.layers has no unique constraint on

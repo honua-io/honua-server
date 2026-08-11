@@ -152,7 +152,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var persisted = await _metadataGraphStore
             .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
             .ConfigureAwait(false);
-        return new MetadataV2GraphMutation(graph, persisted.Revision, persisted.Etag);
+        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
     private async Task<MetadataV2GraphMutation?> UpsertLinkedLayerMetadataV2Async(
@@ -183,7 +183,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var persisted = await _metadataGraphStore
             .SaveAsync(updatedGraph, expectedEtag, cancellationToken)
             .ConfigureAwait(false);
-        return new MetadataV2GraphMutation(graph, persisted.Revision, persisted.Etag);
+        return new MetadataV2GraphMutation(graph, updatedGraph, persisted.Etag);
     }
 
     private async Task CompensateMetadataV2MutationAsync(
@@ -192,13 +192,36 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         try
         {
-            var compensatingGraph = BuildCompensatingMetadataV2Graph(
-                mutation.PreviousGraph,
-                mutation.PersistedRevision,
-                DateTimeOffset.UtcNow);
-            await _metadataGraphStore
-                .SaveAsync(compensatingGraph, mutation.PersistedEtag, CancellationToken.None)
-                .ConfigureAwait(false);
+            const int maxAttempts = 4;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                var current = await _metadataGraphStore.GetCurrentAsync(CancellationToken.None).ConfigureAwait(false);
+                var compensatingGraph = string.Equals(current.Etag, mutation.PersistedEtag, StringComparison.Ordinal)
+                    ? BuildCompensatingMetadataV2Graph(
+                        mutation.PreviousGraph,
+                        current.Revision,
+                        DateTimeOffset.UtcNow)
+                    : BuildRebasedCompensatingMetadataV2Graph(
+                        current.Graph,
+                        mutation.PreviousGraph,
+                        mutation.PersistedGraph,
+                        DateTimeOffset.UtcNow);
+
+                try
+                {
+                    await _metadataGraphStore
+                        .SaveAsync(compensatingGraph, current.Etag, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return;
+                }
+                catch (InvalidOperationException compensationException)
+                    when (attempt < maxAttempts && IsMetadataEtagMismatch(compensationException))
+                {
+                    // Another graph writer won after our read. Reload and rebase the inverse mutation
+                    // again so its unrelated additions survive while this failed publication is
+                    // removed.
+                }
+            }
         }
         catch (DbException compensationException)
         {
@@ -216,7 +239,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             throw BuildCompensationFailure(commitException, compensationException);
         }
+
+        throw new InvalidOperationException("Metadata v2 compensation exhausted its retry budget.");
     }
+
+    private static bool IsMetadataEtagMismatch(InvalidOperationException exception)
+        => exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
 
     private static AggregateException BuildCompensationFailure(
         Exception commitException,
@@ -236,6 +264,109 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Revision = Math.Max(persistedRevision + 1, previousGraph.Revision + 1),
             GeneratedAt = now
+        };
+    }
+
+    /// <summary>
+    /// Rebases the inverse of one failed layer-publication mutation onto a newer graph revision. Only
+    /// identities introduced by that mutation are removed; unrelated resources/publications written
+    /// after it remain intact.
+    /// </summary>
+    internal static MetadataV2Graph BuildRebasedCompensatingMetadataV2Graph(
+        MetadataV2Graph currentGraph,
+        MetadataV2Graph previousGraph,
+        MetadataV2Graph persistedGraph,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(currentGraph);
+        ArgumentNullException.ThrowIfNull(previousGraph);
+        ArgumentNullException.ThrowIfNull(persistedGraph);
+
+        var previousPublicationIds = previousGraph.Publications
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedPublicationIds = persistedGraph.Publications
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousPublicationIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var publications = currentGraph.Publications
+            .Where(item => !addedPublicationIds.Contains(item.Metadata.Id))
+            .ToArray();
+
+        var previousServiceIds = previousGraph.Services
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedServiceIds = persistedGraph.Services
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousServiceIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var services = currentGraph.Services
+            .Select(service => service with
+            {
+                PublicationIds = service.PublicationIds
+                    .Where(id => !addedPublicationIds.Contains(id))
+                    .ToArray()
+            })
+            .Where(service => !addedServiceIds.Contains(service.Metadata.Id) ||
+                publications.Any(publication =>
+                    string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)) ||
+                service.PublicationIds.Count > 0)
+            .ToArray();
+
+        var previousResourceIds = previousGraph.Resources
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedResourceIds = persistedGraph.Resources
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousResourceIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var resources = currentGraph.Resources
+            .Where(resource => !addedResourceIds.Contains(resource.Metadata.Id) ||
+                publications.Any(publication =>
+                    string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)) ||
+                currentGraph.Resources.Any(other =>
+                    !addedResourceIds.Contains(other.Metadata.Id) &&
+                    other.StyleResourceIds.Contains(resource.Metadata.Id, StringComparer.Ordinal)))
+            .ToArray();
+
+        var previousBindingIds = previousGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedBindingIds = persistedGraph.StorageBindings
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousBindingIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var bindings = currentGraph.StorageBindings
+            .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
+                publications.Any(publication =>
+                    string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)) ||
+                resources.Any(resource =>
+                    string.Equals(resource.PrimaryStorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) ||
+                    resource.StorageBindingIds.Contains(binding.Metadata.Id, StringComparer.Ordinal)))
+            .ToArray();
+
+        var previousConnectionIds = previousGraph.Connections
+            .Select(item => item.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var addedConnectionIds = persistedGraph.Connections
+            .Select(item => item.Metadata.Id)
+            .Where(id => !previousConnectionIds.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var connections = currentGraph.Connections
+            .Where(connection => !addedConnectionIds.Contains(connection.Metadata.Id) ||
+                bindings.Any(binding =>
+                    string.Equals(binding.ConnectionId, connection.Metadata.Id, StringComparison.Ordinal)))
+            .ToArray();
+
+        return currentGraph with
+        {
+            Revision = Math.Max(currentGraph.Revision + 1, persistedGraph.Revision + 1),
+            GeneratedAt = now,
+            Services = services,
+            Resources = resources,
+            StorageBindings = bindings,
+            Publications = publications,
+            Connections = connections,
         };
     }
 

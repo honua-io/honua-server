@@ -274,6 +274,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
@@ -361,12 +364,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
         catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
         {
-            // A dropped COMMIT acknowledgement does not prove rollback. Re-read through a fresh
-            // connection: a visible service-layer link proves the transaction committed, while an
-            // absent link proves it did not and makes graph compensation safe. If the probe itself
-            // cannot decide, retain the graph for reconciliation instead of deleting metadata for a
-            // layer that may already be durable.
-            var commitVisible = await TryObserveServiceLayerAsync(connectionString, serviceName, layerId)
+            // A dropped COMMIT acknowledgement does not prove rollback. PostgreSQL's xid status is
+            // the marker for this exact transaction, unlike an idempotent service-layer row that may
+            // have existed before it began.
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
                 .ConfigureAwait(false);
             if (commitVisible == false)
             {
@@ -424,6 +426,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var transactionId = await PostgresTransactionOutcomeObserver
+            .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         var layer = await GetLayerSummaryByIdAsync(connection, transaction, layerId, cancellationToken)
             .ConfigureAwait(false);
@@ -460,7 +465,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
         catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
         {
-            var commitVisible = await TryObserveServiceLayerAsync(connectionString, normalizedService, layerId)
+            var commitVisible = await PostgresTransactionOutcomeObserver
+                .TryObserveCommitAsync(connectionString, transactionId)
                 .ConfigureAwait(false);
             if (commitVisible == false)
             {
@@ -768,6 +774,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private sealed record MetadataV2GraphMutation(
         MetadataV2Graph PreviousGraph,
-        long PersistedRevision,
+        MetadataV2Graph PersistedGraph,
         string PersistedEtag);
 }

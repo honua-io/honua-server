@@ -6,11 +6,22 @@ using System.Reflection;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
 public sealed class PostgreSqlLayerPublishingServiceSqlTests
 {
+    [Theory]
+    [InlineData("committed", true)]
+    [InlineData("aborted", false)]
+    [InlineData("in progress", null)]
+    [InlineData(null, null)]
+    public void InterpretTransactionStatus_ClassifiesOnlyTerminalOutcomes(string? status, bool? expected)
+    {
+        PostgresTransactionOutcomeObserver.InterpretStatus(status).Should().Be(expected);
+    }
+
     [Fact]
     public void BuildCompensatingMetadataV2Graph_RestoresContentAtANewRevision()
     {
@@ -41,6 +52,113 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         compensation.Services.Should().BeEquivalentTo(original.Services);
         compensation.Publications.Should().BeEquivalentTo(original.Publications);
         compensation.StorageBindings.Should().BeEquivalentTo(original.StorageBindings);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RemovesFailedMutationAndPreservesConcurrentWriter()
+    {
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-shared" },
+                    PublicationIds = ["pub-original"],
+                },
+            ],
+            Publications =
+            [
+                CreatePublication(
+                    "pub-original",
+                    "service-shared",
+                    "resource-original",
+                    "binding-original",
+                    1,
+                    MetadataV2PublicationType.EsriFeatureLayer),
+            ],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Services =
+            [
+                previous.Services[0] with { PublicationIds = ["pub-original", "pub-failed"] },
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-failed" } },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-failed" },
+                    ResourceId = "resource-failed",
+                },
+            ],
+            Publications =
+            [
+                previous.Publications[0],
+                CreatePublication(
+                    "pub-failed",
+                    "service-shared",
+                    "resource-failed",
+                    "binding-failed",
+                    2,
+                    MetadataV2PublicationType.EsriFeatureLayer),
+            ],
+        };
+        var concurrentPublication = CreatePublication(
+            "pub-concurrent",
+            "service-shared",
+            "resource-concurrent",
+            "binding-concurrent",
+            3,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var current = persisted with
+        {
+            Revision = 9,
+            Services =
+            [
+                persisted.Services[0] with
+                {
+                    PublicationIds = ["pub-original", "pub-failed", "pub-concurrent"],
+                },
+            ],
+            Resources =
+            [
+                .. persisted.Resources,
+                new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource-concurrent" } },
+            ],
+            StorageBindings =
+            [
+                .. persisted.StorageBindings,
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-concurrent" },
+                    ResourceId = "resource-concurrent",
+                },
+            ],
+            Publications = [.. persisted.Publications, concurrentPublication],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:00:00Z", CultureInfo.InvariantCulture));
+
+        compensation.Revision.Should().Be(10);
+        compensation.Publications.Select(item => item.Metadata.Id)
+            .Should().Equal("pub-original", "pub-concurrent");
+        compensation.Resources.Select(item => item.Metadata.Id)
+            .Should().Equal("resource-concurrent");
+        compensation.StorageBindings.Select(item => item.Metadata.Id)
+            .Should().Equal("binding-concurrent");
+        compensation.Services.Should().ContainSingle().Which.PublicationIds
+            .Should().Equal("pub-original", "pub-concurrent");
     }
 
     [Fact]
