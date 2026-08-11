@@ -16,6 +16,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -356,7 +357,27 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            await transaction.CommitSafelyAsync(cancellationToken);
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            // A dropped COMMIT acknowledgement does not prove rollback. Re-read through a fresh
+            // connection: a visible service-layer link proves the transaction committed, while an
+            // absent link proves it did not and makes graph compensation safe. If the probe itself
+            // cannot decide, retain the graph for reconciliation instead of deleting metadata for a
+            // layer that may already be durable.
+            var commitVisible = await TryObserveServiceLayerAsync(connectionString, serviceName, layerId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
         }
         catch (Exception commitException) when (metadataMutation is not null)
         {
@@ -435,7 +456,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     .ConfigureAwait(false);
             }
 
-            await transaction.CommitSafelyAsync(cancellationToken);
+            await FeatureDataAccess.CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureEditCommitOutcomeUnknownException commitException) when (metadataMutation is not null)
+        {
+            var commitVisible = await TryObserveServiceLayerAsync(connectionString, normalizedService, layerId)
+                .ConfigureAwait(false);
+            if (commitVisible == false)
+            {
+                await CompensateMetadataV2MutationAsync(metadataMutation, commitException).ConfigureAwait(false);
+                throw;
+            }
+
+            if (commitVisible is null)
+            {
+                throw;
+            }
         }
         catch (Exception commitException) when (metadataMutation is not null)
         {

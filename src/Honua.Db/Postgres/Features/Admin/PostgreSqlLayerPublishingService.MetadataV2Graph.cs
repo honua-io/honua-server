@@ -344,6 +344,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
         if (service is null && matchingFeatureServices.Length > 1)
         {
+            var protocolEnabledServices = matchingFeatureServices
+                .Where(candidate => MetadataV2ServiceProtocols.IsProtocolEnabled(
+                    candidate,
+                    MetadataV2ServiceProtocols.FeatureServer))
+                .ToArray();
+            service = protocolEnabledServices.Length == 1 ? protocolEnabledServices[0] : null;
+        }
+
+        if (service is null && matchingFeatureServices.Length > 1)
+        {
             var publishedFeatureServices = matchingFeatureServices
                 .Where(candidate => graph.Publications.Any(publication =>
                     string.Equals(publication.ServiceId, candidate.Metadata.Id, StringComparison.Ordinal) &&

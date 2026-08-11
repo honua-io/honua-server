@@ -174,6 +174,61 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void IndexSourceGovernanceByStorageLayer_WithDisabledSameNameFeatureService_UsesEnabledService()
+    {
+        var disabledMetadata = new MetadataV2ObjectMetadata { Id = "resource-disabled", License = "MIT" };
+        var enabledMetadata = new MetadataV2ObjectMetadata { Id = "resource-enabled", License = "CC-BY-4.0" };
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-disabled", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.OgcFeatures]
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service-enabled", Name = "shared" },
+                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    Protocols = [ServiceProtocols.FeatureServer]
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource { Metadata = disabledMetadata },
+                new MetadataV2Resource { Metadata = enabledMetadata }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-disabled" },
+                    ResourceId = "resource-disabled",
+                    StorageLayerId = 7
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-enabled" },
+                    ResourceId = "resource-enabled",
+                    StorageLayerId = 8
+                }
+            ],
+            Publications =
+            [
+                CreatePublication("pub-disabled", "service-disabled", "resource-disabled", "binding-disabled", 0, MetadataV2PublicationType.EsriFeatureLayer),
+                CreatePublication("pub-enabled", "service-enabled", "resource-enabled", "binding-enabled", 0, MetadataV2PublicationType.EsriFeatureLayer)
+            ]
+        };
+
+        var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
+
+        result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(8, enabledMetadata));
+    }
+
+    [Fact]
     public void IndexSourceGovernanceByStorageLayer_WithProtocolAggregateAndDedicatedFeatureServices_UsesDedicatedFeatureResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
