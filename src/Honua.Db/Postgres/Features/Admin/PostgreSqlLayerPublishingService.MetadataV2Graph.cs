@@ -611,11 +611,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.Symbology3D,
                 persisted.Symbology3D,
                 static value => new MetadataV2Resource { Symbology3D = value }),
-            StyleResourceIds = RestoreResourceMutationValue(
+            StyleResourceIds = RestoreMutationSequence(
                 current.StyleResourceIds,
                 previous.StyleResourceIds,
-                persisted.StyleResourceIds,
-                static value => new MetadataV2Resource { StyleResourceIds = value }),
+                persisted.StyleResourceIds),
             Style = RestoreResourceMutationValue(
                 current.Style,
                 previous.Style,
@@ -799,16 +798,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.Tags,
                 persisted.Tags,
                 static value => new MetadataV2ObjectMetadata { Tags = value }),
-            Labels = RestoreMetadataMutationValue(
+            Labels = RestoreMetadataMapMutation(
                 current.Labels,
                 previous.Labels,
-                persisted.Labels,
-                static value => new MetadataV2ObjectMetadata { Labels = value }),
-            Annotations = RestoreMetadataMutationValue(
+                persisted.Labels),
+            Annotations = RestoreMetadataMapMutation(
                 current.Annotations,
                 previous.Annotations,
-                persisted.Annotations,
-                static value => new MetadataV2ObjectMetadata { Annotations = value }),
+                persisted.Annotations),
             Generation = RestoreMutationValue(current.Generation, previous.Generation, persisted.Generation),
             CreatedAt = RestoreMutationValue(current.CreatedAt, previous.CreatedAt, persisted.CreatedAt),
             UpdatedAt = RestoreMutationValue(current.UpdatedAt, previous.UpdatedAt, persisted.UpdatedAt),
@@ -838,36 +835,62 @@ internal sealed partial class PostgreSqlLayerPublishingService
         IReadOnlyList<MetadataV2Link> previous,
         IReadOnlyList<MetadataV2Link> persisted)
     {
-        var currentByIdentity = IndexMetadataLinks(current);
-        var persistedByIdentity = IndexMetadataLinks(persisted);
-        var restored = new List<MetadataV2Link>(previous.Count + current.Count);
-        var handled = new HashSet<MetadataLinkIdentity>();
+        var previousToPersisted = AlignMetadataLinks(previous, persisted);
+        var persistedToPrevious = previousToPersisted.ToDictionary(
+            match => match.RightIndex,
+            match => match.LeftIndex);
+        var persistedToCurrent = AlignMetadataLinks(persisted, current);
+        var currentToPersisted = persistedToCurrent.ToDictionary(
+            match => match.RightIndex,
+            match => match.LeftIndex);
+        var restored = new List<RestoredMetadataLink>(previous.Count + current.Count);
 
-        foreach (var (identity, previousLink) in EnumerateMetadataLinks(previous))
+        for (var currentIndex = 0; currentIndex < current.Count; currentIndex++)
         {
-            handled.Add(identity);
-            var hasCurrent = currentByIdentity.TryGetValue(identity, out var currentLink);
-            if (!persistedByIdentity.TryGetValue(identity, out var persistedLink))
+            if (!currentToPersisted.TryGetValue(currentIndex, out var persistedIndex))
             {
-                restored.Add(hasCurrent ? currentLink! : previousLink);
+                restored.Add(new RestoredMetadataLink(current[currentIndex], null));
                 continue;
             }
 
-            if (hasCurrent)
+            if (persistedToPrevious.TryGetValue(persistedIndex, out var previousIndex))
             {
-                restored.Add(RestoreMetadataLinkMutation(currentLink!, previousLink, persistedLink));
+                restored.Add(new RestoredMetadataLink(
+                    RestoreMetadataLinkMutation(
+                        current[currentIndex],
+                        previous[previousIndex],
+                        persisted[persistedIndex]),
+                    previousIndex));
             }
+            // Links introduced by the failed publication are omitted. An unmatched
+            // current link is a concurrent insertion and was preserved above.
         }
 
-        foreach (var (identity, currentLink) in EnumerateMetadataLinks(current))
+        var matchedPreviousIndices = previousToPersisted
+            .Select(match => match.LeftIndex)
+            .ToHashSet();
+        for (var previousIndex = 0; previousIndex < previous.Count; previousIndex++)
         {
-            if (!handled.Contains(identity) && !persistedByIdentity.ContainsKey(identity))
+            if (matchedPreviousIndices.Contains(previousIndex))
             {
-                restored.Add(currentLink);
+                continue;
             }
+
+            var recreatedIndex = restored.FindIndex(item =>
+                item.PreviousIndex is null && item.Link == previous[previousIndex]);
+            if (recreatedIndex >= 0)
+            {
+                restored[recreatedIndex] = restored[recreatedIndex] with { PreviousIndex = previousIndex };
+                continue;
+            }
+
+            var insertionIndex = restored.FindIndex(item => item.PreviousIndex > previousIndex);
+            restored.Insert(
+                insertionIndex >= 0 ? insertionIndex : restored.Count,
+                new RestoredMetadataLink(previous[previousIndex], previousIndex));
         }
 
-        return restored;
+        return restored.Select(item => item.Link).ToList();
     }
 
     private static MetadataV2Link RestoreMetadataLinkMutation(
@@ -884,20 +907,113 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ManagedBy = RestoreMutationValue(current.ManagedBy, previous.ManagedBy, persisted.ManagedBy),
         };
 
-    private static Dictionary<MetadataLinkIdentity, MetadataV2Link> IndexMetadataLinks(
-        IReadOnlyList<MetadataV2Link> links)
-        => EnumerateMetadataLinks(links).ToDictionary(item => item.Identity, item => item.Link);
-
-    private static IEnumerable<(MetadataLinkIdentity Identity, MetadataV2Link Link)> EnumerateMetadataLinks(
-        IReadOnlyList<MetadataV2Link> links)
+    private static List<MetadataLinkMatch> AlignMetadataLinks(
+        IReadOnlyList<MetadataV2Link> left,
+        IReadOnlyList<MetadataV2Link> right)
     {
-        for (var index = 0; index < links.Count; index++)
+        const int gapPenalty = -2;
+        var scores = new int[left.Count + 1, right.Count + 1];
+        var moves = new byte[left.Count + 1, right.Count + 1];
+        for (var leftIndex = 1; leftIndex <= left.Count; leftIndex++)
         {
-            yield return (new MetadataLinkIdentity(index), links[index]);
+            scores[leftIndex, 0] = scores[leftIndex - 1, 0] + gapPenalty;
+            moves[leftIndex, 0] = 2;
         }
+
+        for (var rightIndex = 1; rightIndex <= right.Count; rightIndex++)
+        {
+            scores[0, rightIndex] = scores[0, rightIndex - 1] + gapPenalty;
+            moves[0, rightIndex] = 3;
+        }
+
+        for (var leftIndex = 1; leftIndex <= left.Count; leftIndex++)
+        {
+            for (var rightIndex = 1; rightIndex <= right.Count; rightIndex++)
+            {
+                var similarity = GetMetadataLinkSimilarity(left[leftIndex - 1], right[rightIndex - 1]);
+                var matchScore = similarity > 0
+                    ? scores[leftIndex - 1, rightIndex - 1] + similarity + 4
+                    : int.MinValue;
+                var skipLeftScore = scores[leftIndex - 1, rightIndex] + gapPenalty;
+                var skipRightScore = scores[leftIndex, rightIndex - 1] + gapPenalty;
+                if (matchScore >= skipLeftScore && matchScore >= skipRightScore)
+                {
+                    scores[leftIndex, rightIndex] = matchScore;
+                    moves[leftIndex, rightIndex] = 1;
+                }
+                else if (skipLeftScore >= skipRightScore)
+                {
+                    scores[leftIndex, rightIndex] = skipLeftScore;
+                    moves[leftIndex, rightIndex] = 2;
+                }
+                else
+                {
+                    scores[leftIndex, rightIndex] = skipRightScore;
+                    moves[leftIndex, rightIndex] = 3;
+                }
+            }
+        }
+
+        var matches = new List<MetadataLinkMatch>(Math.Min(left.Count, right.Count));
+        var leftCursor = left.Count;
+        var rightCursor = right.Count;
+        while (leftCursor > 0 || rightCursor > 0)
+        {
+            switch (moves[leftCursor, rightCursor])
+            {
+                case 1:
+                    matches.Add(new MetadataLinkMatch(leftCursor - 1, rightCursor - 1));
+                    leftCursor--;
+                    rightCursor--;
+                    break;
+                case 2:
+                    leftCursor--;
+                    break;
+                default:
+                    rightCursor--;
+                    break;
+            }
+        }
+
+        matches.Reverse();
+        return matches;
     }
 
-    private readonly record struct MetadataLinkIdentity(int Index);
+    private static int GetMetadataLinkSimilarity(MetadataV2Link left, MetadataV2Link right)
+    {
+        var score = 0;
+        if (string.Equals(left.Href, right.Href, StringComparison.Ordinal))
+        {
+            score += 8;
+        }
+        if (string.Equals(left.Rel, right.Rel, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 5;
+        }
+        if (left.ManagedBy is not null &&
+            string.Equals(left.ManagedBy, right.ManagedBy, StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+        if (left.Type is not null && string.Equals(left.Type, right.Type, StringComparison.Ordinal))
+        {
+            score += 2;
+        }
+        if (left.Title is not null && string.Equals(left.Title, right.Title, StringComparison.Ordinal))
+        {
+            score += 2;
+        }
+        if (left.Hreflang is not null && string.Equals(left.Hreflang, right.Hreflang, StringComparison.Ordinal))
+        {
+            score += 2;
+        }
+
+        return score;
+    }
+
+    private readonly record struct MetadataLinkMatch(int LeftIndex, int RightIndex);
+
+    private readonly record struct RestoredMetadataLink(MetadataV2Link Link, int? PreviousIndex);
 
     private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
         MetadataV2ResourceSpatial? current,
@@ -1120,6 +1236,49 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // Preserve values introduced by a later writer, but omit values introduced only by the
             // failed mutation.
             restored.Add(currentItem);
+        }
+
+        return restored;
+    }
+
+    private static IReadOnlyDictionary<string, string> RestoreMetadataMapMutation(
+        IReadOnlyDictionary<string, string> current,
+        IReadOnlyDictionary<string, string> previous,
+        IReadOnlyDictionary<string, string> persisted)
+    {
+        var restored = new Dictionary<string, string>(current, StringComparer.Ordinal);
+        foreach (var key in previous.Keys.Concat(persisted.Keys).Distinct(StringComparer.Ordinal))
+        {
+            var hadPrevious = previous.TryGetValue(key, out var previousValue);
+            var wasPersisted = persisted.TryGetValue(key, out var persistedValue);
+            if (hadPrevious == wasPersisted &&
+                (!hadPrevious || string.Equals(previousValue, persistedValue, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var hasCurrent = current.TryGetValue(key, out var currentValue);
+            if (!wasPersisted)
+            {
+                if (hadPrevious && !hasCurrent)
+                {
+                    restored[key] = previousValue!;
+                }
+
+                continue;
+            }
+
+            if (hasCurrent && string.Equals(currentValue, persistedValue, StringComparison.Ordinal))
+            {
+                if (hadPrevious)
+                {
+                    restored[key] = previousValue!;
+                }
+                else
+                {
+                    restored.Remove(key);
+                }
+            }
         }
 
         return restored;

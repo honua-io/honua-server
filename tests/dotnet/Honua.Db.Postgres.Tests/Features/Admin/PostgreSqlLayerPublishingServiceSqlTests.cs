@@ -527,11 +527,18 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Publisher = "Original publisher",
                 CreatedAt = originalAt,
                 UpdatedAt = originalAt,
+                Labels = new Dictionary<string, string>
+                {
+                    ["restored"] = "original",
+                    ["edited"] = "original",
+                },
+                Annotations = new Dictionary<string, string> { ["restored"] = "original" },
                 Links = [previousLink],
             },
             StorageBindingIds = ["binding-imported"],
             PrimaryStorageBindingId = "binding-imported",
             SchemaFields = [previousField],
+            StyleResourceIds = ["style-original"],
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -554,11 +561,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Name = "Published resource",
                 Publisher = null,
                 UpdatedAt = publishedAt,
+                Labels = new Dictionary<string, string> { ["edited"] = "failed" },
+                Annotations = new Dictionary<string, string>(),
                 Links = [persistedLink],
             },
             StorageBindingIds = ["binding-generated"],
             PrimaryStorageBindingId = "binding-generated",
             SchemaFields = [persistedField],
+            StyleResourceIds = ["style-failed"],
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
@@ -580,9 +590,16 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Metadata = persistedResource.Metadata with
             {
                 Publisher = "Concurrent Data Office",
-                Links = [concurrentlyEditedFailedLink, concurrentLink],
+                Labels = new Dictionary<string, string>
+                {
+                    ["edited"] = "concurrent",
+                    ["concurrent"] = "added",
+                },
+                Annotations = new Dictionary<string, string> { ["concurrent"] = "added" },
+                Links = [concurrentLink, concurrentlyEditedFailedLink],
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
+            StyleResourceIds = ["style-failed", "style-concurrent"],
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
         var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
@@ -599,17 +616,29 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
+        resource.Metadata.Labels.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["restored"] = "original",
+            ["edited"] = "concurrent",
+            ["concurrent"] = "added",
+        });
+        resource.Metadata.Annotations.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["restored"] = "original",
+            ["concurrent"] = "added",
+        });
         resource.Metadata.Links.Should().Equal(
+            concurrentLink,
             previousLink with
             {
                 Rel = "alternate",
                 Title = "Concurrent title",
                 ManagedBy = "concurrent-writer",
-            },
-            concurrentLink);
+            });
         resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);
+        resource.StyleResourceIds.Should().Equal("style-original", "style-concurrent");
         resource.Spatial!.SpatialReference.Should().Be(previousResource.Spatial!.SpatialReference);
         resource.Spatial.GeometryType.Should().Be(previousResource.Spatial.GeometryType);
         resource.Spatial.PrimaryGeometryField.Should().Be(previousResource.Spatial.PrimaryGeometryField);
