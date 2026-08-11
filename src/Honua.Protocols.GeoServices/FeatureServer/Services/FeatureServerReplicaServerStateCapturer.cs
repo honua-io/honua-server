@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -23,10 +25,18 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerStateCapturer
 {
     private readonly IFeatureReader _featureReader;
+    private readonly IFilterExpressionService _filterExpressionService;
+    private readonly IReadOnlyDictionary<int, MetadataV2Resource> _resourcesByPublicLayerId;
 
-    public FeatureServerReplicaServerStateCapturer(IFeatureReader featureReader)
+    public FeatureServerReplicaServerStateCapturer(
+        IFeatureReader featureReader,
+        IFilterExpressionService filterExpressionService,
+        IReadOnlyDictionary<int, MetadataV2Resource> resourcesByPublicLayerId)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
+        _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
+        _resourcesByPublicLayerId = resourcesByPublicLayerId
+            ?? throw new ArgumentNullException(nameof(resourcesByPublicLayerId));
     }
 
     public async Task<IReadOnlyDictionary<(int PublicLayerId, long ObjectId), string>> CaptureAsync(
@@ -47,9 +57,7 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
                 continue;
             }
 
-            var feature = await _featureReader
-                .GetAsync(target.StorageLayerId, target.ObjectId, cancellationToken)
-                .ConfigureAwait(false);
+            var feature = await ResolveAsync(target, cancellationToken).ConfigureAwait(false);
             if (feature is { } found)
             {
                 states[key] = FeatureServerEndpoints.CaptureStateEnvelope(found);
@@ -77,9 +85,7 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
                 continue;
             }
 
-            var feature = await _featureReader
-                .GetAsync(target.StorageLayerId, target.ObjectId, cancellationToken)
-                .ConfigureAwait(false);
+            var feature = await ResolveAsync(target, cancellationToken).ConfigureAwait(false);
             if (feature is { } found)
             {
                 tokens[target.ObjectId] = FeatureStateToken.Compute(found);
@@ -87,5 +93,23 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
         }
 
         return tokens;
+    }
+
+    private Task<Feature?> ResolveAsync(
+        ReplicaConflictCaptureTarget target,
+        CancellationToken cancellationToken)
+    {
+        if (!_resourcesByPublicLayerId.TryGetValue(target.PublicLayerId, out var resource))
+        {
+            return Task.FromResult<Feature?>(null);
+        }
+
+        return GeoServicesFeatureObjectIdResolver.ResolveAsync(
+            _featureReader,
+            _filterExpressionService,
+            resource,
+            target.StorageLayerId,
+            target.ObjectId,
+            cancellationToken);
     }
 }

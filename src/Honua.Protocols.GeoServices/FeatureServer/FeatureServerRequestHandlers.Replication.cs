@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Configuration;
 using System.Collections.Immutable;
 using Honua.Infrastructure.Licensing;
@@ -1120,7 +1121,14 @@ internal static partial class FeatureServerEndpoints
                 // yet missing from the snapshot, so a later keep-server resolution silently discarded it
                 // (#2430).
                 var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-                var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(featureReader);
+                var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+                var resourcesByPublicLayerId = replicaLayers
+                    .DistinctBy(static layer => layer.PublicLayerId)
+                    .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
+                var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(
+                    featureReader,
+                    filterExpressionService,
+                    resourcesByPublicLayerId);
 
                 var syncRequest = new ReplicaSyncRequest(
                     ReplicaId: replicaId,

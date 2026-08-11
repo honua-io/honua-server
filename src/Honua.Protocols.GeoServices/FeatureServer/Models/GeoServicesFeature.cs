@@ -33,4 +33,11 @@ public sealed class GeoServicesFeature
     /// </summary>
     [JsonIgnore]
     public bool IncludeGeometry { get; init; } = true;
+
+    /// <summary>
+    /// Internal edit intent that distinguishes restoring an explicit null geometry from an
+    /// ordinary attribute-only update whose geometry was omitted.
+    /// </summary>
+    [JsonIgnore]
+    internal bool ClearGeometry { get; init; }
 }

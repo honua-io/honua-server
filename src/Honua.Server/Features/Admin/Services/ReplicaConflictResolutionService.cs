@@ -297,7 +297,12 @@ internal sealed partial class ReplicaConflictResolutionService
                 claimed.StorageLayerId is { } tokenLayerId)
             {
                 var snapshot = await _applier
-                    .CaptureStateTokenAsync(tokenLayerId, claimed.ObjectId, cancellationToken)
+                    .CaptureStateTokenAsync(
+                        claimed.ServiceId,
+                        claimed.LayerId,
+                        tokenLayerId,
+                        claimed.ObjectId,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 expectedStateToken = snapshot.StateToken;
                 expectedRowAbsent = !snapshot.Exists;
@@ -949,12 +954,22 @@ internal sealed partial class ReplicaConflictResolutionService
             // real edit from the probe. Reading it between the two state reads gives both, because the
             // confirmation covers the whole span (#2430).
             var snapshot = await _applier
-                .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
+                .CaptureStateTokenAsync(
+                    conflict.ServiceId,
+                    conflict.LayerId,
+                    storageLayerId,
+                    conflict.ObjectId,
+                    cancellationToken)
                 .ConfigureAwait(false);
             var generation = await _changeTracker.GetCurrentGenerationAsync(cancellationToken)
                 .ConfigureAwait(false);
             var confirmation = await _applier
-                .CaptureStateTokenAsync(storageLayerId, conflict.ObjectId, cancellationToken)
+                .CaptureStateTokenAsync(
+                    conflict.ServiceId,
+                    conflict.LayerId,
+                    storageLayerId,
+                    conflict.ObjectId,
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (confirmation.Exists != snapshot.Exists ||
                 !string.Equals(confirmation.StateToken, snapshot.StateToken, StringComparison.Ordinal))

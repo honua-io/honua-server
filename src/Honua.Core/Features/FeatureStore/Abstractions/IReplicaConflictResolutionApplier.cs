@@ -54,6 +54,19 @@ public interface IReplicaConflictResolutionApplier
         int storageLayerId,
         long objectId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the conflicting feature using its service-local, protocol-facing identity. Protocol
+    /// adapters with custom public object-id fields override this overload to translate that value to
+    /// the stored row before computing the token.
+    /// </summary>
+    Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
+        string serviceId,
+        int publicLayerId,
+        int storageLayerId,
+        long objectId,
+        CancellationToken cancellationToken = default)
+        => CaptureStateTokenAsync(storageLayerId, objectId, cancellationToken);
 }
 
 /// <summary>

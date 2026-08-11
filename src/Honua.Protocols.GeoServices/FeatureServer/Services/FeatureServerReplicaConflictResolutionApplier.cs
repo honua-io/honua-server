@@ -6,7 +6,9 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -43,17 +45,20 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     private readonly FeatureServerEditsHandler _editsHandler;
     private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
+    private readonly IFilterExpressionService _filterExpressionService;
     private readonly EditLimits _editLimits;
 
     public FeatureServerReplicaConflictResolutionApplier(
         FeatureServerEditsHandler editsHandler,
         IResourceValidator resourceValidator,
         IFeatureReader featureReader,
+        IFilterExpressionService filterExpressionService,
         IOptions<LimitsOptions> limits)
     {
         _editsHandler = editsHandler ?? throw new ArgumentNullException(nameof(editsHandler));
         _resourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
+        _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         _editLimits = (limits ?? throw new ArgumentNullException(nameof(limits))).Value.Edits;
     }
 
@@ -168,11 +173,44 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             : new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
     }
 
+    /// <inheritdoc />
+    public async Task<ReplicaConflictRowSnapshot> CaptureStateTokenAsync(
+        string serviceId,
+        int publicLayerId,
+        int storageLayerId,
+        long objectId,
+        CancellationToken cancellationToken = default)
+    {
+        var identity = await ResolveLayerAsync(serviceId, publicLayerId, cancellationToken).ConfigureAwait(false);
+        if (identity is null)
+        {
+            return new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
+        }
+
+        var current = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
+                _featureReader,
+                _filterExpressionService,
+                identity.Value.Resource,
+                storageLayerId,
+                objectId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return current is { } row
+            ? new ReplicaConflictRowSnapshot(
+                Exists: true,
+                FeatureStateToken.Compute(row),
+                FeatureServerEndpoints.CaptureStateEnvelope(row))
+            : new ReplicaConflictRowSnapshot(Exists: false, StateToken: null, StateJson: null);
+    }
+
     /// <summary>
     /// The layer's configured object-id field plus the names it actually declares, used to decide which
     /// attributes carry identity and which are business data.
     /// </summary>
-    private readonly record struct LayerIdentity(string ObjectIdField, HashSet<string> SchemaFields);
+    private readonly record struct LayerIdentity(
+        string ObjectIdField,
+        HashSet<string> SchemaFields,
+        MetadataV2Resource Resource);
 
     /// <summary>
     /// Resolves the object-id field of the layer as published by this service, together with its
@@ -197,7 +235,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
 
         return new LayerIdentity(
             GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(triple.Resource),
-            triple.Resource.SchemaFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            triple.Resource.SchemaFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            triple.Resource);
     }
 
     /// <summary>
@@ -226,6 +265,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             Geometry = feature.Geometry,
             Centroid = feature.Centroid,
             IncludeGeometry = feature.IncludeGeometry,
+            ClearGeometry = feature.IncludeGeometry && feature.Geometry is null,
         };
     }
 

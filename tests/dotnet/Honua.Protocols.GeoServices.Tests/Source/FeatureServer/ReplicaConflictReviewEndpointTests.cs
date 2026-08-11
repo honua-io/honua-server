@@ -85,7 +85,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         ReplicaConflictStatus status = ReplicaConflictStatus.Pending,
         long? objectId = null,
         long serverGeneration = 5,
-        bool clientEditApplied = false)
+        bool clientEditApplied = false,
+        bool serverGeometryWasNull = false)
     {
         var featureObjectId = objectId ?? await AddFeatureAsync("server");
         var conflictId = Guid.NewGuid().ToString("N");
@@ -106,7 +107,9 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ClientEditApplied = clientEditApplied,
             BaseStateJson = StateEnvelope(featureObjectId, "base"),
             ClientStateJson = StateEnvelope(featureObjectId, "client"),
-            ServerStateJson = StateEnvelope(featureObjectId, "server"),
+            ServerStateJson = serverGeometryWasNull
+                ? StateEnvelopeWithNullGeometry(featureObjectId, "server")
+                : StateEnvelope(featureObjectId, "server"),
             DetectedAt = DateTimeOffset.UtcNow,
         });
 
@@ -119,6 +122,12 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     private static string StateEnvelope(long objectId, string name) => JsonSerializer.Serialize(new
     {
         attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name },
+    });
+
+    private static string StateEnvelopeWithNullGeometry(long objectId, string name) => JsonSerializer.Serialize(new
+    {
+        attributes = new Dictionary<string, object?> { ["objectid"] = objectId, ["name"] = name },
+        geometry = (object?)null,
     });
 
     private async Task<long> AddFeatureAsync(string name)
@@ -158,6 +167,46 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    private async Task UpdateFeatureGeometryAsync(long objectId)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            updates = new[]
+            {
+                new
+                {
+                    attributes = new Dictionary<string, object?> { ["objectid"] = objectId },
+                    geometry = new
+                    {
+                        x = -157.85,
+                        y = 21.30,
+                        spatialReference = new { wkid = 4326 },
+                    },
+                },
+            },
+            f = "json",
+        });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
+            content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    private async Task<JsonValueKind> ReadFeatureGeometryKindAsync(long objectId)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?objectIds={objectId}&returnGeometry=true&outFields=*&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("features")[0].GetProperty("geometry").ValueKind;
     }
 
     private static async Task<ApiResponse<ReplicaConflictResolutionResponse>?> ReadResolutionAsync(
@@ -445,6 +494,32 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         (await ReadFeatureNameAsync(seeded.ObjectId)).Should().Be(
             "server",
             "keeping the server after a last-write-wins sync must restore the captured pre-conflict state");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ResolveReplicaConflict)]
+    [Endpoint("POST /api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
+    public async Task ResolveConflict_KeepServer_RestoresCapturedNullGeometry()
+    {
+        var replicaId = await CreateReplicaAsync("ResolveRestoreNullGeometryReplica");
+        var seeded = await SeedConflictAsync(
+            replicaId,
+            conflictType: ReplicaConflictType.Geometry,
+            clientEditApplied: true,
+            serverGeometryWasNull: true);
+        await UpdateFeatureGeometryAsync(seeded.ObjectId);
+        (await ReadFeatureGeometryKindAsync(seeded.ObjectId)).Should().Be(JsonValueKind.Object);
+
+        var response = await _fixture.Client.PostAsync(
+            ResolvePath(WebAppFixture.TestServiceId, replicaId, seeded.ConflictId),
+            JsonContent.Create(new ReplicaConflictResolutionRequest { Action = "keepServer" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await ReadResolutionAsync(response);
+        body!.Data!.CommittedNewServerState.Should().BeTrue();
+        (await ReadFeatureGeometryKindAsync(seeded.ObjectId)).Should().Be(
+            JsonValueKind.Null,
+            "an explicit null in the captured complete state must clear geometry added by the client edit");
     }
 
     [IntegrationTest]

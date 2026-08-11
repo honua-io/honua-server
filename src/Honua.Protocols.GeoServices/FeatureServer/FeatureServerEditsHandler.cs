@@ -624,11 +624,12 @@ internal sealed class FeatureServerEditsHandler(
                 // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
                 // that could never execute; access .Value.Id directly instead.
                 var internalObjectId = existingFeature.Value.Id;
+                context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
                 // only update on a spatial row from a geometry change.
-                var requestHasGeometry = update.Geometry != null;
+                var requestHasGeometry = update.Geometry != null || update.ClearGeometry;
                 var updateFeature = await BuildFeatureFromGeoServicesAsync(
                     update,
                     internalObjectId,
@@ -774,6 +775,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             var internalObjectId = existingFeature.Value.Id;
+            context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
             context.DeleteIndexes.Add(i);
@@ -833,7 +835,15 @@ internal sealed class FeatureServerEditsHandler(
         // overwritten (#2430). Absent for ordinary wire requests, which leaves the batch unchanged.
         if (!request.Preconditions.IsDefaultOrEmpty)
         {
-            editBatch = editBatch with { Preconditions = request.Preconditions };
+            editBatch = editBatch with
+            {
+                Preconditions = request.Preconditions
+                    .Select(precondition => context.InternalObjectIdsByPublicObjectId.TryGetValue(
+                        precondition.ObjectId, out var internalObjectId)
+                        ? precondition with { ObjectId = internalObjectId }
+                        : precondition)
+                    .ToImmutableArray()
+            };
         }
 
         // Thread the resolved branch version onto the canonical edit batch. A null/DEFAULT context
@@ -1346,6 +1356,7 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> UpdateGeometryChanged { get; } = new();
         public List<long> DeleteIds { get; } = new();
+        public Dictionary<long, long> InternalObjectIdsByPublicObjectId { get; } = new();
         public List<long> DeleteResponseObjectIds { get; } = new();
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
@@ -1453,6 +1464,11 @@ internal sealed class FeatureServerEditsHandler(
         Feature? existingFeature = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
+        if (feature.ClearGeometry)
+        {
+            geometry = null;
+        }
+
         if (feature.Geometry != null)
         {
             // Enforce the layer's declared geometry type. ArcGIS rejects a feature whose
