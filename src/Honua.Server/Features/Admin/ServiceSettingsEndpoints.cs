@@ -689,6 +689,8 @@ internal static class ServiceSettingsEndpoints
         bool refreshTitle = false)
     {
         var currentIndex = FindGovernanceLinkIndex(links, relation);
+        var insertionIndex = links.FindIndex(link =>
+            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase));
 
         if (requestedValue is null)
         {
@@ -700,12 +702,9 @@ internal static class ServiceSettingsEndpoints
             return;
         }
 
-        MetadataV2Link? previous = null;
-        if (currentIndex >= 0)
-        {
-            previous = links[currentIndex];
-            links.RemoveAt(currentIndex);
-        }
+        var previous = currentIndex >= 0 ? links[currentIndex] : null;
+        links.RemoveAll(link =>
+            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase));
 
         if (normalizedValue is not null)
         {
@@ -724,9 +723,9 @@ internal static class ServiceSettingsEndpoints
                     Title = title,
                     ManagedBy = LayerSourceGovernance.LinkManager
                 };
-            if (currentIndex >= 0)
+            if (insertionIndex >= 0)
             {
-                links.Insert(currentIndex, replacement);
+                links.Insert(Math.Min(insertionIndex, links.Count), replacement);
             }
             else
             {
