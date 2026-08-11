@@ -189,6 +189,47 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             .Should().Equal("pub-original", "pub-concurrent");
     }
 
+    [Theory]
+    [InlineData("resource-concurrent", "binding-failed", true)]
+    [InlineData("resource-failed", "binding-concurrent", true)]
+    [InlineData("resource-concurrent", "binding-concurrent", false)]
+    public void BuildRebasedCompensatingMetadataV2Graph_RemovesAddedPublicationUntilTargetIsFullyRepurposed(
+        string currentResourceId,
+        string currentBindingId,
+        bool expectedRemoval)
+    {
+        var failedPublication = CreatePublication(
+            "pub-failed",
+            "service-shared",
+            "resource-failed",
+            "binding-failed",
+            2,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var previous = new MetadataV2Graph { Revision = 7 };
+        var persisted = previous with { Revision = 8, Publications = [failedPublication] };
+        var currentPublication = failedPublication with
+        {
+            ResourceId = currentResourceId,
+            StorageBindingId = currentBindingId,
+        };
+        var current = persisted with { Revision = 9, Publications = [currentPublication] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:30:00Z", CultureInfo.InvariantCulture));
+
+        if (expectedRemoval)
+        {
+            compensation.Publications.Should().BeEmpty();
+        }
+        else
+        {
+            compensation.Publications.Should().ContainSingle().Which.Should().Be(currentPublication);
+        }
+    }
+
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
     {
@@ -838,6 +879,30 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         beta.Should().ContainSingle().Which.Should().Be(new KeyValuePair<int, MetadataV2ObjectMetadata>(
             202,
             graph.Resources[1].Metadata));
+    }
+
+    [Fact]
+    public void FindCanonicalGovernanceLink_PrefersManagedThenFallsBackToAuthoredRelation()
+    {
+        var metadata = new MetadataV2ObjectMetadata
+        {
+            Links =
+            [
+                new MetadataV2Link { Href = "https://example.test/imported-license", Rel = "license" },
+                new MetadataV2Link
+                {
+                    Href = "https://example.test/managed-license",
+                    Rel = "license",
+                    ManagedBy = LayerSourceGovernance.LinkManager,
+                },
+                new MetadataV2Link { Href = "https://example.test/imported-source", Rel = "describedby" },
+            ],
+        };
+
+        PostgreSqlLayerPublishingService.FindCanonicalGovernanceLink(metadata, "license")
+            .Should().Be("https://example.test/managed-license");
+        PostgreSqlLayerPublishingService.FindCanonicalGovernanceLink(metadata, "describedby")
+            .Should().Be("https://example.test/imported-source");
     }
 
     [Fact]

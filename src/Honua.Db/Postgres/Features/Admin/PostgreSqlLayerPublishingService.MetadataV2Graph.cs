@@ -451,7 +451,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static bool StillUsesFailedPublicationDataTarget(
         MetadataV2Publication current,
         MetadataV2Publication persisted)
-        => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) &&
+        => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) ||
            string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
 
     private static MetadataV2Publication RestorePublicationMutation(

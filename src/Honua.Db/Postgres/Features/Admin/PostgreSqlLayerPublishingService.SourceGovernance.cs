@@ -95,12 +95,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
-            LicenseUrl = FindManagedLink(metadata, "license"),
-            SourceUrl = FindManagedLink(metadata, "describedby")
+            LicenseUrl = FindCanonicalGovernanceLink(metadata, "license"),
+            SourceUrl = FindCanonicalGovernanceLink(metadata, "describedby")
         };
 
-    private static string? FindManagedLink(MetadataV2ObjectMetadata metadata, string relation)
-        => metadata.Links.FirstOrDefault(link =>
-            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal))?.Href;
+    internal static string? FindCanonicalGovernanceLink(MetadataV2ObjectMetadata metadata, string relation)
+    {
+        var relationLinks = metadata.Links
+            .Where(link => string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return relationLinks.FirstOrDefault(link =>
+                   string.Equals(
+                       link.ManagedBy,
+                       LayerSourceGovernance.LinkManager,
+                       StringComparison.Ordinal))?.Href ??
+               relationLinks.FirstOrDefault()?.Href;
+    }
 }

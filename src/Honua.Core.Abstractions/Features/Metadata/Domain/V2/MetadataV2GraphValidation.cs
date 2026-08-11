@@ -644,9 +644,11 @@ public static class MetadataV2GraphValidator
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
 
-        if (metadata.ContactPoint is { Email: { } email } && !string.IsNullOrWhiteSpace(email) && !email.Contains('@'))
+        if (metadata.ContactPoint is { Email: { } email } &&
+            !string.IsNullOrWhiteSpace(email) &&
+            !HasNonEmptyEmailParts(email))
         {
-            errors.Add($"{ownerLabel} metadata.contactPoint.email '{email}' must contain '@'.");
+            errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
         }
         if (metadata.ContactPoint is { Url: { } contactUrl } &&
             !string.IsNullOrWhiteSpace(contactUrl) &&
@@ -685,6 +687,16 @@ public static class MetadataV2GraphValidator
             string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
            !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
            string.IsNullOrEmpty(parsedUrl.UserInfo);
+
+    private static bool HasNonEmptyEmailParts(string value)
+    {
+        var separator = value.IndexOf('@');
+        return separator > 0 &&
+               separator == value.LastIndexOf('@') &&
+               separator < value.Length - 1 &&
+               !string.IsNullOrWhiteSpace(value[..separator]) &&
+               !string.IsNullOrWhiteSpace(value[(separator + 1)..]);
+    }
 
     private static void ValidateServices(
         List<string> errors,

@@ -445,6 +445,40 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("not-an-email")]
+    [InlineData("a@")]
+    [InlineData("@")]
+    [InlineData("a@@example.test")]
+    [Operation(Operations.Query)]
+    public void Validate_WithMalformedContactEmail_ReturnsValidationError(string email)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        ContactPoint = new MetadataV2ContactPoint { Name = "Invalid contact", Email = email }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                "metadata.contactPoint.email must contain non-empty local and domain parts",
+                StringComparison.Ordinal));
+        result.Errors.Should().NotContain(error => error.Contains(email, StringComparison.Ordinal));
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     public void Validate_WithCredentialBearingContactUrl_ReturnsValidationError()
