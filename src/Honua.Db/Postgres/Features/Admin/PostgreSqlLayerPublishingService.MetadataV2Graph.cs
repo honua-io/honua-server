@@ -2486,22 +2486,34 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return graph;
         }
 
-        var affectedResourceIds = graph.StorageBindings
-            .Where(binding => affectedBindingIds.Contains(binding.Metadata.Id))
-            .Select(binding => binding.ResourceId)
-            .ToHashSet(StringComparer.Ordinal);
         var lifecycle = enabled
             ? MetadataV2LifecycleStatus.Active
             : MetadataV2LifecycleStatus.Retired;
         var changed = false;
-        MetadataV2Status ToggleStatus(MetadataV2Status status)
+        MetadataV2Status SetLifecycle(MetadataV2Status status, MetadataV2LifecycleStatus targetLifecycle)
             => status with
             {
-                Lifecycle = lifecycle,
+                Lifecycle = targetLifecycle,
                 State = MetadataV2OperationalState.Ready,
                 ObservedAt = now,
             };
 
+        var storageBindings = graph.StorageBindings
+            .Select(binding =>
+            {
+                if (!affectedBindingIds.Contains(binding.Metadata.Id))
+                {
+                    return binding;
+                }
+
+                changed = true;
+                return binding with { Status = SetLifecycle(binding.Status, lifecycle) };
+            })
+            .ToArray();
+        var affectedResourceIds = storageBindings
+            .Where(binding => affectedBindingIds.Contains(binding.Metadata.Id))
+            .Select(binding => binding.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
         var resources = graph.Resources
             .Select(resource =>
             {
@@ -2511,22 +2523,33 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 changed = true;
-                return resource with { Status = ToggleStatus(resource.Status) };
+                var hasEnabledBinding = storageBindings.Any(binding =>
+                    string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                    binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired);
+                var resourceLifecycle = hasEnabledBinding
+                    ? MetadataV2LifecycleStatus.Active
+                    : MetadataV2LifecycleStatus.Retired;
+                return resource with { Status = SetLifecycle(resource.Status, resourceLifecycle) };
             })
             .ToArray();
+        var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
         var publications = graph.Publications
             .Select(publication =>
             {
-                var usesAffectedBinding = publication.StorageBindingId is { } storageBindingId &&
-                    affectedBindingIds.Contains(storageBindingId);
-                if (!usesAffectedBinding &&
-                    !affectedResourceIds.Contains(publication.ResourceId))
+                var storageBindingId = publication.StorageBindingId;
+                if (storageBindingId is null &&
+                    resourcesById.TryGetValue(publication.ResourceId, out var resource))
+                {
+                    storageBindingId = resource.PrimaryStorageBindingId;
+                }
+
+                if (storageBindingId is null || !affectedBindingIds.Contains(storageBindingId))
                 {
                     return publication;
                 }
 
                 changed = true;
-                return publication with { Status = ToggleStatus(publication.Status) };
+                return publication with { Status = SetLifecycle(publication.Status, lifecycle) };
             })
             .ToArray();
         if (!changed)
@@ -2538,6 +2561,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
+            StorageBindings = storageBindings,
             Resources = resources,
             Publications = publications,
         };

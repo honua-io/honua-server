@@ -2637,6 +2637,85 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildLayerEnabledMetadataV2Graph_WithSharedResource_OnlyRetiresAffectedBinding()
+    {
+        var activeStatus = new MetadataV2Status
+        {
+            Lifecycle = MetadataV2LifecycleStatus.Active,
+            State = MetadataV2OperationalState.Ready,
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 7,
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
+                    StorageBindingIds = ["binding-7", "binding-8"],
+                    PrimaryStorageBindingId = "binding-7",
+                    Status = activeStatus,
+                },
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-7" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 7,
+                    Status = activeStatus,
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-8" },
+                    ResourceId = "resource-shared",
+                    StorageLayerId = 8,
+                    Status = activeStatus,
+                },
+            ],
+            Publications =
+            [
+                CreatePublication("pub-7", "service-a", "resource-shared", "binding-7", 7,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = activeStatus },
+                CreatePublication("pub-8", "service-a", "resource-shared", "binding-8", 8,
+                    MetadataV2PublicationType.EsriFeatureLayer) with { Status = activeStatus },
+            ],
+        };
+        var disabledAt = DateTimeOffset.Parse("2026-08-11T19:10:00Z", CultureInfo.InvariantCulture);
+
+        var firstDisabled = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
+            graph,
+            [7],
+            enabled: false,
+            disabledAt);
+
+        firstDisabled.StorageBindings.Single(binding => binding.Metadata.Id == "binding-7")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+        firstDisabled.StorageBindings.Single(binding => binding.Metadata.Id == "binding-8")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        firstDisabled.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Active);
+        firstDisabled.Publications.Single(publication => publication.Metadata.Id == "pub-7")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+        firstDisabled.Publications.Single(publication => publication.Metadata.Id == "pub-8")
+            .Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+
+        var allDisabled = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
+            firstDisabled,
+            [8],
+            enabled: false,
+            disabledAt.AddMinutes(1));
+
+        allDisabled.StorageBindings.Should().AllSatisfy(binding =>
+            binding.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired));
+        allDisabled.Resources.Should().ContainSingle().Which.Status.Lifecycle
+            .Should().Be(MetadataV2LifecycleStatus.Retired);
+        allDisabled.Publications.Should().AllSatisfy(publication =>
+            publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired));
+    }
+
+    [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithTargetIndexCollision_RejectsAmbiguousStorageRoute()
     {
         var now = DateTimeOffset.Parse("2026-08-09T12:00:00Z", CultureInfo.InvariantCulture);

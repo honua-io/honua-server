@@ -617,7 +617,7 @@ internal static partial class FeatureServerEndpoints
         // against it with stable layer-id resolution.
         var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => pair.Resource is not null)
+            .Where(pair => IsPublishedLayerRoutableV2(pair.Publication, pair.Resource))
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
@@ -691,9 +691,17 @@ internal static partial class FeatureServerEndpoints
 
         return
         [
-            ..layers.Where(pair => AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+            ..layers.Where(pair =>
+                IsPublishedLayerRoutableV2(pair.Publication, pair.Resource) &&
+                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
         ];
     }
+
+    private static bool IsPublishedLayerRoutableV2(
+        MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+        => publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+           resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired };
 
     /// <summary>
     /// Projects <see cref="MetadataV2Resource.Relationships"/> to the Esri-style wire shape.
