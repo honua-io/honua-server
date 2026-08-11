@@ -641,39 +641,63 @@ internal sealed partial class PostgreSqlLayerPublishingService
         IReadOnlyList<MetadataV2Field> previous,
         IReadOnlyList<MetadataV2Field> persisted)
     {
-        var restored = new List<MetadataV2Field>(previous.Count + current.Count);
-        foreach (var previousField in previous)
-        {
-            var persistedField = persisted.FirstOrDefault(candidate =>
-                HasSameSchemaFieldIdentity(candidate, previousField));
-            var currentField = current.FirstOrDefault(candidate =>
-                HasSameSchemaFieldIdentity(candidate, previousField));
+        var previousToPersisted = AlignSchemaFields(previous, persisted);
+        var persistedToPrevious = previousToPersisted.ToDictionary(
+            match => match.RightIndex,
+            match => match.LeftIndex);
+        var persistedToCurrent = AlignSchemaFields(persisted, current);
+        var currentToPersisted = persistedToCurrent.ToDictionary(
+            match => match.RightIndex,
+            match => match.LeftIndex);
+        var restored = new List<RestoredSchemaField>(previous.Count + current.Count);
 
-            if (persistedField is null)
+        for (var currentIndex = 0; currentIndex < current.Count; currentIndex++)
+        {
+            if (!currentToPersisted.TryGetValue(currentIndex, out var persistedIndex))
             {
-                // Restore fields removed by the failed mutation, unless a later writer already
-                // recreated that identity with its own definition.
-                restored.Add(currentField ?? previousField);
+                restored.Add(new RestoredSchemaField(current[currentIndex], null));
+                continue;
             }
-            else if (currentField is not null)
+
+            if (persistedToPrevious.TryGetValue(persistedIndex, out var previousIndex))
             {
-                // A later removal wins. Otherwise invert only the properties written by the
-                // failed mutation so concurrent edits to this field survive.
-                restored.Add(RestoreSchemaFieldMutation(currentField, previousField, persistedField));
+                restored.Add(new RestoredSchemaField(
+                    RestoreSchemaFieldMutation(
+                        current[currentIndex],
+                        previous[previousIndex],
+                        persisted[persistedIndex]),
+                    previousIndex));
             }
+            // Fields introduced by the failed publication are omitted, including when a
+            // later writer renamed them. Their paired SQL columns never committed.
         }
 
-        foreach (var currentField in current.Where(currentField =>
-                     !previous.Any(previousField => HasSameSchemaFieldIdentity(previousField, currentField)) &&
-                     !persisted.Any(persistedField => HasSameSchemaFieldIdentity(persistedField, currentField))))
+        var matchedPreviousIndices = previousToPersisted
+            .Select(match => match.LeftIndex)
+            .ToHashSet();
+        for (var previousIndex = 0; previousIndex < previous.Count; previousIndex++)
         {
-            // Preserve fields introduced by a later writer. Fields introduced by the failed
-            // publication are omitted even when their descriptive properties changed later,
-            // because the paired SQL column never committed.
-            restored.Add(currentField);
+            if (matchedPreviousIndices.Contains(previousIndex))
+            {
+                continue;
+            }
+
+            var recreatedIndex = restored.FindIndex(item =>
+                item.PreviousIndex is null &&
+                HasSameSchemaFieldIdentity(item.Field, previous[previousIndex]));
+            if (recreatedIndex >= 0)
+            {
+                restored[recreatedIndex] = restored[recreatedIndex] with { PreviousIndex = previousIndex };
+                continue;
+            }
+
+            var insertionIndex = restored.FindIndex(item => item.PreviousIndex > previousIndex);
+            restored.Insert(
+                insertionIndex >= 0 ? insertionIndex : restored.Count,
+                new RestoredSchemaField(previous[previousIndex], previousIndex));
         }
 
-        return restored;
+        return restored.Select(item => item.Field).ToList();
     }
 
     private static bool HasSameSchemaFieldIdentity(MetadataV2Field left, MetadataV2Field right)
@@ -682,11 +706,208 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(left.SemanticId.Trim(), right.SemanticId.Trim(), StringComparison.Ordinal)) ||
            string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
 
+    private static List<SchemaFieldMatch> AlignSchemaFields(
+        IReadOnlyList<MetadataV2Field> left,
+        IReadOnlyList<MetadataV2Field> right)
+    {
+        var matches = new List<SchemaFieldMatch>(Math.Min(left.Count, right.Count));
+        var matchedLeft = new HashSet<int>();
+        var matchedRight = new HashSet<int>();
+
+        MatchSchemaFieldsByIdentity(
+            left,
+            right,
+            matches,
+            matchedLeft,
+            matchedRight,
+            static (leftField, rightField) =>
+                !string.IsNullOrWhiteSpace(leftField.SemanticId) &&
+                !string.IsNullOrWhiteSpace(rightField.SemanticId) &&
+                string.Equals(
+                    leftField.SemanticId.Trim(),
+                    rightField.SemanticId.Trim(),
+                    StringComparison.Ordinal));
+        MatchSchemaFieldsByIdentity(
+            left,
+            right,
+            matches,
+            matchedLeft,
+            matchedRight,
+            static (leftField, rightField) =>
+                string.Equals(leftField.Name, rightField.Name, StringComparison.OrdinalIgnoreCase));
+
+        var remainingLeft = Enumerable.Range(0, left.Count)
+            .Where(index => !matchedLeft.Contains(index))
+            .ToArray();
+        var remainingRight = Enumerable.Range(0, right.Count)
+            .Where(index => !matchedRight.Contains(index))
+            .ToArray();
+        matches.AddRange(AlignSchemaFieldsBySimilarity(left, right, remainingLeft, remainingRight));
+        return matches;
+    }
+
+    private static void MatchSchemaFieldsByIdentity(
+        IReadOnlyList<MetadataV2Field> left,
+        IReadOnlyList<MetadataV2Field> right,
+        ICollection<SchemaFieldMatch> matches,
+        HashSet<int> matchedLeft,
+        HashSet<int> matchedRight,
+        Func<MetadataV2Field, MetadataV2Field, bool> matchesIdentity)
+    {
+        for (var leftIndex = 0; leftIndex < left.Count; leftIndex++)
+        {
+            if (matchedLeft.Contains(leftIndex))
+            {
+                continue;
+            }
+
+            for (var rightIndex = 0; rightIndex < right.Count; rightIndex++)
+            {
+                if (matchedRight.Contains(rightIndex) || !matchesIdentity(left[leftIndex], right[rightIndex]))
+                {
+                    continue;
+                }
+
+                matches.Add(new SchemaFieldMatch(leftIndex, rightIndex));
+                matchedLeft.Add(leftIndex);
+                matchedRight.Add(rightIndex);
+                break;
+            }
+        }
+    }
+
+    private static List<SchemaFieldMatch> AlignSchemaFieldsBySimilarity(
+        IReadOnlyList<MetadataV2Field> left,
+        IReadOnlyList<MetadataV2Field> right,
+        int[] leftIndices,
+        int[] rightIndices)
+    {
+        const int gapPenalty = -3;
+        var scores = new int[leftIndices.Length + 1, rightIndices.Length + 1];
+        var moves = new byte[leftIndices.Length + 1, rightIndices.Length + 1];
+        for (var leftIndex = 1; leftIndex <= leftIndices.Length; leftIndex++)
+        {
+            scores[leftIndex, 0] = scores[leftIndex - 1, 0] + gapPenalty;
+            moves[leftIndex, 0] = 2;
+        }
+
+        for (var rightIndex = 1; rightIndex <= rightIndices.Length; rightIndex++)
+        {
+            scores[0, rightIndex] = scores[0, rightIndex - 1] + gapPenalty;
+            moves[0, rightIndex] = 3;
+        }
+
+        for (var leftIndex = 1; leftIndex <= leftIndices.Length; leftIndex++)
+        {
+            for (var rightIndex = 1; rightIndex <= rightIndices.Length; rightIndex++)
+            {
+                var similarity = GetSchemaFieldSimilarity(
+                    left[leftIndices[leftIndex - 1]],
+                    right[rightIndices[rightIndex - 1]]);
+                var matchScore = similarity >= 6
+                    ? scores[leftIndex - 1, rightIndex - 1] + similarity + 4
+                    : int.MinValue;
+                var skipLeftScore = scores[leftIndex - 1, rightIndex] + gapPenalty;
+                var skipRightScore = scores[leftIndex, rightIndex - 1] + gapPenalty;
+                if (matchScore >= skipLeftScore && matchScore >= skipRightScore)
+                {
+                    scores[leftIndex, rightIndex] = matchScore;
+                    moves[leftIndex, rightIndex] = 1;
+                }
+                else if (skipLeftScore >= skipRightScore)
+                {
+                    scores[leftIndex, rightIndex] = skipLeftScore;
+                    moves[leftIndex, rightIndex] = 2;
+                }
+                else
+                {
+                    scores[leftIndex, rightIndex] = skipRightScore;
+                    moves[leftIndex, rightIndex] = 3;
+                }
+            }
+        }
+
+        var matches = new List<SchemaFieldMatch>(Math.Min(leftIndices.Length, rightIndices.Length));
+        var leftCursor = leftIndices.Length;
+        var rightCursor = rightIndices.Length;
+        while (leftCursor > 0 || rightCursor > 0)
+        {
+            switch (moves[leftCursor, rightCursor])
+            {
+                case 1:
+                    matches.Add(new SchemaFieldMatch(
+                        leftIndices[leftCursor - 1],
+                        rightIndices[rightCursor - 1]));
+                    leftCursor--;
+                    rightCursor--;
+                    break;
+                case 2:
+                    leftCursor--;
+                    break;
+                default:
+                    rightCursor--;
+                    break;
+            }
+        }
+
+        matches.Reverse();
+        return matches;
+    }
+
+    private static int GetSchemaFieldSimilarity(MetadataV2Field left, MetadataV2Field right)
+    {
+        var score = left.Type == right.Type ? 6 : 0;
+        if (left.Title is not null && string.Equals(left.Title, right.Title, StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+        if (left.Alias is not null && string.Equals(left.Alias, right.Alias, StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+        if (left.Description is not null && string.Equals(left.Description, right.Description, StringComparison.Ordinal))
+        {
+            score += 3;
+        }
+        if (left.SqlType is not null && string.Equals(left.SqlType, right.SqlType, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 3;
+        }
+        if (left.Length is not null && left.Length == right.Length)
+        {
+            score += 2;
+        }
+        if (left.SemanticRoles.Count > 0 && left.SemanticRoles.SequenceEqual(right.SemanticRoles))
+        {
+            score += 3;
+        }
+        if (left.Nullable == right.Nullable)
+        {
+            score++;
+        }
+        if (left.Hidden == right.Hidden)
+        {
+            score++;
+        }
+
+        return score;
+    }
+
+    private readonly record struct SchemaFieldMatch(int LeftIndex, int RightIndex);
+
+    private readonly record struct RestoredSchemaField(MetadataV2Field Field, int? PreviousIndex);
+
     private static MetadataV2Field RestoreSchemaFieldMutation(
         MetadataV2Field current,
         MetadataV2Field previous,
         MetadataV2Field persisted)
-        => current with
+    {
+        if (current == persisted)
+        {
+            return previous;
+        }
+
+        return current with
         {
             SemanticId = RestoreMutationValue(current.SemanticId, previous.SemanticId, persisted.SemanticId),
             Name = RestoreMutationValue(current.Name, previous.Name, persisted.Name),
@@ -722,6 +943,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 persisted.Extensions,
                 static value => new MetadataV2Field { Extensions = value }),
         };
+    }
 
     private static MetadataV2StorageBinding RestoreStorageBindingMutation(
         MetadataV2StorageBinding current,

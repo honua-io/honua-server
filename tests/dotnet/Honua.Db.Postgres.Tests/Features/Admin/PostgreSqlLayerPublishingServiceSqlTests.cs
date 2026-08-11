@@ -733,7 +733,11 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             SchemaFields =
             [
                 persistedField with { Title = "Concurrent identifier title" },
-                failedAddedField with { Title = "Concurrent publish-only title" },
+                failedAddedField with
+                {
+                    Name = "renamed_publish_only",
+                    Title = "Concurrent publish-only title",
+                },
                 concurrentField,
             ],
         };
@@ -753,7 +757,57 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         restoredField.Type.Should().Be(previousField.Type);
         restoredField.Title.Should().Be("Concurrent identifier title");
         fields.Should().NotContain(field => field.Name == failedAddedField.Name);
+        fields.Should().NotContain(field => field.Name == "renamed_publish_only");
         fields.Should().ContainSingle(field => field.Name == concurrentField.Name).Which.Should().Be(concurrentField);
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_AlignsSchemaFieldAcrossRenames()
+    {
+        var previousField = new MetadataV2Field
+        {
+            Name = "original_name",
+            Type = MetadataV2FieldType.BigInteger,
+            Title = "Original name",
+            Alias = "Original name",
+            Description = "Original description",
+        };
+        var persistedField = previousField with
+        {
+            Name = "published_name",
+            Title = "Published name",
+            Alias = "Published name",
+            Description = "Published description",
+        };
+        var currentField = persistedField with
+        {
+            Name = "concurrent_name",
+            Title = "Concurrent name",
+            Alias = "Concurrent name",
+        };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-layer-rename" },
+            SchemaFields = [previousField],
+        };
+        var persistedResource = previousResource with { SchemaFields = [persistedField] };
+        var currentResource = persistedResource with { SchemaFields = [currentField] };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var field = compensation.Resources.Should().ContainSingle().Which.SchemaFields
+            .Should().ContainSingle().Which;
+        field.Name.Should().Be("concurrent_name", "a later rename wins");
+        field.Title.Should().Be("Concurrent name");
+        field.Alias.Should().Be("Concurrent name");
+        field.Description.Should().Be("Original description", "the aborted description change is reverted");
     }
 
     [Fact]
