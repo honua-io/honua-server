@@ -753,6 +753,87 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RestoresAttributeRulesIndependently()
+    {
+        var previousChangedRule = new MetadataV2AttributeRule
+        {
+            Name = "changed-rule",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "true",
+            TriggeringEvents = ["insert"],
+            ErrorMessage = "Original message",
+            IsEnabled = true,
+            Batch = false,
+        };
+        var previousRemovedRule = new MetadataV2AttributeRule
+        {
+            Name = "removed-rule",
+            Type = MetadataV2AttributeRuleType.Validation,
+            ScriptExpression = "true",
+        };
+        var failedChangedRule = previousChangedRule with
+        {
+            Type = MetadataV2AttributeRuleType.Validation,
+            ScriptExpression = "false",
+            TriggeringEvents = ["update"],
+            ErrorMessage = "Failed message",
+            IsEnabled = false,
+            Batch = true,
+        };
+        var failedAddedRule = new MetadataV2AttributeRule
+        {
+            Name = "failed-added-rule",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "false",
+            TriggeringEvents = ["insert"],
+        };
+        var concurrentAddedRule = new MetadataV2AttributeRule
+        {
+            Name = "concurrent-added-rule",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "true",
+        };
+        var concurrentlyEditedRule = failedChangedRule with { ErrorMessage = "Concurrent message" };
+        var previousResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-attribute-rules" },
+            AttributeRules = [previousChangedRule, previousRemovedRule],
+        };
+        var persistedResource = previousResource with
+        {
+            AttributeRules = [failedChangedRule, failedAddedRule],
+        };
+        var currentResource = persistedResource with
+        {
+            AttributeRules =
+            [
+                concurrentAddedRule,
+                concurrentlyEditedRule,
+                failedAddedRule with { TriggeringEvents = ["insert"] },
+            ],
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
+        var persisted = previous with { Revision = 8, Resources = [persistedResource] };
+        var current = persisted with { Revision = 9, Resources = [currentResource] };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-03T00:00:00Z", CultureInfo.InvariantCulture));
+
+        var rules = compensation.Resources.Should().ContainSingle().Which.AttributeRules;
+        rules.Should().BeEquivalentTo(
+            new[]
+            {
+                concurrentAddedRule,
+                previousChangedRule with { ErrorMessage = "Concurrent message" },
+                previousRemovedRule,
+            },
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresSchemaFieldsIndependently()
     {
         var previousField = new MetadataV2Field
@@ -2018,7 +2099,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
-    public void BuildLinkedLayerMetadataV2Graph_WithDisabledExactIdCollision_ReturnsConflict()
+    public void BuildLinkedLayerMetadataV2Graph_WithNonFeatureExactIdCollision_ReturnsConflict()
     {
         var graph = new MetadataV2Graph
         {
@@ -2027,7 +2108,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "beta", Name = "disabled-name" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
                     Protocols = [ServiceProtocols.OgcFeatures],
                 },
                 new MetadataV2Service

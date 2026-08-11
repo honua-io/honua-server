@@ -581,11 +581,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 previous.Subtypes,
                 persisted.Subtypes,
                 static value => new MetadataV2Resource { Subtypes = value }),
-            AttributeRules = RestoreResourceMutationValue(
+            AttributeRules = RestoreAttributeRulesMutation(
                 current.AttributeRules,
                 previous.AttributeRules,
-                persisted.AttributeRules,
-                static value => new MetadataV2Resource { AttributeRules = value }),
+                persisted.AttributeRules),
             ContingentValueGroups = RestoreResourceMutationValue(
                 current.ContingentValueGroups,
                 previous.ContingentValueGroups,
@@ -892,6 +891,126 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private readonly record struct SchemaFieldMatch(int LeftIndex, int RightIndex);
 
     private readonly record struct RestoredSchemaField(MetadataV2Field Field, int? PreviousIndex);
+
+    private static List<MetadataV2AttributeRule> RestoreAttributeRulesMutation(
+        IReadOnlyList<MetadataV2AttributeRule> current,
+        IReadOnlyList<MetadataV2AttributeRule> previous,
+        IReadOnlyList<MetadataV2AttributeRule> persisted)
+    {
+        var restored = new List<RestoredAttributeRule>(previous.Count + current.Count);
+        for (var currentIndex = 0; currentIndex < current.Count; currentIndex++)
+        {
+            var currentRule = current[currentIndex];
+            var persistedIndex = FindAttributeRuleIndex(persisted, currentRule.Name);
+            if (persistedIndex < 0)
+            {
+                restored.Add(new RestoredAttributeRule(currentRule, null));
+                continue;
+            }
+
+            var previousIndex = FindAttributeRuleIndex(previous, persisted[persistedIndex].Name);
+            if (previousIndex >= 0)
+            {
+                restored.Add(new RestoredAttributeRule(
+                    RestoreAttributeRuleMutation(
+                        currentRule,
+                        previous[previousIndex],
+                        persisted[persistedIndex]),
+                    previousIndex));
+            }
+            else if (!AttributeRulesEquivalent(currentRule, persisted[persistedIndex]))
+            {
+                // A later writer repurposed the rule introduced by the failed mutation.
+                restored.Add(new RestoredAttributeRule(currentRule, null));
+            }
+            // Rules introduced only by the failed mutation are otherwise omitted.
+        }
+
+        for (var previousIndex = 0; previousIndex < previous.Count; previousIndex++)
+        {
+            if (FindAttributeRuleIndex(persisted, previous[previousIndex].Name) >= 0)
+            {
+                continue;
+            }
+
+            var recreatedIndex = restored.FindIndex(item =>
+                item.PreviousIndex is null &&
+                HasSameAttributeRuleIdentity(item.Rule, previous[previousIndex]));
+            if (recreatedIndex >= 0)
+            {
+                restored[recreatedIndex] = restored[recreatedIndex] with { PreviousIndex = previousIndex };
+                continue;
+            }
+
+            var insertionIndex = restored.FindIndex(item => item.PreviousIndex > previousIndex);
+            restored.Insert(
+                insertionIndex >= 0 ? insertionIndex : restored.Count,
+                new RestoredAttributeRule(previous[previousIndex], previousIndex));
+        }
+
+        return restored.Select(item => item.Rule).ToList();
+    }
+
+    private static MetadataV2AttributeRule RestoreAttributeRuleMutation(
+        MetadataV2AttributeRule current,
+        MetadataV2AttributeRule previous,
+        MetadataV2AttributeRule persisted)
+        => current with
+        {
+            Name = RestoreMutationValue(current.Name, previous.Name, persisted.Name),
+            Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
+            FieldName = RestoreMutationValue(current.FieldName, previous.FieldName, persisted.FieldName),
+            ScriptExpression = RestoreMutationValue(
+                current.ScriptExpression,
+                previous.ScriptExpression,
+                persisted.ScriptExpression),
+            TriggeringEvents = RestoreMutationSequence(
+                current.TriggeringEvents,
+                previous.TriggeringEvents,
+                persisted.TriggeringEvents),
+            ErrorMessage = RestoreMutationValue(
+                current.ErrorMessage,
+                previous.ErrorMessage,
+                persisted.ErrorMessage),
+            IsEnabled = RestoreMutationValue(current.IsEnabled, previous.IsEnabled, persisted.IsEnabled),
+            Batch = RestoreMutationValue(current.Batch, previous.Batch, persisted.Batch),
+        };
+
+    private static int FindAttributeRuleIndex(
+        IReadOnlyList<MetadataV2AttributeRule> rules,
+        string name)
+    {
+        for (var index = 0; index < rules.Count; index++)
+        {
+            if (string.Equals(rules[index].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool HasSameAttributeRuleIdentity(
+        MetadataV2AttributeRule left,
+        MetadataV2AttributeRule right)
+        => string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+
+    private static bool AttributeRulesEquivalent(
+        MetadataV2AttributeRule left,
+        MetadataV2AttributeRule right)
+        => string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+           left.Type == right.Type &&
+           string.Equals(left.FieldName, right.FieldName, StringComparison.Ordinal) &&
+           string.Equals(left.ScriptExpression, right.ScriptExpression, StringComparison.Ordinal) &&
+           left.TriggeringEvents.SequenceEqual(right.TriggeringEvents, StringComparer.Ordinal) &&
+           string.Equals(left.ErrorMessage, right.ErrorMessage, StringComparison.Ordinal) &&
+           left.IsEnabled == right.IsEnabled &&
+           left.Batch == right.Batch;
+
+    private readonly record struct RestoredAttributeRule(
+        MetadataV2AttributeRule Rule,
+        int? PreviousIndex);
 
     private static MetadataV2Field RestoreSchemaFieldMutation(
         MetadataV2Field current,
@@ -1938,14 +2057,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal))
             .ToArray();
-        var matchingFeatureServices = matchingServices
-            .Where(candidate => IsFeatureServerService(graph, candidate))
-            .ToArray();
-        var exactIdService = matchingFeatureServices.FirstOrDefault(candidate =>
+        var exactIdService = matchingServices.FirstOrDefault(candidate =>
             string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal));
         if (exactIdService is not null)
         {
-            if (!MetadataV2ServiceProtocols.IsProtocolEnabled(
+            if (!IsFeatureServerService(graph, exactIdService) ||
+                !MetadataV2ServiceProtocols.IsProtocolEnabled(
                     exactIdService,
                     MetadataV2ServiceProtocols.FeatureServer))
             {
@@ -1957,6 +2074,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
             return exactIdService;
         }
+
+        var matchingFeatureServices = matchingServices
+            .Where(candidate => IsFeatureServerService(graph, candidate))
+            .ToArray();
 
         var protocolEnabledServices = matchingFeatureServices
             .Where(candidate => MetadataV2ServiceProtocols.IsProtocolEnabled(
