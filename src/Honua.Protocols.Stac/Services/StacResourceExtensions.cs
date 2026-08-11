@@ -32,7 +32,9 @@ internal static class StacResourceExtensions
     /// <c>"various"</c> for link-only declarations and <c>"proprietary"</c> when no
     /// license is declared (matches the v1 default).
     /// </summary>
-    public static string ResolveLicense(this MetadataV2Resource resource)
+    public static string ResolveLicense(
+        this MetadataV2Resource resource,
+        MetadataV2ObjectMetadata? fallbackMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var declared = !string.IsNullOrWhiteSpace(resource.Metadata.License)
@@ -40,11 +42,22 @@ internal static class StacResourceExtensions
             : ReadString(resource, "license")?.Trim();
         if (string.IsNullOrWhiteSpace(declared))
         {
-            return resource.Metadata.Links.Any(link =>
+            if (resource.Metadata.Links.Any(link =>
                 string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(link.Href))
-                ? "various"
-                : "proprietary";
+                !string.IsNullOrWhiteSpace(link.Href)))
+            {
+                return "various";
+            }
+
+            declared = fallbackMetadata?.License?.Trim();
+            if (string.IsNullOrWhiteSpace(declared))
+            {
+                return fallbackMetadata?.Links.Any(link =>
+                    string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(link.Href)) == true
+                    ? "various"
+                    : "proprietary";
+            }
         }
 
         return IsSingleStacLicenseToken(declared)

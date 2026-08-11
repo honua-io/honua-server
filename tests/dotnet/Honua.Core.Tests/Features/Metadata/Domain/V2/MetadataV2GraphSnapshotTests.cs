@@ -163,14 +163,13 @@ public sealed class MetadataV2GraphSnapshotTests
         var publication = graph.Publications.Single();
         var binding = graph.StorageBindings.Single();
 
-        foreach (var lifecycle in new[]
-                 {
-                     MetadataV2LifecycleStatus.Draft,
-                     MetadataV2LifecycleStatus.Retired,
-                     MetadataV2LifecycleStatus.Archived,
-                 })
-        {
-            var snapshot = new MetadataV2GraphSnapshot(
+        var nonServingSnapshots = new[]
+            {
+                MetadataV2LifecycleStatus.Draft,
+                MetadataV2LifecycleStatus.Retired,
+                MetadataV2LifecycleStatus.Archived,
+            }
+            .Select(lifecycle => new MetadataV2GraphSnapshot(
                 graph with
                 {
                     StorageBindings =
@@ -179,10 +178,9 @@ public sealed class MetadataV2GraphSnapshotTests
                     ]
                 },
                 $"\"{lifecycle}\"",
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow));
 
-            snapshot.IsRoutable(publication).Should().BeFalse();
-        }
+        nonServingSnapshots.Should().OnlyContain(snapshot => !snapshot.IsRoutable(publication));
 
         var deprecatedSnapshot = new MetadataV2GraphSnapshot(
             graph with

@@ -67,7 +67,6 @@ internal sealed class StacMappingService
         var stacBase = $"{baseUrl}/stac";
         var displayName = ResolveDisplayName(publication, resource, layerIndex);
         var governance = resource.Metadata.WithServiceGovernanceFallbacks(service.Metadata);
-        var governedResource = resource with { Metadata = governance };
 
         var links = ImmutableArray.CreateBuilder<Link>();
 
@@ -136,7 +135,7 @@ internal sealed class StacMappingService
             Id = collectionId,
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
-            License = governedResource.ResolveLicense(),
+            License = resource.ResolveLicense(service.Metadata),
             Providers = BuildProviders(governance),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),

@@ -2207,12 +2207,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-retired" },
                     ResourceId = retiredMetadata.Id,
                     StorageLayerId = 7,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 },
                 new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "binding-active" },
                     ResourceId = activeMetadata.Id,
                     StorageLayerId = 7,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 },
             ],
             Publications =
@@ -2243,6 +2245,24 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "parcels");
 
         result.Should().ContainSingle().Which.Should().Be(
+            new KeyValuePair<int, MetadataV2ObjectMetadata>(7, activeMetadata));
+
+        var activeStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var bindingLifecycleGraph = graph with
+        {
+            Resources = graph.Resources.Select(resource => resource with { Status = activeStatus }).ToArray(),
+            StorageBindings =
+            [
+                graph.StorageBindings[0] with { Status = retiredStatus },
+                graph.StorageBindings[1] with { Status = activeStatus },
+            ],
+            Publications = graph.Publications.Select(publication => publication with { Status = activeStatus }).ToArray(),
+        };
+        var bindingLifecycleResult = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(
+            bindingLifecycleGraph,
+            "parcels");
+        bindingLifecycleResult.Should().ContainSingle().Which.Should().Be(
             new KeyValuePair<int, MetadataV2ObjectMetadata>(7, activeMetadata));
 
         var retiredOnlyGraph = graph with

@@ -48,31 +48,29 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return new Dictionary<int, MetadataV2ObjectMetadata>();
         }
 
-        var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
-        var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"source-governance\"", DateTimeOffset.UtcNow);
         var metadataByLayerId = new Dictionary<int, MetadataV2ObjectMetadata>();
         foreach (var publication in graph.Publications.Where(publication =>
                      string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
                      publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer)
-                 .OrderByDescending(publication =>
+                 .OrderByDescending(snapshot.IsRoutable)
+                 .ThenByDescending(publication =>
                      publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
-                     resourcesById.TryGetValue(publication.ResourceId, out var resource) &&
+                     snapshot.Index.ResourcesById.TryGetValue(publication.ResourceId, out var resource) &&
                      resource.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
                  .ThenByDescending(publication =>
                      publication.Status.Lifecycle == MetadataV2LifecycleStatus.Active &&
-                     resourcesById.TryGetValue(publication.ResourceId, out var resource) &&
+                     snapshot.Index.ResourcesById.TryGetValue(publication.ResourceId, out var resource) &&
                      resource.Status.Lifecycle == MetadataV2LifecycleStatus.Active))
         {
-            if (!resourcesById.TryGetValue(publication.ResourceId, out var resource))
+            var resource = snapshot.ResolveResource(publication);
+            var binding = snapshot.ResolveStorageBinding(publication);
+            if (resource is null || binding?.StorageLayerId is not { } layerId)
             {
                 continue;
             }
 
-            var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
-            if (bindingId is not null &&
-                bindingsById.TryGetValue(bindingId, out var binding) &&
-                binding.StorageLayerId is { } layerId &&
-                !metadataByLayerId.ContainsKey(layerId))
+            if (!metadataByLayerId.ContainsKey(layerId))
             {
                 metadataByLayerId.Add(layerId, resource.Metadata);
             }
