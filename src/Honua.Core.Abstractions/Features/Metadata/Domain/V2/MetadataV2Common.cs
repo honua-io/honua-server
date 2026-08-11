@@ -33,6 +33,12 @@ public static class MetadataV2Constants
 /// </summary>
 public sealed record MetadataV2ObjectMetadata
 {
+    /// <summary>Maximum canonical attribution length.</summary>
+    public const int MaxAttributionLength = 512;
+
+    /// <summary>Maximum canonical publisher length.</summary>
+    public const int MaxPublisherLength = 256;
+
     private IReadOnlyList<string>? _tags;
     private IReadOnlyDictionary<string, string>? _labels;
     private IReadOnlyDictionary<string, string>? _annotations;

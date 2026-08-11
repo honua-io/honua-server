@@ -17,10 +17,10 @@ public sealed record LayerSourceGovernance
     public const int MaxLicenseLength = SpdxLicensePolicy.MaxExpressionLength;
 
     /// <summary>Maximum attribution length.</summary>
-    public const int MaxAttributionLength = 512;
+    public const int MaxAttributionLength = MetadataV2ObjectMetadata.MaxAttributionLength;
 
     /// <summary>Maximum publisher length.</summary>
-    public const int MaxPublisherLength = 256;
+    public const int MaxPublisherLength = MetadataV2ObjectMetadata.MaxPublisherLength;
 
     /// <summary>Maximum documentation URL length.</summary>
     public const int MaxUrlLength = 2048;

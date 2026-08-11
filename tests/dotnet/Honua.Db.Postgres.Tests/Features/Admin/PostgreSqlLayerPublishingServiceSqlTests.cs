@@ -499,8 +499,19 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var publishedAt = DateTimeOffset.Parse("2026-08-02T00:00:00Z", CultureInfo.InvariantCulture);
         var previousField = new MetadataV2Field { Name = "legacy_id", Type = MetadataV2FieldType.BigInteger };
         var persistedField = new MetadataV2Field { Name = "published_id", Type = MetadataV2FieldType.Integer };
-        var previousLink = new MetadataV2Link { Href = "https://example.test/original", Rel = "describedby" };
-        var persistedLink = new MetadataV2Link { Href = "https://example.test/failed", Rel = "describedby" };
+        var previousLink = new MetadataV2Link
+        {
+            Href = "https://example.test/original",
+            Rel = "describedby",
+            Title = "Original title",
+            ManagedBy = LayerSourceGovernance.LinkManager,
+        };
+        var persistedLink = previousLink with
+        {
+            Href = "https://example.test/failed",
+            Title = "Failed title",
+        };
+        var concurrentlyEditedFailedLink = persistedLink with { Title = "Concurrent title" };
         var concurrentLink = new MetadataV2Link { Href = "https://example.test/concurrent", Rel = "related" };
         var previousResource = new MetadataV2Resource
         {
@@ -564,7 +575,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Metadata = persistedResource.Metadata with
             {
                 Publisher = "Concurrent Data Office",
-                Links = [persistedLink, concurrentLink],
+                Links = [concurrentlyEditedFailedLink, concurrentLink],
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
@@ -583,7 +594,9 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
-        resource.Metadata.Links.Should().Equal(previousLink, concurrentLink);
+        resource.Metadata.Links.Should().Equal(
+            previousLink with { Title = "Concurrent title" },
+            concurrentLink);
         resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);

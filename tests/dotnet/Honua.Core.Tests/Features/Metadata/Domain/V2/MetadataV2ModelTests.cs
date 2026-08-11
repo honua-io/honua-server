@@ -482,6 +482,46 @@ public sealed class MetadataV2ModelTests
         result.Errors.Should().NotContain(error => error.Contains(email, StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidAttributionOrPublisher_ReturnsValidationError(
+        bool attribution,
+        bool oversized)
+    {
+        var graph = CreateValidGraph();
+        var resource = graph.Resources.Single();
+        var maxLength = attribution
+            ? MetadataV2ObjectMetadata.MaxAttributionLength
+            : MetadataV2ObjectMetadata.MaxPublisherLength;
+        var value = oversized ? new string('x', maxLength + 1) : "invalid\u0001text";
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    Metadata = resource.Metadata with
+                    {
+                        Attribution = attribution ? value : resource.Metadata.Attribution,
+                        Publisher = attribution ? resource.Metadata.Publisher : value,
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(error =>
+            error.Contains(
+                attribution ? "metadata.attribution must not exceed" : "metadata.publisher must not exceed",
+                StringComparison.Ordinal));
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     public void Validate_WithCredentialBearingContactUrl_ReturnsValidationError()

@@ -644,6 +644,17 @@ public static class MetadataV2GraphValidator
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
 
+        if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.attribution must not exceed {MetadataV2ObjectMetadata.MaxAttributionLength} characters or contain control characters.");
+        }
+        if (!IsValidGovernanceText(metadata.Publisher, MetadataV2ObjectMetadata.MaxPublisherLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.publisher must not exceed {MetadataV2ObjectMetadata.MaxPublisherLength} characters or contain control characters.");
+        }
+
         if (metadata.ContactPoint is { Email: { } email } &&
             !string.IsNullOrWhiteSpace(email) &&
             !HasNonEmptyEmailParts(email))
@@ -687,6 +698,9 @@ public static class MetadataV2GraphValidator
             string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
            !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
            string.IsNullOrEmpty(parsedUrl.UserInfo);
+
+    private static bool IsValidGovernanceText(string? value, int maxLength)
+        => value is null || (value.Length <= maxLength && !value.Any(char.IsControl));
 
     private static bool HasNonEmptyEmailParts(string value)
     {

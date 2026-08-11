@@ -827,11 +827,81 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Attribution = RestoreMutationValue(current.Attribution, previous.Attribution, persisted.Attribution),
             Publisher = RestoreMutationValue(current.Publisher, previous.Publisher, persisted.Publisher),
             ContactPoint = RestoreMutationValue(current.ContactPoint, previous.ContactPoint, persisted.ContactPoint),
-            Links = RestoreMutationSequence(
+            Links = RestoreMetadataLinksMutation(
                 current.Links,
                 previous.Links,
                 persisted.Links),
         };
+
+    private static List<MetadataV2Link> RestoreMetadataLinksMutation(
+        IReadOnlyList<MetadataV2Link> current,
+        IReadOnlyList<MetadataV2Link> previous,
+        IReadOnlyList<MetadataV2Link> persisted)
+    {
+        var currentByIdentity = IndexMetadataLinks(current);
+        var persistedByIdentity = IndexMetadataLinks(persisted);
+        var restored = new List<MetadataV2Link>(previous.Count + current.Count);
+        var handled = new HashSet<MetadataLinkIdentity>();
+
+        foreach (var (identity, previousLink) in EnumerateMetadataLinks(previous))
+        {
+            handled.Add(identity);
+            var hasCurrent = currentByIdentity.TryGetValue(identity, out var currentLink);
+            if (!persistedByIdentity.TryGetValue(identity, out var persistedLink))
+            {
+                restored.Add(hasCurrent ? currentLink! : previousLink);
+                continue;
+            }
+
+            if (hasCurrent)
+            {
+                restored.Add(RestoreMetadataLinkMutation(currentLink!, previousLink, persistedLink));
+            }
+        }
+
+        foreach (var (identity, currentLink) in EnumerateMetadataLinks(current))
+        {
+            if (!handled.Contains(identity) && !persistedByIdentity.ContainsKey(identity))
+            {
+                restored.Add(currentLink);
+            }
+        }
+
+        return restored;
+    }
+
+    private static MetadataV2Link RestoreMetadataLinkMutation(
+        MetadataV2Link current,
+        MetadataV2Link previous,
+        MetadataV2Link persisted)
+        => current with
+        {
+            Href = RestoreMutationValue(current.Href, previous.Href, persisted.Href),
+            Rel = RestoreMutationValue(current.Rel, previous.Rel, persisted.Rel),
+            Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
+            Title = RestoreMutationValue(current.Title, previous.Title, persisted.Title),
+            Hreflang = RestoreMutationValue(current.Hreflang, previous.Hreflang, persisted.Hreflang),
+            ManagedBy = RestoreMutationValue(current.ManagedBy, previous.ManagedBy, persisted.ManagedBy),
+        };
+
+    private static Dictionary<MetadataLinkIdentity, MetadataV2Link> IndexMetadataLinks(
+        IReadOnlyList<MetadataV2Link> links)
+        => EnumerateMetadataLinks(links).ToDictionary(item => item.Identity, item => item.Link);
+
+    private static IEnumerable<(MetadataLinkIdentity Identity, MetadataV2Link Link)> EnumerateMetadataLinks(
+        IReadOnlyList<MetadataV2Link> links)
+    {
+        var occurrences = new Dictionary<(string Relation, string? ManagedBy), int>();
+        foreach (var link in links)
+        {
+            var stableKey = (Relation: link.Rel.ToUpperInvariant(), ManagedBy: link.ManagedBy);
+            occurrences.TryGetValue(stableKey, out var occurrence);
+            occurrences[stableKey] = occurrence + 1;
+            yield return (new MetadataLinkIdentity(stableKey.Relation, stableKey.ManagedBy, occurrence), link);
+        }
+    }
+
+    private readonly record struct MetadataLinkIdentity(string Relation, string? ManagedBy, int Occurrence);
 
     private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
         MetadataV2ResourceSpatial? current,
