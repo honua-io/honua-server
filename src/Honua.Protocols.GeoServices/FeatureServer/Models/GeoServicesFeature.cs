@@ -48,4 +48,12 @@ public sealed class GeoServicesFeature
     /// </summary>
     [JsonIgnore]
     internal bool ReplaceAttributes { get; init; }
+
+    /// <summary>
+    /// Read-only attributes inherited from a trusted captured conflict snapshot. They identify values
+    /// to preserve from the current row rather than validate as client/operator mutations.
+    /// </summary>
+    [JsonIgnore]
+    internal IReadOnlySet<string> InheritedNonEditableAttributes { get; init; } =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }

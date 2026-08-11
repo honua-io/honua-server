@@ -1568,16 +1568,18 @@ internal sealed class FeatureServerEditsHandler(
 
         IReadOnlyDictionary<string, object?> attributesToValidate = feature.Attributes;
         MetadataV2Field[] nonEditableFields = [];
-        if (existingFeature is not null && feature.ReplaceAttributes)
+        if (existingFeature is not null &&
+            (feature.ReplaceAttributes || feature.InheritedNonEditableAttributes.Count > 0))
         {
-            // A complete server snapshot contains the row's read-only fields as well as its editable
-            // business state. They are not an operator mutation: keep the values from the currently
-            // addressed row, and validate/replace only fields clients are allowed to edit. This also
-            // keeps a custom non-editable id.primary available after rebuilding the attribute bag.
+            // Captured conflict envelopes contain the row's read-only fields as well as its editable
+            // business state. Inherited values are not an operator mutation: validate only explicitly
+            // selected/editable fields and keep read-only values from the currently addressed row. For
+            // complete-state replacement this also keeps a custom non-editable id.primary available
+            // after rebuilding the attribute bag.
             nonEditableFields = resource.SchemaFields.Where(field => !field.Editable).ToArray();
-            var nonEditableNames = nonEditableFields
-                .Select(field => field.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var nonEditableNames = feature.ReplaceAttributes
+                ? nonEditableFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : feature.InheritedNonEditableAttributes;
             attributesToValidate = feature.Attributes
                 .Where(entry => !nonEditableNames.Contains(entry.Key))
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
@@ -1599,10 +1601,11 @@ internal sealed class FeatureServerEditsHandler(
             : ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (existingFeature is not null && feature.ReplaceAttributes)
         {
+            var currentAttributes = existingFeature.Value.Attributes;
             foreach (var field in nonEditableFields.Where(field =>
-                         existingFeature.Value.Attributes.ContainsKey(field.Name)))
+                         currentAttributes.ContainsKey(field.Name)))
             {
-                attributes[field.Name] = existingFeature.Value.Attributes[field.Name];
+                attributes[field.Name] = currentAttributes[field.Name];
             }
         }
         foreach (var (key, value) in attributesResult.Value!)

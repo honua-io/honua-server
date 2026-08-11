@@ -151,6 +151,11 @@ public sealed class ReplicaSyncClientEditAttributionTests
         report.Conflicts[1].Applied.Should().BeTrue("the committed slot is the second operation");
         report.Conflicts[0].Applied.Should().BeFalse("the failed slot must not be promoted");
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
+        repository.DetectionUpdates.Should().ContainSingle(update =>
+                update.ClientEditSuperseded == true)
+            .Which.ConflictId.Should().Be(
+                report.Conflicts[0].ConflictId,
+                "the failed edit's captured state was displaced by the committed delete");
     }
 
     [UnitTest]

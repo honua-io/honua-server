@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -216,7 +217,7 @@ public static class ReplicaConflictResolutionPlanner
                 document.RootElement,
                 fieldValues,
                 geometrySource: null);
-            return Write(merged);
+            return Write(merged, explicitAttributeNames: fieldValues.Keys.ToImmutableArray());
         }
         catch (JsonException)
         {
@@ -387,7 +388,8 @@ public static class ReplicaConflictResolutionPlanner
 
     private static ReplicaConflictResolutionPlan Write(
         string featureStateJson,
-        bool replaceAttributes = false)
+        bool replaceAttributes = false,
+        ImmutableArray<string> explicitAttributeNames = default)
         => new ReplicaConflictResolutionPlan(
             ReplicaConflictResolutionEffect.WriteFeatureState,
             featureStateJson,
@@ -395,7 +397,8 @@ public static class ReplicaConflictResolutionPlanner
             ReplicaConflictResolutionRejection.None,
             RejectionMessage: null)
         {
-            ReplaceAttributes = replaceAttributes
+            ReplaceAttributes = replaceAttributes,
+            ExplicitAttributeNames = explicitAttributeNames
         };
 
     private static ReplicaConflictResolutionPlan Invalid(string message) => new(

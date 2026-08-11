@@ -319,6 +319,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
 
         plan.IsAccepted.Should().BeTrue();
         plan.Effect.Should().Be(ReplicaConflictResolutionEffect.WriteFeatureState);
+        plan.ExplicitAttributeNames.Should().Equal("name");
 
         using var document = JsonDocument.Parse(plan.FeatureStateJson!);
         var attributes = document.RootElement.GetProperty("attributes");

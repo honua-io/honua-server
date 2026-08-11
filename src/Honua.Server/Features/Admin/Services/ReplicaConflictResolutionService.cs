@@ -1097,7 +1097,8 @@ internal sealed partial class ReplicaConflictResolutionService
                 expectedStateToken,
                 expectedRowAbsent)
             {
-                ReplaceAttributes = plan.ReplaceAttributes
+                ReplaceAttributes = plan.ReplaceAttributes,
+                ExplicitAttributeNames = plan.ExplicitAttributeNames
             },
             cancellationToken);
 

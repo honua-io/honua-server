@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
@@ -96,6 +97,13 @@ public readonly record struct ReplicaConflictResolutionPlan(
     /// envelopes and partial operator resolutions are not.
     /// </summary>
     public bool ReplaceAttributes { get; init; }
+
+    /// <summary>
+    /// Attribute names explicitly selected by the operator rather than inherited from a captured
+    /// feature-state envelope. The protocol adapter uses this distinction to omit unchanged read-only
+    /// snapshot fields while still validating an attempted operator mutation of such a field.
+    /// </summary>
+    public ImmutableArray<string> ExplicitAttributeNames { get; init; }
 }
 
 /// <summary>
@@ -139,6 +147,12 @@ public readonly record struct ReplicaConflictResolutionCommand(
     /// Internal shared-pipeline intent; never part of the GeoServices wire contract.
     /// </summary>
     public bool ReplaceAttributes { get; init; }
+
+    /// <summary>
+    /// Attribute names explicitly selected by the operator rather than inherited from the captured
+    /// state. Internal shared-pipeline intent; never part of the GeoServices wire contract.
+    /// </summary>
+    public ImmutableArray<string> ExplicitAttributeNames { get; init; }
 }
 
 /// <summary>

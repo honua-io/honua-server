@@ -100,7 +100,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
                         feature,
                         identity,
                         command.ObjectId,
-                        command.ReplaceAttributes)],
+                        command.ReplaceAttributes,
+                        command.ExplicitAttributeNames)],
                     RollbackOnFailure = true,
                     RollbackOnFailureExplicitlySet = true,
                 };
@@ -254,7 +255,8 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         GeoServicesFeature feature,
         LayerIdentity identity,
         long objectId,
-        bool replaceAttributes)
+        bool replaceAttributes,
+        ImmutableArray<string> explicitAttributeNames)
     {
         var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var entry in feature.Attributes.Where(entry => !IsObjectIdKey(entry.Key, identity)))
@@ -264,6 +266,16 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
 
         attributes[identity.ObjectIdField] = objectId;
 
+        var explicitlySelected = explicitAttributeNames.IsDefaultOrEmpty
+            ? []
+            : explicitAttributeNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var inheritedNonEditableAttributes = identity.Resource.SchemaFields
+            .Where(field =>
+                !field.Editable &&
+                (!explicitlySelected.Contains(field.Name) || IsObjectIdKey(field.Name, identity)))
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         return new GeoServicesFeature
         {
             Attributes = attributes,
@@ -272,6 +284,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
             IncludeGeometry = feature.IncludeGeometry,
             ClearGeometry = feature.IncludeGeometry && feature.Geometry is null,
             ReplaceAttributes = replaceAttributes,
+            InheritedNonEditableAttributes = inheritedNonEditableAttributes,
         };
     }
 

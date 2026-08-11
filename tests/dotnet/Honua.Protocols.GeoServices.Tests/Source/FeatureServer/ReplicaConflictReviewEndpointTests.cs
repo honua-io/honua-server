@@ -626,6 +626,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var replicaId = await CreateReplicaAsync("ResolveMergeFieldsReplica");
         var seeded = await SeedConflictAsync(replicaId, clientEditApplied: true);
         await UpdateFeatureNameAsync(seeded.ObjectId, "client");
+        await MarkObjectIdFieldNonEditableAsync();
 
         var response = await _fixture.Client.PostAsync(
             ResolvePath(WebAppFixture.TestServiceId, replicaId, seeded.ConflictId),
@@ -646,6 +647,9 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         (await ReadFeatureNameAsync(seeded.ObjectId)).Should().Be(
             "merged",
             "a field merge must commit the operator-selected values, which the action-only request model could never express");
+        (await ReadFeatureAttributesAsync(seeded.ObjectId)).GetProperty("objectid").GetInt64().Should().Be(
+            seeded.ObjectId,
+            "an inherited read-only identity is snapshot context, not an attempted operator mutation");
     }
 
     [IntegrationTest]

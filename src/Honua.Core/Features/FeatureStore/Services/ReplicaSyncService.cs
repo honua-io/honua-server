@@ -621,11 +621,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             var winner = lastCommittedByObject.GetValueOrDefault(conflict.ObjectId, (Rank: -1, Slot: -1));
             if (winner.Rank != ExecutionRank(conflict.ClientKind) || winner.Slot != layerConflictSlots[i])
             {
-                // A committed edit that is NOT the final writer for its object was overwritten by a
-                // later one from the same upload. Leaving it at ClientEditApplied=false alone made the
-                // planner read it as a withheld manual-review edit, so keepServer finalized a no-op
-                // while the row actually held the later client update (#2430).
-                if (committedSlots.Contains(layerConflictSlots[i]) &&
+                // Any edit that is NOT the final writer for its object was displaced when a sibling
+                // committed later in execution order. This includes a failed edit: leaving that
+                // conflict at ClientEditApplied=false alone makes the planner read it as a withheld
+                // manual-review edit, so keepServer finalizes a no-op even though the committed sibling
+                // changed (or deleted) the row (#2430).
+                if (winner.Slot >= 0 &&
                     conflict.ConflictId is { Length: > 0 } supersededId)
                 {
                     superseded.Add(supersededId);
