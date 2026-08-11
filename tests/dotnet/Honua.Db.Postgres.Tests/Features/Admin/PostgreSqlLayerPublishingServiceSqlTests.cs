@@ -528,17 +528,21 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Publisher = "Original publisher",
                 CreatedAt = originalAt,
                 UpdatedAt = originalAt,
+                Tags = ["tag-original"],
                 Labels = new Dictionary<string, string>
                 {
                     ["restored"] = "original",
                     ["edited"] = "original",
                 },
                 Annotations = new Dictionary<string, string> { ["restored"] = "original" },
+                Keywords = ["keyword-original"],
+                Themes = ["theme-original"],
                 Links = [previousLink],
             },
             StorageBindingIds = ["binding-imported"],
             PrimaryStorageBindingId = "binding-imported",
             SchemaFields = [previousField],
+            PolicyIds = ["policy-original"],
             StyleResourceIds = ["style-original"],
             AccessPolicy = new AccessPolicy
             {
@@ -579,13 +583,17 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 Name = "Published resource",
                 Publisher = null,
                 UpdatedAt = publishedAt,
+                Tags = [],
                 Labels = new Dictionary<string, string> { ["edited"] = "failed" },
                 Annotations = new Dictionary<string, string>(),
+                Keywords = [],
+                Themes = [],
                 Links = [persistedLink],
             },
             StorageBindingIds = ["binding-generated"],
             PrimaryStorageBindingId = "binding-generated",
             SchemaFields = [persistedField],
+            PolicyIds = ["policy-failed"],
             StyleResourceIds = ["style-failed"],
             AccessPolicy = null,
             Temporal = null,
@@ -610,15 +618,19 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Metadata = persistedResource.Metadata with
             {
                 Publisher = "Concurrent Data Office",
+                Tags = ["tag-concurrent"],
                 Labels = new Dictionary<string, string>
                 {
                     ["edited"] = "concurrent",
                     ["concurrent"] = "added",
                 },
                 Annotations = new Dictionary<string, string> { ["concurrent"] = "added" },
+                Keywords = ["keyword-concurrent"],
+                Themes = ["theme-concurrent"],
                 Links = [concurrentLink, concurrentlyEditedFailedLink],
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
+            PolicyIds = ["policy-failed", "policy-concurrent"],
             StyleResourceIds = ["style-failed", "style-concurrent"],
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["concurrent-writer"] },
             Temporal = new MetadataV2ResourceTemporal { TrackIdField = "concurrent_track" },
@@ -638,6 +650,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
+        resource.Metadata.Tags.Should().Equal("tag-original", "tag-concurrent");
         resource.Metadata.Labels.Should().BeEquivalentTo(new Dictionary<string, string>
         {
             ["restored"] = "original",
@@ -649,6 +662,8 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             ["restored"] = "original",
             ["concurrent"] = "added",
         });
+        resource.Metadata.Keywords.Should().Equal("keyword-original", "keyword-concurrent");
+        resource.Metadata.Themes.Should().Equal("theme-original", "theme-concurrent");
         resource.Metadata.Links.Should().Equal(
             concurrentLink,
             previousLink with
@@ -660,6 +675,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);
+        resource.PolicyIds.Should().Equal("policy-original", "policy-concurrent");
         resource.StyleResourceIds.Should().Equal("style-original", "style-concurrent");
         resource.AccessPolicy!.AllowAnonymous.Should().BeFalse();
         resource.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();

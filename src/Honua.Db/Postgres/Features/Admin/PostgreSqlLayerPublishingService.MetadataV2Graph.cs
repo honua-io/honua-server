@@ -556,11 +556,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.SchemaFields,
                 previous.SchemaFields,
                 persisted.SchemaFields),
-            PolicyIds = RestoreResourceMutationValue(
+            PolicyIds = RestoreMutationSequence(
                 current.PolicyIds,
                 previous.PolicyIds,
-                persisted.PolicyIds,
-                static value => new MetadataV2Resource { PolicyIds = value }),
+                persisted.PolicyIds),
             Relationships = RestoreResourceMutationValue(
                 current.Relationships,
                 previous.Relationships,
@@ -792,11 +791,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Tenant = RestoreMutationValue(current.Tenant, previous.Tenant, persisted.Tenant),
             Title = RestoreMutationValue(current.Title, previous.Title, persisted.Title),
             Description = RestoreMutationValue(current.Description, previous.Description, persisted.Description),
-            Tags = RestoreMetadataMutationValue(
+            Tags = RestoreMutationSequence(
                 current.Tags,
                 previous.Tags,
-                persisted.Tags,
-                static value => new MetadataV2ObjectMetadata { Tags = value }),
+                persisted.Tags),
             Labels = RestoreMetadataMapMutation(
                 current.Labels,
                 previous.Labels,
@@ -808,16 +806,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Generation = RestoreMutationValue(current.Generation, previous.Generation, persisted.Generation),
             CreatedAt = RestoreMutationValue(current.CreatedAt, previous.CreatedAt, persisted.CreatedAt),
             UpdatedAt = RestoreMutationValue(current.UpdatedAt, previous.UpdatedAt, persisted.UpdatedAt),
-            Keywords = RestoreMetadataMutationValue(
+            Keywords = RestoreMutationSequence(
                 current.Keywords,
                 previous.Keywords,
-                persisted.Keywords,
-                static value => new MetadataV2ObjectMetadata { Keywords = value }),
-            Themes = RestoreMetadataMutationValue(
+                persisted.Keywords),
+            Themes = RestoreMutationSequence(
                 current.Themes,
                 previous.Themes,
-                persisted.Themes,
-                static value => new MetadataV2ObjectMetadata { Themes = value }),
+                persisted.Themes),
             Language = RestoreMutationValue(current.Language, previous.Language, persisted.Language),
             License = RestoreMutationValue(current.License, previous.License, persisted.License),
             Attribution = RestoreMutationValue(current.Attribution, previous.Attribution, persisted.Attribution),
@@ -1233,18 +1229,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             persisted,
             containerFactory,
             MetadataV2JsonContext.Default.MetadataV2Connection);
-
-    private static T RestoreMetadataMutationValue<T>(
-        T current,
-        T previous,
-        T persisted,
-        Func<T, MetadataV2ObjectMetadata> containerFactory)
-        => RestoreJsonMutationValue(
-            current,
-            previous,
-            persisted,
-            containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2ObjectMetadata);
 
     private static T RestoreSpatialMutationValue<T>(
         T current,
