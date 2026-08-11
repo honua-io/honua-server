@@ -1068,34 +1068,40 @@ internal sealed partial class PostgreSqlLayerPublishingService
         AccessPolicy? previous,
         AccessPolicy? persisted)
     {
-        if (current is null || previous is null || persisted is null)
+        if (current is null)
         {
-            return RestoreResourceMutationValue(
-                current,
-                previous,
-                persisted,
-                static value => new MetadataV2Resource { AccessPolicy = value });
+            return persisted is null && previous is not null ? previous : null;
         }
 
-        return current with
+        var previousValue = previous ?? new AccessPolicy();
+        var persistedValue = persisted ?? new AccessPolicy();
+        var restored = current with
         {
             AllowAnonymous = RestoreMutationValue(
                 current.AllowAnonymous,
-                previous.AllowAnonymous,
-                persisted.AllowAnonymous),
+                previousValue.AllowAnonymous,
+                persistedValue.AllowAnonymous),
             AllowAnonymousWrite = RestoreMutationValue(
                 current.AllowAnonymousWrite,
-                previous.AllowAnonymousWrite,
-                persisted.AllowAnonymousWrite),
+                previousValue.AllowAnonymousWrite,
+                persistedValue.AllowAnonymousWrite),
             AllowedRoles = RestoreAccessPolicyRolesMutation(
                 current.AllowedRoles,
-                previous.AllowedRoles,
-                persisted.AllowedRoles),
+                previousValue.AllowedRoles,
+                persistedValue.AllowedRoles),
             AllowedWriteRoles = RestoreAccessPolicyRolesMutation(
                 current.AllowedWriteRoles,
-                previous.AllowedWriteRoles,
-                persisted.AllowedWriteRoles),
+                previousValue.AllowedWriteRoles,
+                persistedValue.AllowedWriteRoles),
         };
+
+        return previous is null &&
+               !restored.AllowAnonymous &&
+               !restored.AllowAnonymousWrite &&
+               restored.AllowedRoles is null &&
+               restored.AllowedWriteRoles is null
+            ? null
+            : restored;
     }
 
     private static string[]? RestoreAccessPolicyRolesMutation(

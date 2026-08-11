@@ -80,11 +80,26 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
-        var layers = new List<PublishedLayerSummary>();
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        var layers = await ReadPublishedLayersAsync(
+                connection,
+                transaction: null,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
 
+        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string normalizedService,
+        CancellationToken cancellationToken)
+    {
+        var layers = new List<PublishedLayerSummary>();
         const string sql = """
             SELECT
                 l.layer_id,
@@ -116,7 +131,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ORDER BY l.layer_id;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@serviceName", normalizedService);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -138,7 +153,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             });
         }
 
-        return await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken).ConfigureAwait(false);
+        return layers;
     }
 
     public async Task<PublishedLayerSummary> PublishLayerAsync(
@@ -651,9 +666,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await updateCommand.ExecuteNonQueryAsync(cancellationToken);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
+        var layers = await ReadPublishedLayersAsync(
+                connection,
+                transaction,
+                normalizedService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, cancellationToken)
+            .ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken);
-
-        return await ListPublishedLayersAsync(connectionString, normalizedService, cancellationToken);
+        return hydratedLayers;
     }
 
     public async Task<LayerExtentRefreshResult?> RefreshLayerExtentsAsync(

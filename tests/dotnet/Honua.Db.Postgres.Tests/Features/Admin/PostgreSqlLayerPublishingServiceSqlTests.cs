@@ -587,13 +587,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             PrimaryStorageBindingId = "binding-generated",
             SchemaFields = [persistedField],
             StyleResourceIds = ["style-failed"],
-            AccessPolicy = new AccessPolicy
-            {
-                AllowAnonymous = true,
-                AllowAnonymousWrite = true,
-                AllowedRoles = null,
-                AllowedWriteRoles = ["failed-writer"],
-            },
+            AccessPolicy = null,
             Temporal = null,
             Spatial = new MetadataV2ResourceSpatial
             {
@@ -626,7 +620,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             },
             StorageBindingIds = ["binding-generated", "binding-concurrent"],
             StyleResourceIds = ["style-failed", "style-concurrent"],
-            AccessPolicy = persistedResource.AccessPolicy! with { AllowedWriteRoles = ["concurrent-writer"] },
+            AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["concurrent-writer"] },
             Temporal = new MetadataV2ResourceTemporal { TrackIdField = "concurrent_track" },
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
