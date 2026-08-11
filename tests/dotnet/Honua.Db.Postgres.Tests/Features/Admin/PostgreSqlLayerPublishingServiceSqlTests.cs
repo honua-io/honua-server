@@ -557,6 +557,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         var currentResource = persistedResource with
         {
             Metadata = persistedResource.Metadata with { Publisher = "Concurrent Data Office" },
+            StorageBindingIds = ["binding-generated", "binding-concurrent"],
             Spatial = persistedResource.Spatial! with { Bbox = concurrentBbox },
         };
         var previous = new MetadataV2Graph { Revision = 7, Resources = [previousResource] };
@@ -573,7 +574,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
         resource.Metadata.Name.Should().Be(previousResource.Metadata.Name);
         resource.Metadata.UpdatedAt.Should().Be(originalAt);
         resource.Metadata.Publisher.Should().Be("Concurrent Data Office");
-        resource.StorageBindingIds.Should().Equal("binding-imported");
+        resource.StorageBindingIds.Should().Equal("binding-imported", "binding-concurrent");
         resource.PrimaryStorageBindingId.Should().Be("binding-imported");
         resource.SchemaFields.Should().Equal(previousField);
         resource.Spatial!.SpatialReference.Should().Be(previousResource.Spatial!.SpatialReference);

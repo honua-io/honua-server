@@ -639,9 +639,7 @@ internal static class ServiceSettingsEndpoints
         DateTimeOffset updatedAt)
     {
         var effectiveLicense = request.License is null ? current.License : normalized?.License;
-        var currentLicenseUrl = FindGovernanceLink(current, "license") ??
-            current.Links.FirstOrDefault(link =>
-                string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase))?.Href;
+        var currentLicenseUrl = FindGovernanceLink(current, "license");
         var requestedLicenseUrl = request.LicenseUrl;
         var normalizedLicenseUrl = normalized?.LicenseUrl;
         if (request.License is not null && request.LicenseUrl is null)
@@ -738,9 +736,17 @@ internal static class ServiceSettingsEndpoints
     }
 
     private static string? FindGovernanceLink(MetadataV2ObjectMetadata metadata, string relation)
-        => metadata.Links.FirstOrDefault(link =>
-            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(link.ManagedBy, LayerSourceGovernance.LinkManager, StringComparison.Ordinal))?.Href;
+    {
+        var relationLinks = metadata.Links
+            .Where(link => string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return relationLinks.FirstOrDefault(link =>
+                   string.Equals(
+                       link.ManagedBy,
+                       LayerSourceGovernance.LinkManager,
+                       StringComparison.Ordinal))?.Href ??
+               relationLinks.FirstOrDefault()?.Href;
+    }
 
     private static int FindGovernanceLinkIndex(List<MetadataV2Link> links, string relation)
     {

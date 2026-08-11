@@ -641,7 +641,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
             using var document = JsonDocument.Parse(await urlResponse.Content.ReadAsStringAsync());
             var data = document.RootElement.GetProperty("data");
             data.GetProperty("licenseUrl").GetString().Should().Be(newLicenseUrl);
-            AssertAbsentOrNull(data, "sourceUrl");
+            data.GetProperty("sourceUrl").GetString().Should().Be(unrelatedSourceUrl);
         }
 
         var updatedMetadata = GetLayerMetadata(0);
@@ -719,6 +719,34 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
             string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase));
         metadata.Links.Should().ContainSingle(link => link.Rel == "self" && link.Href == unrelatedUrl);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_UnrelatedPatch_ReturnsUnmanagedCanonicalLinks()
+    {
+        const string licenseUrl = "https://example.test/imported-license";
+        const string sourceUrl = "https://example.test/imported-source";
+        await SetLayerGovernanceMetadataAsync(
+            layerId: 0,
+            license: "MIT",
+            links:
+            [
+                new MetadataV2Link { Href = licenseUrl, Rel = "license" },
+                new MetadataV2Link { Href = sourceUrl, Rel = "describedby" },
+            ]);
+
+        using var content = new StringContent(
+            """{"attribution":"Imported data office"}""",
+            Encoding.UTF8,
+            "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("licenseUrl").GetString().Should().Be(licenseUrl);
+        data.GetProperty("sourceUrl").GetString().Should().Be(sourceUrl);
     }
 
     [IntegrationTest]

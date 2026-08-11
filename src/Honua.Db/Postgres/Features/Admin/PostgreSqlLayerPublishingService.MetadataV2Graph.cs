@@ -543,11 +543,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
             Type = RestoreMutationValue(current.Type, previous.Type, persisted.Type),
-            StorageBindingIds = RestoreResourceMutationValue(
+            StorageBindingIds = RestoreMutationSequence(
                 current.StorageBindingIds,
                 previous.StorageBindingIds,
-                persisted.StorageBindingIds,
-                static value => new MetadataV2Resource { StorageBindingIds = value }),
+                persisted.StorageBindingIds),
             PrimaryStorageBindingId = RestoreMutationValue(
                 current.PrimaryStorageBindingId,
                 previous.PrimaryStorageBindingId,

@@ -602,13 +602,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             return null;
         }
 
+        // Resolve response-only governance before changing transactional state. A graph read failure
+        // must not turn a successfully committed enablement change into an apparent request failure.
+        var hydratedLayers = await HydrateSourceGovernanceAsync([layer], normalizedService, cancellationToken)
+            .ConfigureAwait(false);
+        layer = hydratedLayers[0];
+
         await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
             .ConfigureAwait(false);
         layer = CloneWithEnabled(layer, enabled);
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         await transaction.CommitSafelyAsync(cancellationToken);
-        return await HydrateSourceGovernanceAsync(layer, normalizedService, cancellationToken).ConfigureAwait(false);
+        return layer;
     }
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> SetServiceLayersEnabledAsync(
