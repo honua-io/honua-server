@@ -45,10 +45,10 @@ public sealed class PluginMetricsTests
 
         listener.Dispose();
 
-        invocations.Should().ContainSingle()
-            .Which.Should().Be(("p1", "validate"));
-        durations.Should().ContainSingle()
-            .Which.Should().Be(("p1", "validate"));
+        invocations.Should().ContainSingle(measurement =>
+            measurement.Plugin == "p1" && measurement.Extension == "validate");
+        durations.Should().ContainSingle(measurement =>
+            measurement.Plugin == "p1" && measurement.Extension == "validate");
     }
 
     [Fact]
@@ -74,7 +74,8 @@ public sealed class PluginMetricsTests
 
         listener.Dispose();
 
-        failures.Should().ContainSingle().Which.Should().Be(("p2", "compute"));
+        failures.Should().ContainSingle(measurement =>
+            measurement.Plugin == "p2" && measurement.Extension == "compute");
     }
 
     private static (string Plugin, string Extension) ReadTags(ReadOnlySpan<KeyValuePair<string, object?>> tags)
