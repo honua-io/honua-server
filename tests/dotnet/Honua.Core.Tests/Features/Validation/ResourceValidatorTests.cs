@@ -120,6 +120,15 @@ public sealed class ResourceValidatorTests
             Publications =
             [
                 graph.Publications[0] with { ServiceId = "service-aggregate" },
+                graph.Publications[1] with
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "pub-disabled-feature",
+                        Name = "7",
+                    },
+                    ServiceId = "service-aggregate",
+                },
                 graph.Publications[1] with { ServiceId = "service-feature" },
             ],
         };

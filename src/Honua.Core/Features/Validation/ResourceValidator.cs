@@ -308,6 +308,7 @@ public sealed class ResourceValidator : IResourceValidator
             .Where(service =>
                 string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
             .Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                 .Any(publication =>
                     publication.LayerIndex == layerId &&
