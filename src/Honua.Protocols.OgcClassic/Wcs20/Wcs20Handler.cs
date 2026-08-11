@@ -569,12 +569,13 @@ internal sealed class Wcs20Handler
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
+            var routableResource = resource!;
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service.Service))
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, routableResource, service.Service))
             {
                 continue;
             }
@@ -588,10 +589,10 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+            if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
-                byResource[resource.Metadata.Id] = (publication, resource, storageLayerId.Value);
+                byResource[routableResource.Metadata.Id] = (publication, routableResource, storageLayerId.Value);
             }
         }
 
@@ -657,8 +658,8 @@ internal sealed class Wcs20Handler
         }
 
         var resource = snapshot.ResolveResource(publication);
-        if (resource is null ||
-            !AccessPolicyHelpers.IsResourceAccessible(context, resource, service.Service))
+        if (!publication.IsRoutable(resource) ||
+            !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service.Service))
         {
             return new CoverageResolutionResult(null, null);
         }
@@ -672,7 +673,7 @@ internal sealed class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
-            : new CoverageResolutionResult(new WcsCoverage(resource, storageLayerId.Value, raster.Value, service.Service), null);
+            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value, service.Service), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -708,16 +709,29 @@ internal sealed class Wcs20Handler
 
     private static bool TryResolveResourceForLayer(MetadataV2GraphSnapshot snapshot, int layerId, out MetadataV2Resource resource)
     {
-        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byBinding))
+        var matchingBindings = snapshot.Graph.StorageBindings
+            .Where(candidate => candidate.StorageLayerId == layerId)
+            .ToArray();
+        foreach (var binding in matchingBindings)
         {
-            resource = byBinding;
-            return true;
+            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
+                binding.IsRoutable(byBinding))
+            {
+                resource = byBinding;
+                return true;
+            }
+        }
+        if (matchingBindings.Length > 0)
+        {
+            resource = default!;
+            return false;
         }
 
         var resolved = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
-            .Select(snapshot.ResolveResource)
-            .FirstOrDefault(candidate => candidate is not null);
+            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
+            .FirstOrDefault(candidate => candidate.Publication.IsRoutable(candidate.Resource))
+            .Resource;
         if (resolved is not null)
         {
             resource = resolved;

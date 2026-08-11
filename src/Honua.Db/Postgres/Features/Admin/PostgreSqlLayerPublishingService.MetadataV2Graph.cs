@@ -92,6 +92,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MetadataV2PublicationType.EsriFeatureLayer,
             isPrimary: true,
             idPrefix: "pub",
+            request.Enabled,
             now);
         var stacPublication = BuildPublishedPublication(
             service,
@@ -102,6 +103,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MetadataV2PublicationType.StacCollection,
             isPrimary: false,
             idPrefix: "pub-stac",
+            request.Enabled,
             now);
         var connection = BuildPublishedConnection(request.ConnectionId, now);
         service = service with
@@ -2525,6 +2527,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 MetadataV2PublicationType.EsriFeatureLayer,
                 isPrimary: true,
                 idPrefix: "pub",
+                enabled,
                 now) with
             { Status = linkedStatus };
         }
@@ -2977,7 +2980,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
             // whose target column was not published are dropped (honua-server#1271).
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
-            Status = ActiveReadyStatus(now)
+            Status = LayerReadyStatus(request.Enabled, now)
         };
     }
 
@@ -3120,7 +3123,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 MetadataV2StorageBindingCapability.Aggregate
             ],
             Options = options,
-            Status = ActiveReadyStatus(now)
+            Status = LayerReadyStatus(request.Enabled, now)
         };
     }
 
@@ -3133,6 +3136,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2PublicationType publicationType,
         bool isPrimary,
         string idPrefix,
+        bool enabled,
         DateTimeOffset now)
     {
         return new MetadataV2Publication
@@ -3157,7 +3161,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
             Capabilities = _defaultCapabilities,
-            Status = ActiveReadyStatus(now)
+            Status = LayerReadyStatus(enabled, now)
         };
     }
 

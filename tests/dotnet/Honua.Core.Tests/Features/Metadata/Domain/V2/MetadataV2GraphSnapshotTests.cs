@@ -109,6 +109,36 @@ public sealed class MetadataV2GraphSnapshotTests
         missing.Should().BeEmpty();
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void IsRoutable_RequiresNonRetiredPublicationAndResource()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var publication = new MetadataV2Publication { Status = active };
+        var resource = new MetadataV2Resource { Status = active };
+
+        publication.IsRoutable(resource).Should().BeTrue();
+        (publication with { Status = retired }).IsRoutable(resource).Should().BeFalse();
+        publication.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        publication.IsRoutable(resource: null).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void IsRoutable_RequiresNonRetiredBindingAndResource()
+    {
+        var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
+        var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
+        var binding = new MetadataV2StorageBinding { Status = active };
+        var resource = new MetadataV2Resource { Status = active };
+
+        binding.IsRoutable(resource).Should().BeTrue();
+        (binding with { Status = retired }).IsRoutable(resource).Should().BeFalse();
+        binding.IsRoutable(resource with { Status = retired }).Should().BeFalse();
+        binding.IsRoutable(resource: null).Should().BeFalse();
+    }
+
     private static MetadataV2Graph SampleGraph()
     {
         return new MetadataV2Graph

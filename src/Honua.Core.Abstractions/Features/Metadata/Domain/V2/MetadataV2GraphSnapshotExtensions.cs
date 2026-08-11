@@ -11,6 +11,33 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public static class MetadataV2GraphSnapshotExtensions
 {
     /// <summary>
+    /// Returns whether a publication and its canonical resource may be exposed by a
+    /// protocol adapter. Retired graph entries remain addressable for administration
+    /// and reconciliation, but must not be published on serving routes.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        return publication.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+               resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired };
+    }
+
+    /// <summary>
+    /// Returns whether a storage binding and its canonical resource may be exposed by
+    /// a binding-scoped protocol route.
+    /// </summary>
+    public static bool IsRoutable(
+        this MetadataV2StorageBinding binding,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return binding.Status.Lifecycle != MetadataV2LifecycleStatus.Retired &&
+               resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired };
+    }
+
+    /// <summary>
     /// Finds a service by case-insensitive name.
     /// </summary>
     public static MetadataV2Service? FindService(this MetadataV2GraphSnapshot snapshot, string serviceName)

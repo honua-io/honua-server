@@ -1273,6 +1273,16 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 Enabled = false
             });
 
+            var publishedGraph = _fixture.GetCurrentV2GraphSnapshot();
+            var disabledBinding = publishedGraph.Graph.StorageBindings.Single(binding =>
+                binding.StorageLayerId == disabledLayer.LayerId);
+            var disabledResource = publishedGraph.Index.ResourcesById[disabledBinding.ResourceId];
+            var disabledPublications = publishedGraph.Index.PublicationsByResource[disabledResource.Metadata.Id];
+            disabledBinding.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+            disabledResource.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+            disabledPublications.Should().HaveCount(2).And.OnlyContain(publication =>
+                publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired);
+
             // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also clears the per-test public table).
             await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""

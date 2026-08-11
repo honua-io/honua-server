@@ -150,10 +150,10 @@ internal sealed partial class Wfs20Handler
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null ||
+            if (!publication.IsRoutable(resource) ||
                 !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
-                    resource,
+                    resource!,
                     service,
                     AuthorizationOperation.Query,
                     cancellationToken).ConfigureAwait(false))
@@ -167,7 +167,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            candidates.Add((storageLayerId.Value, resource, publication, service!));
+            candidates.Add((storageLayerId.Value, resource!, publication, service!));
         }
 
         var visiblePublications = candidates
