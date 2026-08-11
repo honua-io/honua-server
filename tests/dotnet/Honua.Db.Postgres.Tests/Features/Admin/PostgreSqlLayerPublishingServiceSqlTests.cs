@@ -288,6 +288,138 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedResource()
+    {
+        var failedPublication = CreatePublication(
+            "pub-failed",
+            "service-existing",
+            "resource-added",
+            "binding-added",
+            0,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var previousService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = ServiceProtocols.All,
+        };
+        var failedResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added", Name = "failed-resource" },
+            StorageBindingIds = ["binding-added"],
+            PrimaryStorageBindingId = "binding-added",
+        };
+        var failedBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
+            ResourceId = failedResource.Metadata.Id,
+            Locator = "failed_table",
+            StorageLayerId = 0,
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Services = [previousService] };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Services = [previousService with { PublicationIds = [failedPublication.Metadata.Id] }],
+            Resources = [failedResource],
+            StorageBindings = [failedBinding],
+            Publications = [failedPublication],
+        };
+        var repurposedResource = failedResource with
+        {
+            Metadata = failedResource.Metadata with { Name = "concurrent-document" },
+            Type = MetadataV2ResourceType.Document,
+            StorageBindingIds = [],
+            PrimaryStorageBindingId = null,
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            Services = [previousService],
+            Resources = [repurposedResource],
+            StorageBindings = [],
+            Publications = [],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:50:00Z", CultureInfo.InvariantCulture));
+
+        var retainedResource = compensation.Resources.Should().ContainSingle().Which;
+        retainedResource.Metadata.Name.Should().Be("concurrent-document");
+        retainedResource.Type.Should().Be(MetadataV2ResourceType.Document);
+        retainedResource.StorageBindingIds.Should().BeEmpty();
+        retainedResource.PrimaryStorageBindingId.Should().BeNull();
+        compensation.StorageBindings.Should().BeEmpty();
+        compensation.Publications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_PreservesRepurposedAddedBindingAndConnection()
+    {
+        var existingResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-existing" },
+            Type = MetadataV2ResourceType.Document,
+        };
+        var failedConnection = new MetadataV2Connection
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "connection-added" },
+            Type = MetadataV2ConnectionType.Database,
+            Provider = "postgres",
+        };
+        var failedBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
+            ResourceId = existingResource.Metadata.Id,
+            ConnectionId = failedConnection.Metadata.Id,
+            Locator = "failed_table",
+        };
+        var previous = new MetadataV2Graph { Revision = 7, Resources = [existingResource] };
+        var persisted = previous with
+        {
+            Revision = 8,
+            StorageBindings = [failedBinding],
+            Connections = [failedConnection],
+        };
+        var repurposedBinding = failedBinding with
+        {
+            ConnectionId = null,
+            StorageType = MetadataV2StorageType.ExternalApi,
+            Locator = "https://example.test/concurrent-resource",
+        };
+        var repurposedConnection = failedConnection with
+        {
+            Type = MetadataV2ConnectionType.HttpApi,
+            Provider = "concurrent-http",
+            Endpoint = new Uri("https://example.test/api"),
+        };
+        var current = persisted with
+        {
+            Revision = 9,
+            StorageBindings = [repurposedBinding],
+            Connections = [repurposedConnection],
+        };
+
+        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current,
+            previous,
+            persisted,
+            DateTimeOffset.Parse("2026-08-11T04:55:00Z", CultureInfo.InvariantCulture));
+
+        var retainedBinding = compensation.StorageBindings.Should().ContainSingle().Which;
+        retainedBinding.ConnectionId.Should().BeNull();
+        retainedBinding.StorageType.Should().Be(MetadataV2StorageType.ExternalApi);
+        retainedBinding.Locator.Should().Be("https://example.test/concurrent-resource");
+        var retainedConnection = compensation.Connections.Should().ContainSingle().Which;
+        retainedConnection.Type.Should().Be(MetadataV2ConnectionType.HttpApi);
+        retainedConnection.Provider.Should().Be("concurrent-http");
+        retainedConnection.Endpoint.Should().Be(new Uri("https://example.test/api"));
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
     {
         var previousPublication = CreatePublication(

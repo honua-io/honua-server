@@ -383,6 +383,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 ? RestoreResourceMutation(resource, previous, persisted)
                 : resource)
             .Where(resource => !addedResourceIds.Contains(resource.Metadata.Id) ||
+                HasCurrentGraphWriterMutation(
+                    resource,
+                    persistedResourcesById[resource.Metadata.Id],
+                    MetadataV2JsonContext.Default.MetadataV2Resource) ||
                 publications.Any(publication =>
                     string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)) ||
                 currentGraph.Resources.Any(other =>
@@ -407,6 +411,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 ? RestoreStorageBindingMutation(binding, previous, persisted)
                 : binding)
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
+                HasCurrentGraphWriterMutation(
+                    binding,
+                    persistedBindingsById[binding.Metadata.Id],
+                    MetadataV2JsonContext.Default.MetadataV2StorageBinding) ||
                 publications.Any(publication =>
                     string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)) ||
                 resources.Any(resource =>
@@ -431,6 +439,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 ? RestoreConnectionMutation(connection, previous, persisted)
                 : connection)
             .Where(connection => !addedConnectionIds.Contains(connection.Metadata.Id) ||
+                HasCurrentGraphWriterMutation(
+                    connection,
+                    persistedConnectionsById[connection.Metadata.Id],
+                    MetadataV2JsonContext.Default.MetadataV2Connection) ||
                 bindings.Any(binding =>
                     string.Equals(binding.ConnectionId, connection.Metadata.Id, StringComparison.Ordinal)))
             .ToArray();
@@ -472,11 +484,17 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .ToArray(),
         };
 
-        return !JsonEquivalent(
+        return HasCurrentGraphWriterMutation(
             current,
             persistedWithoutFailedPublications,
             MetadataV2JsonContext.Default.MetadataV2Service);
     }
+
+    private static bool HasCurrentGraphWriterMutation<T>(
+        T current,
+        T persisted,
+        JsonTypeInfo<T> typeInfo)
+        => !JsonEquivalent(current, persisted, typeInfo);
 
     private static MetadataV2Publication RestorePublicationMutation(
         MetadataV2Publication current,
