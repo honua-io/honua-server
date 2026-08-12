@@ -27,6 +27,8 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ReplicaConflictListResponse))]
 [JsonSerializable(typeof(ReplicaConflictResolutionRequest))]
 [JsonSerializable(typeof(ReplicaConflictResolutionResponse))]
+[JsonSerializable(typeof(ReplicaConflictAuditDetails))]
+[JsonSerializable(typeof(Dictionary<string, System.Text.Json.JsonElement>))]
 [JsonSerializable(typeof(ApiResponse<ReplicaConflictListResponse>))]
 [JsonSerializable(typeof(ApiResponse<ReplicaConflictDetail>))]
 [JsonSerializable(typeof(ApiResponse<ReplicaConflictResolutionResponse>))]

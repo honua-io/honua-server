@@ -4207,6 +4207,26 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             _current = new MetadataV2GraphSnapshot(graph, "\"compensated\"", DateTimeOffset.UtcNow);
             return Task.FromResult(_current);
         }
+
+        public Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(
+            long revision,
+            string? expectedCurrentEtag,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_current.Revision != revision)
+            {
+                throw new InvalidOperationException($"Metadata v2 revision {revision} is not retained by this test store.");
+            }
+
+            if (expectedCurrentEtag is not null &&
+                !string.Equals(expectedCurrentEtag, _current.Etag, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The current Metadata v2 ETag changed before activation.");
+            }
+
+            return Task.FromResult(_current);
+        }
     }
 
     [Fact]

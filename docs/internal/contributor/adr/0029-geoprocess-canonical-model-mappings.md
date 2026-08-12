@@ -5,10 +5,17 @@
 Accepted
 
 For raster processes, [ADR-0071](0071-raster-execution-boundary.md) is the
-controlling engine and placement decision. The PostGIS primitives introduced by
-this ADR express available canonical capabilities; they do not require every
-supported workload to execute in PostGIS. Placement is also gated by database
-resource budgets and serving SLOs.
+controlling engine and placement decision. As of ADR-0071's 2026-08-11
+single-engine amendment (honua-server#3085, #3167), ordinary non-ML
+`raster.*` and `surface.*` GP executes on the isolated GDAL worker. Managed
+imagery inference and orthomosaic production retain the specialized-runtime
+exceptions defined by [ADR-0057](0057-geoprocessing-capability-boundaries.md)
+and [ADR-0073](0073-dedicated-photogrammetry-worker.md). The PostGIS
+primitives introduced by this ADR are retired from GP routing and remain
+non-routable analysis implementation details, not serving/storage registration
+capabilities or an alternative GP execution path. Local vs. AWS Batch placement
+for ordinary raster analysis is static operator configuration, not a per-job
+database-budget decision.
 
 ## Context
 
@@ -194,15 +201,19 @@ model. Must not add domain types to `Honua.Core`.
   `tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/ProcessCatalogTests.cs`
   and [the geoprocessing operations reference](../../../reference/geoprocessing-operations.md)
   as the current authoritative count and per-family breakdown, not this ADR.)
-  For heavyweight `surface.*` and
-  `raster.*` workloads this ticket adds the PostGIS-backed execution
-  primitives (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`)
-  that will sit behind the canonical worker boundary. ADR-0071 controls whether
-  an invocation uses those primitives through the managed PostGIS raster
-  profile or uses isolated native GDAL locally or through a batch backend. The
-  handler/executor wiring that dispatches catalog entries into the selected
-  engine remains follow-on work and is not part of this ticket, so the catalog
-  addition still does not introduce a new execution surface. Destructive
+  This ticket added the PostGIS-backed analysis primitives
+  `ISurfaceAnalysisService` and
+  `IRasterStore.ComputeZonalStatisticsAsync`. ADR-0071's later single-engine
+  amendment retires them from GP routing: their slope, aspect, hillshade,
+  zonal-statistics, and derived-raster behavior is analysis, not bounded
+  serving. They must remain non-routable unless a future ADR explicitly
+  supersedes the single-engine decision. Every `raster.*`/`surface.*` GP
+  invocation instead runs on the isolated native GDAL worker, locally or
+  through a batch backend selected by static operator configuration. The
+  handler/executor wiring that
+  dispatches catalog entries to the GDAL worker remains follow-on work and is
+  not part of this ticket, so the catalog addition still does not introduce a
+  new execution surface. Destructive
   `data-management.*` ids (`delete-features`, `calculate-field`) are classified
   server-side by `ProcessDestructiveClassifier` so submission and execution
   route the plan through `OperatorApprovalGate` with `IsDestructive = true`

@@ -18,12 +18,13 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// <summary>
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
-/// (<c>sync.offline</c>, <c>versioning.branch</c>, and — since #2958 — <c>security.mtls</c>
-/// again; <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>temporal.*</c>
-/// were promoted to GA, so they are no longer experimental) must be genuinely
-/// <b>absent</b> from every served surface end-to-end when experimental is disabled (the
-/// production default), and become present/served the moment a customer opts one in via
-/// <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and B3 (#2335)
+/// (<c>versioning.branch</c> and — since #2958 — <c>security.mtls</c> again;
+/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, <c>temporal.*</c>, and
+/// <c>sync.offline</c> were promoted to GA, so they are no longer experimental) must be
+/// genuinely <b>absent</b> from every served surface end-to-end when experimental is
+/// disabled (the production default), and become present/served the moment a customer
+/// opts one in via <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and
+/// B3 (#2335)
 /// opened at the registry/composition layer by asserting the posture at the wire:
 /// <list type="bullet">
 ///   <item><description>
@@ -36,8 +37,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     (<c>/rest/services/{id}/VersionManagementServer</c>,
 ///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
 ///     <c>404 honua:capability-experimental-disabled</c> while disabled. The now-GA
-///     streaming and temporal groups are asserted to NOT short-circuit even with
-///     experimental off.
+///     temporal, alerts, streaming, and disconnected-sync replica groups are asserted to
+///     NOT short-circuit even with experimental off.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -56,7 +57,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     private static readonly string[] ExperimentalCapabilityIds =
     [
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
-        "sync.offline",
+        // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
         // realtime.feature-streams promoted to GA (Implemented) in #2428 — no longer experimental-gated.
         // alerts.geofence promoted in #2427 — not gated.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
@@ -113,9 +114,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // Opt a single experimental capability in (global switch still OFF). It must
         // reappear in the served manifest while its experimental siblings stay omitted —
         // proving the gate is a real, per-capability lever, not an always-off constant.
+        // (sync.offline is no longer a valid experimental control after its #2430 GA
+        // promotion, so this uses versioning.branch, which remains built-experimental.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
-            perCapabilityEnabled: "sync.offline");
+            perCapabilityEnabled: "versioning.branch");
         await fixture.InitializeAsync();
 
         try
@@ -128,11 +131,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
-            HasCapability(root, "sync.offline").Should().BeTrue(
+            HasCapability(root, "versioning.branch").Should().BeTrue(
                 "the opted-in experimental capability is served");
 
             foreach (var stillDisabled in ExperimentalCapabilityIds.Where(
-                id => !string.Equals(id, "sync.offline", StringComparison.Ordinal)))
+                id => !string.Equals(id, "versioning.branch", StringComparison.Ordinal)))
             {
                 HasCapability(root, stillDisabled).Should().BeFalse(
                     "{0} was not opted in and stays absent", stillDisabled);
@@ -311,6 +314,31 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         {
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
+
+            await AssertNotExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas")]
+    public async Task ReplicasEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    {
+        // #2430 promoted sync.offline Experimental -> Implemented (GA). The disconnected-sync
+        // replica/conflict-review admin group must no longer short-circuit as
+        // experimental-disabled even with the global experimental switch OFF — the request
+        // reaches the handler (subject to admin auth / edition) instead of the 404 the T10 flip
+        // previously produced.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/admin/services/svc-experimental/replicas");
 
             await AssertNotExperimentalDisabledAsync(response);
         }

@@ -837,10 +837,9 @@
       "category": "FieldOps",
       "edition": "Pro",
       "entryCount": 18,
-      "provingTestCount": 126,
+      "provingTestCount": 145,
       "maturity": {
-        "experimental": 5,
-        "implemented": 13
+        "implemented": 18
       },
       "noSurface": null,
       "cite": [],

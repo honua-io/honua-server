@@ -109,6 +109,88 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
     }
 
     [IntegrationTest]
+    public async Task ActivateRevisionAsync_RepointsToRetainedSnapshotWithoutAllocatingCopy()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var first = await store.SaveAsync(
+                new MetadataV2Graph
+                {
+                    Environment = "Test",
+                    Revision = 1,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Resources =
+                    [
+                        new MetadataV2Resource
+                        {
+                            Metadata = new MetadataV2ObjectMetadata { Id = "retained-first", Name = "first" },
+                            Type = MetadataV2ResourceType.FeatureDataset,
+                        },
+                    ],
+                },
+                expectedEtag: null);
+            var second = await store.SaveAsync(
+                first.Graph with
+                {
+                    Revision = 2,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Resources =
+                    [
+                        new MetadataV2Resource
+                        {
+                            Metadata = new MetadataV2ObjectMetadata { Id = "retained-second", Name = "second" },
+                            Type = MetadataV2ResourceType.FeatureDataset,
+                        },
+                    ],
+                },
+                first.Etag);
+
+            // Bootstrap reconciliation can preserve an immutable retained snapshot while
+            // clearing its derived sidecars. Activation must reconstruct those indexes
+            // before making the retained revision current again.
+            await using (var corruptConnection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var deleteCommand = corruptConnection.CreateCommand())
+            {
+                deleteCommand.CommandText = $"""
+                    DELETE FROM "{schema}".metadata_v2_resources_idx
+                     WHERE environment = 'Test' AND revision = {first.Revision};
+                    """;
+                await deleteCommand.ExecuteNonQueryAsync();
+            }
+
+            var activated = await store.ActivateRevisionAsync(first.Revision, second.Etag);
+
+            activated.Revision.Should().Be(first.Revision);
+            activated.Etag.Should().Be(first.Etag);
+            activated.Graph.Resources.Should().ContainSingle(resource => resource.Metadata.Id == "retained-first");
+            var current = await store.GetCurrentAsync();
+            current.Revision.Should().Be(first.Revision);
+            current.Etag.Should().Be(first.Etag);
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".metadata_v2_snapshots WHERE environment = 'Test'";
+            var snapshotCount = (int)(await command.ExecuteScalarAsync())!;
+            snapshotCount.Should().Be(2, "activation must retain revision identity instead of copying the document");
+
+            command.CommandText = $"""
+                SELECT COUNT(*)::int FROM "{schema}".metadata_v2_resources_idx
+                 WHERE environment = 'Test' AND revision = {first.Revision}
+                   AND resource_id = 'retained-first';
+                """;
+            var resourceIndexCount = (int)(await command.ExecuteScalarAsync())!;
+            resourceIndexCount.Should().Be(1, "activation must rebuild sidecars cleared for a retained revision");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task SaveAsync_OnBootstrapWithOrphanedServiceSidecarRows_ReconcilesInsteadOf23505()
     {
         // honua-server#1395: a shared/partially-written DB can carry orphaned
@@ -176,6 +258,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 "bootstrap must clear stale environment sidecar rows instead of colliding with idx_metadata_v2_services_name");
 
             var current = await freshStore.GetCurrentAsync();
+            current.Graph.Revision.Should().Be(2, "the orphan revision is immutable and must not be overwritten");
             current.Graph.Services.Should().ContainSingle(service => service.Metadata.Id == "svc-new");
 
             // Exactly one services row remains for the environment — the orphan was cleared.
@@ -200,7 +283,6 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         try
         {
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-
             await using var committedConnection = (NpgsqlConnection)await provider.OpenConnectionAsync();
             await using var committedTransaction = await committedConnection.BeginTransactionAsync();
             var committedId = await PostgresTransactionOutcomeObserver.CaptureTransactionIdAsync(
@@ -221,6 +303,57 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 .Should().BeTrue();
             (await PostgresTransactionOutcomeObserver.TryObserveCommitAsync(provider, abortedId))
                 .Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_WithCurrentAndOrphanNextRevision_AllocatesAboveOrphan()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var first = await store.SaveAsync(
+                new MetadataV2Graph
+                {
+                    Environment = "Test",
+                    Revision = 1,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                },
+                expectedEtag: null);
+
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $$"""
+                    INSERT INTO "{{schema}}".metadata_v2_snapshots
+                        (environment, revision, schema_version, api_version, document, etag, generated_at)
+                    SELECT environment, 2, schema_version, api_version,
+                           jsonb_set(document, '{revision}', '2'::jsonb),
+                           'orphan-revision-2', generated_at
+                      FROM "{{schema}}".metadata_v2_snapshots
+                     WHERE environment = 'Test' AND revision = 1;
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var saved = await store.SaveAsync(
+                first.Graph with { Revision = 2, GeneratedAt = DateTimeOffset.UtcNow },
+                expectedEtag: first.Etag);
+
+            saved.Graph.Revision.Should().Be(3);
+            await using var verify = await fixture.DataSource.OpenConnectionAsync();
+            await using var verifyCommand = verify.CreateCommand();
+            verifyCommand.CommandText = $"""
+                SELECT etag FROM "{schema}".metadata_v2_snapshots
+                 WHERE environment = 'Test' AND revision = 2;
+                """;
+            (await verifyCommand.ExecuteScalarAsync()).Should().Be("orphan-revision-2");
         }
         finally
         {

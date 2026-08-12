@@ -14,6 +14,14 @@ This is the one-time decision record for applying the
 it records the disposition of every key the audit named as a factually-wrong allowlist
 reason, a mis-attributed route, or a shallow-evidence GA claim.
 
+> **Update (2026-08, #2430).** `sync.offline` (disconnected-sync / replicas) has since been
+> promoted from `Experimental` to `Implemented` (GA) after conflict-resolution hardening, so
+> the "do not promote an existing experimental capability" non-goal below no longer describes
+> the current state for that key, and the registry-flag examples in this record are stale.
+> The registry-flag experimental route groups today are `versioning.branch` (the VMS REST
+> surface) and `security.mtls` (demoted back to experimental in #2958). Every other
+> disposition in this record stands.
+
 ## Demotion candidates: kept-GA-pending-#2945 vs. demoted
 
 `#2945` adds interface-level proving-test depth for several of the audit's demotion
@@ -44,9 +52,9 @@ The repo already has a real, runtime-enforced "hold a capability off the GA surf
 lever: `CapabilityRegistry.cs` descriptors carry a `CapabilityMaturity`, and
 `CapabilityGateResolver` 404s the route group for any descriptor whose maturity is
 `Experimental` unless `Capabilities:Experimental:<id>:Enabled` is set (globally or per
-capability). It is a real mechanism — it already gates `sync.offline` and
-`versioning.branch` off the default GA surface today, and every route group that uses it
-calls `.WithCapabilityGate("<id>")` on its `MapGroup(...)`.
+capability). It is a real mechanism — it already gates `versioning.branch` (and, since
+#2958, `security.mtls`) off the default GA surface today, and every route group that uses
+it calls `.WithCapabilityGate("<id>")` on its `MapGroup(...)`.
 
 That lever does **not** reach `analytics.slice` or `scene.catalog` today:
 
@@ -140,6 +148,7 @@ job still completes rather than being silently lost or permanently wedged.
   `CapabilityGateResolver` / `Capabilities:Experimental:<id>:Enabled` already exist and
   were reused where they reached; where they did not reach (`analytics.slice`,
   `scene.catalog`), the demotion is documentation-only per the scope decision above.
-- Promoting any existing experimental capability (`sync.offline`, `versioning.branch`).
+- Promoting any existing experimental capability (`versioning.branch`, `security.mtls`).
+  (`sync.offline` was promoted to GA later, in #2430 — outside the scope of this re-grade.)
 - Building server-side DR automation. Architecture decision: the server stays
   stateless; DR is owned by IaC/managed-database tooling.

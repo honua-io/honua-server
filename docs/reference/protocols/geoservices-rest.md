@@ -27,7 +27,7 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 | Edits | `applyEdits` (service and layer), `/{layerId}/addFeatures`, `updateFeatures`, `deleteFeatures` | POST only. |
 | Attachments | `/{layerId}/queryAttachments`, `/{layerId}/{featureId}/attachments`, `addAttachment`, `updateAttachment`, `deleteAttachments`, `attachments/{attachmentId}` | |
 | Related records | `/{layerId}/queryRelatedRecords` (GET, POST), `/relationships` | |
-| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | |
+| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | `synchronizeReplica` accepts the Honua extension parameter `conflictHandling`: `lastWriteWins` (default — the conflicting client edit is still committed and the conflict is recorded as advisory review evidence) or `manualReview` (the conflicting edit is withheld and only recorded, for operator resolution through the admin conflict-review API). Any other value is a 400. |
 | Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version `alter`, `delete`, `startReading`/`stopReading`, `startEditing`/`stopEditing`, `reconcile`, `inspectConflicts`, `resolveConflicts`, `post`, `jobs/{jobId}` | |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |

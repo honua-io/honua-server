@@ -108,6 +108,42 @@ public sealed class TestFeatureStorePreconditionTests
     }
 
     [UnitTest]
+    public async Task ApplyEdits_DeleteWithExpectedAbsence_SucceedsWhenRowIsStillAbsent()
+    {
+        using var store = new TestFeatureStore();
+        await store.DeleteAsync(LayerId, 2);
+
+        var result = await store.ApplyEditsAsync(LayerId, FeatureEditBatch.Create(
+            deletes: ImmutableArray.Create(2L),
+            preconditions: ImmutableArray.Create(new FeatureEditPrecondition
+            {
+                ObjectId = 2,
+                ExpectedRowAbsent = true,
+            })));
+
+        result.DeletedCount.Should().Be(1);
+        result.DeleteResults.Should().ContainSingle().Which.IsSuccess.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ApplyEdits_DeleteWithExpectedAbsence_FailsWhenRowWasReinserted()
+    {
+        using var store = new TestFeatureStore();
+
+        var result = await store.ApplyEditsAsync(LayerId, FeatureEditBatch.Create(
+            deletes: ImmutableArray.Create(2L),
+            preconditions: ImmutableArray.Create(new FeatureEditPrecondition
+            {
+                ObjectId = 2,
+                ExpectedRowAbsent = true,
+            })));
+
+        result.DeletedCount.Should().Be(0);
+        result.DeleteResults.Should().ContainSingle().Which.IsPreconditionFailure.Should().BeTrue();
+        (await store.GetAsync(LayerId, 2)).Should().NotBeNull();
+    }
+
+    [UnitTest]
     public async Task ApplyEdits_OrderedUpdateWithStaleToken_FailsTyped()
     {
         using var store = new TestFeatureStore();

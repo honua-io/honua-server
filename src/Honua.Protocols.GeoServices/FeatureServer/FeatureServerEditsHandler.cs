@@ -624,11 +624,12 @@ internal sealed class FeatureServerEditsHandler(
                 // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
                 // that could never execute; access .Value.Id directly instead.
                 var internalObjectId = existingFeature.Value.Id;
+                context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
                 // only update on a spatial row from a geometry change.
-                var requestHasGeometry = update.Geometry != null;
+                var requestHasGeometry = update.Geometry != null || update.ClearGeometry;
                 var updateFeature = await BuildFeatureFromGeoServicesAsync(
                     update,
                     internalObjectId,
@@ -732,6 +733,14 @@ internal sealed class FeatureServerEditsHandler(
             return;
         }
 
+        var expectedAbsentObjectIds = request.Preconditions.IsDefaultOrEmpty
+            ? null
+            : request.Preconditions
+                .Where(static precondition => precondition.ExpectedRowAbsent)
+                .Select(static precondition => precondition.ObjectId)
+                .ToHashSet();
+        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+
         for (var i = 0; i < request.Deletes.Length; i++)
         {
             if (slotObjectIds[i] is not { } objectId)
@@ -742,15 +751,37 @@ internal sealed class FeatureServerEditsHandler(
             Feature? existingFeature = existingFeatures.TryGetValue(objectId, out var resolvedFeature) ? resolvedFeature : null;
             // The pre-read is RLS-enforced on both the fast path and the custom-objectid path,
             // so a null result means the row is missing OR hidden from this caller by RLS. The
-            // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so the
-            // not-found rejection MUST be unconditional — skipping it on the default-OBJECTID
-            // fast path would let a caller delete an RLS-hidden row (#2066).
+            // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so ordinary
+            // requests MUST reject this result — skipping it on the default-OBJECTID fast path would
+            // let a caller delete an RLS-hidden row (#2066). The only exception below is a server-only
+            // expected-absence precondition, which the transactional writer re-validates (#2430).
             if (existingFeature is null)
             {
+                if (expectedAbsentObjectIds?.Contains(objectId) == true && usesInternalObjectIds)
+                {
+                    // This is a server-only idempotent conflict-resolution delete. Absence is the
+                    // precondition, not a validation failure: dispatch the no-op delete so the writer
+                    // reserves the logical key and re-checks absence inside its transaction. A
+                    // concurrent insert then fails the precondition instead of being deleted after
+                    // this pre-read (#2430).
+                    context.DeleteIds.Add(objectId);
+                    context.DeleteResponseObjectIds.Add(objectId);
+                    context.DeleteIndexes.Add(i);
+                    context.DeleteFeatures.Add(null);
+                    continue;
+                }
+
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
-                    code: GeoServicesEditErrorCodes.DeleteNotFound,
-                    description: "Feature not found",
+                    // A custom public object-id value cannot identify a missing storage row. Treat an
+                    // expected-absence resolution as stale instead of falsely finalizing it without
+                    // the provider's storage-key guard.
+                    code: expectedAbsentObjectIds?.Contains(objectId) == true
+                        ? GeoServicesEditErrorCodes.UpdateConflict
+                        : GeoServicesEditErrorCodes.DeleteNotFound,
+                    description: expectedAbsentObjectIds?.Contains(objectId) == true
+                        ? "Feature identity could not be transactionally verified"
+                        : "Feature not found",
                     objectId: objectId);
                 continue;
             }
@@ -774,6 +805,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             var internalObjectId = existingFeature.Value.Id;
+            context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
             context.DeleteIndexes.Add(i);
@@ -826,6 +858,23 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+
+        // Server-side optimistic-concurrency preconditions, when the caller supplied them. The writer
+        // re-checks each token against the locked row inside the write transaction, so a concurrent
+        // edit between the caller's check and this write fails the operation instead of being
+        // overwritten (#2430). Absent for ordinary wire requests, which leaves the batch unchanged.
+        if (!request.Preconditions.IsDefaultOrEmpty)
+        {
+            editBatch = editBatch with
+            {
+                Preconditions = request.Preconditions
+                    .Select(precondition => context.InternalObjectIdsByPublicObjectId.TryGetValue(
+                        precondition.ObjectId, out var internalObjectId)
+                        ? precondition with { ObjectId = internalObjectId }
+                        : precondition)
+                    .ToImmutableArray()
+            };
+        }
 
         // Thread the resolved branch version onto the canonical edit batch. A null/DEFAULT context
         // leaves the byte-identical non-versioned write path unchanged (#1272, ADR-0051).
@@ -1337,6 +1386,7 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> UpdateGeometryChanged { get; } = new();
         public List<long> DeleteIds { get; } = new();
+        public Dictionary<long, long> InternalObjectIdsByPublicObjectId { get; } = new();
         public List<long> DeleteResponseObjectIds { get; } = new();
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
@@ -1444,6 +1494,11 @@ internal sealed class FeatureServerEditsHandler(
         Feature? existingFeature = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
+        if (feature.ClearGeometry)
+        {
+            geometry = null;
+        }
+
         if (feature.Geometry != null)
         {
             // Enforce the layer's declared geometry type. ArcGIS rejects a feature whose
@@ -1511,9 +1566,28 @@ internal sealed class FeatureServerEditsHandler(
             geometry = geometryValidation.Geometry;
         }
 
+        IReadOnlyDictionary<string, object?> attributesToValidate = feature.Attributes;
+        MetadataV2Field[] nonEditableFields = [];
+        if (existingFeature is not null &&
+            (feature.ReplaceAttributes || feature.InheritedNonEditableAttributes.Count > 0))
+        {
+            // Captured conflict envelopes contain the row's read-only fields as well as its editable
+            // business state. Inherited values are not an operator mutation: validate only explicitly
+            // selected/editable fields and keep read-only values from the currently addressed row. For
+            // complete-state replacement this also keeps a custom non-editable id.primary available
+            // after rebuilding the attribute bag.
+            nonEditableFields = resource.SchemaFields.Where(field => !field.Editable).ToArray();
+            var nonEditableNames = feature.ReplaceAttributes
+                ? nonEditableFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : feature.InheritedNonEditableAttributes;
+            attributesToValidate = feature.Attributes
+                .Where(entry => !nonEditableNames.Contains(entry.Key))
+                .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
-            feature.Attributes,
+            attributesToValidate,
             ValidationExtensions.AttributeValidationMode.GeoServices,
             isUpdate: existingFeature is not null);
         if (!attributesResult.IsValid)
@@ -1522,8 +1596,18 @@ internal sealed class FeatureServerEditsHandler(
                 SanitizeEditErrorMessage(attributesResult.ErrorMessage, "Invalid attributes."));
         }
 
-        var attributes = existingFeature?.Attributes.ToBuilder()
-            ?? ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var attributes = existingFeature is not null && !feature.ReplaceAttributes
+            ? existingFeature.Value.Attributes.ToBuilder()
+            : ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (existingFeature is not null && feature.ReplaceAttributes)
+        {
+            var currentAttributes = existingFeature.Value.Attributes;
+            foreach (var field in nonEditableFields.Where(field =>
+                         currentAttributes.ContainsKey(field.Name)))
+            {
+                attributes[field.Name] = currentAttributes[field.Name];
+            }
+        }
         foreach (var (key, value) in attributesResult.Value!)
         {
             attributes[key] = value;

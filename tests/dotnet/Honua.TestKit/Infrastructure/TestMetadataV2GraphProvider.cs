@@ -38,6 +38,7 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
     private const string BaselineSchemaKey = "<baseline>";
 
     private readonly ConcurrentDictionary<string, MetadataV2GraphSnapshot> _bySchema = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, MetadataV2GraphSnapshot> _history = new(StringComparer.Ordinal);
     private MetadataV2GraphSnapshot _baseline;
     private MetadataV2Graph? _activateAfterNextRead;
 
@@ -48,6 +49,7 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
             graph,
             etag ?? $"\"test-{graph.Revision}\"",
             DateTimeOffset.UtcNow);
+        _history[RevisionKey(BaselineSchemaKey, graph.Revision)] = _baseline;
     }
 
     /// <summary>
@@ -63,6 +65,7 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
             DateTimeOffset.UtcNow);
 
         var key = ResolveSchemaKey(schema);
+        _history[RevisionKey(key, graph.Revision)] = snapshot;
         if (string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal))
         {
             _baseline = snapshot;
@@ -115,8 +118,16 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
     {
-        var snapshot = CurrentSnapshot();
-        return new(snapshot.Graph.Revision == revision ? snapshot : null);
+        var key = ResolveSchemaKey(null);
+        if (_history.TryGetValue(RevisionKey(key, revision), out var snapshot))
+        {
+            return new(snapshot);
+        }
+
+        return !string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal) &&
+               _history.TryGetValue(RevisionKey(BaselineSchemaKey, revision), out snapshot)
+            ? new(snapshot)
+            : new((MetadataV2GraphSnapshot?)null);
     }
 
     public Task<MetadataV2GraphSnapshot> SaveAsync(
@@ -138,6 +149,7 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
             DateTimeOffset.UtcNow);
 
         var key = ResolveSchemaKey(null);
+        _history[RevisionKey(key, graph.Revision)] = snapshot;
         if (string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal))
         {
             _baseline = snapshot;
@@ -149,6 +161,40 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 
         return Task.FromResult(snapshot);
     }
+
+    public async Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(
+        long revision,
+        string? expectedCurrentEtag,
+        CancellationToken cancellationToken = default)
+    {
+        var current = CurrentSnapshot();
+        if (expectedCurrentEtag is not null &&
+            !string.Equals(expectedCurrentEtag, current.Etag, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Metadata v2 graph ETag mismatch.");
+        }
+
+        var retained = await GetByRevisionAsync(revision, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Metadata v2 revision {revision} is not retained.");
+        var activated = new MetadataV2GraphSnapshot(
+            retained.Graph,
+            retained.Etag,
+            DateTimeOffset.UtcNow);
+        var key = ResolveSchemaKey(null);
+        if (string.Equals(key, BaselineSchemaKey, StringComparison.Ordinal))
+        {
+            _baseline = activated;
+        }
+        else
+        {
+            _bySchema[key] = activated;
+        }
+
+        return activated;
+    }
+
+    private static string RevisionKey(string schema, long revision)
+        => $"{schema}\0{revision}";
 
     private MetadataV2GraphSnapshot CurrentSnapshot()
     {

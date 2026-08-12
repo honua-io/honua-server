@@ -8,7 +8,20 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
 - `ogc-api-tiles/` - OGC API Tiles CITE compose, config, and seed data.
 - `wfs20/` - WFS 2.0 CITE compose and WFS-specific metadata config. Runs both the `basic` and `transactional` profiles (the transactional leg exercises the Transaction + LockFeature conformance classes).
 - `wps20/` - WPS 2.0.2 ETS 1.1 runner pinned to its upstream source commit. The lane records Basic plus the selected synchronous or asynchronous certification path.
-- `wms11/` - WMS 1.1.1 CITE compose and config (`ogccite/ets-wms11`).
+- `wms11/` - WMS 1.1.1 CITE compose and config (`ogccite/ets-wms11`). Includes an
+  `ogc-testdata-stub` nginx service aliased to `cite.opengeospatial.org` on the
+  compose network: the ets-wms11 profiles tests (`wms:profiles-basic-1/2`,
+  `wms:profiles-queryable-1/2/3`) fetch
+  `http://cite.opengeospatial.org/OGCTestData/wms/1.1.1/null.xml` before asserting
+  anything, and when OGC's host stops answering CI runners those five tests fail
+  with ~135s `java.net.ConnectException` timeouts that look like a server outage
+  (honua-server#3156) — most likely datacenter-IP-range blocking of CI traffic,
+  since the host still answers residential networks. Caching the real data is not
+  an option: OGC decommissioned the `OGCTestData` tree and the live host now 301s
+  that path to the CITE GitHub wiki, so historical green runs were "validating"
+  wiki HTML; the test only requires that the host answer. The stub keeps the
+  suite hermetic; the runner script preflights the alias before starting the
+  suite.
 - `wms13/` - WMS 1.3 CITE compose and config.
 - `wcs20/` - WCS 2.0 CITE compose, config, and deterministic local raster seed data.
 - `wmts10/` - WMTS 1.0 CITE compose and config.

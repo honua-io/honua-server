@@ -261,8 +261,15 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Disconnected-sync conflict review — built-experimental (T10 flip).
-            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Disconnected-sync replica / conflict review — promoted to GA (Implemented) in
+            // #2430 after conflict-resolution hardening: an operator resolution now commits the
+            // resolved feature state through the shared edit pipeline instead of only recording
+            // an action, and a conflictHandling=manualReview sync mode withholds conflicting
+            // edits for review instead of forcing last-write-wins. The admin replica/
+            // conflict-review routes ship on the default first-release surface. Still
+            // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
+            // hidden/unadvertised, not free-tier.
+            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // Realtime feature streaming — promoted to GA (Implemented) in #2428.
             // Second Experimental->Implemented promotion (after alerts.geofence, #2427):
             // WebSocket/SSE feature-change streams with subscription filters and durable

@@ -33,6 +33,29 @@ public sealed class ReplicaConflictSummary
     /// <summary>Server generation cursor captured when the conflict was recorded.</summary>
     public required long ServerGeneration { get; init; }
 
+    /// <summary>
+    /// Whether the conflicting client edit was still committed to the layer when the conflict was
+    /// detected (last-write-wins) or withheld for manual review. Determines what resolving the
+    /// conflict has to write (#2430).
+    /// </summary>
+    public required bool ClientEditApplied { get; init; }
+
+    /// <summary>
+    /// Whether the storage layer could not say if the conflicting client edit committed. When true,
+    /// <see cref="ClientEditApplied"/> is not trustworthy in either direction and both
+    /// <c>acceptClient</c> and <c>keepServer</c> perform a real write rather than a no-op, so the row
+    /// matches the operator's decision whichever way the ambiguous write went (#2430).
+    /// </summary>
+    public bool ClientEditOutcomeUnknown { get; init; }
+
+    /// <summary>
+    /// Whether this conflict's own client edit committed but was superseded by a later edit in the same
+    /// upload to the same feature. <see cref="ClientEditApplied"/> is false for such a record, but the
+    /// row holds neither this edit's state nor the captured server state, so <c>keepServer</c> performs
+    /// a real restore rather than a no-op (#2430).
+    /// </summary>
+    public bool ClientEditSuperseded { get; init; }
+
     /// <summary>Timestamp (UTC) when the conflict was first recorded.</summary>
     public required DateTimeOffset DetectedAt { get; init; }
 }
@@ -75,6 +98,30 @@ public sealed class ReplicaConflictDetail
 
     /// <summary>Server generation cursor captured when the conflict was recorded (temporal linkage).</summary>
     public required long ServerGeneration { get; init; }
+
+    /// <summary>
+    /// Whether the conflicting client edit was still committed to the layer when the conflict was
+    /// detected (last-write-wins) or withheld for manual review. Determines what resolving the
+    /// conflict has to write: accepting the client is a no-op when the edit already landed, whereas
+    /// keeping the server then restores the captured pre-conflict server state (#2430).
+    /// </summary>
+    public required bool ClientEditApplied { get; init; }
+
+    /// <summary>
+    /// Whether the storage layer could not say if the conflicting client edit committed. When true,
+    /// <see cref="ClientEditApplied"/> is not trustworthy in either direction and both
+    /// <c>acceptClient</c> and <c>keepServer</c> perform a real write rather than a no-op, so the row
+    /// matches the operator's decision whichever way the ambiguous write went (#2430).
+    /// </summary>
+    public bool ClientEditOutcomeUnknown { get; init; }
+
+    /// <summary>
+    /// Whether this conflict's own client edit committed but was superseded by a later edit in the same
+    /// upload to the same feature. <see cref="ClientEditApplied"/> is false for such a record, but the
+    /// row holds neither this edit's state nor the captured server state, so <c>keepServer</c> performs
+    /// a real restore rather than a no-op (#2430).
+    /// </summary>
+    public bool ClientEditSuperseded { get; init; }
 
     /// <summary>Base/common-ancestor feature state, when known. Opaque feature object.</summary>
     public System.Text.Json.JsonElement? BaseState { get; init; }
@@ -173,6 +220,21 @@ public sealed class ReplicaConflictResolutionRequest
     /// rejectClient, or defer.
     /// </summary>
     public string? Action { get; init; }
+
+    /// <summary>
+    /// Operator-selected attribute values for a <c>mergeFields</c> resolution, applied over the
+    /// currently committed feature state. Field names are matched case-insensitively against the
+    /// captured attributes (Esri field-name convention). Required for <c>mergeFields</c> and ignored
+    /// by every other action (#2430).
+    /// </summary>
+    public Dictionary<string, System.Text.Json.JsonElement>? FieldValues { get; init; }
+
+    /// <summary>
+    /// Which captured state supplies the winning geometry for a <c>chooseGeometry</c> resolution:
+    /// <c>client</c> or <c>server</c>. Required for <c>chooseGeometry</c> and ignored by every other
+    /// action (#2430).
+    /// </summary>
+    public string? Geometry { get; init; }
 }
 
 /// <summary>
@@ -184,8 +246,43 @@ public sealed class ReplicaConflictResolutionResponse
     public required ReplicaConflictDetail Conflict { get; init; }
 
     /// <summary>
-    /// Whether the resolution created a new committed server state (true for accept-client and
-    /// merge/geometry merges; false for keep-server, reject-client, and defer).
+    /// Whether the resolution created a new committed server state. This reflects what was actually
+    /// written: accepting a client edit that last-write-wins already committed produces no new state,
+    /// whereas keeping the server after such a sync does (the captured pre-conflict state is restored).
     /// </summary>
     public required bool CommittedNewServerState { get; init; }
+
+    /// <summary>
+    /// The feature-store effect the resolution applied: <c>none</c>, <c>writeFeatureState</c>, or
+    /// <c>deleteFeature</c> (#2430).
+    /// </summary>
+    public required string Effect { get; init; }
+}
+
+/// <summary>
+/// Audit-evidence payload recorded for a conflict resolution, capturing what was decided and what was
+/// actually committed rather than only the action name (#2430).
+/// </summary>
+public sealed class ReplicaConflictAuditDetails
+{
+    /// <summary>Wire spelling of the resolution action.</summary>
+    public required string Action { get; init; }
+
+    /// <summary>Feature-store effect applied: none, writeFeatureState, or deleteFeature.</summary>
+    public required string Effect { get; init; }
+
+    /// <summary>Whether the resolution produced a new committed server state.</summary>
+    public required bool CommittedNewServerState { get; init; }
+
+    /// <summary>Service the conflicting feature belongs to.</summary>
+    public required string ServiceId { get; init; }
+
+    /// <summary>Service-local layer id of the conflicting feature.</summary>
+    public required int LayerId { get; init; }
+
+    /// <summary>Stable object id of the conflicting feature.</summary>
+    public required long ObjectId { get; init; }
+
+    /// <summary>Server generation produced by the resolution, when a new state was committed.</summary>
+    public long? ResolvedServerGeneration { get; init; }
 }

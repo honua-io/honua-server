@@ -69,21 +69,36 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         //   - First op Update + last op Update → Update
         // The optional objectid filter is pushed into the change-log scan so a probe restricted to
         // a small set of uploaded ids (replica-sync conflict detection) does not materialize the
-        // entire change history since the base generation.
+        // entire change history since the base generation. public_objectid is the durable alias
+        // captured by the trigger for custom id.primary layers; unlike the source row, it survives a
+        // delete and lets an upload expressed in protocol-facing ids still find the storage change.
         const string sql = """
-            WITH ranked AS (
-                SELECT change_id, generation, layer_id, objectid, operation, changed_at,
-                       FIRST_VALUE(operation) OVER (PARTITION BY layer_id, objectid ORDER BY generation) AS first_op,
-                       LAST_VALUE(operation)  OVER (PARTITION BY layer_id, objectid ORDER BY generation
-                           ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_op,
-                       ROW_NUMBER() OVER (PARTITION BY layer_id, objectid ORDER BY generation DESC) AS rn,
-                       MAX(generation) OVER (PARTITION BY layer_id, objectid) AS max_gen
+            WITH matched_objects AS MATERIALIZED (
+                SELECT DISTINCT layer_id, objectid
                 FROM honua.feature_changes
                 WHERE generation > $1
                   AND layer_id = ANY($2)
-                  AND ($3::bigint[] IS NULL OR objectid = ANY($3))
+                  AND ($3::bigint[] IS NULL OR objectid = ANY($3) OR public_objectid = ANY($3))
+            ),
+            ranked AS (
+                SELECT changes.change_id, changes.generation, changes.layer_id, changes.objectid,
+                       changes.public_objectid, changes.operation, changes.changed_at,
+                       FIRST_VALUE(changes.operation) OVER (
+                           PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation) AS first_op,
+                       LAST_VALUE(changes.operation) OVER (
+                           PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_op,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation DESC) AS rn,
+                       MAX(changes.generation) OVER (
+                           PARTITION BY changes.layer_id, changes.objectid) AS max_gen
+                FROM honua.feature_changes AS changes
+                INNER JOIN matched_objects
+                    ON matched_objects.layer_id = changes.layer_id
+                   AND matched_objects.objectid = changes.objectid
+                WHERE changes.generation > $1
             )
-            SELECT change_id, max_gen AS generation, layer_id, objectid,
+            SELECT change_id, max_gen AS generation, layer_id, objectid, public_objectid,
                    CASE
                        WHEN first_op = 1 AND last_op = 3 THEN 0
                        WHEN first_op = 1 THEN 1
@@ -118,7 +133,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var netOp = reader.GetInt16(4);
+            var netOp = reader.GetInt16(5);
             if (netOp == 0)
             {
                 continue; // insert+delete = no-op (should be filtered by HAVING but just in case)
@@ -130,8 +145,9 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                 Generation = reader.GetInt64(1),
                 LayerId = reader.GetInt32(2),
                 ObjectId = reader.GetInt64(3),
+                PublicObjectId = reader.IsDBNull(4) ? null : reader.GetInt64(4),
                 Operation = (FeatureChangeOperation)netOp,
-                ChangedAt = reader.GetFieldValue<DateTimeOffset>(5)
+                ChangedAt = reader.GetFieldValue<DateTimeOffset>(6)
             });
         }
 

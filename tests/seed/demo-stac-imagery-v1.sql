@@ -31,7 +31,12 @@
 -- PARAMETERS (psql -v):
 --   env        Metadata v2 environment id. MUST match the server's
 --              Metadata__Environment / Environment setting (default "default").
---   schema     Honua metadata schema (default "honua").
+--   schema     Honua migration schema (default and only supported value "honua").
+--              The current migration-owned tracking functions are honua-scoped;
+--              fail closed rather than publishing an untracked custom relation.
+-- Publication attestation is deliberately outside this SQL source. The managed
+-- executor hashes the exact rendered bytes it executes and writes its receipt in
+-- the same transaction; arbitrary psql use is an unattested break-glass path.
 --
 -- USAGE:
 --   psql -v ON_ERROR_STOP=1 -v env=default -v schema=honua -f demo-stac-imagery-v1.sql
@@ -50,7 +55,6 @@
 \else
   \set schema 'honua'
 \endif
-
 BEGIN;
 
 SET search_path TO :"schema", public;
@@ -60,12 +64,229 @@ SET search_path TO :"schema", public;
 SELECT set_config('honua.seed_env', :'env', false);
 SELECT set_config('honua.seed_schema', :'schema', false);
 
+DO $schema_contract$
+BEGIN
+    IF current_setting('honua.seed_schema', true) IS DISTINCT FROM 'honua' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Demo STAC seed requires the migration-owned honua schema';
+    END IF;
+END
+$schema_contract$;
+
+-- Serialize the missing-relation decision across concurrent seed invocations.
+-- Key 0 in this namespace belongs to migration 067/105 change writers; key 1
+-- is reserved for the relation-recovery decision and is held through commit.
+SELECT pg_advisory_xact_lock(144047712, 1);
+
+SELECT set_config(
+    'honua.seed_features_missing',
+    (to_regclass('honua.features') IS NULL)::text,
+    false);
+
 -- ---------------------------------------------------------------------------
 -- 1. Scene features in the shared honua.features table (layer_id discriminated).
 --    Geometry column is `geometry`; non-key attributes live in the `attributes`
 --    JSONB column, matching how the storage-mapped reader projects layers that
 --    share the Honua features table.
 -- ---------------------------------------------------------------------------
+
+-- The features trigger is migration-owned and required for replica sync and
+-- temporal history. Refuse to publish against a partially migrated database;
+-- the seed may reattach the current trigger but must not duplicate or replace
+-- the authoritative functions from migration 105.
+DO $change_tracking$
+BEGIN
+    IF to_regclass('honua.feature_changes') IS NULL
+       OR to_regclass('honua.replicas') IS NULL
+       OR to_regclass('honua.sync_generation') IS NULL
+       OR to_regprocedure('honua.resolve_feature_public_objectid(integer,bigint,jsonb)') IS NULL
+       OR to_regprocedure('honua.track_feature_changes()') IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Demo STAC seed requires the current Honua change-tracking migrations';
+    END IF;
+END
+$change_tracking$;
+
+-- There is no replica epoch or complete relation-loss rebaseline contract.
+-- Migration 061 establishes a generation baseline, but cannot reconstruct
+-- deletes after the live relation is lost. Refuse to preserve ambiguous history
+-- or registered replica cursors rather than silently diverging offline copies.
+DO $recovery_replica_safety$
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        -- Current feature and version change writers use this transaction-scoped
+        -- generation lock. Holding it through recovery makes the history check,
+        -- relation DDL, fixture writes, and sequence alignment one serial cutover.
+        PERFORM pg_advisory_xact_lock(144047712, 0);
+
+        IF EXISTS (SELECT 1 FROM honua.feature_changes)
+           OR EXISTS (SELECT 1 FROM honua.replicas) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Missing honua.features with retained replica state requires an operator rebaseline';
+        END IF;
+    END IF;
+END
+$recovery_replica_safety$;
+
+-- The metadata graph can outlive the physical demo relation across database
+-- resets or partial reseeds. Only a missing relation enters this DDL path;
+-- healthy reruns avoid CREATE TABLE/INDEX locks entirely.
+DO $feature_recovery$
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        EXECUTE $ddl$CREATE TABLE IF NOT EXISTS honua.features (
+            objectid BIGSERIAL PRIMARY KEY,
+            layer_id INT NOT NULL,
+            geometry GEOMETRY,
+            attributes JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_layer_id
+            ON honua.features(layer_id)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry
+            ON honua.features USING GIST(geometry)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geography
+            ON honua.features USING GIST ((ST_Transform(geometry, 4326)::geography))$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes
+            ON honua.features USING GIN(attributes)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_layer_objectid
+            ON honua.features (layer_id, objectid)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes_gin
+            ON honua.features USING GIN (attributes jsonb_path_ops)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes_keys
+            ON honua.features USING GIN (
+                (attributes -> 'id'), (attributes -> 'objectid'), (attributes -> 'fid'))$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry_nn
+            ON honua.features USING GIST (geometry) WHERE geometry IS NOT NULL$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry_3d
+            ON honua.features USING GIST (geometry gist_geometry_ops_nd)
+            WHERE ST_NDims(geometry) > 2$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_envelope
+            ON honua.features USING GIST (ST_Envelope(geometry))
+            WHERE geometry IS NOT NULL$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attr_dates
+            ON honua.features USING BTREE ((attributes ->> 'created_date'))
+            WHERE (attributes ->> 'created_date') IS NOT NULL
+              AND (attributes ->> 'created_date') ~ '^\d{4}-\d{2}-\d{2}'$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attr_timestamps
+            ON honua.features USING BTREE ((attributes ->> 'updated_at'))
+            WHERE (attributes ->> 'updated_at') IS NOT NULL
+              AND (attributes ->> 'updated_at') ~ '^\d{4}-\d{2}-\d{2}'$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_temporal_attrs
+            ON honua.features USING GIN (
+                (attributes -> 'date'),
+                (attributes -> 'created_at'),
+                (attributes -> 'updated_at'),
+                (attributes -> 'timestamp'),
+                (attributes -> 'datetime'))$ddl$;
+    END IF;
+END
+$feature_recovery$;
+
+DO $tracking_trigger$
+DECLARE
+    existing_trigger pg_trigger%ROWTYPE;
+BEGIN
+    SELECT trigger.*
+      INTO existing_trigger
+      FROM pg_trigger AS trigger
+     WHERE trigger.tgrelid = 'honua.features'::regclass
+       AND trigger.tgname = 'trigger_track_feature_changes'
+       AND NOT trigger.tgisinternal;
+
+    IF NOT FOUND THEN
+        EXECUTE 'CREATE TRIGGER trigger_track_feature_changes '
+             || 'AFTER INSERT OR UPDATE OR DELETE ON honua.features '
+             || 'FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes()';
+    ELSIF existing_trigger.tgfoid <> 'honua.track_feature_changes()'::regprocedure::oid
+       OR existing_trigger.tgtype <> 29
+       OR existing_trigger.tgattr <> ''::int2vector
+       OR existing_trigger.tgenabled <> 'O'
+       OR existing_trigger.tgnargs <> 0
+       OR existing_trigger.tgqual IS NOT NULL
+       OR existing_trigger.tgconstraint <> 0
+       OR existing_trigger.tgoldtable IS NOT NULL
+       OR existing_trigger.tgnewtable IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'Existing trigger_track_feature_changes does not match the current Honua migration contract';
+    END IF;
+END
+$tracking_trigger$;
+
+-- CREATE OR REPLACE preserves a function OID, so catalog identity alone cannot
+-- distinguish migration 105 from an older tracker. Exercise the recovered
+-- attachment inside a rolled-back subtransaction and require the current
+-- public-object-id behavior before any resource is published.
+DO $tracking_behavior$
+DECLARE
+    probe_layer_id CONSTANT integer := -2147483647;
+    probe_objectid CONSTANT bigint := -9223372036854775807;
+    probe_public_objectid CONSTANT bigint := -9223372036854775000;
+    first_change_id bigint;
+    observed_changes text;
+BEGIN
+    SELECT coalesce(max(change_id), 0)
+      INTO first_change_id
+      FROM honua.feature_changes;
+
+    BEGIN
+        INSERT INTO honua.layers (
+            layer_id,
+            layer_name,
+            table_name,
+            geometry_type,
+            primary_key_column)
+        VALUES (
+            probe_layer_id,
+            '__demo_seed_tracking_probe__',
+            'features',
+            'Point',
+            'probe_public_objectid');
+        INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
+        VALUES (
+            probe_objectid,
+            probe_layer_id,
+            NULL,
+            jsonb_build_object('probe_public_objectid', probe_public_objectid, 'probe', 'insert'));
+        UPDATE honua.features
+           SET attributes = jsonb_build_object(
+               'probe_public_objectid', probe_public_objectid,
+               'probe', 'update')
+         WHERE objectid = probe_objectid;
+        DELETE FROM honua.features WHERE objectid = probe_objectid;
+
+        SELECT string_agg(
+                   format('%s:%s', operation, coalesce(public_objectid::text, 'null')),
+                   ',' ORDER BY change_id)
+          INTO observed_changes
+          FROM honua.feature_changes
+         WHERE change_id > first_change_id
+           AND layer_id = probe_layer_id
+           AND objectid = probe_objectid;
+
+        IF observed_changes IS DISTINCT FROM format(
+            '1:%s,2:%s,3:%s',
+            probe_public_objectid,
+            probe_public_objectid,
+            probe_public_objectid) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Demo STAC seed requires migration 105 feature change-tracking behavior';
+        END IF;
+
+        RAISE EXCEPTION USING
+            ERRCODE = 'ZX001',
+            MESSAGE = 'rollback demo STAC tracking probe';
+    EXCEPTION
+        WHEN SQLSTATE 'ZX001' THEN NULL;
+    END;
+END
+$tracking_behavior$;
 
 DELETE FROM features WHERE layer_id IN (90810, 90820);
 
@@ -95,6 +316,52 @@ VALUES
         jsonb_build_object('name','Coastal-03','observed_at','2026-03-08T21:00:00Z',
             'quality_score',59,'eo:cloud_cover',29.7,'proj:epsg',4326,'view:sun_azimuth',126.9,'platform','planet-skysat'));
 
+-- A dropped BIGSERIAL relation loses its owned sequence while feature_changes
+-- survives. Explicit fixture IDs do not advance the replacement sequence, so
+-- align it once during recovery before publishing the repaired binding.
+DO $feature_sequence_recovery$
+DECLARE
+    objectid_sequence regclass;
+    objectid_sequence_schema text;
+    retained_max_objectid bigint;
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        objectid_sequence := pg_get_serial_sequence('honua.features', 'objectid')::regclass;
+        IF objectid_sequence IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features has no owned objectid sequence';
+        END IF;
+
+        SELECT namespace.nspname
+          INTO objectid_sequence_schema
+          FROM pg_class AS sequence_relation
+          JOIN pg_namespace AS namespace ON namespace.oid = sequence_relation.relnamespace
+         WHERE sequence_relation.oid = objectid_sequence;
+        IF objectid_sequence_schema IS DISTINCT FROM 'honua' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features objectid sequence is outside the honua schema';
+        END IF;
+
+        SELECT greatest(
+                   coalesce((SELECT max(objectid) FROM honua.features), 0::bigint),
+                   coalesce((SELECT max(objectid) FROM honua.feature_changes), 0::bigint))
+          INTO retained_max_objectid;
+
+        IF retained_max_objectid < 1 THEN
+            PERFORM setval(objectid_sequence, 1, false);
+        ELSIF retained_max_objectid = 9223372036854775807 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features objectid space is exhausted';
+        ELSE
+            PERFORM setval(objectid_sequence, retained_max_objectid, true);
+        END IF;
+    END IF;
+END
+$feature_sequence_recovery$;
+
 -- ---------------------------------------------------------------------------
 -- 2. Merge the STAC service + collections into the active Metadata v2 snapshot.
 --
@@ -111,6 +378,7 @@ DECLARE
     v_now        text := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
     v_doc        jsonb;
     v_revision   bigint;
+    v_bootstrap  boolean := false;
     v_etag       text;
     v_status     jsonb := jsonb_build_object(
                     'lifecycle','active','state','ready','observedAt', v_now);
@@ -123,17 +391,23 @@ BEGIN
         v_env := 'default';
     END IF;
 
+    -- Same environment-scoped transaction lock and order as
+    -- PostgresMetadataV2GraphStore.SaveAsync. Unlike FOR UPDATE, this also serializes
+    -- the absent-current bootstrap case.
+    PERFORM pg_advisory_xact_lock(144047714, hashtext(v_env));
+
     -- Load the current active snapshot document (if any) so we APPEND, not replace.
     SELECT s.document, s.revision
       INTO v_doc, v_revision
       FROM metadata_v2_snapshots s
       JOIN metadata_v2_current c
         ON c.environment = s.environment AND c.revision = s.revision
-     WHERE s.environment = v_env;
+     WHERE s.environment = v_env
+       FOR UPDATE OF c;
 
     IF v_doc IS NULL THEN
         -- No activated snapshot yet for this environment: start an empty graph.
-        v_revision := 0;
+        v_bootstrap := true;
         v_doc := jsonb_build_object(
             'schemaVersion','2.0.0-alpha.1',
             'apiVersion','metadata.honua.io/v2alpha1',
@@ -146,6 +420,13 @@ BEGIN
             'services','[]'::jsonb,
             'publications','[]'::jsonb);
     END IF;
+
+    -- Store-owned revision allocation. An interrupted writer may have left an
+    -- orphan snapshot above current, so never reuse a retained revision number.
+    SELECT coalesce(max(revision), 0)
+      INTO v_revision
+      FROM metadata_v2_snapshots
+     WHERE environment = v_env;
 
     -- The STAC service. protocols MUST include "Stac" for StacV2Lookups to see it.
     v_service := jsonb_build_object(
@@ -307,6 +588,16 @@ BEGIN
     v_etag := 'demo-stac-seed-' || v_revision::text;
     v_doc := v_doc
         || jsonb_build_object('revision', v_revision, 'environment', v_env, 'generatedAt', v_now);
+
+    -- Reconcile a no-current bootstrap exactly like the canonical graph store:
+    -- retained snapshots remain immutable while stale derived sidecars are cleared.
+    IF v_bootstrap THEN
+        DELETE FROM metadata_v2_publications_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_services_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_storage_bindings_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_resources_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_connections_idx WHERE environment = v_env;
+    END IF;
 
     -- Persist as a new revision and activate it.
     INSERT INTO metadata_v2_snapshots
