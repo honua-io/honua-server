@@ -25,10 +25,9 @@
 #                             Metadata__Environment / Environment setting (default "default").
 #   HONUA_SEED_SCHEMA         Honua metadata schema (default "honua").
 #
-# On demo.honua.io the database is reachable only in-VPC. The supported channel is
-# the bootstrap Lambda (honua-demo-demo-postgis-bootstrap), which accepts
-# {"statements":[...]} / {"query":"..."}. To run there, send the contents of
-# demo-stac-imagery-v1.sql as a single statement (the file is one transaction).
+# On demo.honua.io this wrapper is for a directly connected, already-authorized
+# break-glass DBA. It does not produce the managed deployment attestation; use the
+# allowlisted in-VPC seed manager for that operation.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,8 +40,6 @@ fi
 
 SEED_ENV="${HONUA_SEED_ENV:-default}"
 SEED_SCHEMA="${HONUA_SEED_SCHEMA:-honua}"
-SEED_SHA256="$(sha256sum "${SEED_FILE}" | awk '{print $1}')"
-
 echo "Applying demo STAC seed: env=${SEED_ENV} schema=${SEED_SCHEMA} -> ${PGHOST:-localhost}:${PGPORT:-5432}/${PGDATABASE:-honua}"
 
 PGPASSWORD="${PGPASSWORD:?PGPASSWORD is required}" psql \
@@ -53,7 +50,6 @@ PGPASSWORD="${PGPASSWORD:?PGPASSWORD is required}" psql \
   -d "${PGDATABASE:-honua}" \
   -v env="${SEED_ENV}" \
   -v schema="${SEED_SCHEMA}" \
-  -v seed_sha256="${SEED_SHA256}" \
   -f "${SEED_FILE}"
 
 echo

@@ -175,6 +175,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 "bootstrap must clear stale environment sidecar rows instead of colliding with idx_metadata_v2_services_name");
 
             var current = await freshStore.GetCurrentAsync();
+            current.Graph.Revision.Should().Be(2, "the orphan revision is immutable and must not be overwritten");
             current.Graph.Services.Should().ContainSingle(service => service.Metadata.Id == "svc-new");
 
             // Exactly one services row remains for the environment — the orphan was cleared.
@@ -185,6 +186,57 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 """;
             var servicesCount = (int)(await countCmd.ExecuteScalarAsync())!;
             servicesCount.Should().Be(1, "the orphaned sidecar row must be reconciled away on bootstrap");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_WithCurrentAndOrphanNextRevision_AllocatesAboveOrphan()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var first = await store.SaveAsync(
+                new MetadataV2Graph
+                {
+                    Environment = "Test",
+                    Revision = 1,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                },
+                expectedEtag: null);
+
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $$"""
+                    INSERT INTO "{{schema}}".metadata_v2_snapshots
+                        (environment, revision, schema_version, api_version, document, etag, generated_at)
+                    SELECT environment, 2, schema_version, api_version,
+                           jsonb_set(document, '{revision}', '2'::jsonb),
+                           'orphan-revision-2', generated_at
+                      FROM "{{schema}}".metadata_v2_snapshots
+                     WHERE environment = 'Test' AND revision = 1;
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var saved = await store.SaveAsync(
+                first.Graph with { Revision = 2, GeneratedAt = DateTimeOffset.UtcNow },
+                expectedEtag: first.Etag);
+
+            saved.Graph.Revision.Should().Be(3);
+            await using var verify = await fixture.DataSource.OpenConnectionAsync();
+            await using var verifyCommand = verify.CreateCommand();
+            verifyCommand.CommandText = $"""
+                SELECT etag FROM "{schema}".metadata_v2_snapshots
+                 WHERE environment = 'Test' AND revision = 2;
+                """;
+            (await verifyCommand.ExecuteScalarAsync()).Should().Be("orphan-revision-2");
         }
         finally
         {

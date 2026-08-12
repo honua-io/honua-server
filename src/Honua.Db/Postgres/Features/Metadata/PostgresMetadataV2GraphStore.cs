@@ -196,9 +196,6 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
                 $"Metadata v2 graph failed validation: {string.Join("; ", validation.Errors)}");
         }
 
-        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
-        var etag = ComputeEtag(json);
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Self-heal the Metadata v2 schema so a fresh-DB container where migration
@@ -215,15 +212,25 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // the current pointer, preventing revision-1 overwrite and cross-writer deadlocks.
         await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         if (expectedEtag is not null)
         {
-            var currentEtag = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-            if (currentEtag is not null && !string.Equals(currentEtag, expectedEtag, StringComparison.Ordinal))
+            if (current is null || !string.Equals(current.Value.Etag, expectedEtag, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {currentEtag}.");
+                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {current?.Etag ?? "<none>"}.");
             }
         }
+
+        // Revisions are a store-owned allocation, not a caller-owned identifier. The
+        // caller necessarily builds its document before this lock is acquired; another
+        // publisher may therefore have consumed the proposed revision, and an interrupted
+        // writer may have left a higher orphan snapshot. Allocate above every retained
+        // snapshot while holding the shared environment lock.
+        var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        graph = graph with { Revision = revision };
+        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var etag = ComputeEtag(json);
 
         // Bootstrap reconciliation (honua-server#1395): when no current snapshot is
         // activated for this environment the caller (LoadCurrentOrEmptyGraphAsync) started
@@ -236,7 +243,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // rather than only the target (environment, revision), so the first write reconciles
         // cleanly instead of 500ing the layer-publish path and never leaves orphaned
         // revisions behind.
-        var isBootstrap = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false) is null;
+        var isBootstrap = current is null;
 
         await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
         await RefreshSidecarsAsync(connection, transaction, graph, clearStaleEnvironmentRows: isBootstrap, cancellationToken).ConfigureAwait(false);
@@ -409,7 +416,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         }
     }
 
-    private async Task<string?> ReadCurrentEtagAsync(
+    private async Task<(long Revision, string Etag)?> ReadCurrentStateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -420,11 +427,26 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // second snapshot upsert silently overwrites the first writer's document. With the
         // row lock the loser blocks until the winner commits, observes the winner's etag,
         // and surfaces the existing mismatch InvalidOperationException instead.
-        var sql = $"SELECT etag FROM {_currentTable} WHERE environment = @environment FOR UPDATE";
+        var sql = $"SELECT revision, etag FROM {_currentTable} WHERE environment = @environment FOR UPDATE";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is string s ? s : null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? (reader.GetInt64(0), reader.GetString(1))
+            : null;
+    }
+
+    private async Task<long> ReadNextRevisionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"SELECT COALESCE(MAX(revision), 0) + 1 FROM {_snapshotsTable} WHERE environment = @environment";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task UpsertSnapshotAsync(

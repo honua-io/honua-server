@@ -3,8 +3,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -117,8 +115,6 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, SequenceIdentitySql))
                 .Should().Be("honua.features_objectid_seq");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
-            (await ScalarStringAsync(dataSource, SeedMarkerSql))
-                .Should().Be($"{ExpectedSeedSha256}:seed-regression:1");
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
 
@@ -127,8 +123,6 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7, "reapplying the seed must replace, not duplicate, fixture rows");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
-            (await ScalarStringAsync(dataSource, SeedMarkerSql))
-                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2");
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1, "reapplying the seed must not duplicate its migration-owned trigger");
             (await ScalarInt64Async(dataSource, TriggerOidSql))
@@ -141,6 +135,17 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(firstSequenceState, "a healthy rerun must not reset or advance the objectid sequence");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity, "publication ids and bindings must remain stable");
+
+            await InstallMigration067ChangeTrackingFunctionAsync(dataSource);
+            var stableHealthyFeatureState = await ScalarStringAsync(dataSource, FeatureStateSql);
+            var stableHealthyChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+            Func<Task> applyWithHealthyMigration067Tracker = () => ExecuteAsync(dataSource, seed);
+            var healthyLegacyFailure = await applyWithHealthyMigration067Tracker.Should().ThrowAsync<PostgresException>();
+            healthyLegacyFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, FeatureStateSql)).Should().Be(stableHealthyFeatureState);
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(stableHealthyChangeState);
+            (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
 
             var featureMaxBeforeDefaultInsert = await ScalarInt64Async(dataSource, FeatureMaxObjectIdSql);
             var changeMaxBeforeDefaultInsert = await ScalarInt64Async(dataSource, FeatureChangeMaxObjectIdSql);
@@ -168,10 +173,6 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity);
             (await ScalarInt64Async(dataSource, TriggerCountSql)).Should().Be(1);
-            (await ScalarStringAsync(dataSource, SeedMarkerSql))
-                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2",
-                    "the injected failure must roll back the transactional seed marker");
-
             await AssertColumnRestrictedTriggerRejectedAsync(dataSource, seed);
             await ExecuteAsync(dataSource, RestoreCanonicalTriggerSql);
             await AssertHostileTriggerRejectedAsync(dataSource, seed);
@@ -183,10 +184,10 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task Apply_ConcurrentCanonicalBootstrap_SerializesAndPreservesBothPublications()
+    public async Task Apply_SeedFirstCanonicalBootstrap_SerializesWithoutOverwritingSeedRevision()
     {
         var connectionString = await fixture.CreateIsolatedDatabaseAsync(
-            nameof(Apply_ConcurrentCanonicalBootstrap_SerializesAndPreservesBothPublications));
+            nameof(Apply_SeedFirstCanonicalBootstrap_SerializesWithoutOverwritingSeedRevision));
         var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database!;
         var metadataGateHeld = false;
 
@@ -230,9 +231,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 metadataGateHeld = true;
             }
 
-            var canonicalWrite = store.SaveAsync(canonicalGraph, expectedEtag: null);
-            await WaitForMetadataLockWaitersAsync(dataSource, expectedCount: 1);
             var seedWrite = ExecuteAsync(dataSource, RenderSeed(injectFailure: false));
+            await WaitForMetadataLockWaitersAsync(dataSource, expectedCount: 1);
+            var canonicalWrite = store.SaveAsync(canonicalGraph, expectedEtag: null);
             await WaitForMetadataLockWaitersAsync(dataSource, expectedCount: 2);
 
             await using (var release = coordinator.CreateCommand())
@@ -243,14 +244,13 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 metadataGateHeld = false;
             }
 
-            await canonicalWrite.WaitAsync(TimeSpan.FromSeconds(30));
             await seedWrite.WaitAsync(TimeSpan.FromSeconds(30));
+            await canonicalWrite.WaitAsync(TimeSpan.FromSeconds(30));
 
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
-            (await ScalarInt64Async(dataSource, CanonicalAndSeedPublicationCountSql))
-                .Should().Be(2, "the seed must append to, not overwrite, the canonical bootstrap");
-            (await ScalarStringAsync(dataSource, SeedMarkerSql))
-                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2");
+            (await ScalarInt64Async(dataSource, SeedRevisionStillPresentSql))
+                .Should().Be(1, "the force writer must allocate revision 2 instead of overwriting the seed snapshot");
+            (await ScalarInt64Async(dataSource, CanonicalRevisionPresentSql)).Should().Be(1);
         }
         finally
         {
@@ -435,12 +435,50 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task Apply_CurrentWithOrphanNextRevision_AllocatesAboveOrphan()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync(
+            nameof(Apply_CurrentWithOrphanNextRevision_AllocatesAboveOrphan));
+        var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database!;
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await CreateMetadataV2TablesAsync(dataSource);
+            await CreateChangeTrackingTablesAsync(dataSource);
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            var seed = RenderSeed(injectFailure: false);
+            await ExecuteAsync(dataSource, seed);
+            await ExecuteAsync(
+                dataSource,
+                """
+                INSERT INTO honua.metadata_v2_snapshots
+                    (environment, revision, schema_version, api_version, document, etag, generated_at)
+                SELECT environment, 2, schema_version, api_version,
+                       jsonb_set(document, '{revision}', '2'::jsonb),
+                       'orphan-revision-2', generated_at
+                  FROM honua.metadata_v2_snapshots
+                 WHERE environment = 'seed-regression' AND revision = 1;
+                """);
+
+            await ExecuteAsync(dataSource, seed);
+
+            (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(3);
+            (await ScalarStringAsync(dataSource,
+                    "SELECT etag FROM honua.metadata_v2_snapshots WHERE environment = 'seed-regression' AND revision = 2"))
+                .Should().Be("orphan-revision-2", "the seed must not overwrite retained orphan snapshots");
+        }
+        finally
+        {
+            await fixture.DropDatabaseAsync(databaseName);
+        }
+    }
+
     private static string RenderSeed(bool injectFailure, string schema = "honua")
     {
         var seedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
         var source = File.ReadAllText(seedPath);
-        ExpectedSeedSha256 = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
         var begin = source.IndexOf("\nBEGIN;", StringComparison.Ordinal);
         if (begin < 0)
         {
@@ -450,8 +488,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         var rendered = source[(begin + 1)..]
             .Replace(":\"schema\"", $"\"{schema}\"", StringComparison.Ordinal)
             .Replace(":'schema'", $"'{schema}'", StringComparison.Ordinal)
-            .Replace(":'env'", "'seed-regression'", StringComparison.Ordinal)
-            .Replace(":'seed_sha256'", $"'{ExpectedSeedSha256}'", StringComparison.Ordinal);
+            .Replace(":'env'", "'seed-regression'", StringComparison.Ordinal);
         if (rendered.Contains("\\set", StringComparison.Ordinal) || rendered.Contains(":'", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Demo STAC seed still contains psql-only substitutions.");
@@ -720,13 +757,22 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     private const int WriterGateLockNamespace = 144047713;
     private const int WriterGateLockKey = 0;
     private const int MetadataLockNamespace = 144047714;
-    private static string ExpectedSeedSha256 = string.Empty;
-
-    private const string SeedMarkerSql =
+    private const string SeedRevisionStillPresentSql =
         """
-        SELECT source_sha256 || ':' || metadata_environment || ':' || metadata_revision::text
-          FROM honua.demo_seed_revisions
-         WHERE seed_id = 'demo-stac-imagery-v1'
+        SELECT count(*)
+          FROM honua.metadata_v2_snapshots
+         WHERE environment = 'seed-regression'
+           AND revision = 1
+           AND document->'services' @> '[{"metadata":{"id":"svc-demo-stac"}}]'::jsonb
+        """;
+
+    private const string CanonicalRevisionPresentSql =
+        """
+        SELECT count(*)
+          FROM honua.metadata_v2_snapshots
+         WHERE environment = 'seed-regression'
+           AND revision = 2
+           AND document->'resources' @> '[{"metadata":{"id":"res-canonical"}}]'::jsonb
         """;
 
     private const string CanonicalAndSeedPublicationCountSql =

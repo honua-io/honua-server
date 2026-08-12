@@ -34,8 +34,9 @@
 --   schema     Honua migration schema (default and only supported value "honua").
 --              The current migration-owned tracking functions are honua-scoped;
 --              fail closed rather than publishing an untracked custom relation.
---   seed_sha256 SHA-256 of this exact seed source, computed by the invoking wrapper.
---               Required; persisted transactionally for the deployment gate.
+-- Publication attestation is deliberately outside this SQL source. The managed
+-- executor hashes the exact rendered bytes it executes and writes its receipt in
+-- the same transaction; arbitrary psql use is an unattested break-glass path.
 --
 -- USAGE:
 --   psql -v ON_ERROR_STOP=1 -v env=default -v schema=honua -f demo-stac-imagery-v1.sql
@@ -54,12 +55,6 @@
 \else
   \set schema 'honua'
 \endif
-\if :{?seed_sha256}
-\else
-  \echo 'seed_sha256 is required and must be computed from the seed source bytes'
-  \quit
-\endif
-
 BEGIN;
 
 SET search_path TO :"schema", public;
@@ -68,7 +63,6 @@ SET search_path TO :"schema", public;
 -- cannot see psql :vars) can read them via current_setting().
 SELECT set_config('honua.seed_env', :'env', false);
 SELECT set_config('honua.seed_schema', :'schema', false);
-SELECT set_config('honua.seed_sha256', :'seed_sha256', false);
 
 DO $schema_contract$
 BEGIN
@@ -76,11 +70,6 @@ BEGIN
         RAISE EXCEPTION USING
             ERRCODE = '55000',
             MESSAGE = 'Demo STAC seed requires the migration-owned honua schema';
-    END IF;
-    IF current_setting('honua.seed_sha256', true) !~ '^[0-9a-f]{64}$' THEN
-        RAISE EXCEPTION USING
-            ERRCODE = '22023',
-            MESSAGE = 'Demo STAC seed requires a lowercase SHA-256 source digest';
     END IF;
 END
 $schema_contract$;
@@ -240,42 +229,40 @@ DECLARE
     first_change_id bigint;
     observed_changes text;
 BEGIN
-    IF current_setting('honua.seed_features_missing', true)::boolean THEN
-        SELECT coalesce(max(change_id), 0)
-          INTO first_change_id
-          FROM honua.feature_changes;
+    SELECT coalesce(max(change_id), 0)
+      INTO first_change_id
+      FROM honua.feature_changes;
 
-        BEGIN
-            INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
-            VALUES (probe_objectid, probe_layer_id, NULL, jsonb_build_object('probe', 'insert'));
-            UPDATE honua.features
-               SET attributes = jsonb_build_object('probe', 'update')
-             WHERE objectid = probe_objectid;
-            DELETE FROM honua.features WHERE objectid = probe_objectid;
+    BEGIN
+        INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
+        VALUES (probe_objectid, probe_layer_id, NULL, jsonb_build_object('probe', 'insert'));
+        UPDATE honua.features
+           SET attributes = jsonb_build_object('probe', 'update')
+         WHERE objectid = probe_objectid;
+        DELETE FROM honua.features WHERE objectid = probe_objectid;
 
-            SELECT string_agg(
-                       format('%s:%s', operation, coalesce(public_objectid::text, 'null')),
-                       ',' ORDER BY change_id)
-              INTO observed_changes
-              FROM honua.feature_changes
-             WHERE change_id > first_change_id
-               AND layer_id = probe_layer_id
-               AND objectid = probe_objectid;
+        SELECT string_agg(
+                   format('%s:%s', operation, coalesce(public_objectid::text, 'null')),
+                   ',' ORDER BY change_id)
+          INTO observed_changes
+          FROM honua.feature_changes
+         WHERE change_id > first_change_id
+           AND layer_id = probe_layer_id
+           AND objectid = probe_objectid;
 
-            IF observed_changes IS DISTINCT FROM
-               '1:-9223372036854775807,2:-9223372036854775807,3:-9223372036854775807' THEN
-                RAISE EXCEPTION USING
-                    ERRCODE = '55000',
-                    MESSAGE = 'Demo STAC seed requires migration 105 feature change-tracking behavior';
-            END IF;
-
+        IF observed_changes IS DISTINCT FROM
+           '1:-9223372036854775807,2:-9223372036854775807,3:-9223372036854775807' THEN
             RAISE EXCEPTION USING
-                ERRCODE = 'P0001',
-                MESSAGE = 'rollback demo STAC tracking probe';
-        EXCEPTION
-            WHEN SQLSTATE 'P0001' THEN NULL;
-        END;
-    END IF;
+                ERRCODE = '55000',
+                MESSAGE = 'Demo STAC seed requires migration 105 feature change-tracking behavior';
+        END IF;
+
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001',
+            MESSAGE = 'rollback demo STAC tracking probe';
+    EXCEPTION
+        WHEN SQLSTATE 'P0001' THEN NULL;
+    END;
 END
 $tracking_behavior$;
 
@@ -369,6 +356,7 @@ DECLARE
     v_now        text := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
     v_doc        jsonb;
     v_revision   bigint;
+    v_bootstrap  boolean := false;
     v_etag       text;
     v_status     jsonb := jsonb_build_object(
                     'lifecycle','active','state','ready','observedAt', v_now);
@@ -397,7 +385,7 @@ BEGIN
 
     IF v_doc IS NULL THEN
         -- No activated snapshot yet for this environment: start an empty graph.
-        v_revision := 0;
+        v_bootstrap := true;
         v_doc := jsonb_build_object(
             'schemaVersion','2.0.0-alpha.1',
             'apiVersion','metadata.honua.io/v2alpha1',
@@ -410,6 +398,13 @@ BEGIN
             'services','[]'::jsonb,
             'publications','[]'::jsonb);
     END IF;
+
+    -- Store-owned revision allocation. An interrupted writer may have left an
+    -- orphan snapshot above current, so never reuse a retained revision number.
+    SELECT coalesce(max(revision), 0)
+      INTO v_revision
+      FROM metadata_v2_snapshots
+     WHERE environment = v_env;
 
     -- The STAC service. protocols MUST include "Stac" for StacV2Lookups to see it.
     v_service := jsonb_build_object(
@@ -572,6 +567,16 @@ BEGIN
     v_doc := v_doc
         || jsonb_build_object('revision', v_revision, 'environment', v_env, 'generatedAt', v_now);
 
+    -- Reconcile a no-current bootstrap exactly like the canonical graph store:
+    -- retained snapshots remain immutable while stale derived sidecars are cleared.
+    IF v_bootstrap THEN
+        DELETE FROM metadata_v2_publications_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_services_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_storage_bindings_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_resources_idx WHERE environment = v_env;
+        DELETE FROM metadata_v2_connections_idx WHERE environment = v_env;
+    END IF;
+
     -- Persist as a new revision and activate it.
     INSERT INTO metadata_v2_snapshots
         (environment, revision, schema_version, api_version, document, etag, generated_at)
@@ -629,28 +634,6 @@ BEGIN
         SET revision = EXCLUDED.revision,
             etag = EXCLUDED.etag,
             activated_at = EXCLUDED.activated_at;
-
-    -- Durable proof of which source bytes produced the active seed publication.
-    -- The marker is written in this same transaction after current activation, so a
-    -- failed seed cannot leave a receipt that a trusted in-VPC gate could accept.
-    IF to_regclass('honua.demo_seed_revisions') IS NULL THEN
-        EXECUTE $ddl$CREATE TABLE honua.demo_seed_revisions (
-            seed_id text PRIMARY KEY,
-            source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$'),
-            metadata_environment text NOT NULL,
-            metadata_revision bigint NOT NULL,
-            applied_at timestamptz NOT NULL DEFAULT now()
-        )$ddl$;
-    END IF;
-    INSERT INTO honua.demo_seed_revisions
-        (seed_id, source_sha256, metadata_environment, metadata_revision, applied_at)
-    VALUES
-        ('demo-stac-imagery-v1', current_setting('honua.seed_sha256'), v_env, v_revision, now())
-    ON CONFLICT (seed_id) DO UPDATE
-        SET source_sha256 = EXCLUDED.source_sha256,
-            metadata_environment = EXCLUDED.metadata_environment,
-            metadata_revision = EXCLUDED.metadata_revision,
-            applied_at = EXCLUDED.applied_at;
 
     RAISE NOTICE 'demo STAC seed: environment=% activated revision=% (etag=%)', v_env, v_revision, v_etag;
 END
