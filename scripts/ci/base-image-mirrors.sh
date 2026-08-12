@@ -14,6 +14,12 @@
 #                                               # fail if the workflow consumes a
 #                                               # BASE_REPO tag this map does not
 #                                               # mirror (or mirrors an unused tag)
+#   scripts/ci/base-image-mirrors.sh --inventory-markdown
+#                                               # render every digest-pinned .NET
+#                                               # Dockerfile ARG as Markdown
+#   scripts/ci/base-image-mirrors.sh --verify-inventory-doc <markdown-file>
+#                                               # fail if the marked generated
+#                                               # inventory differs from Dockerfiles
 
 set -euo pipefail
 
@@ -65,6 +71,66 @@ print_mirror_set() {
   done
 }
 
+print_dotnet_inventory_markdown() {
+  local path dockerfile line arg_name source_ref
+
+  printf '%s\n' '| Dockerfile | Build argument | Image reference |'
+  printf '%s\n' '| --- | --- | --- |'
+
+  while IFS= read -r -d '' path; do
+    dockerfile="${path#"${REPO_ROOT}/"}"
+    while IFS= read -r line; do
+      line="${line%$'\r'}"
+      if [[ "${line}" =~ ^ARG[[:space:]]+(DOTNET_(SDK|ASPNET|RUNTIME_DEPS)_IMAGE)=(.*)$ ]]; then
+        arg_name="${BASH_REMATCH[1]}"
+        source_ref="${BASH_REMATCH[3]}"
+        source_ref="${source_ref%"${source_ref##*[![:space:]]}"}"
+        if [[ "${source_ref}" =~ ${DIGEST_REF_PATTERN} ]]; then
+          printf '| `%s` | `%s` | `%s` |\n' "${dockerfile}" "${arg_name}" "${source_ref}"
+        fi
+      fi
+    done < "${path}"
+  done < <(
+    {
+      find "${REPO_ROOT}" -maxdepth 1 -type f -name 'Dockerfile' -print0
+      find "${REPO_ROOT}/docker" -type f -name 'Dockerfile*' -print0
+    } | LC_ALL=C sort -z
+  )
+}
+
+verify_inventory_doc() {
+  local doc="$1" begin_marker end_marker begin_count end_count expected actual
+  begin_marker='<!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->'
+  end_marker='<!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->'
+
+  if [[ ! -f "${doc}" ]]; then
+    echo "::error::inventory document ${doc} not found" >&2
+    return 1
+  fi
+
+  begin_count="$(grep -Fxc "${begin_marker}" "${doc}" || true)"
+  end_count="$(grep -Fxc "${end_marker}" "${doc}" || true)"
+  if [[ "${begin_count}" -ne 1 || "${end_count}" -ne 1 ]]; then
+    echo "::error::${doc} must contain exactly one generated .NET inventory marker pair" >&2
+    return 1
+  fi
+
+  expected="$(print_dotnet_inventory_markdown)"
+  actual="$(awk -v begin="${begin_marker}" -v end="${end_marker}" '
+    $0 == begin { capture = 1; next }
+    $0 == end { capture = 0; next }
+    capture { sub(/\r$/, ""); print }
+  ' "${doc}")"
+
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "::error::${doc} .NET base-image inventory differs from digest-pinned Dockerfile ARG defaults" >&2
+    diff -u <(printf '%s\n' "${actual}") <(printf '%s\n' "${expected}") || true
+    return 1
+  fi
+
+  echo "Generated .NET base-image inventory is current in ${doc}."
+}
+
 verify_consumers() {
   local status=0 workflow entry tag consumed mirrored used
 
@@ -103,6 +169,26 @@ verify_consumers() {
 }
 
 main() {
+  if [[ "${1:-}" == "--inventory-markdown" ]]; then
+    shift
+    if [[ "$#" -gt 0 ]]; then
+      echo "::error::--inventory-markdown does not accept additional arguments" >&2
+      exit 2
+    fi
+    print_dotnet_inventory_markdown
+    exit 0
+  fi
+
+  if [[ "${1:-}" == "--verify-inventory-doc" ]]; then
+    shift
+    if [[ "$#" -ne 1 ]]; then
+      echo "::error::--verify-inventory-doc requires exactly one Markdown file" >&2
+      exit 2
+    fi
+    verify_inventory_doc "$1"
+    exit 0
+  fi
+
   if [[ "${1:-}" == "--verify" ]]; then
     shift
     if [[ "$#" -eq 0 ]]; then
