@@ -971,11 +971,15 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private const string TriggerFunctionSql =
         """
-        SELECT tgfoid::regprocedure::text
-          FROM pg_trigger
-         WHERE tgrelid = 'honua.features'::regclass
-           AND tgname = 'trigger_track_feature_changes'
-           AND NOT tgisinternal
+        SELECT quote_ident(function_namespace.nspname)
+               || '.' || quote_ident(target_function.proname)
+               || '(' || pg_get_function_identity_arguments(target_function.oid) || ')'
+          FROM pg_trigger AS trigger
+          JOIN pg_proc AS target_function ON target_function.oid = trigger.tgfoid
+          JOIN pg_namespace AS function_namespace ON function_namespace.oid = target_function.pronamespace
+         WHERE trigger.tgrelid = 'honua.features'::regclass
+           AND trigger.tgname = 'trigger_track_feature_changes'
+           AND NOT trigger.tgisinternal
         """;
 
     private const string TrackingFunctionOidSql =
