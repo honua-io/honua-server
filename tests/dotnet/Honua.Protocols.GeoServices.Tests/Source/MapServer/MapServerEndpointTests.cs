@@ -2379,6 +2379,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = name },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             SchemaFields =
             [
@@ -2414,6 +2415,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
             ResourceId = resourceId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Locator = "features",
             StorageLayerId = layerId,
         });
@@ -2424,6 +2426,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = bindingId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             PublicationType = MetadataV2PublicationType.EsriMapLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {

@@ -203,6 +203,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Description = description
             },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             AccessPolicy = accessPolicy,
@@ -259,6 +260,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Name = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
             },
             ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = "features",
             StorageLayerId = layerId,
@@ -286,6 +288,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             ServiceId = "svc-mobile-offline-demo-feature",
             ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
             StorageBindingId = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),

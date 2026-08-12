@@ -189,6 +189,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
                 Name = $"Layer {_tableName}"
             },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             SchemaFields =
             [
@@ -226,6 +227,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
                 Name = bindingId
             },
             ResourceId = resourceId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = $"{_schema}.{_tableName}",
             StorageLayerId = layerId
@@ -250,6 +252,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = bindingId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = layerIdText,
