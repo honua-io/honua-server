@@ -319,9 +319,69 @@ internal static class SavedMapOperationPayloadValidator
             }
         }
 
+        if (!TryValidateReplacementComponentSemantics(body, out error))
+        {
+            return false;
+        }
+
         // A replacement carries a view too, so it must satisfy the same coordinate-shape rules an
         // explicit SetViewport operation does.
         return TryValidateViewShape(body.View, out error);
+    }
+
+    private static bool TryValidateReplacementComponentSemantics(
+        StudioCompositionBody body,
+        out string error)
+    {
+        foreach (var interaction in body.Interactions ?? [])
+        {
+            if (!TryValidateReplacementComponentRef(body, interaction.On.Ref, "interaction on.ref", out error)
+                || !TryValidateReplacementComponentRef(body, interaction.Do.Ref, "interaction do.ref", out error))
+            {
+                return false;
+            }
+        }
+
+        foreach (var item in body.Layout?.Items ?? [])
+        {
+            if (!TryValidateReplacementComponentRef(body, item.Ref, "layout item ref", out error))
+            {
+                return false;
+            }
+
+            if (item.X < 0 || item.Y < 0)
+            {
+                error = "A layout item in the document-replace payload requires x/y to be zero or greater.";
+                return false;
+            }
+
+            if (item.W < 1 || item.H < 1)
+            {
+                error = "A layout item in the document-replace payload requires w/h to be one or greater.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryValidateReplacementComponentRef(
+        StudioCompositionBody body,
+        string reference,
+        string subject,
+        out string error)
+    {
+        var resolution = StudioInteractionVocabulary.ResolveRef(body, reference);
+        if (resolution == StudioComponentRefResolution.Resolved)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        error = $"The document-replace payload's {subject} is invalid: "
+            + StudioInteractionVocabulary.DescribeResolution(reference, resolution);
+        return false;
     }
 
     private static bool TryValidateReplacementInteractions(JsonElement payload, out string error)

@@ -122,9 +122,12 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"},"disabled":null}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"click"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"navigate"}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"layer:missing","event":"featureSelect"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":null}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":0}}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":25}}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","x":-1,"y":0,"w":1,"h":1}]}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","x":0,"y":0,"w":0,"h":1}]}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","y":0,"w":1,"h":1}]}}""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.
