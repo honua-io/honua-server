@@ -263,6 +263,11 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             return;
         }
 
+        if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(envelope.Family))
+        {
+            ValidateCompositionInteractionsAndLayout(envelope, diagnostics);
+        }
+
         try
         {
             if (envelope.Family == StudioPackageFamily.Map)
@@ -307,6 +312,502 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         {
             diagnostics.Add(Error("studio.body.invalid", "/body", "package body does not match the declared family format."));
         }
+    }
+
+    /// <summary>
+    /// Gates the standard-owned <c>interactions</c>/<c>layout</c> blocks of a map/app
+    /// composition body (geospatial-mcp ADR-0030). Both blocks are OPTIONAL: a body that
+    /// declares neither produces no diagnostics. When present they must satisfy the
+    /// closed event/verb sets, the component-reference grammar, in-document reference
+    /// resolution, id uniqueness, the per-<c>(on.ref, on.event)</c> fan-out cap, and the
+    /// layout grid/placement bounds.
+    /// </summary>
+    /// <remarks>
+    /// The rules are enforced HERE as well as at the composition-tool admission gate
+    /// (<see cref="StudioCompositionBodyEditor.BindInteraction"/>) because a body can be
+    /// authored wholesale through the draft-update surface, which never passes through the
+    /// editor. Both call the shared <see cref="StudioInteractionVocabulary"/> checks, so
+    /// the two gates cannot drift.
+    /// </remarks>
+    private static void ValidateCompositionInteractionsAndLayout(
+        StudioPackageEnvelope envelope,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var body = envelope.Body!.Value;
+        var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
+        var hasLayout = body.TryGetProperty("layout", out var rawLayout);
+        if (!hasInteractions && !hasLayout)
+        {
+            return;
+        }
+
+        if (!ValidateCompositionWireShape(
+                hasInteractions,
+                rawInteractions,
+                hasLayout,
+                rawLayout,
+                diagnostics))
+        {
+            return;
+        }
+
+        StudioCompositionBody composition;
+        try
+        {
+            composition = StudioCompositionBodyEditor.ReadBody(envelope);
+        }
+        catch (StudioCompositionBodyException)
+        {
+            diagnostics.Add(Error(
+                "studio.composition.invalid",
+                "/body",
+                "the composition's interactions/layout blocks do not match the standard shape."));
+            return;
+        }
+
+        ValidateInteractions(composition, diagnostics);
+        ValidateLayout(composition, diagnostics);
+    }
+
+    private static bool ValidateCompositionWireShape(
+        bool hasInteractions,
+        JsonElement rawInteractions,
+        bool hasLayout,
+        JsonElement rawLayout,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var canDeserialize = true;
+        if (hasInteractions)
+        {
+            if (rawInteractions.ValueKind != JsonValueKind.Array)
+            {
+                diagnostics.Add(Error("studio.interactions.array", "/body/interactions", "interactions must be an array."));
+                canDeserialize = false;
+            }
+            else
+            {
+                var index = 0;
+                foreach (var interaction in rawInteractions.EnumerateArray())
+                {
+                    var path = $"/body/interactions/{index}";
+                    if (!ValidateClosedObject(
+                            interaction,
+                            ["id", "on", "do", "disabled"],
+                            path,
+                            "studio.interaction.object",
+                            "studio.interaction.member.unknown",
+                            diagnostics))
+                    {
+                        canDeserialize = false;
+                        index++;
+                        continue;
+                    }
+
+                    canDeserialize &= ValidateRequiredString(
+                        interaction, "id", path, "studio.interaction.id.required", diagnostics);
+
+                    if (!interaction.TryGetProperty("on", out var on)
+                        || !ValidateClosedObject(
+                            on,
+                            ["ref", "event"],
+                            $"{path}/on",
+                            "studio.interaction.event.object",
+                            "studio.interaction.event.member.unknown",
+                            diagnostics))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.event.required",
+                            $"{path}/on",
+                            "interaction on must be an object."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        canDeserialize &= ValidateRequiredString(
+                            on, "ref", $"{path}/on", "studio.interaction.event.ref.required", diagnostics);
+                        canDeserialize &= ValidateRequiredString(
+                            on, "event", $"{path}/on", "studio.interaction.event.name.required", diagnostics);
+                    }
+
+                    if (!interaction.TryGetProperty("do", out var action)
+                        || !ValidateClosedObject(
+                            action,
+                            ["ref", "verb", "args"],
+                            $"{path}/do",
+                            "studio.interaction.action.object",
+                            "studio.interaction.action.member.unknown",
+                            diagnostics))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.action.required",
+                            $"{path}/do",
+                            "interaction do must be an object."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        canDeserialize &= ValidateRequiredString(
+                            action, "ref", $"{path}/do", "studio.interaction.action.ref.required", diagnostics);
+                        canDeserialize &= ValidateRequiredString(
+                            action, "verb", $"{path}/do", "studio.interaction.action.verb.required", diagnostics);
+                        if (action.TryGetProperty("args", out var args) && args.ValueKind != JsonValueKind.Object)
+                        {
+                            diagnostics.Add(Error(
+                                "studio.interaction.args.object",
+                                $"{path}/do/args",
+                                "do.args must be a JSON object."));
+                        }
+                    }
+
+                    if (interaction.TryGetProperty("disabled", out var disabled)
+                        && disabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.disabled.boolean",
+                            $"{path}/disabled",
+                            "interaction disabled must be a boolean."));
+                        canDeserialize = false;
+                    }
+
+                    index++;
+                }
+            }
+        }
+
+        if (hasLayout)
+        {
+            if (!ValidateClosedObject(
+                    rawLayout,
+                    ["grid", "items"],
+                    "/body/layout",
+                    "studio.layout.object",
+                    "studio.layout.member.unknown",
+                    diagnostics))
+            {
+                canDeserialize = false;
+            }
+            else
+            {
+                if (rawLayout.TryGetProperty("grid", out var grid))
+                {
+                    if (!ValidateClosedObject(
+                            grid,
+                            ["columns"],
+                            "/body/layout/grid",
+                            "studio.layout.grid.object",
+                            "studio.layout.grid.member.unknown",
+                            diagnostics))
+                    {
+                        canDeserialize = false;
+                    }
+                    else if (grid.TryGetProperty("columns", out var columns)
+                        && (columns.ValueKind != JsonValueKind.Number || !columns.TryGetInt32(out _)))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.layout.grid.columns.integer",
+                            "/body/layout/grid/columns",
+                            "layout grid columns must be an integer."));
+                        canDeserialize = false;
+                    }
+                }
+
+                if (rawLayout.TryGetProperty("items", out var items))
+                {
+                    if (items.ValueKind != JsonValueKind.Array)
+                    {
+                        diagnostics.Add(Error(
+                            "studio.layout.items.array",
+                            "/body/layout/items",
+                            "layout items must be an array."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        var index = 0;
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            var path = $"/body/layout/items/{index}";
+                            if (!ValidateClosedObject(
+                                    item,
+                                    ["ref", "x", "y", "w", "h"],
+                                    path,
+                                    "studio.layout.item.object",
+                                    "studio.layout.item.member.unknown",
+                                    diagnostics))
+                            {
+                                canDeserialize = false;
+                                index++;
+                                continue;
+                            }
+
+                            canDeserialize &= ValidateRequiredString(
+                                item, "ref", path, "studio.layout.item.ref.required", diagnostics);
+                            canDeserialize &= ValidateRequiredIntegerPair(
+                                item,
+                                "x",
+                                "y",
+                                path,
+                                "studio.layout.item.origin.required",
+                                "studio.layout.item.origin.integer",
+                                "layout item must declare integer x and y coordinates.",
+                                diagnostics);
+                            canDeserialize &= ValidateRequiredIntegerPair(
+                                item,
+                                "w",
+                                "h",
+                                path,
+                                "studio.layout.item.size.required",
+                                "studio.layout.item.size.integer",
+                                "layout item must declare integer w and h dimensions.",
+                                diagnostics);
+                            index++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return canDeserialize;
+    }
+
+    private static bool ValidateClosedObject(
+        JsonElement value,
+        IReadOnlyList<string> allowedMembers,
+        string path,
+        string objectCode,
+        string unknownMemberCode,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            diagnostics.Add(Error(objectCode, path, "value must be a JSON object."));
+            return false;
+        }
+
+        foreach (var member in value.EnumerateObject())
+        {
+            if (allowedMembers.Contains(member.Name, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            diagnostics.Add(Error(
+                unknownMemberCode,
+                $"{path}/{EscapeJsonPointerSegment(member.Name)}",
+                $"member '{member.Name}' is not defined by the ADR-0030 composition schema."));
+        }
+
+        return true;
+    }
+
+    private static bool ValidateRequiredString(
+        JsonElement value,
+        string memberName,
+        string path,
+        string code,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (value.TryGetProperty(memberName, out var member) && member.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string."));
+        return false;
+    }
+
+    private static bool ValidateRequiredIntegerPair(
+        JsonElement value,
+        string firstName,
+        string secondName,
+        string path,
+        string requiredCode,
+        string integerCode,
+        string message,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var hasFirst = value.TryGetProperty(firstName, out var first);
+        var hasSecond = value.TryGetProperty(secondName, out var second);
+        if (!hasFirst || !hasSecond)
+        {
+            diagnostics.Add(Error(requiredCode, path, message));
+        }
+
+        if ((!hasFirst || first.ValueKind == JsonValueKind.Number && first.TryGetInt32(out _))
+            && (!hasSecond || second.ValueKind == JsonValueKind.Number && second.TryGetInt32(out _)))
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(integerCode, path, message));
+        return false;
+    }
+
+    private static string EscapeJsonPointerSegment(string value)
+        => value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
+
+    private static void ValidateInteractions(
+        StudioCompositionBody composition,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var interactions = composition.Interactions;
+        if (interactions is null)
+        {
+            return;
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var fanOut = new Dictionary<(string Ref, string Event), int>();
+        for (var i = 0; i < interactions.Count; i++)
+        {
+            var interaction = interactions[i];
+            var path = $"/body/interactions/{i}";
+            // The wire model cannot express non-null: an explicit JSON null deserializes
+            // into these `required` members regardless of their annotation.
+            if (interaction is null || interaction.On is null || interaction.Do is null)
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.required", path, "interaction must declare 'id', 'on' and 'do'."));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(interaction.Id))
+            {
+                diagnostics.Add(Error("studio.interaction.id.required", $"{path}/id", "interaction id is required."));
+            }
+            else if (interaction.Id.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.id.too-long",
+                    $"{path}/id",
+                    $"interaction id must be {StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer."));
+            }
+            else if (!ids.Add(interaction.Id))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.id.duplicate",
+                    $"{path}/id",
+                    $"interaction id '{interaction.Id}' must be unique within the interactions block."));
+            }
+
+            if (!StudioInteractionVocabulary.IsEventName(interaction.On.Event))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.event.unsupported",
+                    $"{path}/on/event",
+                    $"on.event must be one of: {string.Join(", ", StudioInteractionVocabulary.EventNames)}."));
+            }
+
+            if (!StudioInteractionVocabulary.IsActionVerb(interaction.Do.Verb))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.verb.unsupported",
+                    $"{path}/do/verb",
+                    $"do.verb must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}."));
+            }
+
+            if (interaction.Do.Args is { ValueKind: not JsonValueKind.Object })
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.args.object",
+                    $"{path}/do/args",
+                    "do.args must be a JSON object."));
+            }
+
+            ValidateComponentRef(composition, interaction.On.Ref, $"{path}/on/ref", "studio.interaction.ref", diagnostics);
+            ValidateComponentRef(composition, interaction.Do.Ref, $"{path}/do/ref", "studio.interaction.ref", diagnostics);
+
+            var key = (interaction.On.Ref, interaction.On.Event);
+            fanOut[key] = fanOut.TryGetValue(key, out var count) ? count + 1 : 1;
+        }
+
+        foreach (var ((eventRef, eventName), count) in fanOut)
+        {
+            if (count > StudioInteractionVocabulary.MaxInteractionsPerEventSource)
+            {
+                diagnostics.Add(Error(
+                    "studio.interactions.fan-out",
+                    "/body/interactions",
+                    $"At most {StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions may share the "
+                    + $"same event source; '{eventRef}'/'{eventName}' has {count}."));
+            }
+        }
+    }
+
+    private static void ValidateLayout(StudioCompositionBody composition, List<StudioValidationDiagnostic> diagnostics)
+    {
+        var layout = composition.Layout;
+        if (layout is null)
+        {
+            return;
+        }
+
+        if (layout.Grid?.Columns is { } columns &&
+            (columns < StudioInteractionVocabulary.MinGridColumns || columns > StudioInteractionVocabulary.MaxGridColumns))
+        {
+            diagnostics.Add(Error(
+                "studio.layout.grid.columns.invalid",
+                "/body/layout/grid/columns",
+                $"layout grid columns must be between {StudioInteractionVocabulary.MinGridColumns} and "
+                + $"{StudioInteractionVocabulary.MaxGridColumns}."));
+        }
+
+        var items = layout.Items;
+        if (items is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var path = $"/body/layout/items/{i}";
+            if (item is null)
+            {
+                diagnostics.Add(Error("studio.layout.item.required", path, "layout item must not be null."));
+                continue;
+            }
+
+            ValidateComponentRef(composition, item.Ref, $"{path}/ref", "studio.layout.item.ref", diagnostics);
+
+            if (item.X < 0 || item.Y < 0)
+            {
+                diagnostics.Add(Error(
+                    "studio.layout.item.origin.invalid", path, "layout item x/y must be zero or greater."));
+            }
+
+            if (item.W < 1 || item.H < 1)
+            {
+                diagnostics.Add(Error(
+                    "studio.layout.item.size.invalid", path, "layout item w/h must be one or greater."));
+            }
+        }
+    }
+
+    private static void ValidateComponentRef(
+        StudioCompositionBody composition,
+        string? reference,
+        string path,
+        string codePrefix,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var resolution = StudioInteractionVocabulary.ResolveRef(composition, reference);
+        if (resolution == StudioComponentRefResolution.Resolved)
+        {
+            return;
+        }
+
+        var suffix = resolution switch
+        {
+            StudioComponentRefResolution.Malformed => "invalid",
+            StudioComponentRefResolution.ControlsUnsupported => "control-unsupported",
+            _ => "unresolved",
+        };
+
+        diagnostics.Add(Error(
+            $"{codePrefix}.{suffix}",
+            path,
+            StudioInteractionVocabulary.DescribeResolution(reference, resolution)));
     }
 
     private static void ValidateInitialView(MapInitialView initialView, string path, List<StudioValidationDiagnostic> diagnostics)

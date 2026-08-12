@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/bind_interaction.schema.json",
+  "title": "bind_interaction inputSchema",
+  "description": "Argument shape for bind_interaction (composition profile, ADR-0030). Adds or replaces (by interaction id) one declarative event→action binding in a composition document. The standard-level target is a composition document (mapPackageId or appPackageId). The reference implementation authors compositions through a draft lifecycle; its optimistic-concurrency draft spelling (draftId + generation) is admitted as x-honua-reference-shape, consistent with ADR-0029's admission of reference spellings. Validation gate: the interaction's on.ref and do.ref must resolve to components declared in the target document, and the per-(on.ref, on.event) fan-out cap applies (recommended 8). See docs/adr/0030-declarative-interactions-and-layout.md and common/interactions.schema.json.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["interaction"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target MapPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "appPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target AppPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "interaction": {
+      "$ref": "../common/interactions.schema.json#/$defs/interaction",
+      "description": "The binding to add or replace. Replacement matches on interaction.id."
+    }
+  }
+}

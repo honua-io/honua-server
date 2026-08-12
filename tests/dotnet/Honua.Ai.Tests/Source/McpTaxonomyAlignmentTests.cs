@@ -81,6 +81,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_set_view",
         "honua_studio_add_widget",
         "honua_studio_remove_widget",
+        "honua_studio_bind_interaction",
+        "honua_studio_remove_interaction",
         "honua_studio_propose_publication"
     };
 
@@ -300,6 +302,11 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_studio_set_view"] = (Destructive: false, Idempotent: true),
             ["honua_studio_add_widget"] = (Destructive: false, Idempotent: false),
             ["honua_studio_remove_widget"] = (Destructive: true, Idempotent: false),
+            // Declarative interactions (geospatial-mcp ADR-0030): binding by id is
+            // add-or-replace, so re-sending the same binding is idempotent; removing a
+            // binding drops composed wiring, so it is destructive.
+            ["honua_studio_bind_interaction"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_remove_interaction"] = (Destructive: true, Idempotent: false),
             ["honua_studio_propose_publication"] = (Destructive: false, Idempotent: true),
         };
 
@@ -815,6 +822,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
+            new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
         ];
     }

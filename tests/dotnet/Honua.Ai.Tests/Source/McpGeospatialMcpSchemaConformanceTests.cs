@@ -9,10 +9,12 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,6 +101,32 @@ public sealed partial class McpTaxonomyAlignmentTests
             // publish_service divergence recorded below).
             ["honua_resolve_entity"] = "resolve_entity",
             ["honua_list_capabilities"] = "list_capabilities",
+            // Declarative composition interactions (geospatial-mcp ADR-0030, opt-in
+            // 'composition' profile). Unlike the other honua_studio_* tools these DO map
+            // onto published standard schemas: Honua is the reference implementation of
+            // bind_interaction/remove_interaction. See ReferenceShapeTargetedTools for why
+            // their live required set is a superset of the standard's.
+            ["honua_studio_bind_interaction"] = "bind_interaction",
+            ["honua_studio_remove_interaction"] = "remove_interaction",
+        };
+
+    /// <summary>
+    /// Implemented tools whose live <c>inputSchema</c> deliberately requires MORE than the
+    /// standard schema does, because the standard addresses a composition document
+    /// (<c>mapPackageId</c>/<c>appPackageId</c>) while the reference implementation
+    /// addresses the optimistic-concurrency draft the composition lives in. ADR-0030
+    /// admits that <c>draftId</c> + <c>generation</c> spelling explicitly as
+    /// <c>x-honua-reference-shape</c>, and the standard schema declares both properties —
+    /// so a standard-shaped call using the reference target validates against both
+    /// contracts. The value set enumerates the EXTRA required members permitted; anything
+    /// beyond them fails, and the standard's own required set must still be a subset of
+    /// the live one (a standard-required field Honua does not require would still fail).
+    /// </summary>
+    private static readonly Dictionary<string, string[]> ReferenceShapeTargetedTools =
+        new(StringComparer.Ordinal)
+        {
+            ["honua_studio_bind_interaction"] = ["draftId", "generation"],
+            ["honua_studio_remove_interaction"] = ["draftId", "generation"],
         };
 
     /// <summary>
@@ -262,9 +290,24 @@ public sealed partial class McpTaxonomyAlignmentTests
             // The standard MUST NOT require a field Honua's live schema does not
             // require, otherwise a schema-driven client following the standard
             // could send a call Honua rejects (or omit a field Honua needs).
-            // For implemented tools the two required sets must agree.
-            var liveRequired = liveSchema.Required.OrderBy(x => x, StringComparer.Ordinal);
-            var standardRequired = standardSchema.Required.OrderBy(x => x, StringComparer.Ordinal);
+            // For implemented tools the two required sets must agree, except for the
+            // reference-shape-targeted tools, whose extra required members are the
+            // draft-lifecycle target the standard itself admits (and declares).
+            var liveRequired = liveSchema.Required.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var standardRequired = standardSchema.Required.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+
+            if (ReferenceShapeTargetedTools.TryGetValue(tool.Name, out var allowedExtraRequired))
+            {
+                liveRequired.Should().Contain(standardRequired,
+                    $"'{tool.Name}' must still require everything the standard '{standardName}' requires — "
+                    + "otherwise a standard-shaped call would be missing a field Honua needs");
+                liveRequired.Except(standardRequired, StringComparer.Ordinal).Should().BeSubsetOf(
+                    allowedExtraRequired,
+                    $"'{tool.Name}' may only require the documented x-honua-reference-shape target "
+                    + "members beyond the standard's required set");
+                continue;
+            }
+
             standardRequired.Should().BeEquivalentTo(liveRequired,
                 $"required top-level fields for '{tool.Name}' must match the standard '{standardName}'");
         }
@@ -361,6 +404,68 @@ public sealed partial class McpTaxonomyAlignmentTests
             "every live AnalysisPlanStepKind must be advertised by the standard");
         liveArtifactKinds.Should().BeSubsetOf(standardArtifactKinds,
             "every live ArtifactKind must be advertised by the standard");
+    }
+
+    [UnitTest]
+    public void CompositionInteractions_ClosedEventAndVerbSets_MatchTheStandard()
+    {
+        // ADR-0030 pins the interaction event and action-verb sets CLOSED: extending
+        // either requires a standard ADR. Honua's live bind_interaction schema renders
+        // both enums from the shared StudioInteractionVocabulary, so this asserts the
+        // domain vocabulary — the thing the editor and validator actually enforce — is
+        // exactly the standard's, not merely a subset of it.
+        using var doc = JsonDocument.Parse(
+            File.ReadAllText(Path.Join(SchemaRoot, "common", "interactions.schema.json")));
+        var defs = doc.RootElement.GetProperty("$defs");
+        var standardEvents = EnumStrings(defs.GetProperty("eventName"));
+        var standardVerbs = EnumStrings(defs.GetProperty("actionVerb"));
+
+        StudioInteractionVocabulary.EventNames.Should().BeEquivalentTo(standardEvents,
+            "the live interaction event set is closed and must equal the standard's");
+        StudioInteractionVocabulary.ActionVerbs.Should().BeEquivalentTo(standardVerbs,
+            "the live interaction verb set is closed and must equal the standard's");
+
+        // The advertised inputSchema must carry the same closed sets, so a schema-driven
+        // client never proposes a binding the server would reject.
+        var liveInteraction = StudioMcpSchemas.BindInteractionArgumentSchema
+            .GetProperty("properties").GetProperty("interaction").GetProperty("properties");
+        EnumStrings(liveInteraction.GetProperty("on").GetProperty("properties").GetProperty("event"))
+            .Should().BeEquivalentTo(standardEvents);
+        EnumStrings(liveInteraction.GetProperty("do").GetProperty("properties").GetProperty("verb"))
+            .Should().BeEquivalentTo(standardVerbs);
+    }
+
+    [UnitTest]
+    public void CompositionInteractionIdSchemas_RejectWhitespaceLikeTheHandlers()
+    {
+        var bindInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "interaction": {
+                "id": " ",
+                "on": { "ref": "map", "event": "viewportChange" },
+                "do": { "ref": "map", "verb": "setViewport" }
+              }
+            }
+            """);
+        var removeInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "interactionId": " "
+            }
+            """);
+
+        var liveBind = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.BindInteractionArgumentSchema));
+        var liveRemove = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.RemoveInteractionArgumentSchema));
+        var standardBind = LoadSchema(Path.Join(SchemaRoot, "tools", "bind_interaction.schema.json"));
+        var standardRemove = LoadSchema(Path.Join(SchemaRoot, "tools", "remove_interaction.schema.json"));
+
+        bindInput.IsValid(liveBind).Should().BeFalse();
+        bindInput.IsValid(standardBind).Should().BeFalse();
+        removeInput.IsValid(liveRemove).Should().BeFalse();
+        removeInput.IsValid(standardRemove).Should().BeFalse();
     }
 
     [UnitTest]
