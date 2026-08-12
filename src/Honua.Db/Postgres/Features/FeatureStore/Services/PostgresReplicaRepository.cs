@@ -4,6 +4,7 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -14,6 +15,11 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class PostgresReplicaRepository : IReplicaRepository
 {
+    // Shared with tests/seed/demo-stac-imagery-v1.sql. Key 1 serializes the
+    // missing-relation decision with replica registration through transaction commit.
+    internal const int FeatureRecoveryLockNamespace = 144047712;
+    internal const int FeatureRecoveryLockKey = 1;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
 
     public PostgresReplicaRepository(
@@ -23,6 +29,48 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
     }
 
     public async Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = CreateUpsertCommand(connection, transaction: null, record);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ReplicaRecord> RegisterAtCurrentGenerationAsync(
+        ReplicaRecord record,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using (var lockCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(@namespace, @key)", connection, transaction))
+        {
+            lockCommand.Parameters.AddWithValue("@namespace", FeatureRecoveryLockNamespace);
+            lockCommand.Parameters.AddWithValue("@key", FeatureRecoveryLockKey);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        long currentGeneration;
+        await using (var generationCommand = new NpgsqlCommand(
+            "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection, transaction))
+        {
+            currentGeneration = (long)(await generationCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+        }
+
+        var registered = record with { LastSyncGeneration = currentGeneration };
+        await using (var upsert = CreateUpsertCommand(connection, transaction, registered))
+        {
+            await upsert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return registered;
+    }
+
+    private static NpgsqlCommand CreateUpsertCommand(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        ReplicaRecord record)
     {
         const string sql = """
             INSERT INTO honua.replicas (replica_id, replica_name, service_id, sync_model, layer_ids, created_at, last_sync_time, last_sync_generation, upload_base_generation)
@@ -36,8 +84,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
                 upload_base_generation = EXCLUDED.upload_base_generation
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        var command = new NpgsqlCommand(sql, connection, transaction);
 
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaId);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaName);
@@ -49,7 +96,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.LastSyncGeneration);
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.UploadBaseGeneration);
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return command;
     }
 
     public async Task<bool> TryUpdateSyncStateAsync(
