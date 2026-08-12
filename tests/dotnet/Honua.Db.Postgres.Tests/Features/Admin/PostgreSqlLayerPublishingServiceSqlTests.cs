@@ -877,59 +877,73 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Locator = "failed_table",
             StorageLayerId = 42,
         };
-        var previous = new MetadataV2Graph
+        var previousTargets = new[]
         {
-            Revision = 7,
-            Services = [service],
-            Resources = [existingResource],
-            StorageBindings = [existingBinding],
-            Publications = [existingPublication],
+            (Resource: existingResource, Publication: existingPublication),
+            (
+                Resource: existingResource with { StorageBindingIds = [], PrimaryStorageBindingId = null },
+                Publication: existingPublication with { StorageBindingId = null }),
         };
-        var persisted = previous with
+        foreach (var previousTarget in previousTargets)
         {
-            Revision = 8,
-            Resources = [existingResource, failedResource],
-            StorageBindings = [existingBinding, failedBinding],
-        };
-        var currentResource = existingResource with
-        {
-            StorageBindingIds = [existingBinding.Metadata.Id, failedBinding.Metadata.Id],
-            PrimaryStorageBindingId = failedBinding.Metadata.Id,
-        };
-        var movedBinding = failedBinding with { ResourceId = existingResource.Metadata.Id };
-        var movedPublication = existingPublication with
-        {
-            Metadata = existingPublication.Metadata with { Title = "Concurrent title" },
-            StorageBindingId = failedBinding.Metadata.Id,
-        };
-        var current = persisted with
-        {
-            Revision = 9,
-            Resources =
-            [
-                currentResource,
-                failedResource with { StorageBindingIds = [], PrimaryStorageBindingId = null },
-            ],
-            StorageBindings = [existingBinding, movedBinding],
-            Publications = [movedPublication],
-        };
+            var previous = new MetadataV2Graph
+            {
+                Revision = 7,
+                Services = [service],
+                Resources = [previousTarget.Resource],
+                StorageBindings = [existingBinding],
+                Publications = [previousTarget.Publication],
+            };
+            var persisted = previous with
+            {
+                Revision = 8,
+                Resources = [previousTarget.Resource, failedResource],
+                StorageBindings = [existingBinding, failedBinding],
+            };
+            var currentResource = previousTarget.Resource with
+            {
+                StorageBindingIds = [.. previousTarget.Resource.StorageBindingIds, failedBinding.Metadata.Id],
+                PrimaryStorageBindingId = failedBinding.Metadata.Id,
+            };
+            var movedBinding = failedBinding with { ResourceId = existingResource.Metadata.Id };
+            var movedPublication = previousTarget.Publication with
+            {
+                Metadata = previousTarget.Publication.Metadata with { Title = "Concurrent title" },
+                StorageBindingId = failedBinding.Metadata.Id,
+            };
+            var current = persisted with
+            {
+                Revision = 9,
+                Resources =
+                [
+                    currentResource,
+                    failedResource with { StorageBindingIds = [], PrimaryStorageBindingId = null },
+                ],
+                StorageBindings = [existingBinding, movedBinding],
+                Publications = [movedPublication],
+            };
 
-        var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
-            current,
-            previous,
-            persisted,
-            DateTimeOffset.Parse("2026-08-11T05:01:00Z", CultureInfo.InvariantCulture));
+            var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+                current,
+                previous,
+                persisted,
+                DateTimeOffset.Parse("2026-08-11T05:01:00Z", CultureInfo.InvariantCulture));
 
-        var repairedPublication = compensation.Publications.Should().ContainSingle().Which;
-        repairedPublication.Metadata.Title.Should().Be("Concurrent title");
-        repairedPublication.ResourceId.Should().Be(existingResource.Metadata.Id);
-        repairedPublication.StorageBindingId.Should().Be(existingBinding.Metadata.Id);
-        compensation.StorageBindings.Should().ContainSingle().Which.Should().BeEquivalentTo(existingBinding);
-        var repairedResource = compensation.Resources.Should().ContainSingle().Which;
-        repairedResource.StorageBindingIds.Should().Equal(existingBinding.Metadata.Id);
-        repairedResource.PrimaryStorageBindingId.Should().Be(existingBinding.Metadata.Id);
-        compensation.Services.Should().ContainSingle().Which.PublicationIds
-            .Should().Equal(existingPublication.Metadata.Id);
+            var repairedPublication = compensation.Publications.Should().ContainSingle().Which;
+            repairedPublication.Metadata.Title.Should().Be("Concurrent title");
+            repairedPublication.ResourceId.Should().Be(existingResource.Metadata.Id);
+            repairedPublication.StorageBindingId.Should().Be(previousTarget.Publication.StorageBindingId);
+            compensation.StorageBindings.Should().ContainSingle().Which.Should().BeEquivalentTo(existingBinding);
+            var repairedResource = compensation.Resources.Should().ContainSingle().Which;
+            repairedResource.StorageBindingIds.Should().Equal(previousTarget.Resource.StorageBindingIds);
+            var expectedPrimaryBindingId = previousTarget.Resource.StorageBindingIds.Count > 0
+                ? previousTarget.Resource.StorageBindingIds[0]
+                : null;
+            repairedResource.PrimaryStorageBindingId.Should()
+                .Be(expectedPrimaryBindingId);
+            compensation.Services.Should().ContainSingle().Which.PublicationIds
+                .Should().Equal(existingPublication.Metadata.Id);
+        }
     }
 
     [Fact]
@@ -975,23 +989,28 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Locator = "failed_table",
             StorageLayerId = 42,
         };
-        foreach (var useImplicitPreviousBinding in new[] { false, true })
+        var previousTargets = new[]
         {
-            var previousPublication = useImplicitPreviousBinding
-                ? existingPublication with { StorageBindingId = null }
-                : existingPublication;
+            (Resource: existingResource, Publication: existingPublication),
+            (Resource: existingResource, Publication: existingPublication with { StorageBindingId = null }),
+            (
+                Resource: existingResource with { StorageBindingIds = [], PrimaryStorageBindingId = null },
+                Publication: existingPublication with { StorageBindingId = null }),
+        };
+        foreach (var previousTarget in previousTargets)
+        {
             var previous = new MetadataV2Graph
             {
                 Revision = 7,
                 Services = [service],
-                Resources = [existingResource],
+                Resources = [previousTarget.Resource],
                 StorageBindings = [existingBinding],
-                Publications = [previousPublication],
+                Publications = [previousTarget.Publication],
             };
             var persisted = previous with
             {
                 Revision = 8,
-                Resources = [existingResource, failedResource],
+                Resources = [previousTarget.Resource, failedResource],
                 StorageBindings = [existingBinding, failedBinding],
             };
 
@@ -1000,7 +1019,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 var movedBinding = deleteOriginalResource
                     ? failedBinding
                     : failedBinding with { ResourceId = existingResource.Metadata.Id };
-                var movedPublication = previousPublication with
+                var movedPublication = previousTarget.Publication with
                 {
                     ResourceId = movedBinding.ResourceId,
                     StorageBindingId = movedBinding.Metadata.Id,
@@ -1012,7 +1031,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                         ? [failedResource]
                         :
                         [
-                            existingResource with
+                            previousTarget.Resource with
                             {
                                 StorageBindingIds = [movedBinding.Metadata.Id],
                                 PrimaryStorageBindingId = movedBinding.Metadata.Id,

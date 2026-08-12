@@ -408,18 +408,35 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         static string? ResolveBindingId(
             MetadataV2Publication publication,
-            IReadOnlyDictionary<string, MetadataV2Resource> resources)
+            IReadOnlyDictionary<string, MetadataV2Resource> resources,
+            IReadOnlyDictionary<string, MetadataV2StorageBinding> bindings)
         {
-            resources.TryGetValue(publication.ResourceId, out var resource);
-            return publication.StorageBindingId ??
-                   resource?.PrimaryStorageBindingId ??
-                   (resource is { StorageBindingIds.Count: > 0 }
-                       ? resource.StorageBindingIds[0]
-                       : null);
+            if (!string.IsNullOrEmpty(publication.StorageBindingId) &&
+                bindings.ContainsKey(publication.StorageBindingId))
+            {
+                return publication.StorageBindingId;
+            }
+
+            if (!resources.TryGetValue(publication.ResourceId, out var resource))
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(resource.PrimaryStorageBindingId) &&
+                bindings.ContainsKey(resource.PrimaryStorageBindingId))
+            {
+                return resource.PrimaryStorageBindingId;
+            }
+
+            return bindings.Values.FirstOrDefault(binding =>
+                string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))?.Metadata.Id;
         }
 
         string? ResolveCurrentBindingId(MetadataV2Publication publication)
-            => ResolveBindingId(publication, currentResourcesForPublicationCleanup);
+            => ResolveBindingId(
+                publication,
+                currentResourcesForPublicationCleanup,
+                currentBindingsForPublicationCleanup);
 
         bool UsesRepurposedFailedDataTarget(MetadataV2Publication publication)
         {
@@ -526,7 +543,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
 
             return !rolledBackBindingIds.Contains(previousEffectiveBindingId) &&
-                   resource.StorageBindingIds.Contains(previousEffectiveBindingId, StringComparer.Ordinal) &&
+                   (publication.StorageBindingId is null ||
+                    resource.StorageBindingIds.Contains(previousEffectiveBindingId, StringComparer.Ordinal)) &&
                    rebasedBindingsForPublicationCleanup.TryGetValue(previousEffectiveBindingId, out var binding) &&
                    string.Equals(binding.ResourceId, publication.ResourceId, StringComparison.Ordinal);
         }
@@ -534,7 +552,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         for (var index = publications.Count - 1; index >= 0; index--)
         {
             var publication = publications[index];
-            var bindingId = ResolveBindingId(publication, currentResourcesForPublicationCleanup);
+            var bindingId = ResolveCurrentBindingId(publication);
             if (bindingId is null || !rolledBackBindingIds.Contains(bindingId))
             {
                 continue;
@@ -549,7 +567,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 };
                 var previousEffectiveBindingId = ResolveBindingId(
                     previous,
-                    previousResourcesForPublicationCleanup);
+                    previousResourcesForPublicationCleanup,
+                    previousBindingsForPublicationCleanup);
                 if (RepairedTargetSurvives(repaired, previousEffectiveBindingId))
                 {
                     publications[index] = repaired;
