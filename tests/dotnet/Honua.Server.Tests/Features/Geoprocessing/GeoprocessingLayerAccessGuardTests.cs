@@ -419,6 +419,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
         AccessPolicy = new AccessPolicy { AllowedRoles = allowedRoles },
+        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
     };
 
     private static MetadataV2Publication Publication(
@@ -432,6 +433,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
             ResourceId = resourceId,
             LayerIndex = layerIndex,
             IsPrimary = true,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
     /// <summary>

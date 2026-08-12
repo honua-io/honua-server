@@ -383,22 +383,48 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var currentBindingsForPublicationCleanup = currentGraph.StorageBindings
             .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
 
-        bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
-        {
-            bool IsRepurposedFailedBinding(string? bindingId)
-                => bindingId is not null &&
-                   addedBindingIdsForPublicationCleanup.Contains(bindingId) &&
-                   currentBindingsForPublicationCleanup.TryGetValue(bindingId, out var currentBinding) &&
-                   persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) &&
-                   HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
+        bool IsRepurposedFailedBinding(string? bindingId)
+            => bindingId is not null &&
+               addedBindingIdsForPublicationCleanup.Contains(bindingId) &&
+               currentBindingsForPublicationCleanup.TryGetValue(bindingId, out var currentBinding) &&
+               persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) &&
+               HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
 
+        string? ResolveCurrentBindingId(
+            MetadataV2Publication publication,
+            MetadataV2Resource? currentResource)
+            => publication.StorageBindingId ??
+               currentResource?.PrimaryStorageBindingId ??
+               (currentResource is { StorageBindingIds.Count: > 0 }
+                   ? currentResource.StorageBindingIds[0]
+                   : null);
+
+        bool UsesRepurposedFailedDataTarget(MetadataV2Publication publication)
+        {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
-            var resolvedBindingId = publication.StorageBindingId ??
-                currentResource?.PrimaryStorageBindingId ??
-                (currentResource is { StorageBindingIds.Count: > 0 }
-                    ? currentResource.StorageBindingIds[0]
-                    : null);
+            var resolvedBindingId = ResolveCurrentBindingId(publication, currentResource);
+            if (publication.StorageBindingId is { } explicitBindingId &&
+                addedBindingIdsForPublicationCleanup.Contains(explicitBindingId))
+            {
+                return IsRepurposedFailedBinding(explicitBindingId);
+            }
+
+            return IsRepurposedFailedBinding(resolvedBindingId) ||
+                   addedResourceIdsForPublicationCleanup.Contains(publication.ResourceId) &&
+                   currentResource is not null &&
+                   persistedResource is not null &&
+                   HasResourceBeenRepurposed(
+                       currentResource,
+                       persistedResource,
+                       addedBindingIdsForPublicationCleanup);
+        }
+
+        bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
+        {
+            currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
+            persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
+            var resolvedBindingId = ResolveCurrentBindingId(publication, currentResource);
             var bindingWasRepurposed = IsRepurposedFailedBinding(resolvedBindingId);
             var usesFailedResource = addedResourceIdsForPublicationCleanup.Contains(publication.ResourceId) &&
                 (currentResource is null ||
@@ -432,7 +458,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             if (addedPublicationIds.Contains(current.Metadata.Id) &&
                 persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persistedAdded) &&
-                StillUsesFailedPublicationDataTarget(current, persistedAdded))
+                StillUsesFailedPublicationDataTarget(current, persistedAdded) &&
+                !UsesRepurposedFailedDataTarget(current))
             {
                 if (replacedPublicationsByPersistedId.TryGetValue(current.Metadata.Id, out var replaced) &&
                     !currentGraph.Publications.Any(other =>
