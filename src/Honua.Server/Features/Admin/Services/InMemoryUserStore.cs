@@ -74,6 +74,23 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return Task.FromResult(FindByExternalIdInternal(userId));
     }
 
+    public Task<ManagedUser?> GetUserByPrincipalIdAsync(
+        string principalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(principalId))
+        {
+            return Task.FromResult<ManagedUser?>(null);
+        }
+
+        // Authentication snapshots are keyed by the IdP-owned subject. Resolve that
+        // namespace first so an unrelated record whose userId happens to equal the
+        // subject cannot contribute its roles.
+        var externalUser = FindByExternalIdInternal(principalId);
+        return Task.FromResult(externalUser ??
+            (_users.TryGetValue(principalId, out var directUser) ? directUser : null));
+    }
+
     public Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
     {
         if (!_users.TryGetValue(userId, out var existing))

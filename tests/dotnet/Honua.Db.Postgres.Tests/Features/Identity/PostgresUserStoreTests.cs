@@ -91,6 +91,41 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task GetUserByPrincipalId_CrossColumnCollision_PrefersExternalSubjectOwner()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
+        try
+        {
+            await EnsureManagedUserTablesAsync(schema);
+            var store = CreateStore(schema);
+
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "subject-owner@example.com",
+                ExternalId = "shared-identifier",
+                Roles = ["subject-role"],
+            });
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "shared-identifier",
+                ExternalId = "different-subject",
+                Roles = ["record-id-role"],
+            });
+
+            (await store.GetUserAsync("shared-identifier"))!.UserId.Should().Be("shared-identifier");
+
+            var principal = await store.GetUserByPrincipalIdAsync("shared-identifier");
+            principal.Should().NotBeNull();
+            principal!.UserId.Should().Be("subject-owner@example.com");
+            principal.Roles.Should().BeEquivalentTo(["subject-role"]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeprovisionUser_OnReplicaA_IsAuthoritativelyInactiveOnReplicaB()
     {
         // #3141 acceptance 1: deactivating a managed user on replica A must

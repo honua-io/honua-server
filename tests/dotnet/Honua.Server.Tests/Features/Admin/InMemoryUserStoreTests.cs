@@ -39,7 +39,7 @@ public sealed class InMemoryUserStoreTests
     [Fact]
     public async Task ResolveMembership_ByOidcSubject_ReflectsDeactivation()
     {
-        // ManagedUserPrincipalMembershipSource resolves through IUserStore.GetUserAsync,
+        // ManagedUserPrincipalMembershipSource resolves through the principal lookup,
         // so an identity keyed by userName must revalidate (and fail closed on
         // deactivation) when the deferred snapshot carries only the OIDC subject.
         var store = new InMemoryUserStore();
@@ -63,6 +63,32 @@ public sealed class InMemoryUserStoreTests
         revoked.Should().NotBeNull();
         revoked!.IsActive.Should().BeFalse();
         revoked.Roles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveMembership_CrossColumnCollision_PrefersExternalSubjectOwner()
+    {
+        var store = new InMemoryUserStore();
+        var source = new ManagedUserPrincipalMembershipSource(store);
+
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "subject-owner@example.com",
+            ExternalId = "shared-identifier",
+            Roles = ["subject-role"],
+        });
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "shared-identifier",
+            ExternalId = "different-subject",
+            Roles = ["record-id-role"],
+        });
+
+        (await store.GetUserAsync("shared-identifier"))!.UserId.Should().Be("shared-identifier");
+
+        var membership = await source.ResolveMembershipAsync("shared-identifier");
+        membership.Should().NotBeNull();
+        membership!.Roles.Should().BeEquivalentTo(["subject-role"]);
     }
 
     [Fact]

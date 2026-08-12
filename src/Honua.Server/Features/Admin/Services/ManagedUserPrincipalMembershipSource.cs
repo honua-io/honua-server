@@ -16,7 +16,7 @@ internal sealed class ManagedUserPrincipalMembershipSource(IUserStore userStore)
         string principalId,
         CancellationToken cancellationToken = default)
     {
-        var user = await userStore.GetUserAsync(principalId, cancellationToken).ConfigureAwait(false);
+        var user = await userStore.GetUserByPrincipalIdAsync(principalId, cancellationToken).ConfigureAwait(false);
         if (user is null)
         {
             return null;

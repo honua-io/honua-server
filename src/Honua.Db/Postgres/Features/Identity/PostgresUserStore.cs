@@ -20,12 +20,12 @@ namespace Honua.Db.Postgres.Features.Identity;
 /// profiles.
 /// </summary>
 /// <remarks>
-/// Identifier resolution (finding 2 of #3141): <see cref="GetUserAsync"/> resolves a
-/// principal identifier against the record id (the SCIM <c>userName</c>) first and the
-/// indexed <c>external_id</c> (the IdP-owned stable subject, conventionally the OIDC
-/// <c>sub</c>) second, both case-insensitively. Deferred security snapshots capture the
-/// OIDC subject, so a durable record whose <c>userName</c> differs from the subject is
-/// still resolvable by <c>ManagedUserPrincipalMembershipSource</c>. Because this store is
+/// Identifier resolution (finding 2 of #3141): administrative <see cref="GetUserAsync"/>
+/// calls prefer the record id (the SCIM <c>userName</c>), while authentication membership
+/// calls use <see cref="GetUserByPrincipalIdAsync"/> and prefer the indexed
+/// <c>external_id</c> (the IdP-owned stable subject, conventionally the OIDC <c>sub</c>).
+/// The separate precedence rules prevent a record-id/external-subject collision from
+/// resolving security membership to the wrong user. Because this store is
 /// shared, a resolution miss is authoritative — the #3119 fail-closed managed-membership
 /// marker remains as defense in depth for identifier drift and store outages.
 /// </remarks>
@@ -130,19 +130,33 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
     /// <remarks>
     /// Resolves <paramref name="userId"/> against the record id (SCIM <c>userName</c>)
     /// first, then the indexed external subject (<c>external_id</c>), both
-    /// case-insensitively — so deferred snapshots keyed by the OIDC subject and SCIM/admin
-    /// callers keyed by <c>userName</c> reach the same record (#3141).
+    /// case-insensitively. Authentication membership uses the dedicated principal lookup
+    /// below, whose inverse precedence protects cross-column collisions (#3141).
     /// </remarks>
-    public async Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+        => GetUserByIdentifierAsync(userId, preferExternalId: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<ManagedUser?> GetUserByPrincipalIdAsync(
+        string principalId,
+        CancellationToken cancellationToken = default)
+        => GetUserByIdentifierAsync(principalId, preferExternalId: true, cancellationToken);
+
+    private async Task<ManagedUser?> GetUserByIdentifierAsync(
+        string identifier,
+        bool preferExternalId,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(userId))
+        if (string.IsNullOrWhiteSpace(identifier))
         {
             return null;
         }
 
+        var precedenceColumn = preferExternalId ? "u.external_id" : "u.user_id";
+
         var sql = $"""
             {SelectUsersSql("WHERE LOWER(u.user_id) = LOWER(@id) OR LOWER(u.external_id) = LOWER(@id)")}
-            ORDER BY (LOWER(u.user_id) = LOWER(@id)) DESC
+            ORDER BY (LOWER({precedenceColumn}) = LOWER(@id)) DESC
             LIMIT 1
             """;
 
@@ -150,7 +164,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         {
             await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("id", NpgsqlDbType.Varchar, userId);
+            command.Parameters.AddWithValue("id", NpgsqlDbType.Varchar, identifier);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadUser(reader) : null;
