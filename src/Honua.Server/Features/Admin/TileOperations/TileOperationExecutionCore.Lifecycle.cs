@@ -224,8 +224,9 @@ internal sealed partial class TileOperationExecutionCore
                 {
                     await mutationCoordinator!.ExecuteSerializedAsync(
                         entry.Key,
-                        async mutationToken =>
+                        async mutationContext =>
                         {
+                            var mutationToken = mutationContext.CancellationToken;
                             if (!await mutationCoordinator.IsCurrentAsync(entry, mutationToken).ConfigureAwait(false))
                             {
                                 throw new InvalidOperationException(
@@ -257,8 +258,9 @@ internal sealed partial class TileOperationExecutionCore
                     var markResult = TileCacheExpirationMarkResult.NotCurrent;
                     await mutationCoordinator!.ExecuteSerializedAsync(
                         entry.Key,
-                        async mutationToken =>
+                        async mutationContext =>
                         {
+                            var mutationToken = mutationContext.CancellationToken;
                             markResult = await mutationCoordinator
                                 .TryMarkExpiredIfCurrentAsync(entry, mutationToken)
                                 .ConfigureAwait(false);

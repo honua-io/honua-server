@@ -123,8 +123,9 @@ internal static class GeoServicesCloudTileCache
 
         try
         {
-            async Task UploadAndRecordAsync(CancellationToken mutationToken)
+            async Task UploadAndRecordAsync(TileCacheMutationContext mutationContext)
             {
+                var mutationToken = mutationContext.CancellationToken;
                 var ttl = ResolveTileCacheTtl(storageOptions);
                 var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
                 using var stream = new MemoryStream(data, writable: false);
@@ -165,21 +166,28 @@ internal static class GeoServicesCloudTileCache
                     }
                     catch (Exception exception) when (exception is not OutOfMemoryException)
                     {
+                        // Lease loss means another replica may already own this key. Never let
+                        // compensation from the old owner delete that replica's generation.
+                        mutationContext.LeaseLostToken.ThrowIfCancellationRequested();
+
                         // Upload and lifecycle-state commit are one serialized cache mutation.
                         // If Redis cannot make the object discoverable to eviction/lifecycle
                         // readers, remove the just-uploaded bytes before releasing the fence.
                         var storageRolledBack = false;
                         try
                         {
-                            // Once upload succeeds, caller/lease cancellation must not interrupt
-                            // compensation and leave an unindexed object behind. The serialized
-                            // delegate does not return (and therefore does not release an owned
-                            // fence) until this bounded storage cleanup finishes.
-                            storageRolledBack = await storage.DeleteAsync(objectKey, CancellationToken.None)
+                            // Caller cancellation must not interrupt compensation. Lease loss
+                            // must: at that point deleting this key could remove a newer owner's
+                            // generation. Renewal continues until this bounded cleanup returns.
+                            storageRolledBack = await storage.DeleteAsync(
+                                    objectKey,
+                                    mutationContext.LeaseLostToken)
                                 .ConfigureAwait(false);
                             if (!storageRolledBack)
                             {
-                                storageRolledBack = await storage.GetMetadataAsync(objectKey, CancellationToken.None)
+                                storageRolledBack = await storage.GetMetadataAsync(
+                                        objectKey,
+                                        mutationContext.LeaseLostToken)
                                     .ConfigureAwait(false) is null;
                             }
 
@@ -196,7 +204,10 @@ internal static class GeoServicesCloudTileCache
 
                         if (storageRolledBack)
                         {
-                            await keyIndex.RemoveAsync(objectKey, CancellationToken.None).ConfigureAwait(false);
+                            await keyIndex.RemoveAsync(
+                                    objectKey,
+                                    mutationContext.LeaseLostToken)
+                                .ConfigureAwait(false);
                         }
 
                         throw;
@@ -212,7 +223,9 @@ internal static class GeoServicesCloudTileCache
             }
             else
             {
-                await UploadAndRecordAsync(cancellationToken).ConfigureAwait(false);
+                await UploadAndRecordAsync(new TileCacheMutationContext(
+                    cancellationToken,
+                    CancellationToken.None)).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -227,9 +227,11 @@ public sealed class TileCacheEvictionServiceTests
 
         public Task ExecuteSerializedAsync(
             string key,
-            Func<CancellationToken, Task> mutation,
+            Func<TileCacheMutationContext, Task> mutation,
             CancellationToken cancellationToken = default)
-            => mutation(cancellationToken);
+            => mutation(new TileCacheMutationContext(
+                cancellationToken,
+                CancellationToken.None));
 
         public Task<bool> IsCurrentAsync(
             TileCacheEntry entry,

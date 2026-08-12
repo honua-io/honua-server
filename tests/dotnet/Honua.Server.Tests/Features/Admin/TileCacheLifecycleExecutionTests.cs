@@ -968,13 +968,15 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public async Task ExecuteSerializedAsync(
             string key,
-            Func<CancellationToken, Task> mutation,
+            Func<TileCacheMutationContext, Task> mutation,
             CancellationToken cancellationToken = default)
         {
             await _mutationFence.WaitAsync(cancellationToken);
             try
             {
-                await mutation(cancellationToken);
+                await mutation(new TileCacheMutationContext(
+                    cancellationToken,
+                    CancellationToken.None));
             }
             finally
             {

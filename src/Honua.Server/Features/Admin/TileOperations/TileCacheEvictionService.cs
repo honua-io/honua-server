@@ -121,8 +121,9 @@ internal sealed partial class TileCacheEvictionService(
                 {
                     await _mutationCoordinator.ExecuteSerializedAsync(
                         key,
-                        async mutationToken =>
+                        async mutationContext =>
                         {
+                            var mutationToken = mutationContext.CancellationToken;
                             if (!await _mutationCoordinator.IsCurrentAsync(victim, mutationToken).ConfigureAwait(false))
                             {
                                 return;

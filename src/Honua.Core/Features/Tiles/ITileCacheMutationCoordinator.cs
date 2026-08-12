@@ -16,6 +16,19 @@ public enum TileCacheExpirationMarkResult
     Added
 }
 
+/// <summary>Cancellation state for one fenced tile-cache mutation.</summary>
+/// <param name="CancellationToken">
+/// Cancels when the caller cancels or the distributed mutation lease is lost.
+/// </param>
+/// <param name="LeaseLostToken">
+/// Cancels only when the distributed mutation lease is no longer owned. Compensating storage
+/// mutations must use this token so caller cancellation cannot interrupt cleanup, while lease
+/// loss prevents cleanup from racing a newer owner.
+/// </param>
+public readonly record struct TileCacheMutationContext(
+    CancellationToken CancellationToken,
+    CancellationToken LeaseLostToken);
+
 /// <summary>
 /// Serializes object-storage mutations for one generated tile key across replicas. Implementations
 /// must hold the same fence around both the storage mutation and its cache-index update.
@@ -25,7 +38,7 @@ public interface ITileCacheMutationCoordinator
     /// <summary>Runs one mutation while holding the exclusive fence for <paramref name="key"/>.</summary>
     Task ExecuteSerializedAsync(
         string key,
-        Func<CancellationToken, Task> mutation,
+        Func<TileCacheMutationContext, Task> mutation,
         CancellationToken cancellationToken = default);
 
     /// <summary>Returns whether a snapshotted entry is still the current successful write.</summary>

@@ -35,7 +35,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     // v2 re-runs membership discovery for deployments that completed the earlier v1
     // migration before lifecycle metadata became mandatory.
     private const string MembershipMigrationMarkerKey = "honua:tile-cache:members-migrated:v2";
-    private const string LegacyDiscardSetKey = "honua:tile-cache:legacy-discard:v2";
     private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
     private const int StorageExpirationPruneBatchSize = 1_000;
     private const int SnapshotPageSize = 1_000;
@@ -63,40 +62,19 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         local values = batch[2]
         for index = 1, #values, 2 do
             local key = values[index]
-            if redis.call('HEXISTS', KEYS[4], key) == 1
-                and redis.call('HEXISTS', KEYS[5], key) == 1
-                and redis.call('ZSCORE', KEYS[6], key) then
-                redis.call('ZADD', KEYS[2], 0, key)
-            else
-                redis.call('SADD', KEYS[7], key)
+            if redis.call('HEXISTS', KEYS[4], key) == 0 then
+                redis.call('HSET', KEYS[4], key, 'legacy:v2')
             end
-        end
-        return batch[1]
-        """;
-    private const string DiscardIncompleteLegacyEntriesScript = """
-        local keys = redis.call('SPOP', KEYS[7], ARGV[1])
-        if type(keys) ~= 'table' then
-            keys = {}
-        end
-        for _, key in ipairs(keys) do
-            if redis.call('HEXISTS', KEYS[4], key) == 1
-                and redis.call('HEXISTS', KEYS[5], key) == 1
-                and redis.call('ZSCORE', KEYS[6], key) then
-                redis.call('ZADD', KEYS[2], 0, key)
-            else
-                redis.call('ZREM', KEYS[1], key)
-                redis.call('ZREM', KEYS[2], key)
-                redis.call('HDEL', KEYS[3], key)
-                redis.call('HDEL', KEYS[4], key)
-                redis.call('HDEL', KEYS[5], key)
-                redis.call('ZREM', KEYS[6], key)
-                redis.call('SREM', KEYS[8], key)
+            if redis.call('HEXISTS', KEYS[5], key) == 0 then
+                redis.call('HSET', KEYS[5], key, '')
             end
+            redis.call('ZADD', KEYS[2], 0, key)
         end
-        if redis.call('SCARD', KEYS[7]) == 0 then
-            redis.call('SET', KEYS[9], '1')
+        local next_cursor = tostring(batch[1])
+        if next_cursor == '0' then
+            redis.call('SET', KEYS[3], '1')
         end
-        return #keys
+        return next_cursor
         """;
     private const string SnapshotScript = """
         local minimum = '-'
@@ -529,39 +507,13 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                     MembershipSetKey,
                     MembershipMigrationMarkerKey,
                     WriteVersionHashKey,
-                    TenantScopeHashKey,
-                    StorageExpirationSetKey,
-                    LegacyDiscardSetKey
+                    TenantScopeHashKey
                 },
                 new RedisValue[] { cursor, pageSize },
                 CommandFlags.DemandMaster).ConfigureAwait(false);
             cursor = (string?)result ?? "0";
         }
         while (!string.Equals(cursor, "0", StringComparison.Ordinal));
-
-        long discarded;
-        do
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var result = await database.ScriptEvaluateAsync(
-                DiscardIncompleteLegacyEntriesScript,
-                new RedisKey[]
-                {
-                    LastAccessSetKey,
-                    MembershipSetKey,
-                    SizeHashKey,
-                    WriteVersionHashKey,
-                    TenantScopeHashKey,
-                    StorageExpirationSetKey,
-                    LegacyDiscardSetKey,
-                    ExpiredSetKey,
-                    MembershipMigrationMarkerKey
-                },
-                new RedisValue[] { pageSize },
-                CommandFlags.DemandMaster).ConfigureAwait(false);
-            discarded = result is null || result.IsNull ? 0L : (long)result;
-        }
-        while (discarded == pageSize);
     }
 
     /// <inheritdoc />
@@ -631,7 +583,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     /// <inheritdoc />
     public async Task ExecuteSerializedAsync(
         string key,
-        Func<CancellationToken, Task> mutation,
+        Func<TileCacheMutationContext, Task> mutation,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -661,7 +613,9 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                await mutation(mutationCancellation.Token).ConfigureAwait(false);
+                await mutation(new TileCacheMutationContext(
+                    mutationCancellation.Token,
+                    leaseLost.Token)).ConfigureAwait(false);
             }
             catch (OperationCanceledException ex) when (
                 leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
