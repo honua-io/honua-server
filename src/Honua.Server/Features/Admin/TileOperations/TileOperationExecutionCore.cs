@@ -86,6 +86,8 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
+            "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
+            "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,
@@ -295,12 +297,17 @@ internal sealed partial class TileOperationExecutionCore
 
         if (processed > 0)
         {
-            TileOperationMetrics.TileThroughput.Add(
-                processed,
-                new TagList
-                {
-                    { "operation", request.Operation }
-                });
+            var tags = new TagList { { "operation", request.Operation } };
+            TileOperationMetrics.TileThroughput.Add(processed, tags);
+            if (successful > 0)
+            {
+                TileOperationMetrics.TilesGenerated.Add(successful, tags);
+            }
+
+            if (failed > 0)
+            {
+                TileOperationMetrics.TilesFailed.Add(failed, tags);
+            }
         }
 
         current = current with
@@ -775,7 +782,17 @@ internal sealed partial class TileOperationExecutionCore
 
         if (processed > 0)
         {
-            TileOperationMetrics.TileThroughput.Add(processed, new TagList { { "operation", operationName } });
+            var tags = new TagList { { "operation", operationName } };
+            TileOperationMetrics.TileThroughput.Add(processed, tags);
+            if (successful > 0)
+            {
+                TileOperationMetrics.TilesGenerated.Add(successful, tags);
+            }
+
+            if (failed > 0)
+            {
+                TileOperationMetrics.TilesFailed.Add(failed, tags);
+            }
         }
 
         if (writer.TileCount == 0)

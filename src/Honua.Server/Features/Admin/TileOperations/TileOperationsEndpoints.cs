@@ -5,6 +5,9 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Progress;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Tiles;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,7 +24,7 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/expire/delete job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
@@ -53,6 +56,84 @@ internal static class TileOperationsEndpoints
             .WithName("EvictTileCache")
             .WithSummary("Run a tile-cache eviction sweep")
             .WithDescription("Triggers a synchronous size-quota / LRU eviction sweep over the live Redis tile-key index, dropping least-recently-used tiles that exceed the configured TileOptions:Eviction quota (#1917)");
+
+        _ = group.MapGet("/cache/inventory", HandleCacheInventory)
+            .WithName("GetTileCacheInventory")
+            .WithSummary("Inventory the generated tile cache")
+            .WithDescription("Returns the tracked entry count, total bytes, and per-zoom coverage of the generated tile cache, optionally scoped to a serviceId and/or gridset (#2661)");
+    }
+
+    private static async Task<IResult> HandleCacheInventory(
+        HttpContext context,
+        [FromServices] ITileCacheKeyIndex keyIndex,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromQuery] string? serviceId = null,
+        [FromQuery] string? gridset = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Resolve the optional service filter to its published storage-layer ids so tracked keys
+        // (which carry layer ids, not service names) can be scoped without touching the serve path.
+        HashSet<int>? layerFilter = null;
+        if (!string.IsNullOrWhiteSpace(serviceId))
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var service = snapshot.FindService(serviceId);
+            layerFilter = service is null
+                ? []
+                : [.. snapshot.PublicationsForService(service.Metadata.Id)
+                    .Where(static p => p.LayerIndex.HasValue)
+                    .Select(static p => p.LayerIndex!.Value)];
+        }
+
+        var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
+
+        var entries = keyIndex.IsEnabled
+            ? await keyIndex.SnapshotAsync(cancellationToken).ConfigureAwait(false)
+            : [];
+
+        var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
+        var totalCount = 0;
+        var totalBytes = 0L;
+        foreach (var entry in entries)
+        {
+            if (!GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
+            {
+                continue;
+            }
+
+            if (layerFilter is not null && !layerFilter.Contains(parsed.LayerId))
+            {
+                continue;
+            }
+
+            if (gridsetFilter is not null &&
+                !string.Equals(parsed.Gridset, gridsetFilter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            totalCount++;
+            totalBytes += entry.SizeBytes;
+            var existing = perZoom.TryGetValue(parsed.Z, out var value) ? value : (0, 0L);
+            perZoom[parsed.Z] = (existing.Item1 + 1, existing.Item2 + entry.SizeBytes);
+        }
+
+        var response = new TileCacheInventoryResponse
+        {
+            Enabled = keyIndex.IsEnabled,
+            ServiceId = serviceId,
+            Gridset = gridset,
+            EntryCount = totalCount,
+            TotalBytes = totalBytes,
+            PerZoom = [.. perZoom.Select(kvp => new TileCacheZoomCoverage
+            {
+                Zoom = kvp.Key,
+                Count = kvp.Value.Count,
+                Bytes = kvp.Value.Bytes
+            })]
+        };
+
+        return Results.Json(response, TileOperationsJsonContext.Default.TileCacheInventoryResponse);
     }
 
     private static async Task<IResult> HandleEvict(
@@ -281,8 +362,55 @@ internal static class TileOperationsEndpoints
                 "Publish operations require 'layerId'.");
         }
 
+        if (operation is "expire" or "delete" && !request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Expire/delete operations require either 'layerId' or 'serviceId'.");
+        }
+
         return null;
     }
+}
+
+/// <summary>
+/// Read-only inventory of the generated tile cache (#2661): tracked entry count, total bytes, and
+/// per-zoom coverage, optionally scoped to a service and/or gridset.
+/// </summary>
+internal sealed record TileCacheInventoryResponse
+{
+    /// <summary>Whether a live tile-key index was available; <c>false</c> means nothing is tracked.</summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>The service filter applied, or <c>null</c> when the inventory spans all services.</summary>
+    public string? ServiceId { get; init; }
+
+    /// <summary>The gridset filter applied, or <c>null</c> when the inventory spans all gridsets.</summary>
+    public string? Gridset { get; init; }
+
+    /// <summary>The number of tracked generated tiles that fall inside the requested bound.</summary>
+    public required int EntryCount { get; init; }
+
+    /// <summary>The total stored bytes of the tracked tiles inside the requested bound.</summary>
+    public required long TotalBytes { get; init; }
+
+    /// <summary>Per-zoom coverage inside the requested bound, ascending by zoom.</summary>
+    public required IReadOnlyList<TileCacheZoomCoverage> PerZoom { get; init; }
+}
+
+/// <summary>Coverage of the generated tile cache at a single zoom level.</summary>
+internal sealed record TileCacheZoomCoverage
+{
+    /// <summary>The zoom level.</summary>
+    public required int Zoom { get; init; }
+
+    /// <summary>The number of tracked tiles at this zoom.</summary>
+    public required int Count { get; init; }
+
+    /// <summary>The total stored bytes of the tracked tiles at this zoom.</summary>
+    public required long Bytes { get; init; }
 }
 
 internal sealed record TileOperationStartResponse
@@ -340,6 +468,7 @@ internal sealed record TileCacheEvictionResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationRetryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationListResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileCacheEvictionResponse))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TileCacheInventoryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesArtifactDescriptor))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesUrlStrategy))]
 internal sealed partial class TileOperationsJsonContext : System.Text.Json.Serialization.JsonSerializerContext

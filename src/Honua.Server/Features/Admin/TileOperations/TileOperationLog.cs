@@ -60,4 +60,13 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9220, Level = LogLevel.Warning, Message = "Failed to delete the completed tile-cache generation checkpoint for generation {GenerationId}; it will self-expire.")]
     public static partial void CheckpointDeleteFailed(ILogger logger, string generationId, Exception exception);
+
+    [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Bounded tile-cache {Operation} matched {Matched} tracked tile(s) and affected {Affected} in the requested window.")]
+    public static partial void LifecycleWindowCompleted(ILogger logger, string operation, int matched, long affected);
+
+    [LoggerMessage(EventId = 9222, Level = LogLevel.Warning, Message = "Failed to delete a generated cache tile from the cloud tile store during a bounded delete; it remains tracked for a retry.")]
+    public static partial void LifecycleDeleteFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9223, Level = LogLevel.Information, Message = "Bounded tile-cache {Operation} skipped: no live tile-key index is available, so no generated tiles are tracked to act on.")]
+    public static partial void LifecycleIndexUnavailable(ILogger logger, string operation);
 }

@@ -161,6 +161,80 @@ public sealed class TileCacheExecutionSpecBuilderTests
     }
 
     [UnitTest]
+    public void BuildThenTryParse_RoundTrips_StyleAndFormat()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 4,
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "night",
+            Format = "png"
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.Style].Should().Be("night");
+        spec.Parameters[TileCacheJobParameterKeys.Format].Should().Be("png");
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            spec.Parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.Operation.Should().Be("delete");
+        decoded.Style.Should().Be("night");
+        decoded.Format.Should().Be("png");
+    }
+
+    [UnitTest]
+    public void TryParse_SpecWithoutStyleOrFormat_ParsesWithNulls()
+    {
+        // Back-compat: a spec produced before the style/format fields existed must still parse.
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "expire",
+            [TileCacheJobParameterKeys.LayerId] = "8",
+            [TileCacheJobParameterKeys.TileMatrixSetId] = "WebMercatorQuad"
+        };
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.Style.Should().BeNull();
+        decoded.Format.Should().BeNull();
+        decoded.LayerId.Should().Be(8);
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_EncodesServiceGridsetStyle()
+    {
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "svc-1",
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "night"
+        }).Should().Be("tilecache:svc-1:WebMercatorQuad:night");
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_SameWindow_ProducesSameKey_DifferentWindow_Differs()
+    {
+        var a = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
+        var b = new TileOperationStartRequest { Operation = "delete", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
+        var c = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "night" };
+
+        // Two operations on the same (service, gridset, style) window share a partition key so the
+        // runtime serializes them under one exclusive lease; a different style is a different window.
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a)
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(b));
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a)
+            .Should().NotBe(TileCacheExecutionSpecBuilder.BuildPartitionKey(c));
+    }
+
+    [UnitTest]
     public void TryParse_MissingOperation_Fails()
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
