@@ -5,16 +5,17 @@
 Accepted
 
 For raster serving and GP, [ADR-0071](0071-raster-execution-boundary.md) is the
-controlling engine and placement decision. This ADR's instruction to delegate
-heavy spatial transforms to PostGIS means "when capability, data locality, and
-the database resource/SLO budget permit." Raster work outside the synchronous
-request envelope uses the dedicated managed PostGIS profile only when all three
-gates pass. Work that misses the PostGIS capability or locality gate, or exceeds
-the database budget, uses the isolated native GDAL placement defined by ADR-0071
-only when that engine's capability, locality, and worker-budget gates pass;
-otherwise execution is refused. The GeoETL-specific rollout and
-worker names below remain historical decisions for GeoETL, not a universal
-raster topology.
+controlling engine and placement decision. As of ADR-0071's 2026-08-11
+single-engine amendment (honua-server#3085, #3167), this ADR's instruction to
+delegate heavy spatial transforms to PostGIS applies to non-raster,
+database-native transforms (large-scale reprojection, `ST_Buffer`, spatial
+joins) only. Ordinary raster GP and GeoETL raster transforms execute on the
+isolated native GDAL worker, locally or through a batch backend selected by
+static operator configuration. Bounded request-side raster serving remains on
+ADR-0071's pure-managed/PostGIS serving paths; PostGIS is not a raster GP or
+GeoETL-transform execution destination. The GeoETL-specific rollout and worker
+names below remain historical decisions for GeoETL, not a universal raster
+topology.
 
 ## Context
 
@@ -61,8 +62,9 @@ A handful of secondary forces shape the design:
 - Heavy spatial transforms (large-scale reprojection, `ST_Buffer`,
   spatial joins) already have a mature engine in PostGIS. GeoETL should
   delegate to PostGIS when the predicted work fits the governed database
-  resource and serving-SLO budget, not reproduce them in process. ADR-0071
-  controls this additional gate for raster work.
+  resource and serving-SLO budget, not reproduce them in process. This applies
+  to vector transforms; ADR-0071 routes raster work to the isolated GDAL
+  worker instead, regardless of database budget.
 
 ## Decision
 
