@@ -1574,6 +1574,78 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
     }
 
+    // Regression for review finding "Service-only subscriptions remain
+    // effectively unfiltered". The admission path must persist the service's
+    // routable storage-layer ids in the session filter; service id alone is not
+    // sufficient because change envelopes are matched by storage layer.
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithServiceIdOnly_ScopesSessionToRoutableStorageLayers()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?serviceId={ServiceOnlyFilterStreamLayerCatalog.ServiceName}&clientLabel=service-only-scope");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var response = await fixture.CreateAdminClient().SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await WaitForSessionAsync(sessionManager, "service-only-scope", cts.Token);
+
+            var session = sessionManager.GetSessions()
+                .Single(candidate => candidate.ClientLabel == "service-only-scope");
+            session.ServiceIdFilter.Should().Be(ServiceOnlyFilterStreamLayerCatalog.ServiceName);
+            session.LayerIdFilter.Should().Equal(ServiceOnlyFilterStreamLayerCatalog.RoutableStorageLayerId);
+            session.LayerIdFilter.Should().NotContain(ServiceOnlyFilterStreamLayerCatalog.RetiredStorageLayerId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithServiceIdOnlyAndNoRoutableLayers_ReturnsBadRequest()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?serviceId={ServiceOnlyFilterStreamLayerCatalog.EmptyServiceName}");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            body.Should().Contain("has no routable layers");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // Regression for review finding "Streaming capabilities expose
     // inaccessible layer metadata". The discovery endpoint must omit layers
     // the caller cannot read; otherwise restricted layer names, CRS, or
@@ -2275,6 +2347,60 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 .AddPublication("pub-stream-restricted", "svc-stream-test", "res-stream-restricted", layerIndex: RestrictedLayerId, storageBindingId: "binding-stream-restricted")
                 .BuildProvider();
 
+    }
+
+    private static class ServiceOnlyFilterStreamLayerCatalog
+    {
+        public const string ServiceName = "service-only-filter";
+        public const string EmptyServiceName = "empty-service-only-filter";
+        public const int RoutableStorageLayerId = 41;
+        public const int RetiredStorageLayerId = 42;
+
+        public static TestMetadataV2GraphProvider BuildMetadataProvider()
+        {
+            var graph = new TestMetadataV2GraphBuilder()
+                .AddResource("res-service-only-active", "Active Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding(
+                    "binding-service-only-active",
+                    "res-service-only-active",
+                    "test.layers.service_only_active",
+                    storageLayerId: RoutableStorageLayerId)
+                .AddResource("res-service-only-retired", "Retired Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding(
+                    "binding-service-only-retired",
+                    "res-service-only-retired",
+                    "test.layers.service_only_retired",
+                    storageLayerId: RetiredStorageLayerId)
+                .AddService("svc-service-only-filter", ServiceName, protocols: MetadataV2ServiceProtocols.All)
+                .AddService("svc-empty-service-only-filter", EmptyServiceName, protocols: MetadataV2ServiceProtocols.All)
+                .AddPublication(
+                    "pub-service-only-active",
+                    "svc-service-only-filter",
+                    "res-service-only-active",
+                    layerIndex: 1,
+                    storageBindingId: "binding-service-only-active")
+                .AddPublication(
+                    "pub-service-only-retired",
+                    "svc-service-only-filter",
+                    "res-service-only-retired",
+                    layerIndex: 2,
+                    storageBindingId: "binding-service-only-retired")
+                .Build();
+
+            graph = graph with
+            {
+                Publications = graph.Publications
+                    .Select(publication => publication.Metadata.Id == "pub-service-only-retired"
+                        ? publication with
+                        {
+                            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                        }
+                        : publication)
+                    .ToArray()
+            };
+
+            return new TestMetadataV2GraphProvider(graph);
+        }
     }
 
     private static TestMetadataV2GraphProvider BuildStreamMetadataProvider(bool timeAware)

@@ -1199,11 +1199,22 @@ internal static partial class FeatureStreamEndpoints
         }
         else if (service is not null)
         {
-            var accessError = RequireAllLayerAccess(context, snapshot, service);
-            if (accessError is not null)
+            var serviceLayers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+            if (serviceLayers.Length == 0)
             {
-                return (null, "Access to the requested stream service is forbidden.");
+                return (null, $"Service '{service.Metadata.Name}' has no routable layers.");
             }
+
+            foreach (var layer in serviceLayers)
+            {
+                var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
+                if (accessError is not null)
+                {
+                    return (null, "Access to the requested stream service is forbidden.");
+                }
+            }
+
+            layerIds = serviceLayers.Select(static layer => layer.LayerId).Distinct().ToArray();
         }
 
         double[]? bbox = null;

@@ -101,11 +101,17 @@ internal static partial class FeatureStreamEndpoints
 
         if (service is not null && layerIds is null)
         {
-            var accessError = RequireAllLayerAccess(context, snapshot, service);
+            var (serviceLayerIds, accessError) = ResolveAndAuthorizeServiceLayerIds(
+                context,
+                logger,
+                snapshot,
+                service);
             if (accessError is not null)
             {
                 return SubscriptionParseResult.Failed(accessError);
             }
+
+            layerIds = serviceLayerIds;
         }
 
         // Parse bbox (minX,minY,maxX,maxY).
@@ -481,21 +487,30 @@ internal static partial class FeatureStreamEndpoints
         return (resolvedIds.ToArray(), null);
     }
 
-    private static IResult? RequireAllLayerAccess(
+    private static (int[]? Ids, IResult? Error) ResolveAndAuthorizeServiceLayerIds(
         HttpContext context,
+        ILogger logger,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
-        foreach (var layer in ResolveServiceStreamLayers(snapshot, service))
+        var layers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+        if (layers.Length == 0)
+        {
+            var msg = $"Service '{service.Metadata.Name}' has no routable layers.";
+            FeatureStreamLog.FilterValidationFailed(logger, msg);
+            return (null, StandardErrorHelpers.CreateBadRequest(context, msg));
+        }
+
+        foreach (var layer in layers)
         {
             var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
             if (accessError is not null)
             {
-                return accessError;
+                return (null, accessError);
             }
         }
 
-        return null;
+        return (layers.Select(static layer => layer.LayerId).Distinct().ToArray(), null);
     }
 
     private static IResult? RequireStreamLayerAccess(
