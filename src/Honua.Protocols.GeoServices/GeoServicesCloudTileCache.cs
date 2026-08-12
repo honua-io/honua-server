@@ -163,9 +163,7 @@ internal static class GeoServicesCloudTileCache
                             tenantScope,
                             mutationToken).ConfigureAwait(false);
                     }
-                    catch (Exception exception) when (
-                        exception is not OutOfMemoryException &&
-                        !mutationToken.IsCancellationRequested)
+                    catch (Exception exception) when (exception is not OutOfMemoryException)
                     {
                         // Upload and lifecycle-state commit are one serialized cache mutation.
                         // If Redis cannot make the object discoverable to eviction/lifecycle
@@ -173,11 +171,15 @@ internal static class GeoServicesCloudTileCache
                         var storageRolledBack = false;
                         try
                         {
-                            storageRolledBack = await storage.DeleteAsync(objectKey, mutationToken)
+                            // Once upload succeeds, caller/lease cancellation must not interrupt
+                            // compensation and leave an unindexed object behind. The serialized
+                            // delegate does not return (and therefore does not release an owned
+                            // fence) until this bounded storage cleanup finishes.
+                            storageRolledBack = await storage.DeleteAsync(objectKey, CancellationToken.None)
                                 .ConfigureAwait(false);
                             if (!storageRolledBack)
                             {
-                                storageRolledBack = await storage.GetMetadataAsync(objectKey, mutationToken)
+                                storageRolledBack = await storage.GetMetadataAsync(objectKey, CancellationToken.None)
                                     .ConfigureAwait(false) is null;
                             }
 
@@ -194,7 +196,7 @@ internal static class GeoServicesCloudTileCache
 
                         if (storageRolledBack)
                         {
-                            await keyIndex.RemoveAsync(objectKey, mutationToken).ConfigureAwait(false);
+                            await keyIndex.RemoveAsync(objectKey, CancellationToken.None).ConfigureAwait(false);
                         }
 
                         throw;

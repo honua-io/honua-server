@@ -258,7 +258,10 @@ public sealed class RedisTileCacheKeyIndexTests
             Arg.Is<string>(script =>
                 script.Contains("HEXISTS', KEYS[4]", StringComparison.Ordinal) &&
                 script.Contains("SADD', KEYS[7]", StringComparison.Ordinal)),
-            Arg.Is<RedisKey[]>(keys => keys.Length == 7),
+            Arg.Is<RedisKey[]>(keys =>
+                keys.Length == 7 &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:members-migrated:v2") &&
+                keys.Any(key => key.ToString() == "honua:tile-cache:legacy-discard:v2")),
             Arg.Any<RedisValue[]>(),
             CommandFlags.DemandMaster);
         await database.Received(1).ScriptEvaluateAsync(

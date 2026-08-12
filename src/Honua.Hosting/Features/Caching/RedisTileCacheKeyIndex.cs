@@ -32,8 +32,10 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     private const string ExpiredSetKey = "honua:tile-cache:expired";
     private const string StorageExpirationSetKey = "honua:tile-cache:storage-expiration";
     private const string MembershipSetKey = "honua:tile-cache:members";
-    private const string MembershipMigrationMarkerKey = "honua:tile-cache:members-migrated:v1";
-    private const string LegacyDiscardSetKey = "honua:tile-cache:legacy-discard:v1";
+    // v2 re-runs membership discovery for deployments that completed the earlier v1
+    // migration before lifecycle metadata became mandatory.
+    private const string MembershipMigrationMarkerKey = "honua:tile-cache:members-migrated:v2";
+    private const string LegacyDiscardSetKey = "honua:tile-cache:legacy-discard:v2";
     private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
     private const int StorageExpirationPruneBatchSize = 1_000;
     private const int SnapshotPageSize = 1_000;

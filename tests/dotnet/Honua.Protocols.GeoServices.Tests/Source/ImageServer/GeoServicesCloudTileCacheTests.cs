@@ -174,4 +174,85 @@ public sealed class GeoServicesCloudTileCacheTests
             }
         }
     }
+
+    [UnitTest]
+    public async Task TryWriteAsync_CancellationAfterUpload_RollsBackWithNonCancelledTokenInsideFence()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                Provider = CloudStorageProvider.Local
+            }));
+
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        keyIndex.RecordWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<long>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                requestCancellation.Cancel();
+                return Task.FromCanceled(requestCancellation.Token);
+            });
+
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        var fenceHeld = false;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => ExecuteUnderFenceAsync(
+                callInfo.ArgAt<Func<CancellationToken, Task>>(1),
+                callInfo.ArgAt<CancellationToken>(2)));
+        storage.DeleteAsync(ObjectKey, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                fenceHeld.Should().BeTrue();
+                callInfo.ArgAt<CancellationToken>(1).IsCancellationRequested.Should().BeFalse();
+                return Task.FromResult(true);
+            });
+
+        var act = () => GeoServicesCloudTileCache.TryWriteAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            "1.png",
+            ImmutableDictionary<string, string>.Empty,
+            requestCancellation.Token,
+            keyIndex,
+            tenantScope: "tenant_a");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await storage.Received(1).DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await keyIndex.Received(1).RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
+
+        async Task ExecuteUnderFenceAsync(
+            Func<CancellationToken, Task> mutation,
+            CancellationToken mutationToken)
+        {
+            fenceHeld = true;
+            try
+            {
+                await mutation(mutationToken);
+            }
+            finally
+            {
+                fenceHeld = false;
+            }
+        }
+    }
 }
