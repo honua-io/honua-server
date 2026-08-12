@@ -468,6 +468,75 @@ public sealed class GdalUntrustedInputHardeningTests
         result.StandardOutput.Should().Contain("WMS");
     }
 
+    [UnitTest]
+    public void ProcessRunner_LocalInvocation_StripsInheritedAndReferencedCredentials()
+    {
+        const string referencedVariable = "HONUA_GDAL_REFERENCED_SECRET";
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATH"] = "safe-path",
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret",
+            ["AZURE_STORAGE_CONNECTION_STRING"] = "ambient-azure",
+            [referencedVariable] = "referenced-secret"
+        };
+        var hardeningEnvironment = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options
+            {
+                AccessKeyId = $"env:{referencedVariable}",
+                SecretAccessKey = "must-not-be-forwarded"
+            },
+            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" });
+
+        ProcessGdalCommandRunner.ApplyHardenedEnvironment(
+            environment,
+            hardeningEnvironment,
+            new AwsS3Options
+            {
+                AccessKeyId = $"env:{referencedVariable}",
+                SecretAccessKey = "must-not-be-forwarded"
+            },
+            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" });
+
+        environment.Should().ContainKey("PATH");
+        environment.Should().ContainKey("GDAL_SKIP");
+        environment.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        environment.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+        environment.Should().NotContainKey("AZURE_STORAGE_CONNECTION_STRING");
+        environment.Should().NotContainKey(referencedVariable);
+    }
+
+    [UnitTest]
+    public void ProcessRunner_TrustedS3Invocation_ReplacesAmbientCredentialsWithAuthorizedValues()
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret"
+        };
+        var s3 = new AwsS3Options
+        {
+            AccessKeyId = "registered-access",
+            SecretAccessKey = "registered-secret"
+        };
+        var hardeningEnvironment = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            s3,
+            inputReferencesS3Vsi: true);
+
+        ProcessGdalCommandRunner.ApplyHardenedEnvironment(
+            environment,
+            hardeningEnvironment,
+            s3,
+            new AzureBlobOptions());
+
+        environment["AWS_ACCESS_KEY_ID"].Should().Be("registered-access");
+        environment["AWS_SECRET_ACCESS_KEY"].Should().Be("registered-secret");
+    }
+
     // ---- End-to-end at the executor boundary (no gdal binary needed) -----------
 
     [UnitTest]
