@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -20,6 +21,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     internal const string DefaultSubscriptionId = "default";
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
     private const int RecentEventIdCapacity = 128;
 
     /// <summary>
@@ -39,6 +41,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly IConnectionMultiplexer? _redis;
     private readonly IMetadataV2GraphProvider? _metadataProvider;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
+    private readonly SemaphoreSlim _clusterBroadcastDispatchGate = new(1, 1);
     private ISubscriber? _subscriber;
     private readonly Timer? _clusterBroadcastRecoveryTimer;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
@@ -52,6 +57,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private int _clusterBroadcastBacklogCount;
     private long _clusterBroadcastBacklogDropped;
     private bool _clusterBroadcastBacklogDropLogged;
+    private long _nextRoutabilityRefreshTimestamp;
+    private int _lastRoutabilityRefreshSucceeded = 1;
 
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
@@ -59,7 +66,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         FeatureStreamMetrics metrics,
         IConnectionMultiplexer? redis = null,
         IMetadataV2GraphProvider? metadataProvider = null,
-        FeatureStreamRoutabilityGuard? routabilityGuard = null)
+        FeatureStreamRoutabilityGuard? routabilityGuard = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -67,6 +75,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         _redis = redis;
         _metadataProvider = metadataProvider;
         _routabilityGuard = routabilityGuard;
+        _serviceScopeFactory = serviceScopeFactory;
 
         if (_redis is null)
         {
@@ -120,15 +129,32 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// </summary>
     public async ValueTask<bool> RefreshRoutabilityAsync(CancellationToken cancellationToken = default)
     {
-        if (_metadataProvider is null || _routabilityGuard is null)
+        if ((_metadataProvider is null && _serviceScopeFactory is null) || _routabilityGuard is null)
         {
             return true;
         }
 
+        var now = Environment.TickCount64;
+        if (now < Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+        {
+            return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
+        }
+
+        await _routabilityRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
-            var snapshot = await _metadataProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            now = Environment.TickCount64;
+            if (now < Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+            {
+                return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
+            }
+
+            var snapshot = _serviceScopeFactory is null
+                ? await _metadataProvider!.GetCurrentAsync(cancellationToken).ConfigureAwait(false)
+                : await ReadScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
             _routabilityGuard.Update(snapshot);
+            Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -138,9 +164,24 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _routabilityGuard.Invalidate();
+            Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 0);
             FeatureStreamLog.RoutabilityRefreshFailed(_logger, ex);
             return false;
         }
+        finally
+        {
+            Volatile.Write(
+                ref _nextRoutabilityRefreshTimestamp,
+                Environment.TickCount64 + (long)RoutabilityRefreshInterval.TotalMilliseconds);
+            _routabilityRefreshGate.Release();
+        }
+    }
+
+    private async ValueTask<MetadataV2GraphSnapshot> ReadScopedMetadataAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _serviceScopeFactory!.CreateAsyncScope();
+        var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -541,6 +582,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     private async Task HandleClusterBroadcastAsync(FeatureStreamBroadcastMessage payload)
     {
+        await _clusterBroadcastDispatchGate.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!await RefreshRoutabilityAsync().ConfigureAwait(false))
@@ -556,6 +598,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogClusterBroadcastFailedOnce(ex);
+        }
+        finally
+        {
+            _clusterBroadcastDispatchGate.Release();
         }
     }
 

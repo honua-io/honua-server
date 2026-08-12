@@ -76,8 +76,9 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<ILogger<FeatureStreamSessionManager>>(),
                 sp.GetRequiredService<FeatureStreamMetrics>(),
                 sp.GetService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IMetadataV2GraphProvider>(),
-                sp.GetRequiredService<FeatureStreamRoutabilityGuard>()));
+                metadataProvider: null,
+                routabilityGuard: sp.GetRequiredService<FeatureStreamRoutabilityGuard>(),
+                serviceScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
         services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<PendingFeatureChangeSignal>());
         services.AddSingleton<IFeatureChangeRetryQueue>(sp =>
             new FeatureChangeRetryQueue(

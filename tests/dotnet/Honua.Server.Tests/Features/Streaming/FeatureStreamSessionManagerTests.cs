@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
@@ -636,6 +637,25 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public async Task RefreshRoutability_WithinBoundedInterval_ReusesCurrentRouteSet()
+    {
+        var snapshot = await new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
+        var provider = new CountingMetadataV2GraphProvider(snapshot);
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions()),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            metadataProvider: provider,
+            routabilityGuard: new FeatureStreamRoutabilityGuard());
+
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.True(await manager.RefreshRoutabilityAsync());
+
+        Assert.Equal(1, provider.ReadCount);
+    }
+
+    [UnitTest]
     public void Broadcast_WithBboxFilter_OnlyDeliversIntersectingEvents()
     {
         var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
@@ -945,6 +965,63 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             session.SessionId,
             FeatureStreamSessionManager.DefaultSubscriptionId,
             eventId));
+    }
+
+    [UnitTest]
+    public async Task ClusterBroadcast_MetadataRefreshYield_PreservesMessageOrder()
+    {
+        var subscriber = Substitute.For<ISubscriber>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var handlers = new List<Action<RedisChannel, RedisValue>>();
+        redis.GetSubscriber().Returns(subscriber);
+        subscriber.Subscribe(
+            Arg.Any<RedisChannel>(),
+            Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
+        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var channel = callInfo.Arg<RedisChannel>();
+                var value = callInfo.Arg<RedisValue>();
+                foreach (var handler in handlers)
+                {
+                    handler(channel, value);
+                }
+
+                return handlers.Count;
+            });
+
+        var options = Options.Create(new FeatureStreamOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            MaxBufferPerConnection = 4,
+            ReplayBatchSize = 100,
+        });
+        var metadataSnapshot = await new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
+        var metadataProvider = new BlockingMetadataV2GraphProvider(metadataSnapshot);
+        using var localManager = new FeatureStreamSessionManager(
+            options,
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            redis);
+        using var remoteManager = new FeatureStreamSessionManager(
+            options,
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            redis,
+            metadataProvider,
+            new FeatureStreamRoutabilityGuard());
+        using var remoteSession = remoteManager.CreateSession("WebSocket", "ordered-remote");
+
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 201)));
+        await metadataProvider.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 202)));
+        metadataProvider.AllowFirstReadToComplete.TrySetResult();
+
+        var first = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        var second = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(201L, first.Envelope.Cursor);
+        Assert.Equal(202L, second.Envelope.Cursor);
     }
 
     [UnitTest]
@@ -1382,5 +1459,50 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             Interlocked.Increment(ref _sendCount);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class BlockingMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowFirstReadToComplete { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                FirstReadStarted.TrySetResult();
+                await AllowFirstReadToComplete.Task.WaitAsync(cancellationToken);
+            }
+
+            return snapshot;
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
+    }
+
+    private sealed class CountingMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public int ReadCount => Volatile.Read(ref _readCount);
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _readCount);
+            return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
     }
 }
