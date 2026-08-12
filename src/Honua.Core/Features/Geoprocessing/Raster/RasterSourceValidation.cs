@@ -181,6 +181,16 @@ public static class RasterSourceDescriptorValidator
                         "Declared raster dimensions must all be positive when supplied.");
                 }
 
+                if (cog.DeclaredPixelScale is { } pixelScale
+                    && (!double.IsFinite(pixelScale.X)
+                        || !double.IsFinite(pixelScale.Y)
+                        || pixelScale.X <= 0d
+                        || pixelScale.Y <= 0d))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredPixelScale",
+                        "Declared raster pixel scales must be positive finite numbers when supplied.");
+                }
+
                 break;
 
             case ObjectStoreZarrRasterSourceDescriptor zarr:

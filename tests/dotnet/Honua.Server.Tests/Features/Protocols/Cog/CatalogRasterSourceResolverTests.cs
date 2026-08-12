@@ -85,6 +85,7 @@ public sealed class CatalogRasterSourceResolverTests
         descriptor.Version.Should().Be("s3-version-9");
         descriptor.Content.SizeBytes.Should().Be(9_876_543_210);
         descriptor.DeclaredDimensions.Should().Be(new RasterSourceDimensions(4096, 2048, 3, 16));
+        descriptor.DeclaredPixelScale.Should().Be(new RasterSourcePixelScale(1d, 1d));
         await reader.Received(1).ReadRangeAsync(
             "test-bucket",
             "test.tif",

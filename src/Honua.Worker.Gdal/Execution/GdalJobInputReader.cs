@@ -97,7 +97,8 @@ internal static class GdalJobInputReader
                     input = GdalRasterInput.Referenced(
                         GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey),
                         cog.Content.ETag,
-                        cog.DeclaredDimensions);
+                        cog.DeclaredDimensions,
+                        cog.DeclaredPixelScale);
                     return true;
                 }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
@@ -305,20 +306,22 @@ internal readonly record struct GdalRasterInput(
     byte[]? InlineBytes,
     string? ReferencedPath,
     string? ExpectedETag,
-    RasterSourceDimensions? DeclaredDimensions)
+    RasterSourceDimensions? DeclaredDimensions,
+    RasterSourcePixelScale? DeclaredPixelScale)
 {
     /// <summary>Whether the input is an inline payload that must be staged to scratch.</summary>
     public bool IsInline => InlineBytes is not null;
 
     /// <summary>Creates an inline input.</summary>
-    public static GdalRasterInput Inline(byte[] bytes) => new(bytes, null, null, null);
+    public static GdalRasterInput Inline(byte[] bytes) => new(bytes, null, null, null, null);
 
     /// <summary>Creates a conditional object-store input.</summary>
     public static GdalRasterInput Referenced(
         string path,
         string expectedETag,
-        RasterSourceDimensions declaredDimensions) =>
-        new(null, path, expectedETag, declaredDimensions);
+        RasterSourceDimensions declaredDimensions,
+        RasterSourcePixelScale? declaredPixelScale) =>
+        new(null, path, expectedETag, declaredDimensions, declaredPixelScale);
 
     /// <summary>
     /// Applies the same pre-GDAL dimension guard to inline headers and catalog-probed

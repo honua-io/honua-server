@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
@@ -8,11 +9,13 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 /// <summary>Bounded header-probe result and observable range budget.</summary>
 /// <param name="Dimensions">Trusted dimensions from the ETag-pinned object.</param>
+/// <param name="PixelScale">Trusted ground-unit pixel size from the same object version.</param>
 /// <param name="RangeCount">Number of conditional object ranges read.</param>
 /// <param name="RequestedBytes">Total bytes requested across all ranges.</param>
 /// <param name="ReceivedBytes">Total bytes returned across all ranges.</param>
 public sealed record CogRasterHeaderProbeResult(
     RasterSourceDimensions Dimensions,
+    RasterSourcePixelScale PixelScale,
     int RangeCount,
     long RequestedBytes,
     long ReceivedBytes);
@@ -108,6 +111,12 @@ public static class CogRasterHeaderProbe
                 bandCountValue,
                 cancellationToken)
             .ConfigureAwait(false);
+        var pixelScale = await ReadPixelScaleAsync(
+                probe,
+                parser,
+                entries,
+                cancellationToken)
+            .ConfigureAwait(false);
         if (width <= 0 || height <= 0 || bitsPerSample <= 0)
         {
             throw new InvalidDataException("TIFF declares non-positive raster dimensions.");
@@ -119,6 +128,7 @@ public static class CogRasterHeaderProbe
                 height,
                 checked((int)bandCountValue),
                 bitsPerSample),
+            pixelScale,
             probe.RangeCount,
             probe.RequestedBytes,
             probe.ReceivedBytes);
@@ -219,6 +229,56 @@ public static class CogRasterHeaderProbe
         }
 
         return values.Max();
+    }
+
+    private static async Task<RasterSourcePixelScale> ReadPixelScaleAsync(
+        BoundedRangeProbe probe,
+        TiffIfdParser parser,
+        IReadOnlyList<IfdEntry> entries,
+        CancellationToken cancellationToken)
+    {
+        var entry = entries.FirstOrDefault(candidate =>
+            candidate.Tag == TiffConstants.TagModelPixelScaleTag);
+        if (entry.Tag != TiffConstants.TagModelPixelScaleTag)
+        {
+            // This mirrors GDAL's identity-grid interpretation for an unreferenced TIFF.
+            return new RasterSourcePixelScale(1d, 1d);
+        }
+
+        // GeoTIFF ModelPixelScale is exactly three DOUBLE values. Even in BigTIFF the
+        // 24-byte array is external, which lets the bounded probe read only the first
+        // two values needed for the output-grid guard.
+        if (entry.Type != TiffConstants.TypeDouble || entry.Count != 3 || entry.IsInline)
+        {
+            throw new InvalidDataException(
+                "TIFF ModelPixelScale must contain three external DOUBLE values.");
+        }
+
+        const int requiredBytes = 2 * sizeof(double);
+        var data = await probe
+            .ReadAsync(entry.ValueOrOffset, requiredBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (data.Length < requiredBytes)
+        {
+            throw new InvalidDataException("TIFF ModelPixelScale data is truncated.");
+        }
+
+        var scaleX = parser.IsLittleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(data)
+            : BinaryPrimitives.ReadDoubleBigEndian(data);
+        var scaleY = parser.IsLittleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(data.AsSpan(sizeof(double)))
+            : BinaryPrimitives.ReadDoubleBigEndian(data.AsSpan(sizeof(double)));
+        if (!double.IsFinite(scaleX)
+            || !double.IsFinite(scaleY)
+            || scaleX <= 0d
+            || scaleY <= 0d)
+        {
+            throw new InvalidDataException(
+                "TIFF ModelPixelScale values must be positive finite numbers.");
+        }
+
+        return new RasterSourcePixelScale(scaleX, scaleY);
     }
 
     private sealed class BoundedRangeProbe(

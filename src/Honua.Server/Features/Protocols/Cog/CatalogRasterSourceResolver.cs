@@ -221,6 +221,7 @@ internal sealed class CatalogRasterSourceResolver(
             CatalogLayerId = registration.LayerId,
             CatalogRasterId = registration.Id,
             DeclaredDimensions = probe.Dimensions,
+            DeclaredPixelScale = probe.PixelScale,
             Version = immutableVersion,
             Content = new RasterContentIdentity
             {

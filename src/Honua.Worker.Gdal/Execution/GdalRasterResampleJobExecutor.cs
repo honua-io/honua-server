@@ -133,20 +133,20 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             // when the raster carries no georeferencing, matching gdalwarp's own -tr
             // interpretation). When the header is not one we can read dimensions from, the
             // input dimension caps plus the timeout/artifact ceilings remain the backstop.
-            if (sourceInput.InlineBytes is { } sourceForGrid
-                && GdalRasterDimensionGuard.TryReadRasterDimensions(sourceForGrid, out var inputDims))
+            if (!TryGetInputGrid(sourceInput, out var inputDims, out var scaleX, out var scaleY, out var gridError))
             {
-                GdalRasterDimensionGuard.ReadGeoTiffPixelScale(sourceForGrid, out var scaleX, out var scaleY);
-                if (!GdalOutputGridGuard.TryAdmitResolution(
-                        inputDims.Width * scaleX,
-                        inputDims.Height * scaleY,
-                        cellSizeX,
-                        cellSizeY,
-                        opts,
-                        out var resolutionError))
-                {
-                    return JobExecutionResult.Failed($"Invalid resample inputs: {resolutionError}");
-                }
+                return JobExecutionResult.Failed($"Invalid resample inputs: {gridError}");
+            }
+
+            if (!GdalOutputGridGuard.TryAdmitResolution(
+                    inputDims.Width * scaleX,
+                    inputDims.Height * scaleY,
+                    cellSizeX,
+                    cellSizeY,
+                    opts,
+                    out var resolutionError))
+            {
+                return JobExecutionResult.Failed($"Invalid resample inputs: {resolutionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)
@@ -251,6 +251,55 @@ internal sealed partial class GdalRasterResampleJobExecutor(
         }
 
         value = parsed;
+        return true;
+    }
+
+    private static bool TryGetInputGrid(
+        GdalRasterInput sourceInput,
+        out GdalRasterDimensionGuard.RasterDimensions dimensions,
+        out double scaleX,
+        out double scaleY,
+        out string error)
+    {
+        dimensions = default;
+        scaleX = 1d;
+        scaleY = 1d;
+        error = "";
+
+        if (sourceInput.InlineBytes is { } inlineBytes)
+        {
+            if (!GdalRasterDimensionGuard.TryReadRasterDimensions(inlineBytes, out dimensions))
+            {
+                // Preserve the legacy fallback for formats whose dimensions this
+                // cheap managed guard cannot parse. The format, timeout, and artifact
+                // ceilings remain in force; referenced COGs fail closed below because
+                // their catalog contract always includes bounded dimensions.
+                return true;
+            }
+
+            GdalRasterDimensionGuard.ReadGeoTiffPixelScale(inlineBytes, out scaleX, out scaleY);
+            return true;
+        }
+
+        if (sourceInput.DeclaredDimensions is not { } declaredDimensions)
+        {
+            error = "referenced raster is missing bounded catalog dimensions";
+            return false;
+        }
+
+        if (sourceInput.DeclaredPixelScale is not { } declaredPixelScale)
+        {
+            error = "referenced raster is missing catalog-probed pixel scale for output-grid admission";
+            return false;
+        }
+
+        dimensions = new GdalRasterDimensionGuard.RasterDimensions(
+            declaredDimensions.Width,
+            declaredDimensions.Height,
+            declaredDimensions.BandCount,
+            declaredDimensions.BitsPerSample);
+        scaleX = declaredPixelScale.X;
+        scaleY = declaredPixelScale.Y;
         return true;
     }
 

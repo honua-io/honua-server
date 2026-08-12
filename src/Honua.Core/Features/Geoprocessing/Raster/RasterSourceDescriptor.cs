@@ -108,6 +108,14 @@ public sealed record ObjectStoreCogRasterSourceDescriptor : RasterSourceDescript
     /// Catalog resolution must populate this before a native worker can open the reference.
     /// </summary>
     public RasterSourceDimensions? DeclaredDimensions { get; init; }
+
+    /// <summary>
+    /// Ground-unit pixel size read from the same bounded, immutable header probe as
+    /// <see cref="DeclaredDimensions"/>. A unit scale represents an unreferenced TIFF.
+    /// Native resampling requires this value so it can bound the derived output grid
+    /// before invoking GDAL.
+    /// </summary>
+    public RasterSourcePixelScale? DeclaredPixelScale { get; init; }
 }
 
 /// <summary>Bounded raster dimensions used for pre-GDAL resource admission.</summary>
@@ -120,6 +128,11 @@ public sealed record RasterSourceDimensions(
     long Height,
     int BandCount,
     int BitsPerSample);
+
+/// <summary>Positive ground-unit pixel sizes used for pre-GDAL output-grid admission.</summary>
+/// <param name="X">Horizontal ground units per source pixel.</param>
+/// <param name="Y">Vertical ground units per source pixel.</param>
+public sealed record RasterSourcePixelScale(double X, double Y);
 
 /// <summary>References an immutable Zarr hierarchy and array in a registered object store.</summary>
 public sealed record ObjectStoreZarrRasterSourceDescriptor : RasterSourceDescriptor

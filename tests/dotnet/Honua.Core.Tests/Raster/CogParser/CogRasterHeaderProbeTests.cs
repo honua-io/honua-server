@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.CogParser;
@@ -50,6 +51,23 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(3, result.Dimensions.BandCount);
         Assert.Equal(16, result.Dimensions.BitsPerSample);
         Assert.Equal(0, reader.UnconditionalReadCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ModelPixelScale_IsReadThroughConditionalBoundedRange()
+    {
+        const string etag = "scale-etag";
+        var reader = new ConditionalRangeReader(BuildClassicTiffWithPixelScale(), etag);
+
+        var result = await CogRasterHeaderProbe.ReadAsync(
+            reader,
+            "imagery",
+            "scaled.tif",
+            etag);
+
+        Assert.Equal(new RasterSourcePixelScale(30d, 20d), result.PixelScale);
+        Assert.Equal(0, reader.UnconditionalReadCount);
+        Assert.All(reader.Requests, request => Assert.Equal(etag, request.ExpectedETag));
     }
 
     [Fact]
@@ -147,6 +165,30 @@ public sealed class CogRasterHeaderProbeTests
         WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 64);
         WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 8);
         WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 1);
+        return bytes;
+    }
+
+    private static byte[] BuildClassicTiffWithPixelScale()
+    {
+        const int ifdOffset = 8;
+        const ushort entryCount = 5;
+        const int scaleOffset = ifdOffset + 2 + (entryCount * 12) + 4;
+        var bytes = new byte[scaleOffset + (3 * sizeof(double))];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(ifdOffset), entryCount);
+
+        var entryOffset = ifdOffset + 2;
+        WriteClassicTiffEntry(bytes, entryOffset, tag: 256, type: 4, count: 1, value: 1000);
+        WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 500);
+        WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 16);
+        WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 1);
+        WriteClassicTiffEntry(bytes, entryOffset + 48, tag: 33550, type: 12, count: 3, value: scaleOffset);
+        BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(scaleOffset), 30d);
+        BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(scaleOffset + sizeof(double)), 20d);
+        BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(scaleOffset + (2 * sizeof(double))), 0d);
         return bytes;
     }
 

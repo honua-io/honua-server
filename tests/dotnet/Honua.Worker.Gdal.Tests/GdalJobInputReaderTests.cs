@@ -34,6 +34,7 @@ public sealed class GdalJobInputReaderTests
             StoreReference = "imagery-prod",
             ObjectKey = "tenant/dem.tif",
             DeclaredDimensions = new RasterSourceDimensions(2048, 1024, 1, 16),
+            DeclaredPixelScale = new RasterSourcePixelScale(30d, 20d),
             Version = "version-7",
             Content = new RasterContentIdentity
             {
@@ -63,6 +64,7 @@ public sealed class GdalJobInputReaderTests
         ok.Should().BeTrue(error);
         input.InlineBytes.Should().BeNull();
         input.ReferencedPath.Should().Be("/vsis3/imagery-prod/tenant/dem.tif");
+        input.DeclaredPixelScale.Should().Be(new RasterSourcePixelScale(30d, 20d));
         input.TryAdmit(new GdalWorkerOptions(), out error).Should().BeTrue(error);
         var arguments = new List<string>();
         input.AddReadPin(arguments);
