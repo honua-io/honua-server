@@ -235,8 +235,18 @@ BEGIN
       FROM honua.feature_changes;
 
     BEGIN
-        INSERT INTO honua.layers (layer_id, primary_key_column)
-        VALUES (probe_layer_id, 'probe_public_objectid');
+        INSERT INTO honua.layers (
+            layer_id,
+            layer_name,
+            table_name,
+            geometry_type,
+            primary_key_column)
+        VALUES (
+            probe_layer_id,
+            '__demo_seed_tracking_probe__',
+            'features',
+            'Point',
+            'probe_public_objectid');
         INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
         VALUES (
             probe_objectid,

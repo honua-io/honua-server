@@ -1089,8 +1089,13 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private const string ChangeTrackingExerciseSql =
         """
-        INSERT INTO honua.layers (layer_id, primary_key_column)
-        VALUES (90999, 'custom_id');
+        INSERT INTO honua.layers (
+            layer_id,
+            layer_name,
+            table_name,
+            geometry_type,
+            primary_key_column)
+        VALUES (90999, 'Change Tracking Exercise', 'features', 'Point', 'custom_id');
         INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
         VALUES (
             990001,
@@ -1109,7 +1114,10 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         CREATE SEQUENCE honua.sync_generation;
         CREATE TABLE honua.layers (
             layer_id INT PRIMARY KEY,
-            primary_key_column TEXT
+            layer_name TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            geometry_type TEXT NOT NULL,
+            primary_key_column TEXT NOT NULL DEFAULT 'objectid'
         );
         CREATE TABLE honua.replicas (
             replica_id TEXT PRIMARY KEY,
