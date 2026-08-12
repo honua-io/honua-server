@@ -29,6 +29,20 @@ public interface IReplicaRepository
     Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Registers a new replica at the committed change-log high-watermark in the same
+    /// transaction as the durable row insert. PostgreSQL uses the relation-recovery lock for
+    /// this operation so a cursor cannot be persisted across a missing-relation cutover.
+    /// </summary>
+    /// <returns>The persisted record with its authoritative last-sync generation.</returns>
+    async Task<ReplicaRecord> RegisterAtCurrentGenerationAsync(
+        ReplicaRecord record,
+        CancellationToken cancellationToken = default)
+    {
+        await UpsertAsync(record, cancellationToken).ConfigureAwait(false);
+        return record;
+    }
+
+    /// <summary>
     /// Atomically updates a replica's sync-state cursors (<see cref="ReplicaRecord.LastSyncTime"/>,
     /// <see cref="ReplicaRecord.LastSyncGeneration"/> and
     /// <see cref="ReplicaRecord.UploadBaseGeneration"/>) only when the persisted cursors still match
