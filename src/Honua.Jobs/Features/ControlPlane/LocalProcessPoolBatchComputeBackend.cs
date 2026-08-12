@@ -7,6 +7,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -77,7 +78,8 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         // process lost to a host restart recovers (a fresh launch on the next attempt).
         SupportsRetry = true,
         SupportsLogStreaming = false,
-        SupportsArtifactStaging = false
+        SupportsArtifactStaging = false,
+        MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
     };
 
     private readonly ILogger<LocalProcessPoolBatchComputeBackend> _logger;

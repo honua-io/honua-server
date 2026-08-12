@@ -5,6 +5,7 @@ using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -77,6 +78,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
         capabilities.SupportsArtifactStaging.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 #if !HONUA_EXCLUDE_AZURE
 namespace Honua.ControlPlane;
@@ -50,7 +51,8 @@ internal sealed partial class AzureBatchComputeBackend(
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
         });
 
     public async Task<BatchComputeSubmissionResult> StartAsync(

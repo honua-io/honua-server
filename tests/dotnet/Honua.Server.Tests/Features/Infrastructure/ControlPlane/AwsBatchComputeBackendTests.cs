@@ -6,6 +6,7 @@ using System.Net;
 using Amazon.Runtime;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -25,6 +26,7 @@ public sealed class AwsBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
         capabilities.SupportsArtifactStaging.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
     }
 
     [Fact]

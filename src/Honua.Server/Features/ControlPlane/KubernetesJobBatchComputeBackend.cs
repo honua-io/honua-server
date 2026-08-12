@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
@@ -49,7 +50,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
-            SupportsArtifactStaging = true
+            SupportsArtifactStaging = true,
+            MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
         });
 
     public async Task<BatchComputeSubmissionResult> StartAsync(

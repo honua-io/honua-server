@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -671,6 +672,7 @@ public sealed class AzureBatchComputeBackendTests
         capabilities.SupportsCancellation.Should().BeTrue();
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
         capabilities.SupportsProgressPolling.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
     }

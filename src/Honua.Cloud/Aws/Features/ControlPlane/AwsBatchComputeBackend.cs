@@ -7,6 +7,7 @@ using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -286,7 +287,8 @@ internal sealed partial class AwsBatchComputeBackend(
         SupportsProgressPolling = true,
         SupportsRetry = true,
         SupportsLogStreaming = false,
-        SupportsArtifactStaging = false
+        SupportsArtifactStaging = false,
+        MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
     };
 
     internal static bool TryExtractPendingJobName(string? providerOperationId, out string jobName)

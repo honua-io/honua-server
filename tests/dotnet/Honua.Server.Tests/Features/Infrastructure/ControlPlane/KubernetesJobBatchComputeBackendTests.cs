@@ -6,6 +6,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +39,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
     }
 
     [Fact]
