@@ -134,6 +134,7 @@ internal sealed class ImageServerTileHandler
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
                 var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+                var tileCacheTenantScope = ResolveTileCacheTenantScope(context);
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
@@ -150,7 +151,13 @@ internal sealed class ImageServerTileHandler
                     row,
                     col);
 
-                if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+                if (await GeoServicesCloudTileCache.TryReadAsync(
+                        storage,
+                        storageOptions,
+                        tileCacheKey,
+                        cancellationToken,
+                        tileCacheKeyIndex,
+                        tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
                 {
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                     scope.SetSuccess(1);
@@ -200,7 +207,8 @@ internal sealed class ImageServerTileHandler
                             .Add("format", rasterFormat.ToString())
                             .Add("metadataEtag", snapshot.Etag),
                         cancellationToken,
-                        tileCacheKeyIndex).ConfigureAwait(false);
+                        tileCacheKeyIndex,
+                        tileCacheTenantScope).ConfigureAwait(false);
                     return Results.File(result.Data, result.ContentType);
                 }
             }
@@ -334,6 +342,7 @@ internal sealed class ImageServerTileHandler
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
             var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
+            var tileCacheTenantScope = ResolveTileCacheTenantScope(context);
             var window = new RasterTileWindow
             {
                 MinX = bounds.XMin,
@@ -361,7 +370,13 @@ internal sealed class ImageServerTileHandler
                 col,
                 window);
 
-            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+            if (await GeoServicesCloudTileCache.TryReadAsync(
+                    storage,
+                    storageOptions,
+                    tileCacheKey,
+                    cancellationToken,
+                    tileCacheKeyIndex,
+                    tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
             {
                 ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                 scope.SetSuccess(1);
@@ -410,7 +425,8 @@ internal sealed class ImageServerTileHandler
                     .Add("format", rasterFormat.ToString())
                     .Add("metadataEtag", snapshot.Etag),
                 cancellationToken,
-                tileCacheKeyIndex).ConfigureAwait(false);
+                tileCacheKeyIndex,
+                tileCacheTenantScope).ConfigureAwait(false);
             return Results.File(result.Data, result.ContentType);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -490,4 +506,8 @@ internal sealed class ImageServerTileHandler
             CultureInfo.InvariantCulture,
             $"tenant:{tenantId.Length}:{tenantId}|auth:{authenticationType.Length}:{authenticationType}|principal:{principalId.Length}:{principalId}");
     }
+
+    private static string? ResolveTileCacheTenantScope(HttpContext context)
+        => context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema
+            ?? context.RequestServices.GetService<ITenantContext>()?.TenantId;
 }

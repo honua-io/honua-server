@@ -27,7 +27,8 @@ internal static class GeoServicesCloudTileCache
         CloudStorageOptions? storageOptions,
         string objectKey,
         CancellationToken cancellationToken,
-        ITileCacheKeyIndex? keyIndex = null)
+        ITileCacheKeyIndex? keyIndex = null,
+        string? tenantScope = null)
     {
         if (storage is null || storageOptions?.Enabled == false)
         {
@@ -82,6 +83,7 @@ internal static class GeoServicesCloudTileCache
                     objectKey,
                     data.LongLength,
                     metadata.ExpiresAt,
+                    tenantScope,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -111,7 +113,8 @@ internal static class GeoServicesCloudTileCache
         string fileName,
         ImmutableDictionary<string, string> metadata,
         CancellationToken cancellationToken,
-        ITileCacheKeyIndex? keyIndex = null)
+        ITileCacheKeyIndex? keyIndex = null,
+        string? tenantScope = null)
     {
         if (storage is null || storageOptions?.Enabled == false || data.Length == 0)
         {
@@ -146,7 +149,12 @@ internal static class GeoServicesCloudTileCache
                 // quota-manage it and lifecycle deletion can fence this exact write.
                 if (keyIndex is { IsEnabled: true })
                 {
-                    await keyIndex.RecordWriteAsync(objectKey, data.LongLength, expiresAt, mutationToken).ConfigureAwait(false);
+                    await keyIndex.RecordWriteAsync(
+                        objectKey,
+                        data.LongLength,
+                        expiresAt,
+                        tenantScope,
+                        mutationToken).ConfigureAwait(false);
                 }
             }
 

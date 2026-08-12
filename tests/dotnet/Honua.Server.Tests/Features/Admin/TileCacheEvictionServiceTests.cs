@@ -198,6 +198,7 @@ public sealed class TileCacheEvictionServiceTests
             string key,
             long sizeBytes,
             DateTimeOffset? expiresAt,
+            string? tenantScope = null,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
@@ -205,6 +206,7 @@ public sealed class TileCacheEvictionServiceTests
             string key,
             long sizeBytes,
             DateTimeOffset expiresAt,
+            string? tenantScope = null,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

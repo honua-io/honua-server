@@ -28,6 +28,7 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
         string key,
         long sizeBytes,
         DateTimeOffset? expiresAt,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
@@ -36,6 +37,7 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
         string key,
         long sizeBytes,
         DateTimeOffset expiresAt,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 

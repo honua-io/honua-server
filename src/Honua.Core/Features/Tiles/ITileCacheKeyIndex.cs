@@ -21,7 +21,7 @@ public readonly record struct TileCacheIndexSnapshot(
     bool IsAvailable);
 
 /// <summary>
-/// One bounded, oldest-first page from the live tile-cache index.
+/// One bounded page from the live tile-cache index.
 /// </summary>
 /// <param name="Entries">Entries in this page.</param>
 /// <param name="IsAvailable">Whether the backing index was readable.</param>
@@ -55,18 +55,20 @@ public interface ITileCacheKeyIndex
     bool IsEnabled { get; }
 
     /// <summary>
-    /// Records a tile-cache access: upserts the tile key with its current byte size and refreshes its
-    /// last-access timestamp to now. Called on both cache writes (after a freshly rendered tile is
-    /// stored) and cache hits (so reads keep hot tiles from being evicted).
+    /// Records a tile-cache access only while the written index entry still exists, refreshing its
+    /// byte size and last-access timestamp. Called on cache hits so reads keep hot tiles from being
+    /// evicted without recreating an entry concurrently removed by a lifecycle delete.
     /// </summary>
     /// <param name="key">The tile cache key (the storage object key).</param>
     /// <param name="sizeBytes">The stored tile size in bytes.</param>
     /// <param name="expiresAt">The storage object's absolute expiration time, when available.</param>
+    /// <param name="tenantScope">Tenant/schema scope that owns the cached object.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     Task RecordAccessAsync(
         string key,
         long sizeBytes,
         DateTimeOffset? expiresAt,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -77,11 +79,13 @@ public interface ITileCacheKeyIndex
     /// <param name="key">The tile cache key (the storage object key).</param>
     /// <param name="sizeBytes">The stored tile size in bytes.</param>
     /// <param name="expiresAt">The storage object's absolute expiration time.</param>
+    /// <param name="tenantScope">Tenant/schema scope that owns the cached object.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     Task RecordWriteAsync(
         string key,
         long sizeBytes,
         DateTimeOffset expiresAt,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -123,9 +127,9 @@ public interface ITileCacheKeyIndex
             IsAvailable: true);
 
     /// <summary>
-    /// Reads bounded index pages in least-recently-used order. Backends that do not provide native
-    /// paging inherit a single-page adapter; distributed backends should override this method so a
-    /// large cache never becomes one blocking server command or one unbounded response payload.
+    /// Reads bounded index pages through a stable membership cursor. Backends that do not provide
+    /// native paging inherit a single-page adapter; distributed backends should override this method
+    /// so a large cache never becomes one blocking server command or one unbounded response payload.
     /// </summary>
     /// <param name="pageSize">Maximum entries requested per page.</param>
     /// <param name="cancellationToken">A cancellation token.</param>

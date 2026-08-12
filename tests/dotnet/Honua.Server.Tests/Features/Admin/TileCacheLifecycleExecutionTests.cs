@@ -67,6 +67,35 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_TenantScopedWindow_DoesNotRemoveAnotherTenantsTiles()
+    {
+        const string tenantAKey = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-a/2/1/1.png";
+        const string tenantBKey = "prefix/imageserver/tiles/1/webmercatorquad/default/tenant-b/2/1/1.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(tenantAKey, 100, "tenant_a");
+        index.Seed(tenantBKey, 100, "tenant_b");
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage,
+            schemaName: "tenant_a");
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.SuccessfulTiles.Should().Be(1);
+        index.Removed.Should().BeEquivalentTo([tenantAKey]);
+        index.Remaining.Should().BeEquivalentTo([tenantBKey]);
+        await storage.DidNotReceive().DeleteAsync(tenantBKey, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Delete_MaxTiles_TruncatesDeterministicWindowAndReportsWarning()
     {
         const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
@@ -713,6 +742,7 @@ public sealed class TileCacheLifecycleExecutionTests
         ICloudFileStorage storage,
         ITileCacheGenerationCheckpointStore? checkpointStore = null,
         IMetadataV2GraphProvider? graphProvider = null,
+        string? schemaName = null,
         CancellationToken cancellationToken = default)
     {
         var services = new ServiceCollection();
@@ -720,6 +750,12 @@ public sealed class TileCacheLifecycleExecutionTests
         services.AddSingleton(Substitute.For<ITileProvider>());
         services.AddSingleton(keyIndex);
         services.AddSingleton(storage);
+        if (schemaName is not null)
+        {
+            var schemaContext = Substitute.For<ISchemaContext>();
+            schemaContext.CurrentSchema.Returns(schemaName);
+            services.AddSingleton(schemaContext);
+        }
         using var provider = services.BuildServiceProvider();
 
         var cacheInvalidationService = new OutputCacheInvalidationService(
@@ -762,7 +798,7 @@ public sealed class TileCacheLifecycleExecutionTests
 
     private sealed class StatefulKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
     {
-        private readonly ConcurrentDictionary<string, long> _entries = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (long SizeBytes, string? TenantScope)> _entries = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _mutationFence = new(1, 1);
 
         public ConcurrentBag<string> Removed { get; } = [];
@@ -785,15 +821,17 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public IReadOnlyList<string> Remaining => [.. _entries.Keys];
 
-        public void Seed(string key, long sizeBytes) => _entries[key] = sizeBytes;
+        public void Seed(string key, long sizeBytes, string? tenantScope = null)
+            => _entries[key] = (sizeBytes, tenantScope);
 
         public Task RecordAccessAsync(
             string key,
             long sizeBytes,
             DateTimeOffset? expiresAt,
+            string? tenantScope = null,
             CancellationToken cancellationToken = default)
         {
-            _entries[key] = sizeBytes;
+            _entries[key] = (sizeBytes, tenantScope);
             return Task.CompletedTask;
         }
 
@@ -801,8 +839,9 @@ public sealed class TileCacheLifecycleExecutionTests
             string key,
             long sizeBytes,
             DateTimeOffset expiresAt,
+            string? tenantScope = null,
             CancellationToken cancellationToken = default)
-            => RecordAccessAsync(key, sizeBytes, expiresAt, cancellationToken);
+            => RecordAccessAsync(key, sizeBytes, expiresAt, tenantScope, cancellationToken);
 
         public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
         {
@@ -817,7 +856,11 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>(
-                [.. _entries.Select(kvp => new TileCacheEntry(kvp.Key, kvp.Value, DateTimeOffset.UtcNow))]);
+                [.. _entries.Select(kvp => new TileCacheEntry(
+                    kvp.Key,
+                    kvp.Value.SizeBytes,
+                    DateTimeOffset.UtcNow,
+                    TenantScope: kvp.Value.TenantScope))]);
 
         public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
             CancellationToken cancellationToken = default)

@@ -83,6 +83,7 @@ internal static class TileOperationsEndpoints
         }
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
+        var tenantScope = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
 
         var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
         var totalCount = 0;
@@ -101,7 +102,8 @@ internal static class TileOperationsEndpoints
 
                 foreach (var entry in page.Entries)
                 {
-                    if (!GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
+                    if (!string.Equals(entry.TenantScope, tenantScope, StringComparison.Ordinal)
+                        || !GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
                     {
                         continue;
                     }

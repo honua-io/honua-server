@@ -55,6 +55,12 @@ internal sealed partial class TileCacheEvictionService(
 
         long totalEntries = 0;
         long totalBytes = 0;
+        var lruComparer = Comparer<TileCacheEntry>.Create(static (left, right) =>
+        {
+            var byAccess = left.LastAccessUtc.CompareTo(right.LastAccessUtc);
+            return byAccess != 0 ? byAccess : string.CompareOrdinal(left.Key, right.Key);
+        });
+        var oldestCandidates = new SortedSet<TileCacheEntry>(lruComparer);
         await foreach (var page in _keyIndex.ReadPagesAsync(EvictionBatchSize, cancellationToken).ConfigureAwait(false))
         {
             if (!page.IsAvailable)
@@ -66,6 +72,11 @@ internal sealed partial class TileCacheEvictionService(
             foreach (var entry in page.Entries)
             {
                 totalBytes += entry.SizeBytes;
+                _ = oldestCandidates.Add(entry);
+                if (oldestCandidates.Count > EvictionBatchSize)
+                {
+                    _ = oldestCandidates.Remove(oldestCandidates.Max);
+                }
             }
         }
 
@@ -75,35 +86,22 @@ internal sealed partial class TileCacheEvictionService(
             return new TileCacheEvictionResult(scanned, 0, Enabled: true);
         }
 
-        // The index pages are oldest-first. Select at most one bounded batch per sweep; hosted
-        // sweeps converge large overages without ever materializing the complete index or an
-        // unbounded victim set in one process.
+        // Stable membership pages need not be LRU-ordered. The scan retained only the bounded
+        // oldest candidate set, from which this sweep selects at most one victim batch. Hosted
+        // sweeps converge large overages without materializing the complete index.
         var projectedEntries = totalEntries;
         var projectedBytes = totalBytes;
         var victims = new List<TileCacheEntry>(EvictionBatchSize);
-        await foreach (var page in _keyIndex.ReadPagesAsync(EvictionBatchSize, cancellationToken).ConfigureAwait(false))
+        foreach (var entry in oldestCandidates)
         {
-            if (!page.IsAvailable)
-            {
-                return new TileCacheEvictionResult(0, 0, Enabled: false);
-            }
-
-            foreach (var entry in page.Entries)
-            {
-                if (!ExceedsQuota(projectedEntries, projectedBytes) || victims.Count >= EvictionBatchSize)
-                {
-                    break;
-                }
-
-                victims.Add(entry);
-                projectedEntries--;
-                projectedBytes -= entry.SizeBytes;
-            }
-
             if (!ExceedsQuota(projectedEntries, projectedBytes) || victims.Count >= EvictionBatchSize)
             {
                 break;
             }
+
+            victims.Add(entry);
+            projectedEntries--;
+            projectedBytes -= entry.SizeBytes;
         }
 
         var evicted = 0;

@@ -81,7 +81,8 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var targetLayers = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
-        var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits);
+        var tenantScope = serviceProvider.GetService<ISchemaContext>()?.CurrentSchema;
+        var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits, tenantScope);
 
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
         var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
@@ -131,7 +132,7 @@ internal sealed partial class TileOperationExecutionCore
 
             foreach (var entry in page.Entries)
             {
-                if (!window.Matches(entry.Key))
+                if (!window.Matches(entry))
                 {
                     continue;
                 }
@@ -467,6 +468,7 @@ internal sealed partial class TileOperationExecutionCore
         private readonly double _maxLon;
         private readonly double _maxLat;
         private readonly bool _hasBbox;
+        private readonly string? _tenantScope;
 
         private TileCacheKeyWindow(
             HashSet<int> layers,
@@ -480,7 +482,8 @@ internal sealed partial class TileOperationExecutionCore
             double minLat,
             double maxLon,
             double maxLat,
-            bool hasBbox)
+            bool hasBbox,
+            string? tenantScope)
         {
             _layers = layers;
             _anyLayer = anyLayer;
@@ -494,12 +497,14 @@ internal sealed partial class TileOperationExecutionCore
             _maxLon = maxLon;
             _maxLat = maxLat;
             _hasBbox = hasBbox;
+            _tenantScope = tenantScope;
         }
 
         public static TileCacheKeyWindow Create(
             TileOperationStartRequest request,
             IReadOnlyList<int> targetLayers,
-            TileLimits tileLimits)
+            TileLimits tileLimits,
+            string? tenantScope)
         {
             // An unscoped internal request may target every layer. A named service that does not
             // resolve must instead match nothing; treating its empty layer set as "all layers"
@@ -536,7 +541,8 @@ internal sealed partial class TileOperationExecutionCore
                 Math.Min(bbox[1], bbox[3]),
                 Math.Max(bbox[0], bbox[2]),
                 Math.Max(bbox[1], bbox[3]),
-                hasBbox);
+                hasBbox,
+                tenantScope);
         }
 
         private static string NormalizeFormat(string format)
@@ -550,9 +556,10 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        public bool Matches(string key)
+        public bool Matches(TileCacheEntry entry)
         {
-            if (!GeneratedTileCacheKey.TryParse(key, out var parsed))
+            if (!string.Equals(entry.TenantScope, _tenantScope, StringComparison.Ordinal)
+                || !GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
             {
                 return false;
             }

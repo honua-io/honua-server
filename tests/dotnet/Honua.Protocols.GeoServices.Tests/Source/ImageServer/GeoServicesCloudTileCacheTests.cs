@@ -54,12 +54,14 @@ public sealed class GeoServicesCloudTileCacheTests
             "1.png",
             ImmutableDictionary<string, string>.Empty,
             CancellationToken.None,
-            keyIndex);
+            keyIndex,
+            tenantScope: "tenant_a");
 
         await keyIndex.Received(1).RecordWriteAsync(
             ObjectKey,
             data.LongLength,
             Arg.Any<DateTimeOffset>(),
+            "tenant_a",
             Arg.Any<CancellationToken>());
     }
 
@@ -87,6 +89,7 @@ public sealed class GeoServicesCloudTileCacheTests
             Arg.Any<string>(),
             Arg.Any<long>(),
             Arg.Any<DateTimeOffset>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 }
