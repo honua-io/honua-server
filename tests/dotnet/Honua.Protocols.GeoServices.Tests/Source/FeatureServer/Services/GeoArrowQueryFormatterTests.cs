@@ -300,18 +300,16 @@ public sealed class GeoArrowQueryFormatterTests
         var extensionMetadata = geometryField.Metadata["ARROW:extension:metadata"];
 
         // Golden assertion: the exact extension metadata is the authoritative EPSG:4326
-        // PROJJSON paired with crs_type, and nothing else.
+        // PROJJSON as the sole metadata key; the object value identifies its CRS type.
         extensionMetadata.Should().Be(ExpectedWgs84ExtensionMetadata());
 
         using var doc = JsonDocument.Parse(extensionMetadata);
 
-        // GeoArrow 0.2 supports only crs, crs_type, and edges as extension metadata keys.
+        // No implementation-specific keys are emitted alongside the required CRS.
         doc.RootElement.EnumerateObject().Select(p => p.Name)
-            .Should().BeEquivalentTo(["crs", "crs_type"],
-                "GeoArrow 0.2 extension metadata supports only crs, crs_type, and edges");
+            .Should().Equal("crs");
 
         // The output CRS is declared as PROJJSON resolving to EPSG:4326.
-        doc.RootElement.GetProperty("crs_type").GetString().Should().Be("projjson");
         var crs = doc.RootElement.GetProperty("crs");
         crs.ValueKind.Should().Be(JsonValueKind.Object, "GeoArrow producers should write PROJJSON");
         crs.GetProperty("id").GetProperty("authority").GetString().Should().Be("EPSG");
@@ -512,14 +510,14 @@ public sealed class GeoArrowQueryFormatterTests
 
     /// <summary>
     /// The exact GeoArrow 0.2 extension metadata the formatter must emit for EPSG:4326
-    /// output: the authoritative catalog PROJJSON plus <c>crs_type</c>, with planar edges
-    /// declared by omitting <c>edges</c> and no GeoParquet-only keys.
+    /// output: the authoritative catalog PROJJSON, with planar edges declared by omitting
+    /// <c>edges</c> and no GeoParquet-only keys.
     /// </summary>
     private static string ExpectedWgs84ExtensionMetadata()
     {
         GeoParquetProjJsonCatalog.TryGetProjJson(4326, out var projJson).Should().BeTrue(
             "the embedded PROJJSON catalog must contain EPSG:4326");
-        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
+        return $@"{{""crs"":{projJson}}}";
     }
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)

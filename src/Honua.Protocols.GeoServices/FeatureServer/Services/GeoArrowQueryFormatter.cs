@@ -524,8 +524,8 @@ internal sealed class GeoArrowQueryFormatter
     {
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // GeoArrow 0.2 (https://geoarrow.org/extension-types.html) supports only `crs`,
-        // `crs_type`, and `edges` in ARROW:extension:metadata:
+        // GeoArrow 0.2 (https://geoarrow.org/extension-types.html) supports only `crs`
+        // and optional `edges` in ARROW:extension:metadata:
         // - `crs` is emitted as the authoritative PROJJSON for the output SRID. GeoArrow has
         //   no default CRS (omission means "unknown"), so the known output CRS must always be
         //   declared. Coordinates stay (x, y) / (longitude, latitude) per the GeoArrow
@@ -541,7 +541,7 @@ internal sealed class GeoArrowQueryFormatter
             return null;
         }
 
-        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
+        return $@"{{""crs"":{projJson}}}";
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
