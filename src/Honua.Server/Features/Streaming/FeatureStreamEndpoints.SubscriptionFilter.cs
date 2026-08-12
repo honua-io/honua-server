@@ -57,6 +57,7 @@ internal static partial class FeatureStreamEndpoints
         bool hasAnyFilter = serviceId is not null;
 
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        deps.RoutabilityGuard.Update(snapshot);
         MetadataV2Service? service = null;
 
         if (serviceId is not null)
@@ -307,7 +308,8 @@ internal static partial class FeatureStreamEndpoints
             layerIds: layerIds,
             bbox: bbox,
             attributeFilter: attributeFilter,
-            temporalFilter: temporalFilter);
+            temporalFilter: temporalFilter,
+            routabilityGuard: deps.RoutabilityGuard);
 
         var snapshotScopeError = ValidateSnapshotScope(mode, filter);
         if (snapshotScopeError is not null)

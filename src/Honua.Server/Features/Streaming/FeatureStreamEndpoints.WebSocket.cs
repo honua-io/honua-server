@@ -1132,6 +1132,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var serviceId = NullIfEmpty(control.ServiceId);
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        deps.RoutabilityGuard.Update(snapshot);
         MetadataV2Service? service = null;
         if (serviceId is not null)
         {
@@ -1328,7 +1329,13 @@ internal static partial class FeatureStreamEndpoints
             temporalFilter = parsedTemporalFilter;
         }
 
-        return (new StreamSubscriptionFilter(serviceId, layerIds, bbox, attributeFilter, temporalFilter), null);
+        return (new StreamSubscriptionFilter(
+            serviceId,
+            layerIds,
+            bbox,
+            attributeFilter,
+            temporalFilter,
+            deps.RoutabilityGuard), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

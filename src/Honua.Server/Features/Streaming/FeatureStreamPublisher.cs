@@ -50,7 +50,10 @@ internal sealed partial class FeatureStreamPublisher(
             return;
         }
 
-        FanOut(persisted);
+        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
+        {
+            FanOut(persisted);
+        }
     }
 
     public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -60,7 +63,10 @@ internal sealed partial class FeatureStreamPublisher(
         // silently transferring durability to the best-effort retry queue.
         var durableRequest = EnsureEventId(request);
         var persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
-        FanOut(persisted);
+        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
+        {
+            FanOut(persisted);
+        }
     }
 
     private static FeatureChangeEventRequest EnsureEventId(FeatureChangeEventRequest request)

@@ -3,9 +3,11 @@
 
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -581,6 +583,56 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         }
 
         Assert.Equal(2, count);
+    }
+
+    [UnitTest]
+    public async Task Broadcast_ServiceFilterStopsMatchingWhenPublicationIsRetired()
+    {
+        const string serviceName = "mutable-stream";
+        const int storageLayerId = 41;
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-mutable-stream", "Mutable Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-mutable-stream",
+                "res-mutable-stream",
+                "test.layers.mutable_stream",
+                storageLayerId: storageLayerId)
+            .AddService("svc-mutable-stream", serviceName)
+            .AddPublication(
+                "pub-mutable-stream",
+                "svc-mutable-stream",
+                "res-mutable-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-mutable-stream")
+            .Build();
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var guard = new FeatureStreamRoutabilityGuard();
+        guard.Update(await provider.GetCurrentAsync());
+        var filter = new StreamSubscriptionFilter(
+            serviceId: serviceName,
+            layerIds: [storageLayerId],
+            routabilityGuard: guard);
+        using var session = _manager.CreateSession("WebSocket", "metadata-routability", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1, layerId: storageLayerId, serviceId: serviceName)));
+        Assert.True(session.Reader.TryRead(out _));
+
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                })
+                .ToArray()
+        });
+        guard.Update(await provider.GetCurrentAsync());
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 2, layerId: storageLayerId, serviceId: serviceName)));
+        Assert.False(session.Reader.TryRead(out _));
     }
 
     [UnitTest]

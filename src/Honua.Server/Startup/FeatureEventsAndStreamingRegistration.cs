@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Events.Outbox;
 using Honua.Infrastructure.Extensions;
@@ -68,12 +69,15 @@ internal static partial class FeatureEventsAndStreamingRegistration
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<FeatureStreamOptions>, FeatureStreamOptionsValidator>();
         services.AddSingleton<FeatureStreamMetrics>();
+        services.AddSingleton<FeatureStreamRoutabilityGuard>();
         services.AddSingleton<FeatureStreamSessionManager>(sp =>
             new FeatureStreamSessionManager(
                 sp.GetRequiredService<IOptions<FeatureStreamOptions>>(),
                 sp.GetRequiredService<ILogger<FeatureStreamSessionManager>>(),
                 sp.GetRequiredService<FeatureStreamMetrics>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<IMetadataV2GraphProvider>(),
+                sp.GetRequiredService<FeatureStreamRoutabilityGuard>()));
         services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<PendingFeatureChangeSignal>());
         services.AddSingleton<IFeatureChangeRetryQueue>(sp =>
             new FeatureChangeRetryQueue(

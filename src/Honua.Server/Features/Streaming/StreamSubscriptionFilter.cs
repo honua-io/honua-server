@@ -22,6 +22,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     private readonly double[]? _bbox;
     private readonly FilterExpression? _attributeFilter;
     private readonly StreamTemporalFilter? _temporalFilter;
+    private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
 
     /// <summary>
     /// Creates a composite subscription filter.
@@ -31,18 +32,21 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// <param name="bbox">Bounding box [MinX, MinY, MaxX, MaxY] (null = no spatial filter).</param>
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
     /// <param name="temporalFilter">Parsed temporal interval filter (null = no temporal filter).</param>
+    /// <param name="routabilityGuard">Live metadata-derived routing guard for open subscriptions.</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
         int[]? layerIds = null,
         double[]? bbox = null,
         FilterExpression? attributeFilter = null,
-        StreamTemporalFilter? temporalFilter = null)
+        StreamTemporalFilter? temporalFilter = null,
+        FeatureStreamRoutabilityGuard? routabilityGuard = null)
     {
         _serviceId = serviceId;
         _layerIds = layerIds;
         _bbox = bbox;
         _attributeFilter = attributeFilter;
         _temporalFilter = temporalFilter;
+        _routabilityGuard = routabilityGuard;
     }
 
     /// <summary>
@@ -120,6 +124,12 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
         ref bool propertiesParsed)
     {
+        if (_routabilityGuard is not null &&
+            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId))
+        {
+            return false;
+        }
+
         // 1. Service filter — cheapest, short-circuits first.
         if (_serviceId is not null &&
             !string.Equals(envelope.ServiceId, _serviceId, StringComparison.OrdinalIgnoreCase))

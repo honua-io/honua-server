@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -36,6 +37,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly ILogger<FeatureStreamSessionManager> _logger;
     private readonly FeatureStreamMetrics _metrics;
     private readonly IConnectionMultiplexer? _redis;
+    private readonly IMetadataV2GraphProvider? _metadataProvider;
+    private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
     private ISubscriber? _subscriber;
     private readonly Timer? _clusterBroadcastRecoveryTimer;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
@@ -54,12 +57,16 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         IOptions<FeatureStreamOptions> options,
         ILogger<FeatureStreamSessionManager> logger,
         FeatureStreamMetrics metrics,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        IMetadataV2GraphProvider? metadataProvider = null,
+        FeatureStreamRoutabilityGuard? routabilityGuard = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _redis = redis;
+        _metadataProvider = metadataProvider;
+        _routabilityGuard = routabilityGuard;
 
         if (_redis is null)
         {
@@ -106,6 +113,35 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Configured concurrent-session cap. Exposed for the health check's saturation signal.
     /// </summary>
     public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
+
+    /// <summary>
+    /// Refreshes the routing state referenced by all open scoped subscriptions. Failure clears
+    /// the state so a stale filter fails closed until metadata becomes readable again.
+    /// </summary>
+    public async ValueTask<bool> RefreshRoutabilityAsync(CancellationToken cancellationToken = default)
+    {
+        if (_metadataProvider is null || _routabilityGuard is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var snapshot = await _metadataProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            _routabilityGuard.Update(snapshot);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _routabilityGuard.Invalidate();
+            FeatureStreamLog.RoutabilityRefreshFailed(_logger, ex);
+            return false;
+        }
+    }
 
     /// <summary>
     /// Point-in-time snapshot of the cross-node broadcast backlog for the health check:
@@ -492,6 +528,26 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 return;
             }
 
+            _ = HandleClusterBroadcastAsync(payload);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Intentional broad catch: this handles an inbound Redis pub/sub callback for
+            // a cross-node broadcast. A malformed or unexpected payload must not throw back
+            // into StackExchange.Redis's dispatch thread; log and drop the message.
+            LogClusterBroadcastFailedOnce(ex);
+        }
+    }
+
+    private async Task HandleClusterBroadcastAsync(FeatureStreamBroadcastMessage payload)
+    {
+        try
+        {
+            if (!await RefreshRoutabilityAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
             BroadcastLocally(FeatureStreamMessage.Data(
                 payload.Envelope,
                 payload.GeometryEnvelope,
@@ -499,9 +555,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional broad catch: this handles an inbound Redis pub/sub callback for
-            // a cross-node broadcast. A malformed or unexpected payload must not throw back
-            // into StackExchange.Redis's dispatch thread; log and drop the message.
             LogClusterBroadcastFailedOnce(ex);
         }
     }
