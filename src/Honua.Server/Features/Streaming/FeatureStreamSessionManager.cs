@@ -139,6 +139,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         await _routabilityRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
+        var refreshGeneration = _routabilityGuard.BeginRefresh();
         try
         {
             now = Environment.TickCount64;
@@ -148,7 +149,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
 
             var snapshot = await ReadScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
-            _routabilityGuard.Update(snapshot);
+            _routabilityGuard.Update(refreshGeneration, snapshot);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
             return true;
         }
@@ -158,7 +159,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _routabilityGuard.Invalidate();
+            _routabilityGuard.Invalidate(refreshGeneration);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 0);
             FeatureStreamLog.RoutabilityRefreshFailed(_logger, ex);
             return false;

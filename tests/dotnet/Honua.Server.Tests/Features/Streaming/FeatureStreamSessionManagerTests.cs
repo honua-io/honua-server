@@ -609,7 +609,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var guard = new FeatureStreamRoutabilityGuard();
-        guard.Update(await provider.GetCurrentAsync());
+        guard.Update(guard.BeginRefresh(), await provider.GetCurrentAsync());
         var filter = new StreamSubscriptionFilter(routabilityGuard: guard);
         using var session = _manager.CreateSession("WebSocket", "metadata-routability", filter);
 
@@ -627,7 +627,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
                 })
                 .ToArray()
         });
-        guard.Update(await provider.GetCurrentAsync());
+        guard.Update(guard.BeginRefresh(), await provider.GetCurrentAsync());
 
         _manager.Broadcast(FeatureStreamMessage.Data(
             CreateEnvelope(cursor: 2, layerId: storageLayerId, serviceId: serviceName)));
@@ -635,12 +635,12 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public async Task RoutabilityGuard_OlderSnapshot_DoesNotReenableRetiredRoute()
+    public async Task RoutabilityGuard_LaterRollbackSnapshot_WinsOverEarlierRefresh()
     {
         const string serviceName = "versioned-stream";
         const int storageLayerId = 43;
         var activeGraph = new TestMetadataV2GraphBuilder()
-            .WithRevision(7)
+            .WithRevision(8)
             .AddResource("res-versioned-stream", "Versioned Stream", MetadataV2ResourceType.FeatureDataset)
             .AddStorageBinding(
                 "binding-versioned-stream",
@@ -657,7 +657,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             .Build();
         var retiredGraph = activeGraph with
         {
-            Revision = 8,
+            Revision = 7,
             Publications = activeGraph.Publications
                 .Select(publication => publication with
                 {
@@ -669,8 +669,11 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         var retiredSnapshot = await new TestMetadataV2GraphProvider(retiredGraph).GetCurrentAsync();
         var guard = new FeatureStreamRoutabilityGuard();
 
-        guard.Update(retiredSnapshot);
-        guard.Update(activeSnapshot);
+        guard.Update(guard.BeginRefresh(), activeSnapshot);
+        var earlierRefresh = guard.BeginRefresh();
+        var rollbackRefresh = guard.BeginRefresh();
+        guard.Update(rollbackRefresh, retiredSnapshot);
+        guard.Update(earlierRefresh, activeSnapshot);
 
         Assert.False(guard.IsRoutable(serviceName, storageLayerId));
     }

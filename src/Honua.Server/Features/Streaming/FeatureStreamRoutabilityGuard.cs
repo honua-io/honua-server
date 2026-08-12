@@ -13,10 +13,14 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal sealed class FeatureStreamRoutabilityGuard
 {
+    private long _nextRefreshGeneration;
     private RoutabilityState _state = RoutabilityState.Empty;
 
-    public void Update(MetadataV2GraphSnapshot snapshot)
+    public long BeginRefresh() => Interlocked.Increment(ref _nextRefreshGeneration);
+
+    public void Update(long refreshGeneration, MetadataV2GraphSnapshot snapshot)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(refreshGeneration);
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -43,11 +47,11 @@ internal sealed class FeatureStreamRoutabilityGuard
             }
         }
 
-        var next = new RoutabilityState(snapshot.Graph.Revision, routes);
+        var next = new RoutabilityState(refreshGeneration, routes);
         while (true)
         {
             var current = Volatile.Read(ref _state);
-            if (next.Revision < current.Revision)
+            if (next.RefreshGeneration < current.RefreshGeneration)
             {
                 return;
             }
@@ -59,13 +63,20 @@ internal sealed class FeatureStreamRoutabilityGuard
         }
     }
 
-    public void Invalidate()
+    public void Invalidate(long refreshGeneration)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(refreshGeneration);
+
         while (true)
         {
             var current = Volatile.Read(ref _state);
+            if (refreshGeneration < current.RefreshGeneration)
+            {
+                return;
+            }
+
             var invalid = new RoutabilityState(
-                current.Revision,
+                refreshGeneration,
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
             {
@@ -80,7 +91,7 @@ internal sealed class FeatureStreamRoutabilityGuard
     private static string RouteKey(string serviceId, int layerId)
         => string.Concat(serviceId, "\u001f", layerId.ToString(CultureInfo.InvariantCulture));
 
-    private sealed record RoutabilityState(long Revision, HashSet<string> Routes)
+    private sealed record RoutabilityState(long RefreshGeneration, HashSet<string> Routes)
     {
         public static RoutabilityState Empty { get; } = new(
             0,

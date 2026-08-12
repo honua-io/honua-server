@@ -1132,8 +1132,9 @@ internal static partial class FeatureStreamEndpoints
         CancellationToken cancellationToken)
     {
         var serviceId = NullIfEmpty(control.ServiceId);
+        var refreshGeneration = deps.RoutabilityGuard.BeginRefresh();
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        deps.RoutabilityGuard.Update(snapshot);
+        deps.RoutabilityGuard.Update(refreshGeneration, snapshot);
         MetadataV2Service? service = null;
         if (serviceId is not null)
         {
