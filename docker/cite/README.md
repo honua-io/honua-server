@@ -15,8 +15,13 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
   `http://cite.opengeospatial.org/OGCTestData/wms/1.1.1/null.xml` before asserting
   anything, and when OGC's host stops answering CI runners those five tests fail
   with ~135s `java.net.ConnectException` timeouts that look like a server outage
-  (honua-server#3156). The stub keeps the suite hermetic; the runner script
-  preflights the alias before starting the suite.
+  (honua-server#3156) — most likely datacenter-IP-range blocking of CI traffic,
+  since the host still answers residential networks. Caching the real data is not
+  an option: OGC decommissioned the `OGCTestData` tree and the live host now 301s
+  that path to the CITE GitHub wiki, so historical green runs were "validating"
+  wiki HTML; the test only requires that the host answer. The stub keeps the
+  suite hermetic; the runner script preflights the alias before starting the
+  suite.
 - `wms13/` - WMS 1.3 CITE compose and config.
 - `wcs20/` - WCS 2.0 CITE compose, config, and deterministic local raster seed data.
 - `wmts10/` - WMTS 1.0 CITE compose and config.
