@@ -71,11 +71,16 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         // Fall back to the stable external subject (SCIM externalId / OIDC sub) so a
         // deferred security snapshot keyed by the OIDC subject resolves the managed record
         // even when the SCIM userName differs from the subject (honua-server#3141).
-        return Task.FromResult(FindByExternalIdInternal(userId));
+        var matches = _users.Values
+            .Where(user => ExternalIdEquals(user, userId, issuer: null, requireIssuerMatch: false))
+            .Take(2)
+            .ToArray();
+        return Task.FromResult(matches.Length == 1 ? matches[0] : null);
     }
 
     public Task<ManagedUser?> GetUserByPrincipalIdAsync(
         string principalId,
+        string? issuer = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(principalId))
@@ -86,7 +91,12 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         // Authentication snapshots are keyed by the IdP-owned subject. Resolve that
         // namespace first so an unrelated record whose userId happens to equal the
         // subject cannot contribute its roles.
-        var externalUser = FindByExternalIdInternal(principalId);
+        var externalUser = FindByExternalIdInternal(principalId, issuer);
+        if (issuer is not null)
+        {
+            return Task.FromResult(externalUser);
+        }
+
         return Task.FromResult(externalUser ??
             (_users.TryGetValue(principalId, out var directUser) ? directUser : null));
     }
@@ -102,6 +112,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         {
             UserId = existing.UserId,
             ExternalId = existing.ExternalId,
+            ExternalIssuer = existing.ExternalIssuer,
             DisplayName = existing.DisplayName,
             Email = existing.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -139,7 +150,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         // overwriting.
         var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? null : provisioning.ExternalId.Trim();
         if (FindByUserNameInternal(provisioning.UserName) is not null ||
-            (externalId is not null && FindByExternalIdInternal(externalId) is not null))
+            (externalId is not null && FindByExternalIdInternal(externalId, provisioning.ExternalIssuer) is not null))
         {
             return Task.FromResult<ManagedUser?>(null);
         }
@@ -149,6 +160,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         {
             UserId = provisioning.UserName,
             ExternalId = externalId,
+            ExternalIssuer = NormalizeIssuer(provisioning.ExternalIssuer),
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = "scim",
@@ -200,6 +212,9 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
             // subject on a PUT that omits it would orphan in-flight deferred snapshots
             // keyed by that subject (honua-server#3141).
             ExternalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? existing.ExternalId : provisioning.ExternalId.Trim(),
+            ExternalIssuer = string.IsNullOrWhiteSpace(provisioning.ExternalId)
+                ? existing.ExternalIssuer
+                : NormalizeIssuer(provisioning.ExternalIssuer),
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -288,11 +303,23 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return _users.Values.FirstOrDefault(u => u.UserId.Equals(userName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private ManagedUser? FindByExternalIdInternal(string externalId)
+    private ManagedUser? FindByExternalIdInternal(string externalId, string? issuer)
         => string.IsNullOrWhiteSpace(externalId)
             ? null
             : _users.Values.FirstOrDefault(u =>
-                u.ExternalId is not null && u.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase));
+                ExternalIdEquals(u, externalId, issuer, requireIssuerMatch: true));
+
+    private static bool ExternalIdEquals(
+        ManagedUser user,
+        string externalId,
+        string? issuer,
+        bool requireIssuerMatch)
+        => user.ExternalId is not null
+            && user.ExternalId.Equals(externalId, StringComparison.Ordinal)
+            && (!requireIssuerMatch || string.Equals(user.ExternalIssuer, NormalizeIssuer(issuer), StringComparison.Ordinal));
+
+    private static string? NormalizeIssuer(string? issuer)
+        => string.IsNullOrWhiteSpace(issuer) ? null : issuer.Trim();
 
     private static ManagedUser Deactivate(ManagedUser existing) => Clone(existing, isActive: false, roles: []);
 
@@ -300,6 +327,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
     {
         UserId = existing.UserId,
         ExternalId = existing.ExternalId,
+        ExternalIssuer = existing.ExternalIssuer,
         DisplayName = existing.DisplayName,
         Email = existing.Email,
         ProvisioningSource = existing.ProvisioningSource,

@@ -22,21 +22,23 @@ namespace Honua.Db.Postgres.Features.Identity;
 /// <remarks>
 /// Identifier resolution (finding 2 of #3141): administrative <see cref="GetUserAsync"/>
 /// calls prefer the record id (the SCIM <c>userName</c>), while authentication membership
-/// calls use <see cref="GetUserByPrincipalIdAsync"/> and prefer the indexed
-/// <c>external_id</c> (the IdP-owned stable subject, conventionally the OIDC <c>sub</c>).
-/// The separate precedence rules prevent a record-id/external-subject collision from
-/// resolving security membership to the wrong user. Because this store is
+/// calls use <see cref="GetUserByPrincipalIdAsync"/> and match the indexed, case-sensitive
+/// pair of <c>external_issuer</c> plus <c>external_id</c> (the validated OIDC issuer and
+/// subject). The separate namespace prevents both record-id and cross-issuer subject
+/// collisions from resolving security membership to the wrong user. Because this store is
 /// shared, a resolution miss is authoritative — the #3119 fail-closed managed-membership
 /// marker remains as defense in depth for identifier drift and store outages.
 /// </remarks>
 internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 {
     private const string UserColumns =
-        "u.user_id, u.external_id, u.display_name, u.email, u.provisioning_source, u.provider_id, u.is_active, u.created_at, u.updated_at";
+        "u.user_id, u.external_id, u.external_issuer, u.display_name, u.email, u.provisioning_source, u.provider_id, u.is_active, u.created_at, u.updated_at";
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _usersTable;
     private readonly string _rolesTable;
+    private readonly string _groupsTable;
+    private readonly string _groupMembersTable;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PostgresUserStore"/> class.
@@ -50,6 +52,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         _dataSource = dataSource;
         _usersTable = SchemaSearchPath.QualifyTable("managed_users", schemaName);
         _rolesTable = SchemaSearchPath.QualifyTable("managed_user_roles", schemaName);
+        _groupsTable = SchemaSearchPath.QualifyTable("scim_groups", schemaName);
+        _groupMembersTable = SchemaSearchPath.QualifyTable("scim_group_members", schemaName);
     }
 
     /// <summary>
@@ -63,10 +67,11 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         ArgumentNullException.ThrowIfNull(user);
 
         var upsert = $"""
-            INSERT INTO {_usersTable} (user_id, external_id, display_name, email, provisioning_source, provider_id, is_active, created_at, updated_at)
-            VALUES (@user_id, @external_id, @display_name, @email, @provisioning_source, @provider_id, @is_active, @created_at, @updated_at)
+            INSERT INTO {_usersTable} (user_id, external_id, external_issuer, display_name, email, provisioning_source, provider_id, is_active, created_at, updated_at)
+            VALUES (@user_id, @external_id, @external_issuer, @display_name, @email, @provisioning_source, @provider_id, @is_active, @created_at, @updated_at)
             ON CONFLICT (user_id) DO UPDATE SET
                 external_id = EXCLUDED.external_id,
+                external_issuer = EXCLUDED.external_issuer,
                 display_name = EXCLUDED.display_name,
                 email = EXCLUDED.email,
                 provisioning_source = EXCLUDED.provisioning_source,
@@ -82,6 +87,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         {
             command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, user.UserId);
             command.Parameters.AddWithValue("external_id", NpgsqlDbType.Varchar, (object?)user.ExternalId ?? DBNull.Value);
+            command.Parameters.AddWithValue("external_issuer", NpgsqlDbType.Varchar, (object?)NormalizeIssuer(user.ExternalIssuer) ?? DBNull.Value);
             command.Parameters.AddWithValue("display_name", NpgsqlDbType.Varchar, user.DisplayName);
             command.Parameters.AddWithValue("email", NpgsqlDbType.Varchar, (object?)user.Email ?? DBNull.Value);
             command.Parameters.AddWithValue("provisioning_source", NpgsqlDbType.Varchar, user.ProvisioningSource);
@@ -173,22 +179,54 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
     /// <inheritdoc />
     /// <remarks>
     /// Resolves <paramref name="userId"/> against the record id (SCIM <c>userName</c>)
-    /// first, then the indexed external subject (<c>external_id</c>), both
-    /// case-insensitively. Authentication membership uses the dedicated principal lookup
-    /// below, whose inverse precedence protects cross-column collisions (#3141).
+    /// first, then an unambiguous exact external subject (<c>external_id</c>).
+    /// Authentication membership uses the dedicated issuer-scoped principal lookup below.
     /// </remarks>
     public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
-        => GetUserByIdentifierAsync(userId, preferExternalId: false, cancellationToken);
+        => GetUserByIdentifierAsync(userId, cancellationToken);
 
     /// <inheritdoc />
-    public Task<ManagedUser?> GetUserByPrincipalIdAsync(
+    public async Task<ManagedUser?> GetUserByPrincipalIdAsync(
         string principalId,
+        string? issuer = null,
         CancellationToken cancellationToken = default)
-        => GetUserByIdentifierAsync(principalId, preferExternalId: true, cancellationToken);
+    {
+        if (string.IsNullOrWhiteSpace(principalId))
+        {
+            return null;
+        }
+
+        var normalizedIssuer = NormalizeIssuer(issuer);
+        var where = normalizedIssuer is null
+            ? "WHERE u.external_id = @id AND u.external_issuer IS NULL OR LOWER(u.user_id) = LOWER(@id)"
+            : "WHERE u.external_id = @id AND u.external_issuer = @issuer";
+        var sql = $"""
+            {SelectUsersSql(where)}
+            ORDER BY (u.external_id = @id) DESC
+            LIMIT 1
+            """;
+
+        try
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("id", NpgsqlDbType.Varchar, principalId);
+            if (normalizedIssuer is not null)
+            {
+                command.Parameters.AddWithValue("issuer", NpgsqlDbType.Varchar, normalizedIssuer);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadUser(reader) : null;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
+        {
+            return null;
+        }
+    }
 
     private async Task<ManagedUser?> GetUserByIdentifierAsync(
         string identifier,
-        bool preferExternalId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -196,11 +234,11 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             return null;
         }
 
-        var precedenceColumn = preferExternalId ? "u.external_id" : "u.user_id";
-
+        var where = "WHERE LOWER(u.user_id) = LOWER(@id) "
+            + $"OR (u.external_id = @id AND 1 = (SELECT COUNT(*) FROM {_usersTable} x WHERE x.external_id = @id))";
         var sql = $"""
-            {SelectUsersSql("WHERE LOWER(u.user_id) = LOWER(@id) OR LOWER(u.external_id) = LOWER(@id)")}
-            ORDER BY (LOWER({precedenceColumn}) = LOWER(@id)) DESC
+            {SelectUsersSql(where)}
+            ORDER BY (LOWER(u.user_id) = LOWER(@id)) DESC
             LIMIT 1
             """;
 
@@ -275,10 +313,11 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         var userId = provisioning.UserName.Trim();
         var roles = NormalizeRoles(provisioning.Roles);
         var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? null : provisioning.ExternalId.Trim();
+        var externalIssuer = externalId is null ? null : NormalizeIssuer(provisioning.ExternalIssuer);
 
         var insert = $"""
-            INSERT INTO {_usersTable} (user_id, external_id, display_name, email, provisioning_source, provider_id, is_active, created_at, updated_at)
-            VALUES (@user_id, @external_id, @display_name, @email, 'scim', NULL, @is_active, @created_at, @updated_at)
+            INSERT INTO {_usersTable} (user_id, external_id, external_issuer, display_name, email, provisioning_source, provider_id, is_active, created_at, updated_at)
+            VALUES (@user_id, @external_id, @external_issuer, @display_name, @email, 'scim', NULL, @is_active, @created_at, @updated_at)
             """;
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -290,6 +329,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             {
                 command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, userId);
                 command.Parameters.AddWithValue("external_id", NpgsqlDbType.Varchar, (object?)externalId ?? DBNull.Value);
+                command.Parameters.AddWithValue("external_issuer", NpgsqlDbType.Varchar, (object?)externalIssuer ?? DBNull.Value);
                 command.Parameters.AddWithValue("display_name", NpgsqlDbType.Varchar,
                     string.IsNullOrWhiteSpace(provisioning.DisplayName) ? userId : provisioning.DisplayName);
                 command.Parameters.AddWithValue("email", NpgsqlDbType.Varchar, (object?)provisioning.Email ?? DBNull.Value);
@@ -299,7 +339,13 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await ReplaceRolesAsync(connection, transaction, userId, roles, cancellationToken).ConfigureAwait(false);
+            var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, userId, cancellationToken).ConfigureAwait(false);
+            await ReplaceRolesAsync(
+                connection,
+                transaction,
+                userId,
+                NormalizeRoles([.. roles, .. groupRoles]),
+                cancellationToken).ConfigureAwait(false);
             var created = await ReadUserByCanonicalIdAsync(connection, transaction, userId, cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return created;
@@ -421,6 +467,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 email = @email,
                 is_active = @is_active,
                 external_id = COALESCE(@external_id, external_id),
+                external_issuer = CASE WHEN @external_id IS NULL THEN external_issuer ELSE @external_issuer END,
                 updated_at = NOW()
             WHERE user_id = @user_id
             """;
@@ -436,6 +483,10 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 command.Parameters.AddWithValue("email", NpgsqlDbType.Varchar, (object?)provisioning.Email ?? DBNull.Value);
                 command.Parameters.AddWithValue("is_active", NpgsqlDbType.Boolean, provisioning.Active);
                 command.Parameters.AddWithValue("external_id", NpgsqlDbType.Varchar, (object?)externalId ?? DBNull.Value);
+                command.Parameters.AddWithValue(
+                    "external_issuer",
+                    NpgsqlDbType.Varchar,
+                    (object?)NormalizeIssuer(provisioning.ExternalIssuer) ?? DBNull.Value);
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -468,12 +519,16 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         if (active)
         {
-            // Reactivation restores the account but not previously revoked roles (in-memory
-            // store parity: deactivation cleared the role set).
             var update = $"UPDATE {_usersTable} SET is_active = TRUE, updated_at = NOW() WHERE user_id = @user_id";
             await using var command = new NpgsqlCommand(update, connection, transaction);
             command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, canonicalId);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            // Group memberships intentionally survive deprovisioning. Restore their mapped
+            // roles when the user is reactivated so the durable group view and user role view
+            // cannot diverge after delete/reprovision flows.
+            var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
+            await ReplaceRolesAsync(connection, transaction, canonicalId, groupRoles, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -504,19 +559,20 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
     {
         UserId = reader.GetString(0),
         ExternalId = reader.IsDBNull(1) ? null : reader.GetString(1),
-        DisplayName = reader.GetString(2),
-        Email = reader.IsDBNull(3) ? null : reader.GetString(3),
-        ProvisioningSource = reader.GetString(4),
-        ProviderId = reader.IsDBNull(5) ? null : reader.GetGuid(5),
-        IsActive = reader.GetBoolean(6),
-        CreatedAt = reader.GetFieldValue<DateTimeOffset>(7),
-        UpdatedAt = reader.GetFieldValue<DateTimeOffset>(8),
-        Roles = reader.GetFieldValue<string[]>(9),
+        ExternalIssuer = reader.IsDBNull(2) ? null : reader.GetString(2),
+        DisplayName = reader.GetString(3),
+        Email = reader.IsDBNull(4) ? null : reader.GetString(4),
+        ProvisioningSource = reader.GetString(5),
+        ProviderId = reader.IsDBNull(6) ? null : reader.GetGuid(6),
+        IsActive = reader.GetBoolean(7),
+        CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+        UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+        Roles = reader.GetFieldValue<string[]>(10),
     };
 
     /// <summary>
     /// Resolves the canonical record id for a caller-supplied identifier: exact record id
-    /// (SCIM <c>userName</c>) wins over an external-subject match, both case-insensitive.
+    /// (SCIM <c>userName</c>) wins over an exact external-subject match.
     /// Returns <see langword="null"/> when no record matches or the tables do not exist.
     /// </summary>
     private async Task<string?> ResolveCanonicalUserIdAsync(
@@ -532,7 +588,8 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         var sql = $"""
             SELECT user_id FROM {_usersTable}
-            WHERE LOWER(user_id) = LOWER(@id) OR LOWER(external_id) = LOWER(@id)
+            WHERE LOWER(user_id) = LOWER(@id)
+               OR (external_id = @id AND 1 = (SELECT COUNT(*) FROM {_usersTable} x WHERE x.external_id = @id))
             ORDER BY (LOWER(user_id) = LOWER(@id)) DESC
             LIMIT 1
             """;
@@ -565,6 +622,32 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadUser(reader) : null;
+    }
+
+    private async Task<List<string>> ReadGroupRolesForUserAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string canonicalId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT DISTINCT g.display_name
+            FROM {_groupMembersTable} m
+            INNER JOIN {_groupsTable} g ON g.group_id = m.group_id
+            WHERE LOWER(m.user_id) = LOWER(@user_id)
+            ORDER BY g.display_name
+            """;
+
+        var roles = new List<string>();
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, canonicalId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            roles.Add(reader.GetString(0));
+        }
+
+        return roles;
     }
 
     private async Task ReplaceRolesAsync(
@@ -644,4 +727,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
             .Select(static r => r.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static string? NormalizeIssuer(string? issuer)
+        => string.IsNullOrWhiteSpace(issuer) ? null : issuer.Trim();
 }

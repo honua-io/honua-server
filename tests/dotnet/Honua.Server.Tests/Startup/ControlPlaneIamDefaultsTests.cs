@@ -130,7 +130,10 @@ public sealed class ControlPlaneIamDefaultsTests
         public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
             => Task.FromResult<ManagedUser?>(null);
 
-        public Task<ManagedUser?> GetUserByPrincipalIdAsync(string principalId, CancellationToken cancellationToken = default)
+        public Task<ManagedUser?> GetUserByPrincipalIdAsync(
+            string principalId,
+            string? issuer = null,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<ManagedUser?>(null);
 
         public Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)

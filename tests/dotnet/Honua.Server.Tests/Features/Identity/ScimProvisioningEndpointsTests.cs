@@ -24,6 +24,7 @@ namespace Honua.Server.Tests.Features.Identity;
 public class ScimProvisioningEndpointsTests : IAsyncLifetime
 {
     private const string ScimToken = "scim-integration-bearer-token";
+    private const string ScimOidcIssuer = "https://issuer.example.com";
     private static readonly JsonSerializerOptions _json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -46,6 +47,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
                 // in IdentityEntitlementGateTests).
                 builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
                 builder.UseSetting("Scim:BearerToken", ScimToken);
+                builder.UseSetting("Scim:OidcIssuer", ScimOidcIssuer);
             });
     }
 
@@ -106,6 +108,30 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var bySubject = await store.GetUserAsync("auth0|abc123");
         Assert.NotNull(bySubject);
         Assert.Equal("subject-user@example.com", bySubject!.UserId);
+        Assert.Equal(ScimOidcIssuer, bySubject.ExternalIssuer);
+        Assert.NotNull(await store.GetUserByPrincipalIdAsync("auth0|abc123", ScimOidcIssuer));
+        Assert.Null(await store.GetUserByPrincipalIdAsync("auth0|abc123", "https://other.example.com"));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_OverlongPersistedFields_ReturnInvalidValue()
+    {
+        object[] invalidUsers =
+        [
+            new { userName = new string('u', 257) },
+            new { userName = "long-external@example.com", externalId = new string('s', 257) },
+            new { userName = "long-display@example.com", displayName = new string('d', 513) },
+            new { userName = "long-email@example.com", emails = new[] { new { value = new string('e', 321), primary = true } } },
+        ];
+
+        foreach (var invalidUser in invalidUsers)
+        {
+            var response = await _client.PostAsJsonAsync("/scim/v2/Users", invalidUser);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var error = await ReadAsync(response);
+            Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
+        }
     }
 
     [IntegrationTest]
@@ -163,6 +189,22 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var user = await ReadAsync(response);
         Assert.Equal("Renamed Person", user.GetProperty("displayName").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_OverlongExternalId_ReturnsInvalidValue()
+    {
+        await CreateUserAsync("replace-invalid@example.com");
+        var response = await _client.PutAsJsonAsync("/scim/v2/Users/replace-invalid@example.com", new
+        {
+            userName = "replace-invalid@example.com",
+            externalId = new string('s', 257),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
     }
 
     [IntegrationTest]

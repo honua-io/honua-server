@@ -29,7 +29,11 @@ public static class IdentityServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddOptions<ScimProvisioningOptions>()
-            .Bind(configuration.GetSection(ScimProvisioningOptions.SectionName));
+            .Bind(configuration.GetSection(ScimProvisioningOptions.SectionName))
+            .Validate(
+                static options => options.OidcIssuer is null || options.OidcIssuer.Length <= 2048,
+                "Scim:OidcIssuer must be at most 2048 characters.")
+            .ValidateOnStart();
 
         services.AddOptions<SamlAuthenticationOptions>()
             .Bind(configuration.GetSection(SamlAuthenticationOptions.SectionName));

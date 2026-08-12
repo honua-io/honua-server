@@ -25,6 +25,10 @@ internal static partial class ScimEndpoints
 {
     private const string BearerPrefix = "Bearer ";
     private const int MaxPageSize = 200;
+    private const int MaxUserNameLength = 256;
+    private const int MaxExternalIdLength = 256;
+    private const int MaxDisplayNameLength = 512;
+    private const int MaxEmailLength = 320;
 
     /// <summary>Log category for SCIM endpoints.</summary>
     internal sealed class ScimEndpointsLog;
@@ -146,13 +150,20 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "userName is required.", "invalidValue");
         }
 
+        var email = SelectEmail(input.Emails);
+        if (ValidateUserInput(input, email) is { } validationError)
+        {
+            return validationError;
+        }
+
         var created = await store.CreateUserAsync(
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
                 ExternalId = input.ExternalId,
+                ExternalIssuer = options.Value.OidcIssuer,
                 DisplayName = input.DisplayName,
-                Email = SelectEmail(input.Emails),
+                Email = email,
                 Active = input.Active,
             },
             context.RequestAborted).ConfigureAwait(false);
@@ -201,6 +212,12 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "userName is required.", "invalidValue");
         }
 
+        var email = SelectEmail(input.Emails);
+        if (ValidateUserInput(input, email) is { } validationError)
+        {
+            return validationError;
+        }
+
         var existing = await store.GetUserAsync(id, context.RequestAborted).ConfigureAwait(false);
         ManagedUser? replaced;
         try
@@ -211,8 +228,9 @@ internal static partial class ScimEndpoints
                 {
                     UserName = input.UserName.Trim(),
                     ExternalId = input.ExternalId,
+                    ExternalIssuer = options.Value.OidcIssuer,
                     DisplayName = input.DisplayName,
-                    Email = SelectEmail(input.Emails),
+                    Email = email,
                     Active = input.Active,
                     // Roles are owned by group membership sync; PUT preserves the current set.
                     Roles = existing?.Roles ?? [],
@@ -546,6 +564,37 @@ internal static partial class ScimEndpoints
 
         var primary = emails.FirstOrDefault(e => e.Primary == true && !string.IsNullOrWhiteSpace(e.Value));
         return (primary ?? emails.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.Value)))?.Value;
+    }
+
+    private static IResult? ValidateUserInput(ScimUser input, string? email)
+    {
+        var userName = input.UserName?.Trim();
+        if (userName is { Length: > MaxUserNameLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"userName must be at most {MaxUserNameLength} characters.", "invalidValue");
+        }
+
+        if (input.ExternalId?.Trim() is { Length: > MaxExternalIdLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"externalId must be at most {MaxExternalIdLength} characters.", "invalidValue");
+        }
+
+        var displayName = string.IsNullOrWhiteSpace(input.DisplayName) ? userName : input.DisplayName;
+        if (displayName is { Length: > MaxDisplayNameLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"displayName must be at most {MaxDisplayNameLength} characters.", "invalidValue");
+        }
+
+        if (email is { Length: > MaxEmailLength })
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"email must be at most {MaxEmailLength} characters.", "invalidValue");
+        }
+
+        return null;
     }
 
     private static List<string> ExtractMemberIds(IReadOnlyList<ScimMember>? members)

@@ -15,8 +15,14 @@ internal sealed class ManagedUserPrincipalMembershipSource(IUserStore userStore)
     public async Task<PrincipalMembership?> ResolveMembershipAsync(
         string principalId,
         CancellationToken cancellationToken = default)
+        => await ResolveMembershipAsync(principalId, issuer: null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<PrincipalMembership?> ResolveMembershipAsync(
+        string principalId,
+        string? issuer,
+        CancellationToken cancellationToken = default)
     {
-        var user = await userStore.GetUserByPrincipalIdAsync(principalId, cancellationToken).ConfigureAwait(false);
+        var user = await userStore.GetUserByPrincipalIdAsync(principalId, issuer, cancellationToken).ConfigureAwait(false);
         if (user is null)
         {
             return null;

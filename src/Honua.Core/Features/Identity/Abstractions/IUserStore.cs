@@ -24,7 +24,10 @@ public interface IUserStore
     /// Gets the user represented by an authentication principal identifier. Stable
     /// external subjects take precedence over record IDs when the two namespaces collide.
     /// </summary>
-    Task<ManagedUser?> GetUserByPrincipalIdAsync(string principalId, CancellationToken cancellationToken = default);
+    Task<ManagedUser?> GetUserByPrincipalIdAsync(
+        string principalId,
+        string? issuer = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates role assignments for a user.

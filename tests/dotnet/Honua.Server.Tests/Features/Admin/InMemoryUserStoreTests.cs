@@ -92,6 +92,36 @@ public sealed class InMemoryUserStoreTests
     }
 
     [Fact]
+    public async Task ResolveMembership_SameSubjectFromDifferentIssuers_IsIssuerScopedAndCaseSensitive()
+    {
+        var store = new InMemoryUserStore();
+        var source = new ManagedUserPrincipalMembershipSource(store);
+
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "issuer-a@example.com",
+            ExternalId = "SharedSubject",
+            ExternalIssuer = "https://issuer-a.example.com/",
+            Roles = ["issuer-a-role"],
+        });
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "issuer-b@example.com",
+            ExternalId = "SharedSubject",
+            ExternalIssuer = "https://issuer-b.example.com",
+            Roles = ["issuer-b-role"],
+        });
+
+        (await source.ResolveMembershipAsync("SharedSubject", "https://issuer-a.example.com/"))!
+            .Roles.Should().BeEquivalentTo(["issuer-a-role"]);
+        (await source.ResolveMembershipAsync("SharedSubject", "https://issuer-b.example.com"))!
+            .Roles.Should().BeEquivalentTo(["issuer-b-role"]);
+        (await store.GetUserAsync("SharedSubject")).Should().BeNull();
+        (await source.ResolveMembershipAsync("sharedsubject", "https://issuer-a.example.com/"))
+            .Should().BeNull();
+    }
+
+    [Fact]
     public async Task CreateUser_DuplicateExternalId_ReturnsNull()
     {
         var store = new InMemoryUserStore();
@@ -104,7 +134,7 @@ public sealed class InMemoryUserStoreTests
         (await store.CreateUserAsync(new ScimUserProvisioning
         {
             UserName = "carol.alt@example.com",
-            ExternalId = "SUB-CAROL",
+            ExternalId = "sub-carol",
         })).Should().BeNull();
     }
 

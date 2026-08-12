@@ -28,6 +28,7 @@ CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.managed_users (
     user_id             VARCHAR(256) PRIMARY KEY,
     external_id         VARCHAR(256),
+    external_issuer     VARCHAR(2048),
     display_name        VARCHAR(512) NOT NULL,
     email               VARCHAR(320),
     provisioning_source VARCHAR(64)  NOT NULL,
@@ -37,15 +38,29 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.managed_users (
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE $HonuaSchema$.managed_users
+    ADD COLUMN IF NOT EXISTS external_issuer VARCHAR(2048);
+
 -- Lookups are case-insensitive (parity with the in-memory store's OrdinalIgnoreCase keys).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_user_id_lower
     ON $HonuaSchema$.managed_users (LOWER(user_id));
 
--- The stable external subject (SCIM externalId / OIDC sub). Indexed and unique so deferred
--- security snapshots capturing the OIDC subject resolve to the same record as the SCIM
--- userName (#3141 finding 2). Partial: multiple users may omit an external id.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_lower
-    ON $HonuaSchema$.managed_users (LOWER(external_id))
+-- OIDC subjects are case-sensitive and unique only within an issuer. Index the composite
+-- identity so two configured issuers may legitimately provision the same sub without either
+-- identity resolving the other's roles (#3141 review). Legacy issuer-less subjects remain
+-- unique within their own namespace.
+DROP INDEX IF EXISTS $HonuaSchema$.uq_managed_users_external_id_lower;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_identity
+    ON $HonuaSchema$.managed_users (external_issuer, external_id)
+    WHERE external_id IS NOT NULL AND external_issuer IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_legacy
+    ON $HonuaSchema$.managed_users (external_id)
+    WHERE external_id IS NOT NULL AND external_issuer IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_managed_users_external_id
+    ON $HonuaSchema$.managed_users (external_id)
     WHERE external_id IS NOT NULL;
 
 -- Role assignments (flat role-name set per user; SCIM group sync and the admin

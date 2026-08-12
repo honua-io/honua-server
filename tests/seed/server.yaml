@@ -248,6 +248,7 @@ sql:
       CREATE TABLE IF NOT EXISTS honua.managed_users (
           user_id             VARCHAR(256) PRIMARY KEY,
           external_id         VARCHAR(256),
+          external_issuer     VARCHAR(2048),
           display_name        VARCHAR(512) NOT NULL,
           email               VARCHAR(320),
           provisioning_source VARCHAR(64)  NOT NULL,
@@ -256,8 +257,12 @@ sql:
           created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
           updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
       );
+  - "ALTER TABLE honua.managed_users ADD COLUMN IF NOT EXISTS external_issuer VARCHAR(2048);"
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_user_id_lower ON honua.managed_users (LOWER(user_id));"
-  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_lower ON honua.managed_users (LOWER(external_id)) WHERE external_id IS NOT NULL;"
+  - "DROP INDEX IF EXISTS honua.uq_managed_users_external_id_lower;"
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_identity ON honua.managed_users (external_issuer, external_id) WHERE external_id IS NOT NULL AND external_issuer IS NOT NULL;"
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_legacy ON honua.managed_users (external_id) WHERE external_id IS NOT NULL AND external_issuer IS NULL;"
+  - "CREATE INDEX IF NOT EXISTS ix_managed_users_external_id ON honua.managed_users (external_id) WHERE external_id IS NOT NULL;"
   - |
       CREATE TABLE IF NOT EXISTS honua.managed_user_roles (
           user_id    VARCHAR(256) NOT NULL REFERENCES honua.managed_users(user_id) ON DELETE CASCADE,

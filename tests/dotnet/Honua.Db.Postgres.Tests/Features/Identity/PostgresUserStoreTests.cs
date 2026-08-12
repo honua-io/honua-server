@@ -126,6 +126,44 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task GetUserByPrincipalId_SameSubjectFromDifferentIssuers_IsIssuerScopedAndCaseSensitive()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
+        try
+        {
+            await EnsureManagedUserTablesAsync(schema);
+            var store = CreateStore(schema);
+
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "issuer-a@example.com",
+                ExternalId = "SharedSubject",
+                ExternalIssuer = "https://issuer-a.example.com/",
+                Roles = ["issuer-a-role"],
+            });
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "issuer-b@example.com",
+                ExternalId = "SharedSubject",
+                ExternalIssuer = "https://issuer-b.example.com",
+                Roles = ["issuer-b-role"],
+            });
+
+            (await store.GetUserByPrincipalIdAsync("SharedSubject", "https://issuer-a.example.com/"))!
+                .Roles.Should().BeEquivalentTo(["issuer-a-role"]);
+            (await store.GetUserByPrincipalIdAsync("SharedSubject", "https://issuer-b.example.com"))!
+                .Roles.Should().BeEquivalentTo(["issuer-b-role"]);
+            (await store.GetUserAsync("SharedSubject")).Should().BeNull();
+            (await store.GetUserByPrincipalIdAsync("sharedsubject", "https://issuer-a.example.com/"))
+                .Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeprovisionUser_OnReplicaA_IsAuthoritativelyInactiveOnReplicaB()
     {
         // #3141 acceptance 1: deactivating a managed user on replica A must
@@ -224,7 +262,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
             (await store.CreateUserAsync(new ScimUserProvisioning
             {
                 UserName = "carol.alt@example.com",
-                ExternalId = "SUB-CAROL",
+                ExternalId = "sub-carol",
             })).Should().BeNull();
         }
         finally
@@ -393,6 +431,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
         CREATE TABLE IF NOT EXISTS "{schema}".managed_users (
             user_id             VARCHAR(256) PRIMARY KEY,
             external_id         VARCHAR(256),
+            external_issuer     VARCHAR(2048),
             display_name        VARCHAR(512) NOT NULL,
             email               VARCHAR(320),
             provisioning_source VARCHAR(64)  NOT NULL,
@@ -405,8 +444,16 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
         CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_user_id_lower
             ON "{schema}".managed_users (LOWER(user_id));
 
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_lower
-            ON "{schema}".managed_users (LOWER(external_id))
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_identity
+            ON "{schema}".managed_users (external_issuer, external_id)
+            WHERE external_id IS NOT NULL AND external_issuer IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_legacy
+            ON "{schema}".managed_users (external_id)
+            WHERE external_id IS NOT NULL AND external_issuer IS NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_managed_users_external_id
+            ON "{schema}".managed_users (external_id)
             WHERE external_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS "{schema}".managed_user_roles (
@@ -420,6 +467,19 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
 
         CREATE INDEX IF NOT EXISTS ix_managed_user_roles_role_lower
             ON "{schema}".managed_user_roles (LOWER(role));
+
+        CREATE TABLE IF NOT EXISTS "{schema}".scim_groups (
+            group_id     VARCHAR(64)  PRIMARY KEY,
+            display_name VARCHAR(256) NOT NULL,
+            created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS "{schema}".scim_group_members (
+            group_id   VARCHAR(64)  NOT NULL REFERENCES "{schema}".scim_groups(group_id) ON DELETE CASCADE,
+            user_id    VARCHAR(256) NOT NULL,
+            created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
         """;
 
     private async Task EnsureManagedUserTablesAsync(string schema)
