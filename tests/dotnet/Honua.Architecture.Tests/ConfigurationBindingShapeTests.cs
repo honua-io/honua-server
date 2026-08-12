@@ -108,7 +108,23 @@ public sealed partial class ConfigurationBindingShapeTests
                     pending.Push(referencedType);
                 }
             }
+
+            foreach (var baseTypeName in typeShape.BaseTypeNames)
+            {
+                foreach (var baseType in ResolveDeclaredTypes(
+                             baseTypeName,
+                             typeShape.Namespace,
+                             typeShape.UsingNamespaces,
+                             typesByName))
+                {
+                    pending.Push(baseType);
+                }
+            }
         }
+
+        Assert.Contains(
+            "Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderConfiguration",
+            visited);
 
         Assert.True(
             violations.Count == 0,
@@ -247,6 +263,16 @@ public sealed partial class ConfigurationBindingShapeTests
                             StringComparison.Ordinal)));
                 }
 
+                var declarationTail = typeMatch.Groups["tail"].Value;
+                var baseClauseSeparator = declarationTail.IndexOf(':', StringComparison.Ordinal);
+                var baseTypeNames = baseClauseSeparator < 0
+                    ? []
+                    : QualifiedTypeIdentifierPattern()
+                        .Matches(declarationTail[(baseClauseSeparator + 1)..])
+                        .Select(match => match.Value)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray();
+
                 var typeName = typeMatch.Groups["name"].Value;
                 if (!typesByName.TryGetValue(typeName, out var shapes))
                 {
@@ -259,6 +285,7 @@ public sealed partial class ConfigurationBindingShapeTests
                     namespaceName,
                     path,
                     usingNamespaces,
+                    baseTypeNames,
                     properties));
             }
         }
@@ -556,6 +583,7 @@ public sealed partial class ConfigurationBindingShapeTests
         string Namespace,
         string Path,
         IReadOnlySet<string> UsingNamespaces,
+        IReadOnlyList<string> BaseTypeNames,
         IReadOnlyList<PropertyShape> Properties)
     {
         public string QualifiedName => string.IsNullOrEmpty(Namespace)
@@ -593,7 +621,7 @@ public sealed partial class ConfigurationBindingShapeTests
     private static partial Regex ConfigurePattern();
 
     [GeneratedRegex(
-        @"\b(?:class|record(?:\s+class)?)\s+(?<name>[A-Za-z_]\w*)[^\{;]*(?<brace>\{)",
+        @"\b(?:class|record(?:\s+class)?)\s+(?<name>[A-Za-z_]\w*)(?<tail>[^\{;]*)(?<brace>\{)",
         RegexOptions.Singleline)]
     private static partial Regex TypeDeclarationPattern();
 

@@ -51,7 +51,7 @@ mechanical.
 |---|---:|---:|
 | `AlertOptions` | 37 | 33 |
 | `AlertDeliveryOptions` | 26 | 25 |
-| `LimitsOptions` | 32 | 32 |
+| `LimitsOptions` | 12 | 12 |
 | `TileOptions` | 11 | 10 |
 | `WorkspaceOptions` | 10 | 10 |
 | `FederationSourceOptions` | 7 | 7 |
@@ -65,7 +65,7 @@ mechanical.
 | `MigrationSafetyOptions` | 3 | 3 |
 | `FieldCollectionAutomationOptions` | 3 | 0 |
 | `SpecCostEstimatorOptions` | 2 | 2 |
-| **Total** | **163** | **153** |
+| **Total** | **143** | **133** |
 
 The scan also confirmed that similarly named immutable types were outside the
 vulnerable path: `StartupResilienceOptions` is constructed with `Get<T>()`;
