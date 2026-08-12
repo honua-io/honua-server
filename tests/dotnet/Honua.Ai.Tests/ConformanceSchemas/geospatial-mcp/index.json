@@ -451,6 +451,24 @@
       "schema": "tools/studio_propose_publication.schema.json",
       "implementationStatus": "implemented",
       "notes": "Honua extension (honua-server#3002): records publish/share/embed intent on a Studio draft for human review ONLY — no publish/share/embed execution tool exists on the agent surface (REQ-003/REQ-009). Pending formalization in the standard's publish family."
+    },
+    {
+      "standardName": "bind_interaction",
+      "referenceToolName": "honua_studio_bind_interaction",
+      "family": "Composition interactions",
+      "schema": "tools/bind_interaction.schema.json",
+      "implementationStatus": "implemented",
+      "profile": "composition",
+      "notes": "Adds or replaces one declarative event→action binding in a composition document; member of the opt-in composition conformance profile (geospatial-mcp docs/adr/0030-declarative-interactions-and-layout.md). Bindings are data-only ($event.* substitution, no expression language); actions never emit events. Honua is the reference implementation: the tool is advertised as honua_studio_bind_interaction over the draft-lifecycle target (draftId + generation, admitted upstream as x-honua-reference-shape)."
+    },
+    {
+      "standardName": "remove_interaction",
+      "referenceToolName": "honua_studio_remove_interaction",
+      "family": "Composition interactions",
+      "schema": "tools/remove_interaction.schema.json",
+      "implementationStatus": "implemented",
+      "profile": "composition",
+      "notes": "Removes one declarative binding, by id, from a composition document; member of the opt-in composition conformance profile. Removing an unknown id is an error, not a no-op. Advertised by the reference implementation as honua_studio_remove_interaction."
     }
   ],
   "resources": [
@@ -571,6 +589,11 @@
       "name": "GeoprocessingError",
       "schema": "common/geoprocessing-error.schema.json",
       "role": "Canonical error envelope reused by all tool/resource failure paths."
+    },
+    {
+      "name": "CompositionInteractions",
+      "schema": "common/interactions.schema.json",
+      "role": "Standard-owned interactions and layout blocks for composition documents (MapPackage/AppPackage); referenced by both resource schemas and by bind_interaction. See geospatial-mcp docs/adr/0030-declarative-interactions-and-layout.md."
     }
   ],
   "conformance": [
