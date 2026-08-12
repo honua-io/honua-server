@@ -143,6 +143,28 @@ public sealed class TileCacheEvictionServiceTests
         index.Removed.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task SweepAsync_WhenVictimWasReplacedBeforeFence_DoesNotDeleteFreshObject()
+    {
+        var index = new FakeTileCacheKeyIndex(enabled: true) { RejectCurrent = true };
+        index.Seed(new TileCacheEntry(
+            "oldest",
+            100,
+            DateTimeOffset.UtcNow.AddMinutes(-30),
+            WriteVersion: "snapshot-version"));
+        var storage = Substitute.For<ICloudFileStorage>();
+        var service = CreateService(
+            index,
+            new TileCacheEvictionOptions { Enabled = true, MaxEntries = 0 },
+            storage);
+
+        var result = await service.SweepAsync(CancellationToken.None);
+
+        result.Evicted.Should().Be(0);
+        index.Removed.Should().BeEmpty();
+        await storage.DidNotReceive().DeleteAsync("oldest", Arg.Any<CancellationToken>());
+    }
+
     private static TileCacheEvictionService CreateService(
         FakeTileCacheKeyIndex index,
         TileCacheEvictionOptions eviction,
@@ -160,13 +182,15 @@ public sealed class TileCacheEvictionServiceTests
             storage);
     }
 
-    private sealed class FakeTileCacheKeyIndex(bool enabled) : ITileCacheKeyIndex
+    private sealed class FakeTileCacheKeyIndex(bool enabled) : ITileCacheKeyIndex, ITileCacheMutationCoordinator
     {
         private readonly List<TileCacheEntry> _entries = [];
 
         public ConcurrentBag<string> Removed { get; } = [];
 
         public bool IsEnabled { get; } = enabled;
+
+        public bool RejectCurrent { get; init; }
 
         public void Seed(TileCacheEntry entry) => _entries.Add(entry);
 
@@ -190,5 +214,16 @@ public sealed class TileCacheEvictionServiceTests
             Removed.Add(key);
             return Task.CompletedTask;
         }
+
+        public Task ExecuteSerializedAsync(
+            string key,
+            Func<CancellationToken, Task> mutation,
+            CancellationToken cancellationToken = default)
+            => mutation(cancellationToken);
+
+        public Task<bool> IsCurrentAsync(
+            TileCacheEntry entry,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(!RejectCurrent);
     }
 }

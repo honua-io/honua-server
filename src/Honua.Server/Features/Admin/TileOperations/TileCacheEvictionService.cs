@@ -35,6 +35,7 @@ internal sealed partial class TileCacheEvictionService(
         (tileOptions ?? throw new ArgumentNullException(nameof(tileOptions))).Value.Eviction;
     private readonly ILogger<TileCacheEvictionService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ICloudFileStorage? _storage = storage;
+    private readonly ITileCacheMutationCoordinator? _mutationCoordinator = keyIndex as ITileCacheMutationCoordinator;
 
     /// <summary>Whether eviction is enabled and a live index is available.</summary>
     public bool IsEnabled => _options.Enabled && _keyIndex.IsEnabled;
@@ -73,28 +74,49 @@ internal sealed partial class TileCacheEvictionService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Delete the stored tile first; only drop the index entry once the tile is gone so a
-            // failed delete leaves the key tracked for the next sweep instead of orphaning a tile.
-            if (_storage is not null)
+            if (!entriesByKey.TryGetValue(key, out var victim))
+            {
+                continue;
+            }
+
+            var removed = false;
+            if (_storage is null)
+            {
+                removed = await _keyIndex.TryRemoveAsync(victim, cancellationToken).ConfigureAwait(false);
+            }
+            else if (_mutationCoordinator is not null)
             {
                 try
                 {
-                    if (!await TileCacheStorageDeletion
-                            .DeleteOrConfirmMissingAsync(_storage, key, cancellationToken)
-                            .ConfigureAwait(false))
-                    {
-                        continue;
-                    }
+                    await _mutationCoordinator.ExecuteSerializedAsync(
+                        key,
+                        async mutationToken =>
+                        {
+                            if (!await _mutationCoordinator.IsCurrentAsync(victim, mutationToken).ConfigureAwait(false))
+                            {
+                                return;
+                            }
+
+                            // Hold the same per-key fence as hot cache writes across both the
+                            // irreversible storage delete and the conditional index removal.
+                            if (!await TileCacheStorageDeletion
+                                    .DeleteOrConfirmMissingAsync(_storage, key, mutationToken)
+                                    .ConfigureAwait(false))
+                            {
+                                return;
+                            }
+
+                            removed = await _keyIndex.TryRemoveAsync(victim, mutationToken).ConfigureAwait(false);
+                        },
+                        cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Log.EvictionDeleteFailed(_logger, ex);
-                    continue;
                 }
             }
 
-            if (!entriesByKey.TryGetValue(key, out var victim)
-                || !await _keyIndex.TryRemoveAsync(victim, cancellationToken).ConfigureAwait(false))
+            if (!removed)
             {
                 continue;
             }
