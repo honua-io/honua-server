@@ -110,11 +110,13 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.OgcFeatures],
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.FeatureServer],
                 },
             ],
@@ -208,11 +210,13 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.OgcFeatures],
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.FeatureServer],
                 },
             ],
@@ -255,6 +259,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
+                    Status = ActiveStatus(),
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
                     Route = "/rest/services/shared/FeatureServer",
                     Protocols = ServiceProtocols.All,
@@ -262,6 +267,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-gp", Name = "shared" },
+                    Status = ActiveStatus(),
                     ServiceType = MetadataV2ServiceType.Custom,
                     Route = "/rest/services/shared/GPServer",
                     Protocols = [ServiceProtocols.GPServer],
@@ -274,6 +280,39 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource!.Metadata.Id.Should().Be("service-gp");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_PublicationlessGpServerRequiresServingLifecycle()
+    {
+        foreach (var lifecycle in new[]
+                 {
+                     MetadataV2LifecycleStatus.Draft,
+                     MetadataV2LifecycleStatus.Archived,
+                     MetadataV2LifecycleStatus.Retired,
+                 })
+        {
+            var service = new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "service-gp", Name = "geoprocessing" },
+                Status = new MetadataV2Status { Lifecycle = lifecycle },
+                Route = "/rest/services/geoprocessing/GPServer",
+                Protocols = [ServiceProtocols.GPServer],
+            };
+            var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
+                new MetadataV2Graph { Services = [service] }));
+
+            var protocolResult = await validator.ValidateServiceV2Async(
+                service.Metadata.Id,
+                ServiceProtocols.GPServer);
+            var unscopedResult = await validator.ValidateServiceV2Async(service.Metadata.Id);
+
+            protocolResult.IsValid.Should().BeFalse($"{lifecycle} services must not be routable");
+            protocolResult.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+            unscopedResult.IsValid.Should().BeFalse($"{lifecycle} services must not be routable");
+            unscopedResult.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+        }
     }
 
     private static MetadataV2Graph ExactIdProtocolCollisionGraph()
@@ -330,6 +369,7 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "mixed-service", Name = "mixed-service" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.OgcFeatures, ServiceProtocols.FeatureServer],
                 },
             ],
@@ -415,11 +455,13 @@ public sealed class ResourceValidatorTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "svc-browser-compat-image", Name = "browser_compat" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.ImageServer],
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "svc-browser-compat-map", Name = "browser_compat" },
+                    Status = ActiveStatus(),
                     Protocols = [ServiceProtocols.OgcApiMaps],
                 },
             ],

@@ -20,7 +20,7 @@ public static class MetadataV2GraphSnapshotExtensions
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
-            !IsServingLifecycle(service.Status.Lifecycle))
+            !service.IsRoutable())
         {
             return false;
         }
@@ -33,6 +33,16 @@ public static class MetadataV2GraphSnapshotExtensions
 
         var binding = snapshot.ResolveStorageBinding(publication);
         return binding is null || binding.IsRoutable(resource);
+    }
+
+    /// <summary>
+    /// Returns whether a service may expose protocol routes, including service-only
+    /// surfaces that do not have a publication to anchor lifecycle evaluation.
+    /// </summary>
+    public static bool IsRoutable(this MetadataV2Service service)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        return IsServingLifecycle(service.Status.Lifecycle);
     }
 
     /// <summary>

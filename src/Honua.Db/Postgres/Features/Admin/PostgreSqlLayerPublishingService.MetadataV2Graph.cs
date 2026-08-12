@@ -363,6 +363,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var previousResourceIdsForPublicationCleanup = previousGraph.Resources
             .Select(item => item.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousResourcesForPublicationCleanup = previousGraph.Resources
+            .ToDictionary(item => item.Metadata.Id, StringComparer.Ordinal);
         var addedResourceIdsForPublicationCleanup = persistedGraph.Resources
             .Select(item => item.Metadata.Id)
             .Where(id => !previousResourceIdsForPublicationCleanup.Contains(id))
@@ -390,20 +392,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
                persistedBindingsForPublicationCleanup.TryGetValue(bindingId, out var persistedBinding) &&
                HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
 
-        string? ResolveCurrentBindingId(
+        static string? ResolveBindingId(
             MetadataV2Publication publication,
-            MetadataV2Resource? currentResource)
-            => publication.StorageBindingId ??
-               currentResource?.PrimaryStorageBindingId ??
-               (currentResource is { StorageBindingIds.Count: > 0 }
-                   ? currentResource.StorageBindingIds[0]
-                   : null);
+            IReadOnlyDictionary<string, MetadataV2Resource> resources)
+        {
+            resources.TryGetValue(publication.ResourceId, out var resource);
+            return publication.StorageBindingId ??
+                   resource?.PrimaryStorageBindingId ??
+                   (resource is { StorageBindingIds.Count: > 0 }
+                       ? resource.StorageBindingIds[0]
+                       : null);
+        }
+
+        string? ResolveCurrentBindingId(MetadataV2Publication publication)
+            => ResolveBindingId(publication, currentResourcesForPublicationCleanup);
 
         bool UsesRepurposedFailedDataTarget(MetadataV2Publication publication)
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
-            var resolvedBindingId = ResolveCurrentBindingId(publication, currentResource);
+            var resolvedBindingId = ResolveCurrentBindingId(publication);
             if (publication.StorageBindingId is { } explicitBindingId &&
                 addedBindingIdsForPublicationCleanup.Contains(explicitBindingId))
             {
@@ -424,7 +432,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
-            var resolvedBindingId = ResolveCurrentBindingId(publication, currentResource);
+            var resolvedBindingId = ResolveCurrentBindingId(publication);
             var bindingWasRepurposed = IsRepurposedFailedBinding(resolvedBindingId);
             var usesFailedResource = addedResourceIdsForPublicationCleanup.Contains(publication.ResourceId) &&
                 (currentResource is null ||
@@ -484,6 +492,35 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 persistedPublicationsById.TryGetValue(current.Metadata.Id, out var persisted)
                     ? RestorePublicationMutation(current, previous, persisted)
                     : current);
+        }
+        var rolledBackBindingIds = addedBindingIdsForPublicationCleanup
+            .Where(bindingId => !IsRepurposedFailedBinding(bindingId))
+            .ToHashSet(StringComparer.Ordinal);
+        for (var index = publications.Count - 1; index >= 0; index--)
+        {
+            var publication = publications[index];
+            var bindingId = ResolveBindingId(publication, currentResourcesForPublicationCleanup);
+            if (bindingId is null || !rolledBackBindingIds.Contains(bindingId))
+            {
+                continue;
+            }
+
+            if (previousPublicationsById.TryGetValue(publication.Metadata.Id, out var previous))
+            {
+                var repaired = publication with
+                {
+                    ResourceId = previous.ResourceId,
+                    StorageBindingId = previous.StorageBindingId,
+                };
+                var repairedBindingId = ResolveBindingId(repaired, previousResourcesForPublicationCleanup);
+                if (repairedBindingId is null || !rolledBackBindingIds.Contains(repairedBindingId))
+                {
+                    publications[index] = repaired;
+                    continue;
+                }
+            }
+
+            publications.RemoveAt(index);
         }
         var retainedPublicationIds = publications
             .Select(publication => publication.Metadata.Id)

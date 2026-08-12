@@ -82,6 +82,11 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
+            if (!service.IsRoutable())
+            {
+                continue;
+            }
+
             // Derive the catalog "type" from every Esri-family protocol the service
             // exposes, not just the primary one. A service reachable under multiple
             // Esri types (e.g. both FeatureServer and MapServer, or a vector layer that

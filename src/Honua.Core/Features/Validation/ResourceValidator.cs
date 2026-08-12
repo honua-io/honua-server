@@ -159,11 +159,11 @@ public sealed class ResourceValidator : IResourceValidator
                     ErrorMessages.NotFound.FormatService(serviceId));
         }
 
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable())
         {
             return ResourceValidationResult.Success(byName);
         }
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) && byId.IsRoutable())
         {
             return ResourceValidationResult.Success(byId);
         }
@@ -178,8 +178,9 @@ public sealed class ResourceValidator : IResourceValidator
     {
         var matchingServices = snapshot.Graph.Services
             .Where(service =>
-                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+                service.IsRoutable() &&
+                (string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal)))
             .ToArray();
 
         var exactId = matchingServices.FirstOrDefault(service =>
