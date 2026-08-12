@@ -1,6 +1,6 @@
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-07-27
+Last reviewed: 2026-08-12
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -31,27 +31,28 @@ directory — check the workflow.
 ## Current Per-Protocol Status
 
 Snapshot copied from
-[CITE Evidence Report run 30310628136](https://github.com/honua-io/honua-server/actions/runs/30310628136)
-on `fix/3017-cite-evidence@510e1c6f2c918703c3b18f443218b40da51a66d6`, completed
-2026-07-27T22:56:22Z. The fully green run's `cite-conformance-evidence-5`
+[CITE Evidence Report run 31609659377](https://github.com/honua-io/honua-server/actions/runs/31609659377)
+on `trunk@eee76952f08d68e78b93b11b3acedac655625d62`, completed
+2026-08-12T15:29:44Z. The fully green run's `cite-conformance-evidence-10`
 bundle reported `allPassed=true`: 1117 passed, 0
-failed, 0 skipped, 0 CantTell.
+failed, 0 skipped, 0 CantTell. (This run also validates the hermetic
+OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-07-27 |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-07-27 |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-07-27 |
-| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-07-27 |
-| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-07-27 |
-| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-07-27 |
-| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-07-27 |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | 2026-07-27 |
-| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-07-27 |
-| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-07-27 |
-| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-07-27 |
-| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-07-27 |
-| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-07-27 |
+| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-08-12 |
+| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-08-12 |
+| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-08-12 |
+| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-08-12 |
+| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-12 |
+| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-12 |
+| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-12 |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | 2026-08-12 |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-12 |
+| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-12 |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-08-12 |
+| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-12 |
+| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-12 |
 
 The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures the
 Transaction + LockFeature conformance classes independently from the `basic`
@@ -63,7 +64,7 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 ### Common Re-Grading Mistakes To Avoid
 
 - **"WFS 2.0 CITE is 75% pass."** Incorrect. The `basic` profile is 167/167
-  (100%) on the 2026-07-27 evidence run. The 75% figure does not match any
+  (100%) on the 2026-08-12 evidence run. The 75% figure does not match any
   published or archived result on `trunk` — likely a confusion with a
   partial-run diagnostic, an older branch, or the GML 3.2 `default` profile
   that intentionally loads inapplicable classes.
