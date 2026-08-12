@@ -537,7 +537,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         var arguments = ResolveArguments(job.Spec.Parameters);
         var supportedVersion = _options.WorkerContracts
             .Where(contract => string.Equals(contract.Executable, executable, StringComparison.Ordinal))
-            .Where(contract => ContractMatchesSelectedWorker(contract, executable, arguments))
+            .Where(contract => ContractMatchesSelectedWorker(contract, arguments))
             .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
             .DefaultIfEmpty(1)
             .Max();
@@ -550,15 +550,14 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private static bool ContractMatchesSelectedWorker(
         LocalProcessWorkerContractOptions contract,
-        string executable,
         string[] arguments)
     {
         var prefix = contract.ArgumentPrefix;
         if (prefix.Count == 0)
         {
-            // Empty prefixes are reserved for self-contained worker executables. Shared launchers
-            // must attest the worker-selecting argument(s), never the runtime binary alone.
-            return !IsSharedLauncher(executable);
+            // Empty prefixes are accepted only under an explicit operator assertion. Inferring
+            // launcher-vs-worker from a filename denylist misses dispatchers such as /usr/bin/env.
+            return contract.IsSelfContained;
         }
 
         return arguments.Length >= prefix.Count
@@ -567,14 +566,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                     arguments[index],
                     StringComparison.Ordinal))
                 .All(static matches => matches);
-    }
-
-    private static bool IsSharedLauncher(string executable)
-    {
-        var name = Path.GetFileNameWithoutExtension(executable).ToLowerInvariant();
-        return name.StartsWith("python", StringComparison.Ordinal)
-            || name is "dotnet" or "java" or "sh" or "bash" or "zsh" or "node" or "ruby"
-                or "pwsh" or "powershell" or "cmd";
     }
 
     private static string[] ResolveArguments(IReadOnlyDictionary<string, string> parameters)
@@ -890,6 +881,12 @@ internal sealed class LocalProcessWorkerContractOptions
     /// as <c>dotnet</c>, <c>python</c>, <c>java</c>, or a shell.
     /// </summary>
     public List<string> ArgumentPrefix { get; set; } = [];
+
+    /// <summary>
+    /// Explicit operator assertion that <see cref="Executable"/> is the worker itself and does not
+    /// dispatch an argument-selected artifact. Required when <see cref="ArgumentPrefix"/> is empty.
+    /// </summary>
+    public bool IsSelfContained { get; set; }
 
     /// <summary>Highest execution contract understood by this exact worker identity.</summary>
     public int MaxSupportedContractVersion { get; set; } = 1;

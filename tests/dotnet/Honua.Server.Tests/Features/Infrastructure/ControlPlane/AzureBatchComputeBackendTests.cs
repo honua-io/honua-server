@@ -45,10 +45,14 @@ public sealed class AzureBatchComputeBackendTests
         var stub = new StubAzureBatchClient();
         var backend = CreateBackend(stub, new AzureBatchExecutionOptions
         {
-            ImageMaxSupportedContractVersions = new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                ["ghcr.io/honua-io/gdal-worker:v2"] = RasterSourceContract.JobContractVersion,
-            }
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "ghcr.io/honua-io/gdal-worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
         });
         var job = CreateJob(parameters: new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -72,10 +76,14 @@ public sealed class AzureBatchComputeBackendTests
         var stub = new StubAzureBatchClient();
         var backend = CreateBackend(stub, new AzureBatchExecutionOptions
         {
-            ImageMaxSupportedContractVersions = new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                [image] = RasterSourceContract.JobContractVersion,
-            }
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = image,
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
         });
         var job = CreateJob();
         job = job with
@@ -725,10 +733,14 @@ public sealed class AzureBatchComputeBackendTests
     {
         var backend = CreateBackend(new StubAzureBatchClient(), new AzureBatchExecutionOptions
         {
-            ImageMaxSupportedContractVersions = new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                ["ghcr.io/honua-io/gdal-worker:v2"] = RasterSourceContract.JobContractVersion,
-            }
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "ghcr.io/honua-io/gdal-worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
         });
 
         var capabilities = await backend.GetCapabilitiesAsync();

@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -18,6 +19,28 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class KubernetesJobBatchComputeBackendTests
 {
+    [Fact]
+    public void ControlPlaneOptions_BindsTaggedImageAttestationsAsEntryValues()
+    {
+        const string kubernetesImage = "ghcr.io/honua/worker:v2";
+        const string azureImage = "ghcr.io/honua/gdal@sha256:abc123";
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{ControlPlaneOptions.SectionName}:Kubernetes:ImageContracts:0:Image"] = kubernetesImage,
+                [$"{ControlPlaneOptions.SectionName}:Kubernetes:ImageContracts:0:MaxSupportedContractVersion"] = "2",
+                [$"{ControlPlaneOptions.SectionName}:AzureBatch:ImageContracts:0:Image"] = azureImage,
+                [$"{ControlPlaneOptions.SectionName}:AzureBatch:ImageContracts:0:MaxSupportedContractVersion"] = "2"
+            })
+            .Build();
+        var options = new ControlPlaneOptions();
+
+        configuration.GetSection(ControlPlaneOptions.SectionName).Bind(options);
+
+        options.Kubernetes.ImageContracts.Should().ContainSingle().Which.Image.Should().Be(kubernetesImage);
+        options.AzureBatch.ImageContracts.Should().ContainSingle().Which.Image.Should().Be(azureImage);
+    }
+
     [Fact]
     public void BackendIdentity_MatchesContract()
     {
@@ -80,10 +103,14 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var backend = CreateBackend(client, new KubernetesExecutionOptions
         {
             DefaultNamespace = "default",
-            ImageMaxSupportedContractVersions = new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                ["honua/worker:v2"] = RasterSourceContract.JobContractVersion,
-            }
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "honua/worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
         });
         var job = CreateJob("job-v2-image", image: "honua/worker:v2") with
         {

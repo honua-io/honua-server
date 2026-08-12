@@ -55,10 +55,11 @@ internal sealed partial class AzureBatchComputeBackend(
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
-        var imageContracts = options.Value.AzureBatch.ImageMaxSupportedContractVersions;
-        var configuredImageMaximum = imageContracts.Count == 0
-            ? 1
-            : imageContracts.Values.Max();
+        var configuredImageMaximum = options.Value.AzureBatch.ImageContracts
+            .Where(contract => !string.IsNullOrWhiteSpace(contract.Image))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
         return Task.FromResult(new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
@@ -521,13 +522,13 @@ internal sealed partial class AzureBatchComputeBackend(
 
     private int ResolveImageMaxSupportedContractVersion(string? image)
     {
-        if (image is not null &&
-            options.Value.AzureBatch.ImageMaxSupportedContractVersions.TryGetValue(image, out var configuredVersion))
-        {
-            return Math.Max(1, configuredVersion);
-        }
-
-        return 1;
+        return image is null
+            ? 1
+            : options.Value.AzureBatch.ImageContracts
+                .Where(contract => string.Equals(contract.Image, image, StringComparison.Ordinal))
+                .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+                .DefaultIfEmpty(1)
+                .Max();
     }
 
     private static void ApplyEnvironmentSettings(

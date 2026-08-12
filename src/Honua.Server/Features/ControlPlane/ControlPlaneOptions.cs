@@ -231,11 +231,11 @@ internal sealed class KubernetesExecutionOptions
     public int DefaultImageMaxSupportedContractVersion { get; set; } = 1;
 
     /// <summary>
-    /// Exact image-reference to maximum-contract attestations for images selectable by a job's
-    /// artifact or <c>k8s.image</c> override. Unlisted overrides are treated as v1 workers.
+    /// Image contract attestations for images selectable by a job's artifact or <c>k8s.image</c>
+    /// override. Image identities are entry values because tags/digests contain configuration-path
+    /// delimiters. Unlisted overrides are treated as v1 workers.
     /// </summary>
-    public Dictionary<string, int> ImageMaxSupportedContractVersions { get; set; } =
-        new(StringComparer.Ordinal);
+    public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
 
     /// <summary>
     /// Fallback image pull policy (<c>Always</c>, <c>IfNotPresent</c>, <c>Never</c>).
@@ -297,12 +297,21 @@ internal sealed class KubernetesExecutionOptions
 internal sealed class AzureBatchExecutionOptions
 {
     /// <summary>
-    /// Exact image-reference to maximum-contract attestations for images selectable through
-    /// <c>azure.batch.container_image</c> or an execution workload's artifact reference.
-    /// Unlisted images are treated as v1 workers.
+    /// Image contract attestations for images selectable through <c>azure.batch.container_image</c>
+    /// or an execution workload's artifact reference. Image identities are entry values because
+    /// tags/digests contain configuration-path delimiters. Unlisted images are treated as v1 workers.
     /// </summary>
-    public Dictionary<string, int> ImageMaxSupportedContractVersions { get; set; } =
-        new(StringComparer.Ordinal);
+    public List<WorkerImageContractOptions> ImageContracts { get; set; } = [];
+}
+
+/// <summary>An exact worker-image identity and its supported execution contract.</summary>
+internal sealed class WorkerImageContractOptions
+{
+    /// <summary>Exact tagged or digest image reference selected by the workload.</summary>
+    public string Image { get; set; } = string.Empty;
+
+    /// <summary>Highest execution contract understood by this image.</summary>
+    public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
 /// <summary>

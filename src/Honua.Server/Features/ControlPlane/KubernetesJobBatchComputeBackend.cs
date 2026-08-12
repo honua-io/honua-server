@@ -45,9 +45,11 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         var snapshot = options.CurrentValue;
-        var configuredImageMaximum = snapshot.ImageMaxSupportedContractVersions.Count == 0
-            ? 1
-            : snapshot.ImageMaxSupportedContractVersions.Values.Max();
+        var configuredImageMaximum = snapshot.ImageContracts
+            .Where(contract => !string.IsNullOrWhiteSpace(contract.Image))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
         return Task.FromResult(new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
@@ -650,9 +652,14 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     private int ResolveImageMaxSupportedContractVersion(string image)
     {
         var snapshot = options.CurrentValue;
-        if (snapshot.ImageMaxSupportedContractVersions.TryGetValue(image, out var configuredVersion))
+        var configuredVersion = snapshot.ImageContracts
+            .Where(contract => string.Equals(contract.Image, image, StringComparison.Ordinal))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(0)
+            .Max();
+        if (configuredVersion > 0)
         {
-            return Math.Max(1, configuredVersion);
+            return configuredVersion;
         }
 
         return string.Equals(Normalize(snapshot.DefaultImage), image, StringComparison.Ordinal)

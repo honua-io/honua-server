@@ -137,6 +137,33 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_EmptyPrefixWithoutSelfContainedAssertionRejectsLauncher()
+    {
+        const string launcher = "env";
+        using var backend = CreateBackend(workerContracts:
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = launcher,
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            }
+        ]);
+        var job = CreateJob(
+            "job-env-launcher-v2",
+            new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = launcher,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "old-v1-worker"
+            },
+            contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("selected argument prefix").And.Contain("requires version 2");
+    }
+
+    [Fact]
     public void BackendIdentity_MatchesContract()
     {
         using var backend = CreateBackend();
@@ -408,6 +435,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
                 new LocalProcessWorkerContractOptions
                 {
                     Executable = SleepPath,
+                    IsSelfContained = true,
                     MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
                 }
             ];
