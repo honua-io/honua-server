@@ -59,6 +59,20 @@ public sealed class StudioCompositionBodyEditorTests
         Assert.Single(withLayer.Layers);
     }
 
+    [Theory]
+    [InlineData("{\"interactions\":[null]}")]
+    [InlineData("{\"interactions\":[{\"id\":\"i\",\"on\":null,\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\"}}]}")]
+    [InlineData("{\"interactions\":[{\"id\":\"i\",\"on\":{\"ref\":\"map\",\"event\":\"viewportChange\"},\"do\":null}]}")]
+    [InlineData("{\"layout\":{\"items\":[null]}}")]
+    public void ReadBody_WithNullReferenceNodes_ThrowsBodyException(string bodyJson)
+    {
+        using var document = JsonDocument.Parse(bodyJson);
+        var envelope = BuildEnvelope(StudioPackageFamily.Map, document.RootElement.Clone());
+
+        Assert.Throws<StudioCompositionBodyException>(
+            () => StudioCompositionBodyEditor.ReadBody(envelope));
+    }
+
     [UnitTest]
     public void ReadBody_ThenWriteBody_PreservesFieldsOutsideTheProjection()
     {

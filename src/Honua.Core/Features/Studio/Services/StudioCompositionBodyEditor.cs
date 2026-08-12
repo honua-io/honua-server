@@ -60,6 +60,8 @@ public static class StudioCompositionBodyEditor
                 return StudioCompositionBody.Empty;
             }
 
+            EnsureReferenceNodesArePresent(composition);
+
             // Normalize the collections before handing the body to any caller. The
             // source-generated converter assigns only members PRESENT in the payload, so a body
             // that simply omits "layers" or "widgets" -- the legal `{}`, or a view-only document --
@@ -82,6 +84,17 @@ public static class StudioCompositionBodyEditor
         {
             throw new StudioCompositionBodyException(
                 "The draft's composition body is not a valid Studio composition payload.", ex);
+        }
+    }
+
+    private static void EnsureReferenceNodesArePresent(StudioCompositionBody composition)
+    {
+        if (composition.Interactions?.Any(interaction =>
+                interaction is null || interaction.On is null || interaction.Do is null) == true
+            || composition.Layout?.Items?.Any(item => item is null) == true)
+        {
+            throw new JsonException(
+                "Composition interactions and layout items must contain non-null reference nodes.");
         }
     }
 
