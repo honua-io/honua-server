@@ -388,7 +388,7 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("ARG PDAL_VERSION=");
         dockerfile.Should().Contain("ARG PDAL_SOURCE_SHA256=");
         dockerfile.Should().Contain("ARG GDAL_VERSION=3.13.1");
-        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.10");
+        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.11");
         dockerfile.Should().Contain("ubuntu-full-3.13.1");
         dockerfile.Should().Contain("apt-get -y --no-install-recommends upgrade");
         dockerfile.Should().Contain("FROM ${GDAL_BASE_IMAGE} AS pdal-build");
