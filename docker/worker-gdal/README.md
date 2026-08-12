@@ -16,7 +16,7 @@ development and compatibility testing; it is not a production distribution.
   SHA-256 checksum, against the same Ubuntu 26.04/GDAL 3.13.1 toolchain. This
   avoids mixing packages from the older Noble UbuntuGIS repository into the
   worker while retaining `readers.las` and `filters.reprojection`.
-- Pins the ASP.NET Core runtime to 10.0.10 and checks the resolved GDAL, PDAL,
+- Pins the ASP.NET Core runtime to 10.0.11 and checks the resolved GDAL, PDAL,
   .NET, and native link closure while assembling the image.
 - Runs the **same** durable job-execution loop (`JobExecutionService` /
   `JobReconciliationService` / `RedisJobQueue`) that the serving image hosts —

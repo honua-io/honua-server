@@ -77,8 +77,8 @@ profile:
   independently built, scanned, admitted, upgraded, and disabled.
 - **PostGIS is not a reconstruction engine.** It may receive a validated result
   through the normal raster ingest/registration path after the job completes.
-  Later serving and analysis then follow the PostGIS-first, database-SLO-aware
-  rules in ADR-0071.
+  Later serving and analysis then follow ADR-0071's serving/storage-plane
+  rules: PostGIS serves and registers the raster; it never executes GP.
 
 This is a trusted built-in capability profile, not ADR-0063 `custom-code`.
 Operators cannot change the entrypoint, inject code, or pass arbitrary engine
