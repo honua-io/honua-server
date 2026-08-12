@@ -701,6 +701,45 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveRasterSource_BlankLegacySource_RemovesLegacyInput()
+    {
+        var plan = CreateRasterSourcePlan(rasterId: 91);
+        var sourceStep = plan.Steps[0];
+        plan = plan with
+        {
+            Steps =
+            [
+                sourceStep with
+                {
+                    Inputs = new Dictionary<string, string>(sourceStep.Inputs)
+                    {
+                        ["source"] = "  ",
+                    },
+                },
+            ],
+        };
+        var resolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
+        resolver.ResolveAsync(
+                Arg.Is<RasterSourceReference>(reference => reference.RasterId == 91),
+                Arg.Any<CancellationToken>())
+            .Returns(RasterSourceResolution.Success(CreateObjectStoreRasterSource()));
+
+        var resolved = await GeoprocessingRasterSourceResolution.ResolveAsync(
+            plan,
+            new BuiltInProcessCatalog(),
+            resolver,
+            new RasterSecurityContextReference
+            {
+                TenantId = "tenant:opaque",
+                AuthorizationSnapshotReference = "job:test:submitter",
+            },
+            CancellationToken.None);
+
+        resolved.Steps[0].Inputs.Should().NotContainKey("source");
+        resolved.Steps[0].RasterSources.Should().ContainKey("source");
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_UnknownOrMismatchedRasterReference_FailsWithoutReadingBytesOrEnumerating()

@@ -236,6 +236,11 @@ internal static class GeoprocessingRasterSourceResolution
         RasterSourceDescriptor descriptor,
         RasterSecurityContextReference securityContext)
     {
+        // A blank legacy source is semantically absent during plan validation and catalog
+        // resolution. Remove it when adding the typed descriptor so the durable worker spec does
+        // not contain both source representations and reject a request admission accepted.
+        var inputs = new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal);
+        inputs.Remove(SourceInput);
         var rasterSources = new Dictionary<string, RasterSourceDescriptor>(
             step.RasterSources,
             StringComparer.Ordinal)
@@ -243,7 +248,7 @@ internal static class GeoprocessingRasterSourceResolution
             [SourceInput] = descriptor with { SecurityContext = securityContext },
         };
 
-        return step with { RasterSources = rasterSources };
+        return step with { Inputs = inputs, RasterSources = rasterSources };
     }
 
     private static AnalysisPlanStep WithResolvedLayerId(AnalysisPlanStep step, int layerId)

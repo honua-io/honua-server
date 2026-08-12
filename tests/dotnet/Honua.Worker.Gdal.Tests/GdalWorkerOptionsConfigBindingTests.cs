@@ -110,6 +110,43 @@ public sealed class GdalWorkerOptionsConfigBindingTests
             .Should().Be(connectionString);
     }
 
+    [UnitTest]
+    public void AddGdalProcessExecutors_ResolvesCloudCredentialEnvironmentReferences()
+    {
+        const string accessVariable = "HONUA_TEST_GDAL_S3_ACCESS";
+        const string secretVariable = "HONUA_TEST_GDAL_S3_SECRET";
+        const string azureVariable = "HONUA_TEST_GDAL_AZURE_CONNECTION";
+        const string azureConnection =
+            "DefaultEndpointsProtocol=https;AccountName=resolved;AccountKey=resolved-secret";
+        var previousAccess = Environment.GetEnvironmentVariable(accessVariable);
+        var previousSecret = Environment.GetEnvironmentVariable(secretVariable);
+        var previousAzure = Environment.GetEnvironmentVariable(azureVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(accessVariable, "resolved-access");
+            Environment.SetEnvironmentVariable(secretVariable, "resolved-secret");
+            Environment.SetEnvironmentVariable(azureVariable, azureConnection);
+            using var provider = BuildProvider(new Dictionary<string, string?>
+            {
+                ["FileStorage:AwsS3:AccessKeyId"] = $"env:{accessVariable}",
+                ["FileStorage:AwsS3:SecretAccessKey"] = $"env:{secretVariable}",
+                ["FileStorage:AzureBlob:ConnectionString"] = $"env:{azureVariable}",
+            });
+
+            var s3 = provider.GetRequiredService<IOptions<AwsS3Options>>().Value;
+            s3.AccessKeyId.Should().Be("resolved-access");
+            s3.SecretAccessKey.Should().Be("resolved-secret");
+            provider.GetRequiredService<IOptions<AzureBlobOptions>>().Value.ConnectionString
+                .Should().Be(azureConnection);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(accessVariable, previousAccess);
+            Environment.SetEnvironmentVariable(secretVariable, previousSecret);
+            Environment.SetEnvironmentVariable(azureVariable, previousAzure);
+        }
+    }
+
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)
     {
         var configuration = new ConfigurationBuilder()
