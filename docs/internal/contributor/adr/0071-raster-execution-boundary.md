@@ -21,9 +21,13 @@ runs GP:
   overviews, materialized tiles, and a registration target for GP outputs —
   including serving-side operations whose database implementation uses GDAL
   internally, which does not make PostGIS a GP execution engine;
-- the native GP worker is the raster execution engine: it runs every raster
-  GP job, either as a local worker pool or on a remote batch backend such as
-  AWS Batch, selected by static operator configuration rather than per job;
+- the native GP worker is the raster analysis execution engine: it runs every
+  ordinary raster GP job governed by this ADR, either as a local worker pool
+  or on a remote batch backend such as AWS Batch, selected by static operator
+  configuration (with an optional bounded per-job size-threshold comparison);
+- orthomosaic production is the explicit exception governed by ADR-0073: it
+  runs only in the dedicated `photogrammetry-worker`, then hands its validated
+  raster output to this ADR's registration, serving, and later-analysis path;
   and
 - object storage exchanges large inputs, intermediate products, and outputs
   by typed reference.
@@ -33,9 +37,10 @@ PostGIS-backed raster and surface primitives behind the canonical process
 model — capability, not an execution mandate. ADR-0038 keeps native
 dependencies out of the serving image. ADR-0057 says raster GP uses the GDAL
 worker. ADR-0060 describes local and remote execution backends. Read together
-they now agree on a single answer: raster GP always executes on the GDAL
-worker; PostGIS participates only as a data source and registration/serving
-target.
+they now agree on a single answer for ordinary raster analysis: it executes on
+the GDAL worker; PostGIS participates only as a data source and
+registration/serving target. ADR-0073 separately controls the qualified
+multi-stage photogrammetry engine used to produce an orthomosaic.
 
 An earlier version of this ADR instead proposed a dual-engine design — per-job
 selection between PostGIS and GDAL, and between local and remote placement,
@@ -62,9 +67,17 @@ Batch isolation; the reference-based artifact transport below addresses it.
 
 ## Decision
 
-Adopt a **single raster execution engine**. All raster GP jobs execute on the
-isolated native GDAL worker. There is no per-job engine selection and PostGIS
-never executes GP analysis.
+Adopt a **single ordinary raster-analysis execution engine**. Except for the
+dedicated orthomosaic-production capability controlled by ADR-0073, all raster
+GP jobs execute on the isolated native GDAL worker. There is no per-job engine
+selection and PostGIS never executes GP analysis.
+
+The exception is narrow: orthomosaic production is a multi-stage
+photogrammetry workflow, not a GDAL-worker algorithm, and executes only in the
+qualified `photogrammetry-worker`. Its validated output crosses back as a
+canonical typed raster artifact. Registration, serving, and any subsequent
+raster analysis of that artifact follow this decision. This exception does not
+create a second engine for the ordinary raster operations listed below.
 
 The GDAL worker runs in one of two placements — a local worker pool, or a
 remote batch backend such as AWS Batch — chosen by **static operator
@@ -97,8 +110,9 @@ backend.
 | --- | --- | --- |
 | Native-AOT web | Protocol adaptation, authorization, validation, metadata-only planning, bounded request execution, job submission, and bounded pure-managed COG/Zarr reads | No GDAL libraries, CLI tools, bindings, or transitive native packages |
 | PostGIS | Serving/storage plane: bounded, data-resident raster serving and a registration target for GP outputs | Database-side GDAL is allowed for storage/serving functions only; PostGIS never executes a GP job |
-| Local native GP worker | **The** raster execution engine for local placement: format conversion and every native raster algorithm | GDAL is allowed and isolated from public ingress |
+| Local native GP worker | **The** ordinary raster-analysis execution engine for local placement: format conversion and native raster algorithms other than ADR-0073 photogrammetry | GDAL is allowed and isolated from public ingress |
 | Remote native backend | The same GDAL worker image, for placements selected by static operator configuration (bursty, high-memory, or high-scratch profiles) | A versioned GDAL worker image runs through `IBatchComputeBackend`, including AWS Batch or another configured backend |
+| Dedicated photogrammetry worker | ADR-0073 orthomosaic production only; publishes a validated canonical raster artifact back through the shared handoff | Separately qualified optional image and dependency surface; never hosted by the general GP/GDAL worker |
 | Object storage | Exchange of large immutable inputs, intermediate products, and outputs | Typed references cross process boundaries; payload bytes do not travel in durable job specifications |
 
 The serving image may issue bounded PostGIS raster serving queries as part of
@@ -122,7 +136,8 @@ Honua selects one of three execution envelopes:
    bursty jobs, object-store-local bulk work, large decoded surfaces, or
    high/unpredictable scratch and memory demand.
 
-Every raster GP operation — clip/window, mosaic, reproject/resample, map
+Every ordinary raster GP operation governed by this ADR — clip/window,
+mosaic, reproject/resample, map
 algebra, reclassification, spectral indices, statistics, zonal statistics,
 terrain derivatives, arbitrary format decode/encode, COG construction,
 NetCDF/HDF/GRIB conversion, and large mosaics or warps — executes on the GDAL
@@ -413,9 +428,10 @@ serving, and registration; raster GP analysis remains on the GDAL worker.
 
 - DEM-derived elevation, terrain tiles, hillshade and other raster surface
   derivatives remain raster capabilities and follow this execution decision.
-- Orthomosaic production is a durable native/photogrammetric workflow whose
-  registered output is a canonical raster artifact. Subsequent serving and
-  raster analysis follow this decision.
+- Orthomosaic production is the explicit ADR-0073 exception: its durable job
+  executes only in the dedicated `photogrammetry-worker`, never the general
+  GP/GDAL worker. Its registered output is a canonical raster artifact;
+  subsequent serving and raster analysis follow this decision.
 - Point clouds (LAS/LAZ/COPC), meshes, scene-layer generation, stereo feature
   matching, and general 3D reconstruction are not raster engines. They use
   separate native capability families and worker dependencies. If they produce
@@ -532,8 +548,10 @@ Effective decision, replacing everything this document previously said about
 dynamic engine selection, database-SLO-aware placement, a capability/cost
 registry, or cross-engine semantic equivalence:
 
-- **All raster GP executes on the isolated GDAL worker.** There is no per-job
-  engine selection, and PostGIS never executes GP analysis.
+- **All ordinary raster analysis GP executes on the isolated GDAL worker.**
+  ADR-0073's dedicated photogrammetry runtime is the explicit orthomosaic-
+  production exception; there is no per-job engine selection, and PostGIS
+  never executes GP analysis.
 - **Local vs. AWS Batch placement is static operator configuration**
   (optionally a simple size threshold). A bounded admission router evaluates
   a configured threshold per job and records the result; it is not the

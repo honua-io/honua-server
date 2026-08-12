@@ -5,11 +5,14 @@ Date: 2026-07-04
 
 Raster specialization: [ADR-0071](0071-raster-execution-boundary.md) controls
 raster engine and placement within the execution/GP plane. As of ADR-0071's
-2026-08-11 single-engine amendment (honua-server#3085, #3167), all raster GP
-runs on the isolated GDAL worker; local vs. a configured batch backend is
-static operator configuration, not a per-job placement decision, and PostGIS
-never executes raster GP. Large raster inputs and outputs cross the plane by
-typed artifact reference.
+2026-08-11 single-engine amendment (honua-server#3085, #3167), ordinary raster
+analysis GP runs on the isolated GDAL worker; local vs. a configured batch
+backend follows a rule fixed by operator configuration. A configured decoded-
+size threshold performs only a bounded per-job comparison against that rule;
+it is not a dynamic capability, cost, or health planner. ADR-0073 separately
+governs orthomosaic production in the dedicated `photogrammetry-worker`, and
+PostGIS never executes raster GP. Large raster inputs and outputs cross the
+plane by typed artifact reference.
 
 ## Context
 
@@ -33,9 +36,12 @@ Adopt a **two-plane, substrate-neutral operability architecture**: Honua owns th
 - **Serving plane (`IDeployBackend`)** — stateless request/response; rolling replace with health-gating; proxy-fronted.
 - **Execution/GP plane (`IBatchComputeBackend`)** — stateless batch jobs (inputs from store → outputs to store); submit / track / retry / cancel / collect; scheduler-fronted.
 
-For raster jobs, the execution plane is the isolated GDAL worker, run either
-as a local process pool or on a remote backend. ADR-0071 makes that placement
-static operator configuration, not a per-job planner decision.
+For ordinary raster analysis jobs, the execution plane is the isolated GDAL
+worker, run either as a local process pool or on a remote backend. ADR-0071
+makes the routing rule static operator configuration; when operators configure
+a decoded-size threshold, a bounded router applies that rule per job without
+becoming a dynamic capability, cost, or health planner. ADR-0073's dedicated
+photogrammetry runtime is a separate qualified capability boundary.
 `IBatchComputeBackend` is the substrate-neutral dispatch seam for the remote
 placement; there is no governed PostGIS execution path to bypass or duplicate,
 since PostGIS never executes raster GP.
