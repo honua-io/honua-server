@@ -5553,7 +5553,6 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Position_NoDataPixel_ReturnsNullValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Position_OutsideCollectionExtent_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Position_ParameterNameFilter_ReturnsOnlyRequestedBands",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Position_UnknownParameterName_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Position_WithoutDatetime_UsesRasterTimestamp",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_InvalidCoords_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries"
