@@ -237,6 +237,21 @@ internal sealed partial class TileOperationExecutionCore
                 }
 
                 affected++;
+
+                if (deleteBytes && checkpointEnabled)
+                {
+                    // A delete removes the successful key from the next snapshot. Durably advance
+                    // the cumulative safety-cap count immediately and without the request token,
+                    // before cancellation can escape to a retry and expose a later key.
+                    await PersistLifecycleDeleteCheckpointAsync(
+                        generationId!,
+                        request.Operation,
+                        i + 1,
+                        priorDeleteMutations + affected,
+                        failed,
+                        newFailedUnits,
+                        attempt).ConfigureAwait(false);
+                }
             }
 
             processed++;
@@ -312,6 +327,30 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = $"{failed} tiles failed during cache {request.Operation}.",
             CurrentPhase = $"{request.Operation} completed with failures"
         };
+    }
+
+    private async Task PersistLifecycleDeleteCheckpointAsync(
+        string generationId,
+        string operation,
+        int completedUnits,
+        long completedUnitCount,
+        long failedUnitCount,
+        IReadOnlyCollection<string> failedUnits,
+        int attempt)
+    {
+        await _checkpointStore!.SaveAsync(
+            new TileCacheGenerationCheckpoint
+            {
+                GenerationId = generationId,
+                Operation = operation,
+                CompletedMetatileBlocks = completedUnits,
+                CompletedUnitCount = completedUnitCount,
+                FailedUnitCount = failedUnitCount,
+                FailedUnits = failedUnits.ToArray(),
+                CapturedAt = DateTimeOffset.UtcNow,
+                Attempt = attempt
+            },
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     private async Task InvalidateHttpLayerAsync(

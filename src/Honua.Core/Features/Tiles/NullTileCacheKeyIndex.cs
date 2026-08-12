@@ -24,7 +24,11 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
     public bool IsEnabled => false;
 
     /// <inheritdoc />
-    public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+    public Task RecordAccessAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
     /// <inheritdoc />

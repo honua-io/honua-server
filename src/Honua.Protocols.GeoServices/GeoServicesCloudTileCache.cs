@@ -63,6 +63,14 @@ internal static class GeoServicesCloudTileCache
                 return null;
             }
 
+            // The download can cross the object's TTL after the initial metadata check. Recheck
+            // against the same authoritative expiration before recording access, so an access
+            // update cannot resurrect index state that TTL pruning just removed.
+            if (metadata.ExpiresAt.HasValue && metadata.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+            {
+                return null;
+            }
+
             var contentType = string.IsNullOrWhiteSpace(metadata.ContentType)
                 ? DefaultContentType
                 : metadata.ContentType;
@@ -70,7 +78,11 @@ internal static class GeoServicesCloudTileCache
             // Cache hit: refresh the tile's last-access score so hot tiles survive LRU eviction (#1917).
             if (keyIndex is { IsEnabled: true })
             {
-                await keyIndex.RecordAccessAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
+                await keyIndex.RecordAccessAsync(
+                    objectKey,
+                    data.LongLength,
+                    metadata.ExpiresAt,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return new Hit(data, contentType);

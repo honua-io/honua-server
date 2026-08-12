@@ -194,7 +194,11 @@ public sealed class TileCacheEvictionServiceTests
 
         public void Seed(TileCacheEntry entry) => _entries.Add(entry);
 
-        public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        public Task RecordAccessAsync(
+            string key,
+            long sizeBytes,
+            DateTimeOffset? expiresAt,
+            CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task RecordWriteAsync(

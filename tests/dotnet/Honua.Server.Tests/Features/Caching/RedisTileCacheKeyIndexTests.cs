@@ -71,9 +71,22 @@ public sealed class RedisTileCacheKeyIndexTests
             .Returns(Task.FromException<bool>(new RedisException("unavailable")));
         var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
 
-        var act = async () => await index.RecordAccessAsync("tile-key", 42);
+        var act = async () => await index.RecordAccessAsync("tile-key", 42, expiresAt: null);
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_WhenObjectExpired_DoesNotReAddPrunedKey()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        await index.RecordAccessAsync("tile-key", 42, DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        database.DidNotReceive().CreateTransaction(Arg.Any<object>());
     }
 
     [Theory]

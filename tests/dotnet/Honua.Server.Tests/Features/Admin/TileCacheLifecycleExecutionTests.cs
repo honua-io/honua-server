@@ -139,6 +139,54 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_CancellationAfterSuccess_PersistsCumulativeCapBeforeRetry()
+    {
+        const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
+        const string second = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        const string outsideOriginalCap = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/2.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(first, 100);
+        index.Seed(second, 100);
+        index.Seed(outsideOriginalCap, 100);
+        using var cancellation = new CancellationTokenSource();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (string.Equals(call.ArgAt<string>(0), first, StringComparison.Ordinal))
+                {
+                    cancellation.Cancel();
+                }
+
+                return Task.FromResult(true);
+            });
+        var checkpointStore = new InMemoryTileCacheGenerationCheckpointStore();
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 2,
+            GenerationId = "gen-delete-cancel-cap"
+        };
+
+        var cancelled = async () => await ExecuteAsync(
+            request,
+            index,
+            storage,
+            checkpointStore,
+            cancellationToken: cancellation.Token);
+        await cancelled.Should().ThrowAsync<OperationCanceledException>();
+        (await checkpointStore.LoadAsync(request.GenerationId!))!.CompletedUnitCount.Should().Be(1);
+
+        var retry = await ExecuteAsync(request, index, storage, checkpointStore);
+
+        retry.Status.Should().Be(OperationStatus.Completed);
+        index.Removed.Should().BeEquivalentTo([first, second]);
+        index.Remaining.Should().BeEquivalentTo([outsideOriginalCap]);
+    }
+
+    [UnitTest]
     public async Task Delete_WhenIndexIsDisabled_FailsInsteadOfReportingFalseSuccess()
     {
         var storage = Substitute.For<ICloudFileStorage>();
@@ -610,7 +658,8 @@ public sealed class TileCacheLifecycleExecutionTests
         ITileCacheKeyIndex keyIndex,
         ICloudFileStorage storage,
         ITileCacheGenerationCheckpointStore? checkpointStore = null,
-        IMetadataV2GraphProvider? graphProvider = null)
+        IMetadataV2GraphProvider? graphProvider = null,
+        CancellationToken cancellationToken = default)
     {
         var services = new ServiceCollection();
         services.AddSingleton(graphProvider ?? Substitute.For<IMetadataV2GraphProvider>());
@@ -643,7 +692,7 @@ public sealed class TileCacheLifecycleExecutionTests
             request.LayerId,
             request.TileMatrixSetId);
 
-        return await core.ExecuteAsync(started, request, provider, CancellationToken.None);
+        return await core.ExecuteAsync(started, request, provider, cancellationToken);
     }
 
     private static CloudFile StoredTile(string key) => new()
@@ -684,7 +733,11 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public void Seed(string key, long sizeBytes) => _entries[key] = sizeBytes;
 
-        public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        public Task RecordAccessAsync(
+            string key,
+            long sizeBytes,
+            DateTimeOffset? expiresAt,
+            CancellationToken cancellationToken = default)
         {
             _entries[key] = sizeBytes;
             return Task.CompletedTask;
@@ -695,7 +748,7 @@ public sealed class TileCacheLifecycleExecutionTests
             long sizeBytes,
             DateTimeOffset expiresAt,
             CancellationToken cancellationToken = default)
-            => RecordAccessAsync(key, sizeBytes, cancellationToken);
+            => RecordAccessAsync(key, sizeBytes, expiresAt, cancellationToken);
 
         public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
         {

@@ -92,8 +92,12 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     public bool IsEnabled => true;
 
     /// <inheritdoc />
-    public async Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
-        => await RecordAsync(key, sizeBytes, expiresAt: null, cancellationToken).ConfigureAwait(false);
+    public async Task RecordAccessAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        CancellationToken cancellationToken = default)
+        => await RecordAsync(key, sizeBytes, expiresAt, isWrite: false, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
     public async Task RecordWriteAsync(
@@ -101,12 +105,13 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         long sizeBytes,
         DateTimeOffset expiresAt,
         CancellationToken cancellationToken = default)
-        => await RecordAsync(key, sizeBytes, expiresAt, cancellationToken).ConfigureAwait(false);
+        => await RecordAsync(key, sizeBytes, expiresAt, isWrite: true, cancellationToken).ConfigureAwait(false);
 
     private async Task RecordAsync(
         string key,
         long sizeBytes,
         DateTimeOffset? expiresAt,
+        bool isWrite,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(key))
@@ -121,16 +126,24 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             var db = _redis.GetDatabase();
             var score = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             await PruneStorageExpirationsAsync(db, score).ConfigureAwait(false);
+            if (!isWrite && expiresAt.HasValue && expiresAt.Value.ToUnixTimeMilliseconds() <= score)
+            {
+                return;
+            }
 
             // Refresh LRU score and remember the byte size. A transaction keeps the two structures
             // consistent so the evictor never sees a key without an associated size.
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetAddAsync(LastAccessSetKey, key, score);
             _ = transaction.HashSetAsync(SizeHashKey, key, sizeBytes);
-            if (expiresAt.HasValue)
+            if (isWrite)
             {
                 _ = transaction.HashSetAsync(WriteVersionHashKey, key, Guid.NewGuid().ToString("N"));
                 _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
+            }
+
+            if (expiresAt.HasValue)
+            {
                 _ = transaction.SortedSetAddAsync(
                     StorageExpirationSetKey,
                     key,
@@ -138,14 +151,14 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             }
 
             var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
-            if (expiresAt.HasValue && !committed)
+            if (isWrite && !committed)
             {
                 throw new RedisException("Tile-cache write state transaction was not committed.");
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            if (expiresAt.HasValue)
+            if (isWrite)
             {
                 Log.RecordWriteFailed(_logger, ex);
                 throw;

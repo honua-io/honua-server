@@ -48,8 +48,13 @@ public interface ITileCacheKeyIndex
     /// </summary>
     /// <param name="key">The tile cache key (the storage object key).</param>
     /// <param name="sizeBytes">The stored tile size in bytes.</param>
+    /// <param name="expiresAt">The storage object's absolute expiration time, when available.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default);
+    Task RecordAccessAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset? expiresAt,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records a newly written tile, advances its write generation, and clears any
