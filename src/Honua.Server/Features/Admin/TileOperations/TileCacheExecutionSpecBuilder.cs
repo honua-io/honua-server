@@ -29,6 +29,7 @@ internal static class TileCacheExecutionSpecBuilder
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
+        request = NormalizeRequest(request);
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -230,7 +231,7 @@ internal static class TileCacheExecutionSpecBuilder
             schemaName = schema;
         }
 
-        request = new TileOperationStartRequest
+        var parsedRequest = new TileOperationStartRequest
         {
             Operation = operation,
             ServiceId = string.IsNullOrWhiteSpace(serviceId) ? null : serviceId,
@@ -245,14 +246,62 @@ internal static class TileCacheExecutionSpecBuilder
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
         };
 
+        try
+        {
+            request = parsedRequest with { Operation = NormalizeOperation(parsedRequest.Operation) };
+        }
+        catch (ArgumentException)
+        {
+            error = $"invalid tile-cache parameter 'operation'; got '{operation}'";
+            return false;
+        }
+
         return true;
     }
 
     /// <summary>
+    /// Canonicalizes the request shape shared by in-process and durable execution paths.
+    /// </summary>
+    public static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var operation = NormalizeOperation(request.Operation);
+
+        return request with
+        {
+            Operation = operation,
+            TileMatrixSetId = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+                ? DefaultTileMatrixSetId
+                : request.TileMatrixSetId.Trim(),
+            Style = string.IsNullOrWhiteSpace(request.Style)
+                ? "default"
+                : request.Style.Trim(),
+            Format = string.IsNullOrWhiteSpace(request.Format)
+                ? null
+                : request.Format.Trim().ToLowerInvariant(),
+        };
+    }
+
+    private static string NormalizeOperation(string? operation)
+    {
+        var normalized = operation?.Trim().ToLowerInvariant();
+        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
+        {
+            throw new ArgumentException(
+                "Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.",
+                nameof(operation));
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
     /// Builds the replica-safety partition key for a tile-cache generation window (issue #2661).
-    /// Concurrent seed/warm/expire/delete jobs that target the same
-    /// <c>(service, gridset, style)</c> window share this key so the execution runtime serializes
-    /// them under an exclusive lease and two replicas cannot mutate the same window at once.
+    /// All resolved layer sets for the same gridset/style use one coarse partition. A composite
+    /// service target and any single-layer subset therefore overlap under the same exclusive lease,
+    /// preventing a service delete from racing a layer seed while unrelated grid/style windows can
+    /// still execute concurrently.
     /// </summary>
     public static string BuildPartitionKey(
         TileOperationStartRequest request,
@@ -260,9 +309,7 @@ internal static class TileCacheExecutionSpecBuilder
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var targetSegment = resolvedLayerIds is { Count: > 0 }
-            ? string.Join(',', resolvedLayerIds.Distinct().Order())
-            : request.LayerId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "_";
+        var targetSegment = resolvedLayerIds is { Count: > 0 } ? "layers" : "unresolved";
         var gridsetSegment = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
             ? DefaultTileMatrixSetId
             : GeneratedTileCacheKey.Sanitize(request.TileMatrixSetId);

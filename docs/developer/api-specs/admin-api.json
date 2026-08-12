@@ -19443,6 +19443,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The generated tile-cache index is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

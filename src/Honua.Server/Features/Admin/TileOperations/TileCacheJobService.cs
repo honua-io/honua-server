@@ -70,6 +70,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
 
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";

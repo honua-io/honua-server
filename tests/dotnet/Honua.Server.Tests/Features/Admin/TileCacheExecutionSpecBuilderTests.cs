@@ -187,6 +187,28 @@ public sealed class TileCacheExecutionSpecBuilderTests
     }
 
     [UnitTest]
+    public void BuildThenTryParse_NormalizesDurableRequestBeforeDispatch()
+    {
+        var spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
+        {
+            Operation = " DELETE ",
+            LayerId = 4,
+            TileMatrixSetId = " WebMercatorQuad ",
+            Style = " night ",
+            Format = " PNG ",
+        }, schemaName: null, new TileCacheBatchOptions());
+
+        TileCacheExecutionSpecBuilder.TryParse(
+            spec.Parameters, out var decoded, out _, out var error).Should().BeTrue();
+
+        error.Should().BeEmpty();
+        decoded.Operation.Should().Be("delete");
+        decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        decoded.Style.Should().Be("night");
+        decoded.Format.Should().Be("png");
+    }
+
+    [UnitTest]
     public void TryParse_SpecWithoutStyleOrFormat_ParsesWithNulls()
     {
         // Back-compat: a spec produced before the style/format fields existed must still parse.
@@ -238,7 +260,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
             ServiceId = "svc-1",
             TileMatrixSetId = "WebMercatorQuad",
             Style = "night"
-        }, [42]).Should().Be("tilecache:42:webmercatorquad:night");
+        }, [42]).Should().Be("tilecache:layers:webmercatorquad:night");
     }
 
     [UnitTest]
@@ -276,6 +298,22 @@ public sealed class TileCacheExecutionSpecBuilderTests
         };
 
         TileCacheExecutionSpecBuilder.BuildPartitionKey(serviceRequest, [42])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(layerRequest, [42]));
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_OverlappingLayerSets_ShareCoarseWindowLease()
+    {
+        var serviceRequest = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "svc",
+            TileMatrixSetId = "WebMercatorQuad",
+            Style = "default",
+        };
+        var layerRequest = serviceRequest with { ServiceId = null, LayerId = 42, Operation = "seed" };
+
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(serviceRequest, [42, 43])
             .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(layerRequest, [42]));
     }
 

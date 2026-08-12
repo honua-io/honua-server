@@ -85,7 +85,7 @@ public sealed class TileCacheJobServiceTests
 
         var servicePartition = (await jobStore.GetAsync(byService))!.Concurrency!.PartitionKey;
         var layerPartition = (await jobStore.GetAsync(byLayer))!.Concurrency!.PartitionKey;
-        servicePartition.Should().Be("tilecache:42:web_mercatorquad:a_b");
+        servicePartition.Should().Be("tilecache:layers:web_mercatorquad:a_b");
         layerPartition.Should().Be(servicePartition);
     }
 
@@ -114,6 +114,29 @@ public sealed class TileCacheJobServiceTests
         var progress = await progressStore.GetProgressAsync<TileOperationProgress>(jobId);
         progress.Should().NotBeNull();
         progress!.Operation.Should().Be("seed");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_NormalizesOperationBeforeDurableDispatch()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var service = CreateService(jobStore, progressStore, [backend], options);
+
+        var jobId = await service.SubmitAsync(SeedRequest() with
+        {
+            Operation = " DELETE ",
+            TileMatrixSetId = " WebMercatorQuad ",
+            Style = " default ",
+        }, schemaName: null);
+
+        var record = (await jobStore.GetAsync(jobId))!;
+        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
+        var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
+        progress.Operation.Should().Be("delete");
+        progress.TileMatrixSetId.Should().Be("WebMercatorQuad");
     }
 
     [UnitTest]

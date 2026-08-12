@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Tiles;
 using StackExchange.Redis;
 
@@ -26,6 +27,18 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
     private const string SizeHashKey = "honua:tile-cache:size";
     private const string WriteVersionHashKey = "honua:tile-cache:write-version";
     private const string ExpiredSetKey = "honua:tile-cache:expired";
+    private const string SnapshotScript = """
+        local ranked = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
+        local snapshot = {}
+        for index = 1, #ranked, 2 do
+            local key = ranked[index]
+            snapshot[#snapshot + 1] = key
+            snapshot[#snapshot + 1] = ranked[index + 1]
+            snapshot[#snapshot + 1] = redis.call('HGET', KEYS[2], key) or ''
+            snapshot[#snapshot + 1] = redis.call('HGET', KEYS[3], key) or ''
+        end
+        return snapshot
+        """;
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
@@ -143,40 +156,51 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
         {
             var db = _redis.GetDatabase();
 
-            // Least-recently-used first so the snapshot ordering already matches the policy's
-            // eviction order; the policy re-sorts defensively but this keeps payloads small.
-            var ranked = await db.SortedSetRangeByRankWithScoresAsync(
-                LastAccessSetKey,
-                0,
-                -1,
-                Order.Ascending).ConfigureAwait(false);
-
-            if (ranked.Length == 0)
+            // Capture each ranked observation together with its size and write generation in one
+            // Redis command. A later write cannot otherwise slip between ZRANGE and HGET and make
+            // lifecycle deletion mistake a newly generated object for the older snapshot entry.
+            var snapshot = (RedisResult[]?)await db.ScriptEvaluateAsync(
+                SnapshotScript,
+                new RedisKey[] { LastAccessSetKey, SizeHashKey, WriteVersionHashKey },
+                values: null,
+                flags: CommandFlags.DemandMaster).ConfigureAwait(false);
+            if (snapshot is null || snapshot.Length == 0)
             {
                 return new TileCacheIndexSnapshot([], IsAvailable: true);
             }
 
-            var fields = new RedisValue[ranked.Length];
-            for (var i = 0; i < ranked.Length; i++)
+            const int fieldsPerEntry = 4;
+            if (snapshot.Length % fieldsPerEntry != 0)
             {
-                fields[i] = ranked[i].Element;
+                throw new RedisException("Tile-cache snapshot script returned a malformed result.");
             }
 
-            var sizes = await db.HashGetAsync(SizeHashKey, fields).ConfigureAwait(false);
-            var writeVersions = await db.HashGetAsync(WriteVersionHashKey, fields).ConfigureAwait(false);
-
-            var entries = new List<TileCacheEntry>(ranked.Length);
-            for (var i = 0; i < ranked.Length; i++)
+            var entries = new List<TileCacheEntry>(snapshot.Length / fieldsPerEntry);
+            for (var i = 0; i < snapshot.Length; i += fieldsPerEntry)
             {
-                var key = (string?)ranked[i].Element;
+                var key = (string?)snapshot[i];
                 if (string.IsNullOrEmpty(key))
                 {
                     continue;
                 }
 
-                var size = sizes[i].TryParse(out long parsed) ? parsed : 0L;
-                var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)ranked[i].Score);
-                var writeVersion = writeVersions[i].HasValue ? (string?)writeVersions[i] : null;
+                var scoreRaw = (string?)snapshot[i + 1];
+                if (!double.TryParse(scoreRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
+                {
+                    throw new RedisException("Tile-cache snapshot script returned an invalid LRU score.");
+                }
+
+                var sizeRaw = (string?)snapshot[i + 2];
+                var size = long.TryParse(sizeRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : 0L;
+                var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)score);
+                var writeVersion = (string?)snapshot[i + 3];
+                if (string.IsNullOrEmpty(writeVersion))
+                {
+                    writeVersion = null;
+                }
+
                 entries.Add(new TileCacheEntry(key, size, lastAccess, writeVersion));
             }
 

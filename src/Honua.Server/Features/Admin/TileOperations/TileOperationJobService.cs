@@ -87,7 +87,7 @@ internal sealed partial class TileOperationJobService(
         cancellationToken.ThrowIfCancellationRequested();
         PruneExpiredJobRequests();
 
-        var normalized = NormalizeRequest(request);
+        var normalized = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
         var jobId = Guid.NewGuid().ToString("N");
 
         // Stamp a stable generation id on the first submission so seed/warm generations are
@@ -385,29 +385,6 @@ internal sealed partial class TileOperationJobService(
                 DeferredDisposal.Dispose(leaseCoordinator);
             }
         }
-    }
-
-    private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
-    {
-        var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
-        {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.", nameof(request));
-        }
-
-        return request with
-        {
-            Operation = operation,
-            TileMatrixSetId = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
-                ? "WebMercatorQuad"
-                : request.TileMatrixSetId.Trim(),
-            Style = string.IsNullOrWhiteSpace(request.Style)
-                ? "default"
-                : request.Style.Trim(),
-            Format = string.IsNullOrWhiteSpace(request.Format)
-                ? null
-                : request.Format.Trim().ToLowerInvariant()
-        };
     }
 
     private static CachedTileOperationRequest CreateCachedRequest(TileOperationStartRequest request, string? schemaName)
