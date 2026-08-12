@@ -329,8 +329,16 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
             ?? throw new InvalidOperationException(
                 $"Metadata v2 revision {revision} is not retained for environment '{_environment}'.");
 
-        // Activation changes only the current pointer. The immutable snapshot and its
-        // revision-scoped sidecars already exist and must not be copied to a new revision.
+        // A bootstrap write can clear sidecars for every retained revision before it
+        // activates its new snapshot. Rebuild the target revision's derived indexes from
+        // the immutable document before repointing current so the activated graph and its
+        // lookup surfaces become visible atomically without allocating a new revision.
+        await RefreshSidecarsAsync(
+            connection,
+            transaction,
+            target.Graph,
+            clearStaleEnvironmentRows: false,
+            cancellationToken).ConfigureAwait(false);
         await UpsertCurrentAsync(connection, transaction, revision, target.Etag, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 

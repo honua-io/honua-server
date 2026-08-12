@@ -147,6 +147,19 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 },
                 first.Etag);
 
+            // Bootstrap reconciliation can preserve an immutable retained snapshot while
+            // clearing its derived sidecars. Activation must reconstruct those indexes
+            // before making the retained revision current again.
+            await using (var corruptConnection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var deleteCommand = corruptConnection.CreateCommand())
+            {
+                deleteCommand.CommandText = $"""
+                    DELETE FROM "{schema}".metadata_v2_resources_idx
+                     WHERE environment = 'Test' AND revision = {first.Revision};
+                    """;
+                await deleteCommand.ExecuteNonQueryAsync();
+            }
+
             var activated = await store.ActivateRevisionAsync(first.Revision, second.Etag);
 
             activated.Revision.Should().Be(first.Revision);
@@ -161,6 +174,14 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
             command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".metadata_v2_snapshots WHERE environment = 'Test'";
             var snapshotCount = (int)(await command.ExecuteScalarAsync())!;
             snapshotCount.Should().Be(2, "activation must retain revision identity instead of copying the document");
+
+            command.CommandText = $"""
+                SELECT COUNT(*)::int FROM "{schema}".metadata_v2_resources_idx
+                 WHERE environment = 'Test' AND revision = {first.Revision}
+                   AND resource_id = 'retained-first';
+                """;
+            var resourceIndexCount = (int)(await command.ExecuteScalarAsync())!;
+            resourceIndexCount.Should().Be(1, "activation must rebuild sidecars cleared for a retained revision");
         }
         finally
         {
