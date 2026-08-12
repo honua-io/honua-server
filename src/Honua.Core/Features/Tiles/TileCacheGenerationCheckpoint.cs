@@ -39,15 +39,20 @@ public sealed record TileCacheGenerationCheckpoint
     /// </summary>
     public int CompletedMetatileBlocks { get; init; }
 
-    /// <summary>Cumulative number of units that have rendered successfully across all attempts.</summary>
+    /// <summary>
+    /// Cumulative number of units that have rendered successfully across all attempts. For a
+    /// destructive lifecycle delete, this is instead the cumulative number of mutation slots
+    /// durably reserved under the generation's safety cap.
+    /// </summary>
     public long CompletedUnitCount { get; init; }
 
     /// <summary>Number of units recorded as failed at the time the checkpoint was captured.</summary>
     public long FailedUnitCount { get; init; }
 
     /// <summary>
-    /// Bounded set of failed unit keys (<c>layerId/z/x/y</c>) that a retry must regenerate. The
-    /// checkpoint store truncates this to a deterministic upper bound on write.
+    /// Bounded set of failed unit keys (<c>layerId/z/x/y</c>) that a retry must regenerate. During
+    /// a lifecycle delete it also carries the keys with a reserved but not-yet-completed mutation.
+    /// The checkpoint store truncates this to a deterministic upper bound on write.
     /// </summary>
     public required IReadOnlyList<string> FailedUnits { get; init; }
 
@@ -72,7 +77,7 @@ public static class TileCacheGenerationCheckpointBounds
     public const int MaxFailedUnits = 1_000;
 
     /// <summary>Maximum length of a single persisted failed-unit key.</summary>
-    public const int MaxFailedUnitLength = 64;
+    public const int MaxFailedUnitLength = 1_024;
 
     /// <summary>
     /// Returns a copy of <paramref name="checkpoint"/> with counts clamped non-negative, the

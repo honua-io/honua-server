@@ -37,6 +37,7 @@ public sealed class RedisTileCacheKeyIndexTests
                 arguments[0]?.ToString() == "honua:tile-cache:storage-expiration");
         expirationWrite[1]?.ToString().Should().Be("tile-key");
         expirationWrite[2].Should().Be(Convert.ToDouble(expiresAt.ToUnixTimeMilliseconds()));
+        expirationWrite[3].Should().Be(SortedSetWhen.Always);
     }
 
     [Fact]
@@ -87,6 +88,61 @@ public sealed class RedisTileCacheKeyIndexTests
         await index.RecordAccessAsync("tile-key", 42, DateTimeOffset.UtcNow.AddMinutes(-1));
 
         database.DidNotReceive().CreateTransaction(Arg.Any<object>());
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_DoesNotShortenExpirationRecordedByNewerWrite()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(true);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        await index.RecordAccessAsync("tile-key", 42, DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var expirationWrite = transaction.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ITransaction.SortedSetAddAsync))
+            .Select(call => call.GetArguments())
+            .Single(arguments =>
+                arguments[0]?.ToString() == "honua:tile-cache:storage-expiration");
+        expirationWrite[3].Should().Be(SortedSetWhen.GreaterThan);
+    }
+
+    [Fact]
+    public async Task SnapshotWithStatusAsync_DrainsEveryExpiredStorageBatchBeforeReadingIndex()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(
+                Task.FromResult(RedisResult.Create((RedisValue)1_000)),
+                Task.FromResult(RedisResult.Create((RedisValue)1_000)),
+                Task.FromResult(RedisResult.Create((RedisValue)7)));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("WITHSCORES", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(Task.FromResult(RedisResult.Create(Array.Empty<RedisResult>())));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var snapshot = await index.SnapshotWithStatusAsync();
+
+        snapshot.IsAvailable.Should().BeTrue();
+        snapshot.Entries.Should().BeEmpty();
+        await database.Received(3).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
     }
 
     [Theory]

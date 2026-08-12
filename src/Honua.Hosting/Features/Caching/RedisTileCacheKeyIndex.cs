@@ -30,6 +30,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     private const string ExpiredSetKey = "honua:tile-cache:expired";
     private const string StorageExpirationSetKey = "honua:tile-cache:storage-expiration";
     private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
+    private const int StorageExpirationPruneBatchSize = 1_000;
     private static readonly TimeSpan DefaultMutationLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DefaultMutationLeaseRenewalInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MutationLeaseRetryDelay = TimeSpan.FromMilliseconds(25);
@@ -147,7 +148,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 _ = transaction.SortedSetAddAsync(
                     StorageExpirationSetKey,
                     key,
-                    expiresAt.Value.ToUnixTimeMilliseconds());
+                    expiresAt.Value.ToUnixTimeMilliseconds(),
+                    isWrite ? SortedSetWhen.Always : SortedSetWhen.GreaterThan);
             }
 
             var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
@@ -226,9 +228,12 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         try
         {
             var db = _redis.GetDatabase();
-            await PruneStorageExpirationsAsync(
-                db,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+            var nowUnixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            while (await PruneStorageExpirationsAsync(db, nowUnixMilliseconds).ConfigureAwait(false)
+                == StorageExpirationPruneBatchSize)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             // Capture each ranked observation together with its size and write generation in one
             // Redis command. A later write cannot otherwise slip between ZRANGE and HGET and make
@@ -467,9 +472,9 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             : string.Equals((string?)currentVersion, entry.WriteVersion, StringComparison.Ordinal);
     }
 
-    private static async Task PruneStorageExpirationsAsync(IDatabase database, long nowUnixMilliseconds)
+    private static async Task<long> PruneStorageExpirationsAsync(IDatabase database, long nowUnixMilliseconds)
     {
-        _ = await database.ScriptEvaluateAsync(
+        var result = await database.ScriptEvaluateAsync(
             PruneStorageExpirationsScript,
             new RedisKey[]
             {
@@ -481,6 +486,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             },
             new RedisValue[] { nowUnixMilliseconds },
             CommandFlags.DemandMaster).ConfigureAwait(false);
+        return result is null || result.IsNull ? 0L : (long)result;
     }
 
     private static partial class Log

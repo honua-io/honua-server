@@ -95,19 +95,17 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var matched = snapshot.Entries.Where(entry => window.Matches(entry.Key)).ToList();
+        var allMatched = snapshot.Entries.Where(entry => window.Matches(entry.Key)).ToList();
 
         // Deterministic ordinal order so a resumed attempt processes the window in the same order.
-        matched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
+        allMatched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
         string[] warnings = [];
-        if (matched.Count > maxTiles)
+        if (allMatched.Count > maxTiles)
         {
-            var originalCount = matched.Count;
-            matched.RemoveRange(maxTiles, matched.Count - maxTiles);
             warnings =
             [
-                $"The cache lifecycle window matched {originalCount} tiles and was truncated to the {maxTiles}-tile safety cap."
+                $"The cache lifecycle window matched {allMatched.Count} tiles and was truncated to the {maxTiles}-tile safety cap."
             ];
         }
 
@@ -122,24 +120,52 @@ internal sealed partial class TileOperationExecutionCore
             TileOperationLog.GenerationResumed(_logger, generationId!, checkpoint.CompletedMetatileBlocks, checkpoint.FailedUnits.Count, attempt);
         }
 
-        // Delete removes successful entries from the next snapshot. Subtract those prior
-        // mutations from the generation's original safety budget before selecting a retry window,
-        // otherwise newly exposed keys can make repeated attempts exceed MaxTiles cumulatively.
-        var priorDeleteMutations = deleteBytes
+        // Delete reservations, including a key whose prior mutation failed, consume the original
+        // generation safety budget. FailedUnits is also the durable set of reserved keys that a
+        // retry may process without consuming a second slot. This selection admits those pending
+        // keys first and only then fills the still-unreserved portion of MaxTiles.
+        var deleteReservations = deleteBytes
             ? Math.Min(maxTiles, checkpoint?.CompletedUnitCount ?? 0L)
             : 0L;
+        var pendingDeleteUnits = deleteBytes && checkpoint is { FailedUnits.Count: > 0 }
+            ? new HashSet<string>(checkpoint.FailedUnits, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        var snapshotUnits = allMatched
+            .Select(static entry => TruncateUnit(entry.Key))
+            .ToHashSet(StringComparer.Ordinal);
+        pendingDeleteUnits.IntersectWith(snapshotUnits);
+
+        List<TileCacheEntry> matched;
         if (deleteBytes)
         {
-            var remainingDeleteBudget = (int)Math.Max(0L, maxTiles - priorDeleteMutations);
-            if (matched.Count > remainingDeleteBudget)
+            var remainingDeleteBudget = (int)Math.Max(0L, maxTiles - deleteReservations);
+            var newReservationsSelected = 0;
+            matched = [];
+            foreach (var entry in allMatched)
             {
-                matched.RemoveRange(remainingDeleteBudget, matched.Count - remainingDeleteBudget);
+                if (pendingDeleteUnits.Contains(TruncateUnit(entry.Key)))
+                {
+                    matched.Add(entry);
+                }
+                else if (newReservationsSelected < remainingDeleteBudget)
+                {
+                    matched.Add(entry);
+                    newReservationsSelected++;
+                }
+            }
+
+            if (matched.Count < allMatched.Count && deleteReservations > 0)
+            {
                 warnings =
                 [
                     .. warnings,
                     $"The retry was limited to the {remainingDeleteBudget}-tile budget remaining under the original {maxTiles}-tile safety cap."
                 ];
             }
+        }
+        else
+        {
+            matched = allMatched.Take(maxTiles).ToList();
         }
 
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
@@ -153,7 +179,9 @@ internal sealed partial class TileOperationExecutionCore
         var failed = 0L;
         var bytesReleased = 0L;
         var mutations = 0L;
-        var newFailedUnits = new HashSet<string>(StringComparer.Ordinal);
+        var newFailedUnits = deleteBytes
+            ? new HashSet<string>(pendingDeleteUnits, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
 
         var current = progress with
         {
@@ -168,6 +196,30 @@ internal sealed partial class TileOperationExecutionCore
         {
             cancellationToken.ThrowIfCancellationRequested();
             var entry = matched[i];
+            var unit = TruncateUnit(entry.Key);
+
+            if (deleteBytes && checkpointEnabled && !newFailedUnits.Contains(unit))
+            {
+                if (newFailedUnits.Count >= TileCacheGenerationCheckpointBounds.MaxFailedUnits)
+                {
+                    throw new InvalidOperationException(
+                        "The lifecycle delete checkpoint cannot reserve another key without exceeding its durable bound.");
+                }
+
+                // Reserve the safety-cap slot before the irreversible storage delete. SaveAsync is
+                // intentionally not best-effort here: if durable accounting is unavailable, no
+                // bytes for this key may be changed.
+                newFailedUnits.Add(unit);
+                deleteReservations++;
+                await PersistLifecycleDeleteCheckpointAsync(
+                    generationId!,
+                    request.Operation,
+                    i,
+                    deleteReservations,
+                    newFailedUnits.Count,
+                    newFailedUnits,
+                    attempt).ConfigureAwait(false);
+            }
 
             var release = true;
             try
@@ -224,7 +276,7 @@ internal sealed partial class TileOperationExecutionCore
             {
                 TileOperationLog.LifecycleMutationFailed(_logger, request.Operation, ex);
                 failed++;
-                newFailedUnits.Add(TruncateUnit(entry.Key));
+                newFailedUnits.Add(unit);
                 release = false;
             }
 
@@ -234,24 +286,10 @@ internal sealed partial class TileOperationExecutionCore
                 {
                     bytesReleased += entry.SizeBytes;
                     mutations++;
+                    newFailedUnits.Remove(unit);
                 }
 
                 affected++;
-
-                if (deleteBytes && checkpointEnabled)
-                {
-                    // A delete removes the successful key from the next snapshot. Durably advance
-                    // the cumulative safety-cap count immediately and without the request token,
-                    // before cancellation can escape to a retry and expose a later key.
-                    await PersistLifecycleDeleteCheckpointAsync(
-                        generationId!,
-                        request.Operation,
-                        i + 1,
-                        priorDeleteMutations + affected,
-                        failed,
-                        newFailedUnits,
-                        attempt).ConfigureAwait(false);
-                }
             }
 
             processed++;
@@ -273,8 +311,8 @@ internal sealed partial class TileOperationExecutionCore
                         generationId!,
                         request.Operation,
                         i + 1,
-                        deleteBytes ? priorDeleteMutations + affected : affected,
-                        failed,
+                        deleteBytes ? deleteReservations : affected,
+                        deleteBytes ? newFailedUnits.Count : failed,
                         newFailedUnits,
                         attempt,
                         cancellationToken).ConfigureAwait(false);
