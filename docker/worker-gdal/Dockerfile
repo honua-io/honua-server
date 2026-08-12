@@ -28,7 +28,7 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
 ARG GDAL_VERSION=3.13.1
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
-ARG DOTNET_RUNTIME_VERSION=10.0.10
+ARG DOTNET_RUNTIME_VERSION=10.0.11
 # PDAL is built from its upstream release archive against the SAME GDAL/Ubuntu
 # toolchain as the runtime. Ubuntu 26.04 does not publish PDAL, and cross-release
 # UbuntuGIS packages are intentionally forbidden. Pin both release and upstream
