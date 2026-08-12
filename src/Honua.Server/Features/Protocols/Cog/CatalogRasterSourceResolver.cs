@@ -167,10 +167,25 @@ internal sealed class CatalogRasterSourceResolver(
         // producing a durable job record (#3090). Probe dimensions are trusted because every
         // probe range was pinned to the same immutable ETag captured above.
         var dimensions = probe.Dimensions;
-        var bytesPerSample = (dimensions.BitsPerSample + 7) / 8;
-        var decodedBytes = dimensions.Width * dimensions.Height
-            * dimensions.BandCount * (long)bytesPerSample;
         var maxDecodedBytes = options.Value.MaxDecodedRasterBytes;
+        long decodedBytes;
+        try
+        {
+            // checked: hostile headers can declare per-axis values whose product wraps 64-bit
+            // math (e.g. 3e9 x 3e9 x 4 bands), which would slip a negative/small total past the
+            // comparison below and defeat the decompression-bomb gate.
+            var bytesPerSample = (dimensions.BitsPerSample + 7) / 8;
+            decodedBytes = checked(dimensions.Width * dimensions.Height
+                * dimensions.BandCount * (long)bytesPerSample);
+        }
+        catch (OverflowException)
+        {
+            return RasterSourceResolution.Failure(
+                $"the resolved raster's decoded size ({dimensions.Width}x{dimensions.Height}, "
+                + $"{dimensions.BandCount} band(s), {dimensions.BitsPerSample} bits/sample) overflows the "
+                + "admission bound and exceeds the maximum accepted for geoprocessing sources.");
+        }
+
         if (decodedBytes > maxDecodedBytes)
         {
             return RasterSourceResolution.Failure(

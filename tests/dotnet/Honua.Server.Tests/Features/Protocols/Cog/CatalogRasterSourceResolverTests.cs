@@ -218,6 +218,42 @@ public sealed class CatalogRasterSourceResolverTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_DecodedSizeProductOverflowsLong_FailsClosed()
+    {
+        var store = Substitute.For<ICogStore>();
+        store.GetAsync(91, Arg.Any<CancellationToken>()).Returns(CreateRegistration(91, layerId: 42));
+        var reader = Substitute.For<ICloudRangeReader>();
+        reader.Provider.Returns(CloudStorageProvider.AwsS3);
+        reader.GetObjectMetadataAsync("test-bucket", "test.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata
+            {
+                SizeBytes = 4_096,
+                Version = "s3-version-10",
+                ETag = "etag-10",
+            });
+        reader.ReadRangeAsync(
+                "test-bucket",
+                "test.tif",
+                0,
+                4096,
+                "etag-10",
+                Arg.Any<CancellationToken>())
+            // 3e9 x 3e9 x 4 bands x 8 bits = ~3.6e19 decoded bytes: the unchecked product wraps
+            // 64-bit math negative, which would sail under MaxDecodedRasterBytes and defeat the
+            // decompression-bomb gate (#3090).
+            .Returns(BuildMinimalTiffHeader(width: 3_000_000_000, height: 3_000_000_000, bands: 4, bitsPerSample: 8));
+        await using var services = BuildServices(store, BuildSnapshot((42, 900)), reader);
+        var resolver = CreateResolver(services, maxDecodedRasterBytes: 64L * 1024 * 1024);
+
+        var result = await resolver.ResolveAsync(new RasterSourceReference(900, 91));
+
+        result.Found.Should().BeFalse();
+        result.Descriptor.Should().BeNull();
+        result.FailureReason.Should().Contain("decoded size");
+        await reader.DidNotReceiveWithAnyArgs().ReadRangeStreamAsync(default!, default!, default, default, default);
+    }
+
+    [UnitTest]
     public async Task ResolveLayerIdAsync_StorageLayerSelector_QueriesItsPublicationIndex()
     {
         var store = Substitute.For<ICogStore>();
