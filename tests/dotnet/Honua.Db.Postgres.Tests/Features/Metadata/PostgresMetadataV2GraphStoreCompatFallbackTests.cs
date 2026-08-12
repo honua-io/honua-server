@@ -175,6 +175,49 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_EmptyFirstMutation_RequiresExactSyntheticEmptyEtag()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var empty = await store.GetCurrentAsync();
+            empty.Etag.Should().NotBeNullOrEmpty();
+            var firstMutation = empty.Graph with
+            {
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Resources =
+                [
+                    new MetadataV2Resource
+                    {
+                        Metadata = new MetadataV2ObjectMetadata { Id = "res-first-empty", Name = "first-empty-mutation" },
+                        Type = MetadataV2ResourceType.FeatureDataset,
+                    },
+                ],
+            };
+
+            Func<Task> wrongEtag = () => store.SaveAsync(firstMutation, expectedEtag: "wrong-empty-etag");
+            await wrongEtag.Should().ThrowAsync<InvalidOperationException>();
+            (await store.TryGetPersistedCurrentAsync()).Should().BeNull(
+                "a wrong empty ETag must not bootstrap a v2 pointer");
+
+            var saved = await store.SaveAsync(firstMutation, expectedEtag: empty.Etag);
+            saved.Graph.Revision.Should().Be(1);
+            saved.Graph.Resources.Should().ContainSingle(resource => resource.Metadata.Id == "res-first-empty");
+
+            var persisted = await store.TryGetPersistedCurrentAsync();
+            persisted.Should().NotBeNull();
+            persisted!.Etag.Should().Be(saved.Etag);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_BareLayerWithNoServicePublication_StillSynthesizesCollection()
     {
         // The CITE OGC API Features seed (docker/cite/ogc-api-features/seed.sql) inserts ONLY

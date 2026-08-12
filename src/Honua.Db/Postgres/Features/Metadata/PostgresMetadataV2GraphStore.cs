@@ -166,6 +166,22 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         }
     }
 
+    private async Task<bool> HasV1CatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT to_regclass(format('%I.%I', @schema, 'layers')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'service_layers')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'services')) IS NOT NULL
+               AND to_regclass(format('%I.%I', @schema, 'layer_fields')) IS NOT NULL;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("schema", _schemaName);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+    }
+
     public async ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
         long revision, CancellationToken cancellationToken = default)
     {
@@ -223,16 +239,21 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         if (expectedEtag is not null)
         {
-            // A V1-only deployment has no v2 current row, but GetCurrentAsync returns an
-            // exact synthesized compatibility ETag that callers legitimately use for the
-            // first mutation. Recompute that compatibility snapshot after acquiring the
-            // authoritative environment lock so V1 catalog changes are detected just like
-            // a stale v2 pointer. No other non-null ETag is accepted without a v2 current.
+            // A deployment without a v2 current row still returns an exact synthesized ETag:
+            // either a V1 compatibility graph or the empty graph. Recompute that bootstrap
+            // base after acquiring the authoritative environment lock so V1 catalog changes
+            // are detected just like a stale v2 pointer. No other non-null ETag is accepted
+            // without a v2 current.
             var actualEtag = current?.Etag;
             if (current is null)
             {
-                actualEtag = (await TryBuildCompatSnapshotFromV1CatalogAsync(
-                    connection, transaction, cancellationToken).ConfigureAwait(false))?.Etag;
+                var hasV1Catalog = await HasV1CatalogAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
+                actualEtag = hasV1Catalog
+                    ? (await TryBuildCompatSnapshotFromV1CatalogAsync(
+                        connection, transaction, cancellationToken).ConfigureAwait(false))?.Etag
+                    : null;
+                actualEtag ??= BuildEmptySnapshot().Etag;
             }
 
             if (!string.Equals(actualEtag, expectedEtag, StringComparison.Ordinal))
