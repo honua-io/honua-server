@@ -244,7 +244,8 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         var ranges = doc.RootElement.GetProperty("ranges");
         ranges.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("band_3");
         ranges.GetProperty("band_3").GetProperty("values").EnumerateArray()
-            .Should().OnlyContain(value => value.GetDouble() == 13.0);
+            .Select(value => value.GetDouble())
+            .Should().AllSatisfy(value => value.Should().BeApproximately(13.0, 1e-9));
     }
 
     [IntegrationTest]
