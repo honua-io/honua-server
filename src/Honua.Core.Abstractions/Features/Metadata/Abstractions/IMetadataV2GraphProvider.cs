@@ -38,4 +38,15 @@ public interface IMetadataV2GraphStore : IMetadataV2GraphProvider
         MetadataV2Graph graph,
         string? expectedEtag,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Makes an existing retained revision current without creating a new snapshot.
+    /// </summary>
+    /// <param name="revision">Retained durable revision to activate.</param>
+    /// <param name="expectedCurrentEtag">Optional optimistic concurrency tag for the current pointer.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(
+        long revision,
+        string? expectedCurrentEtag,
+        CancellationToken cancellationToken = default);
 }

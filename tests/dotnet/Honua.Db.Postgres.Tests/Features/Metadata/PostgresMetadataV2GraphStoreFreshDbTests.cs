@@ -108,6 +108,67 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
     }
 
     [IntegrationTest]
+    public async Task ActivateRevisionAsync_RepointsToRetainedSnapshotWithoutAllocatingCopy()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var first = await store.SaveAsync(
+                new MetadataV2Graph
+                {
+                    Environment = "Test",
+                    Revision = 1,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Resources =
+                    [
+                        new MetadataV2Resource
+                        {
+                            Metadata = new MetadataV2ObjectMetadata { Id = "retained-first", Name = "first" },
+                            Type = MetadataV2ResourceType.FeatureDataset,
+                        },
+                    ],
+                },
+                expectedEtag: null);
+            var second = await store.SaveAsync(
+                first.Graph with
+                {
+                    Revision = 2,
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Resources =
+                    [
+                        new MetadataV2Resource
+                        {
+                            Metadata = new MetadataV2ObjectMetadata { Id = "retained-second", Name = "second" },
+                            Type = MetadataV2ResourceType.FeatureDataset,
+                        },
+                    ],
+                },
+                first.Etag);
+
+            var activated = await store.ActivateRevisionAsync(first.Revision, second.Etag);
+
+            activated.Revision.Should().Be(first.Revision);
+            activated.Etag.Should().Be(first.Etag);
+            activated.Graph.Resources.Should().ContainSingle(resource => resource.Metadata.Id == "retained-first");
+            var current = await store.GetCurrentAsync();
+            current.Revision.Should().Be(first.Revision);
+            current.Etag.Should().Be(first.Etag);
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".metadata_v2_snapshots WHERE environment = 'Test'";
+            var snapshotCount = (int)(await command.ExecuteScalarAsync())!;
+            snapshotCount.Should().Be(2, "activation must retain revision identity instead of copying the document");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task SaveAsync_OnBootstrapWithOrphanedServiceSidecarRows_ReconcilesInsteadOf23505()
     {
         // honua-server#1395: a shared/partially-written DB can carry orphaned

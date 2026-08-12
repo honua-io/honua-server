@@ -305,6 +305,40 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return snapshot;
     }
 
+    public async Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(
+        long revision,
+        string? expectedCurrentEtag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(revision);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        if (expectedCurrentEtag is not null &&
+            !string.Equals(current?.Etag, expectedCurrentEtag, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedCurrentEtag} but found {current?.Etag ?? "<none>"}.");
+        }
+
+        var target = await ReadSnapshotAsync(connection, transaction, revision, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"Metadata v2 revision {revision} is not retained for environment '{_environment}'.");
+
+        // Activation changes only the current pointer. The immutable snapshot and its
+        // revision-scoped sidecars already exist and must not be copied to a new revision.
+        await UpsertCurrentAsync(connection, transaction, revision, target.Etag, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+
+        _cachedCurrent = target;
+        _cacheInvalidator?.Invalidate(_environment);
+        return target;
+    }
+
     private async Task AcquireEnvironmentWriteLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -475,6 +509,25 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? (reader.GetInt64(0), reader.GetString(1))
             : null;
+    }
+
+    private async Task<MetadataV2GraphSnapshot?> ReadSnapshotAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"SELECT document, etag FROM {_snapshotsTable} WHERE environment = @environment AND revision = @revision";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@environment", _environment);
+        command.Parameters.AddWithValue("@revision", revision);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return MaterializeSnapshot(reader.GetString(0), reader.GetString(1));
     }
 
     private async Task<long> ReadNextRevisionAsync(
