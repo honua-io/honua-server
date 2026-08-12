@@ -511,22 +511,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Where(bindingId => !IsRepurposedFailedBinding(bindingId))
             .ToHashSet(StringComparer.Ordinal);
 
-        bool RepairedTargetSurvives(MetadataV2Publication publication)
+        bool RepairedTargetSurvives(
+            MetadataV2Publication publication,
+            string? previousEffectiveBindingId)
         {
             if (!rebasedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var resource))
             {
                 return false;
             }
 
-            var bindingId = ResolveBindingId(publication, rebasedResourcesForPublicationCleanup);
-            if (bindingId is null)
+            if (previousEffectiveBindingId is null)
             {
                 return true;
             }
 
-            return !rolledBackBindingIds.Contains(bindingId) &&
-                   resource.StorageBindingIds.Contains(bindingId, StringComparer.Ordinal) &&
-                   rebasedBindingsForPublicationCleanup.TryGetValue(bindingId, out var binding) &&
+            return !rolledBackBindingIds.Contains(previousEffectiveBindingId) &&
+                   resource.StorageBindingIds.Contains(previousEffectiveBindingId, StringComparer.Ordinal) &&
+                   rebasedBindingsForPublicationCleanup.TryGetValue(previousEffectiveBindingId, out var binding) &&
                    string.Equals(binding.ResourceId, publication.ResourceId, StringComparison.Ordinal);
         }
 
@@ -546,7 +547,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     ResourceId = previous.ResourceId,
                     StorageBindingId = previous.StorageBindingId,
                 };
-                if (RepairedTargetSurvives(repaired))
+                var previousEffectiveBindingId = ResolveBindingId(
+                    previous,
+                    previousResourcesForPublicationCleanup);
+                if (RepairedTargetSurvives(repaired, previousEffectiveBindingId))
                 {
                     publications[index] = repaired;
                     continue;

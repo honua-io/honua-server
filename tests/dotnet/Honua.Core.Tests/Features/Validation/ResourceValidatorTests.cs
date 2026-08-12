@@ -200,6 +200,30 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceLayerV2Async_InactiveExactServiceId_DoesNotFallThroughToUnscopedNameMatch()
+    {
+        var graph = ExactIdProtocolCollisionGraph();
+        graph = graph with
+        {
+            Services = graph.Services
+                .Select(service => service.Metadata.Id == "route-token"
+                    ? service with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                    }
+                    : service)
+                .ToArray(),
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(graph));
+
+        var result = await validator.ValidateServiceLayerV2Async("route-token", 7);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceV2Async_WithSharedName_ResolvesProtocolSpecificService()
     {
         var graph = MixedProtocolPublicationGraph();

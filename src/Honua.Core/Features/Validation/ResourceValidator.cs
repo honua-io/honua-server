@@ -305,12 +305,14 @@ public sealed class ResourceValidator : IResourceValidator
     {
         if (requiredProtocol is null)
         {
-            if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+            if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
             {
-                return byName;
+                return byId.IsRoutable() ? byId : null;
             }
 
-            return snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) ? byId : null;
+            return snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable()
+                ? byName
+                : null;
         }
 
         // Several protocol-specific services may intentionally share one public route name.

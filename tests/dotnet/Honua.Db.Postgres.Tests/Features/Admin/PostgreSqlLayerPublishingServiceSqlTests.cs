@@ -975,66 +975,73 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
             Locator = "failed_table",
             StorageLayerId = 42,
         };
-        var previous = new MetadataV2Graph
+        foreach (var useImplicitPreviousBinding in new[] { false, true })
         {
-            Revision = 7,
-            Services = [service],
-            Resources = [existingResource],
-            StorageBindings = [existingBinding],
-            Publications = [existingPublication],
-        };
-        var persisted = previous with
-        {
-            Revision = 8,
-            Resources = [existingResource, failedResource],
-            StorageBindings = [existingBinding, failedBinding],
-        };
-        foreach (var deleteOriginalResource in new[] { true, false })
-        {
-            var movedBinding = deleteOriginalResource
-                ? failedBinding
-                : failedBinding with { ResourceId = existingResource.Metadata.Id };
-            var movedPublication = existingPublication with
+            var previousPublication = useImplicitPreviousBinding
+                ? existingPublication with { StorageBindingId = null }
+                : existingPublication;
+            var previous = new MetadataV2Graph
             {
-                ResourceId = movedBinding.ResourceId,
-                StorageBindingId = movedBinding.Metadata.Id,
+                Revision = 7,
+                Services = [service],
+                Resources = [existingResource],
+                StorageBindings = [existingBinding],
+                Publications = [previousPublication],
             };
-            var current = persisted with
+            var persisted = previous with
             {
-                Revision = 9,
-                Resources = deleteOriginalResource
-                    ? [failedResource]
-                    :
-                    [
-                        existingResource with
-                        {
-                            StorageBindingIds = [movedBinding.Metadata.Id],
-                            PrimaryStorageBindingId = movedBinding.Metadata.Id,
-                        },
-                    ],
-                StorageBindings = [movedBinding],
-                Publications = [movedPublication],
+                Revision = 8,
+                Resources = [existingResource, failedResource],
+                StorageBindings = [existingBinding, failedBinding],
             };
 
-            var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
-                current,
-                previous,
-                persisted,
-                DateTimeOffset.Parse("2026-08-11T05:02:00Z", CultureInfo.InvariantCulture));
+            foreach (var deleteOriginalResource in new[] { true, false })
+            {
+                var movedBinding = deleteOriginalResource
+                    ? failedBinding
+                    : failedBinding with { ResourceId = existingResource.Metadata.Id };
+                var movedPublication = previousPublication with
+                {
+                    ResourceId = movedBinding.ResourceId,
+                    StorageBindingId = movedBinding.Metadata.Id,
+                };
+                var current = persisted with
+                {
+                    Revision = 9,
+                    Resources = deleteOriginalResource
+                        ? [failedResource]
+                        :
+                        [
+                            existingResource with
+                            {
+                                StorageBindingIds = [movedBinding.Metadata.Id],
+                                PrimaryStorageBindingId = movedBinding.Metadata.Id,
+                            },
+                        ],
+                    StorageBindings = [movedBinding],
+                    Publications = [movedPublication],
+                };
 
-            compensation.Publications.Should().BeEmpty();
-            compensation.StorageBindings.Should().BeEmpty();
-            compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
-            if (deleteOriginalResource)
-            {
-                compensation.Resources.Should().BeEmpty();
-            }
-            else
-            {
-                var retainedResource = compensation.Resources.Should().ContainSingle().Which;
-                retainedResource.Metadata.Id.Should().Be(existingResource.Metadata.Id);
-                retainedResource.StorageBindingIds.Should().BeEmpty();
-                retainedResource.PrimaryStorageBindingId.Should().BeNull();
+                var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+                    current,
+                    previous,
+                    persisted,
+                    DateTimeOffset.Parse("2026-08-11T05:02:00Z", CultureInfo.InvariantCulture));
+
+                compensation.Publications.Should().BeEmpty();
+                compensation.StorageBindings.Should().BeEmpty();
+                compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
+                if (deleteOriginalResource)
+                {
+                    compensation.Resources.Should().BeEmpty();
+                }
+                else
+                {
+                    var retainedResource = compensation.Resources.Should().ContainSingle().Which;
+                    retainedResource.Metadata.Id.Should().Be(existingResource.Metadata.Id);
+                    retainedResource.StorageBindingIds.Should().BeEmpty();
+                    retainedResource.PrimaryStorageBindingId.Should().BeNull();
+                }
             }
         }
     }
