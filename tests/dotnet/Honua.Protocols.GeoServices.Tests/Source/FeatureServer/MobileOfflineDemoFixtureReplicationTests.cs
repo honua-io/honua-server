@@ -91,6 +91,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Description = "Deterministic SDK-backed mobile offline field operations fixture"
             },
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = $"/rest/services/{ServiceId}/FeatureServer",
             Protocols = [MetadataV2ServiceProtocols.FeatureServer],
             AccessPolicy = accessPolicy,

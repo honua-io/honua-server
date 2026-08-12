@@ -2352,6 +2352,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                 .Append(new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     Protocols = [ServiceProtocols.MapServer],
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     Settings = new MetadataV2ServiceSettings { MaxFeaturesPerLayer = 10_000 },

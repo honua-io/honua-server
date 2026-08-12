@@ -176,6 +176,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-projected", Name = serviceId },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Protocols = [ServiceProtocols.Wmts, ServiceProtocols.MapServer],
         };
 

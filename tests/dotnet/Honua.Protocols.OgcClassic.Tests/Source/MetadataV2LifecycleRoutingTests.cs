@@ -30,6 +30,32 @@ public sealed class MetadataV2LifecycleRoutingTests
     }
 
     [UnitTest]
+    public void WmsAndWmtsResolvers_WithServingGraph_IncludeLayer()
+    {
+        var snapshot = CreateSnapshot(publicationLifecycle: MetadataV2LifecycleStatus.Active);
+        var service = snapshot.Graph.Services.Single();
+
+        InvokeLayerResolver(typeof(WmsRequestHandlers), "ResolveWmsLayers", snapshot, service)
+            .Length.Should().Be(1);
+        InvokeLayerResolver(typeof(WmtsRequestHandlers), "ResolveWmtsLayers", snapshot, service)
+            .Length.Should().Be(1);
+    }
+
+    [UnitTest]
+    public void WmsAndWmtsResolvers_WithRetiredService_OmitLayer()
+    {
+        var snapshot = CreateSnapshot(
+            publicationLifecycle: MetadataV2LifecycleStatus.Active,
+            serviceLifecycle: MetadataV2LifecycleStatus.Retired);
+        var service = snapshot.Graph.Services.Single();
+
+        InvokeLayerResolver(typeof(WmsRequestHandlers), "ResolveWmsLayers", snapshot, service)
+            .Length.Should().Be(0);
+        InvokeLayerResolver(typeof(WmtsRequestHandlers), "ResolveWmtsLayers", snapshot, service)
+            .Length.Should().Be(0);
+    }
+
+    [UnitTest]
     public void WcsLayerResolver_WithRetiredBinding_OmitsCoverage()
     {
         var snapshot = CreateSnapshot(
@@ -61,11 +87,16 @@ public sealed class MetadataV2LifecycleRoutingTests
     private static MetadataV2GraphSnapshot CreateSnapshot(
         MetadataV2LifecycleStatus publicationLifecycle,
         MetadataV2LifecycleStatus resourceLifecycle = MetadataV2LifecycleStatus.Active,
-        MetadataV2LifecycleStatus bindingLifecycle = MetadataV2LifecycleStatus.Active)
+        MetadataV2LifecycleStatus bindingLifecycle = MetadataV2LifecycleStatus.Active,
+        MetadataV2LifecycleStatus serviceLifecycle = MetadataV2LifecycleStatus.Active)
     {
         var service = new MetadataV2Service
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-ogc", Name = "ogc" }
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-ogc", Name = "ogc" },
+            // Explicit lifecycle: MetadataV2Status defaults to Draft, which would make the
+            // publication non-routable for service-lifecycle reasons and mask the
+            // publication/binding lifecycle behaviour these cases are proving.
+            Status = new MetadataV2Status { Lifecycle = serviceLifecycle }
         };
         var resource = new MetadataV2Resource
         {

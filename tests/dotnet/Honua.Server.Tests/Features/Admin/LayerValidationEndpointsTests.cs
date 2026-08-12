@@ -237,6 +237,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
                 Id = serviceId,
                 Name = _serviceName
             },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/api/v1/admin/metadata/layers"
         };
         var publication = new MetadataV2Publication
