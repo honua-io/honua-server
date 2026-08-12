@@ -159,13 +159,16 @@ public sealed class ResourceValidator : IResourceValidator
                     ErrorMessages.NotFound.FormatService(serviceId));
         }
 
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
+        {
+            return byId.IsRoutable()
+                ? ResourceValidationResult.Success(byId)
+                : ResourceValidationResult.NotFound<MetadataV2Service>(
+                    ErrorMessages.NotFound.FormatService(serviceId));
+        }
         if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable())
         {
             return ResourceValidationResult.Success(byName);
-        }
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) && byId.IsRoutable())
-        {
-            return ResourceValidationResult.Success(byId);
         }
         return ResourceValidationResult.NotFound<MetadataV2Service>(
             ErrorMessages.NotFound.FormatService(serviceId));
@@ -176,19 +179,18 @@ public sealed class ResourceValidator : IResourceValidator
         string serviceId,
         string requiredProtocol)
     {
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var exactId))
+        {
+            return exactId.IsRoutable() && ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol)
+                ? exactId
+                : null;
+        }
+
         var matchingServices = snapshot.Graph.Services
             .Where(service =>
                 service.IsRoutable() &&
-                (string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal)))
+                string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-
-        var exactId = matchingServices.FirstOrDefault(service =>
-            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
-        if (exactId is not null)
-        {
-            return ServiceProtocols.IsProtocolEnabled(exactId, requiredProtocol) ? exactId : null;
-        }
 
         var candidates = matchingServices
             .Where(service => ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))

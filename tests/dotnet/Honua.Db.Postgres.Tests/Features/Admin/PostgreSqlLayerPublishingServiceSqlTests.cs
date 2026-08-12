@@ -933,6 +933,113 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [Fact]
+    public void BuildRebasedCompensatingMetadataV2Graph_RemovesExistingPublicationWhenOriginalTargetWasDeleted()
+    {
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
+            PublicationIds = ["publication-existing"],
+        };
+        var existingResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-existing" },
+            StorageBindingIds = ["binding-existing"],
+            PrimaryStorageBindingId = "binding-existing",
+        };
+        var existingBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-existing" },
+            ResourceId = existingResource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "existing_table",
+            StorageLayerId = 7,
+        };
+        var existingPublication = CreatePublication(
+            "publication-existing",
+            service.Metadata.Id,
+            existingResource.Metadata.Id,
+            existingBinding.Metadata.Id,
+            0,
+            MetadataV2PublicationType.EsriFeatureLayer);
+        var failedResource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
+            StorageBindingIds = ["binding-added"],
+            PrimaryStorageBindingId = "binding-added",
+        };
+        var failedBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
+            ResourceId = failedResource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "failed_table",
+            StorageLayerId = 42,
+        };
+        var previous = new MetadataV2Graph
+        {
+            Revision = 7,
+            Services = [service],
+            Resources = [existingResource],
+            StorageBindings = [existingBinding],
+            Publications = [existingPublication],
+        };
+        var persisted = previous with
+        {
+            Revision = 8,
+            Resources = [existingResource, failedResource],
+            StorageBindings = [existingBinding, failedBinding],
+        };
+        foreach (var deleteOriginalResource in new[] { true, false })
+        {
+            var movedBinding = deleteOriginalResource
+                ? failedBinding
+                : failedBinding with { ResourceId = existingResource.Metadata.Id };
+            var movedPublication = existingPublication with
+            {
+                ResourceId = movedBinding.ResourceId,
+                StorageBindingId = movedBinding.Metadata.Id,
+            };
+            var current = persisted with
+            {
+                Revision = 9,
+                Resources = deleteOriginalResource
+                    ? [failedResource]
+                    :
+                    [
+                        existingResource with
+                        {
+                            StorageBindingIds = [movedBinding.Metadata.Id],
+                            PrimaryStorageBindingId = movedBinding.Metadata.Id,
+                        },
+                    ],
+                StorageBindings = [movedBinding],
+                Publications = [movedPublication],
+            };
+
+            var compensation = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+                current,
+                previous,
+                persisted,
+                DateTimeOffset.Parse("2026-08-11T05:02:00Z", CultureInfo.InvariantCulture));
+
+            compensation.Publications.Should().BeEmpty();
+            compensation.StorageBindings.Should().BeEmpty();
+            compensation.Services.Should().ContainSingle().Which.PublicationIds.Should().BeEmpty();
+            if (deleteOriginalResource)
+            {
+                compensation.Resources.Should().BeEmpty();
+            }
+            else
+            {
+                var retainedResource = compensation.Resources.Should().ContainSingle().Which;
+                retainedResource.Metadata.Id.Should().Be(existingResource.Metadata.Id);
+                retainedResource.StorageBindingIds.Should().BeEmpty();
+                retainedResource.PrimaryStorageBindingId.Should().BeNull();
+            }
+        }
+    }
+
+    [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RestoresPublicationReplacedByFailedUpsert()
     {
         var previousPublication = CreatePublication(

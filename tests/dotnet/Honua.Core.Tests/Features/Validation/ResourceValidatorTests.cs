@@ -250,6 +250,36 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_InactiveExactServiceId_DoesNotFallThroughToRoutableNameMatch()
+    {
+        var exactIdService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "route-token", Name = "inactive-service" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+            Protocols = [ServiceProtocols.GPServer],
+        };
+        var nameMatchedService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "active-service", Name = "route-token" },
+            Status = ActiveStatus(),
+            Protocols = [ServiceProtocols.GPServer],
+        };
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
+            new MetadataV2Graph { Services = [exactIdService, nameMatchedService] }));
+
+        var protocolResult = await validator.ValidateServiceV2Async(
+            exactIdService.Metadata.Id,
+            ServiceProtocols.GPServer);
+        var unscopedResult = await validator.ValidateServiceV2Async(exactIdService.Metadata.Id);
+
+        protocolResult.IsValid.Should().BeFalse();
+        protocolResult.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+        unscopedResult.IsValid.Should().BeFalse();
+        unscopedResult.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceV2Async_WithSharedGpServerName_PrefersGeoprocessingService()
     {
         var graph = new MetadataV2Graph
