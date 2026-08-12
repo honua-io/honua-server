@@ -266,6 +266,59 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /scim/v2/Groups")]
+    [Endpoint("PUT /scim/v2/Groups/{id}")]
+    [Endpoint("PATCH /scim/v2/Groups/{id}")]
+    public async Task GroupWrites_OverlongPersistedFields_ReturnInvalidValue()
+    {
+        var overlongDisplayName = await _client.PostAsJsonAsync("/scim/v2/Groups", new
+        {
+            displayName = new string('g', 257),
+        });
+        await AssertInvalidValueAsync(overlongDisplayName);
+
+        var create = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "length-validation" });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var groupId = (await ReadAsync(create)).GetProperty("id").GetString()!;
+
+        var overlongPutMember = await _client.PutAsJsonAsync($"/scim/v2/Groups/{groupId}", new
+        {
+            displayName = "length-validation",
+            members = new[] { new { value = new string('m', 257) } },
+        });
+        await AssertInvalidValueAsync(overlongPutMember);
+
+        var overlongPatchMember = await _client.PatchAsync($"/scim/v2/Groups/{groupId}", JsonContent.Create(new
+        {
+            Operations = new[]
+            {
+                new { op = "add", path = "members", value = new[] { new { value = new string('p', 257) } } },
+            },
+        }));
+        await AssertInvalidValueAsync(overlongPatchMember);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Groups/{id}")]
+    public async Task ReplaceGroup_DuplicateDisplayName_ReturnsConflict()
+    {
+        var first = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "rename-source" });
+        var second = await _client.PostAsJsonAsync("/scim/v2/Groups", new { displayName = "rename-target" });
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        var firstId = (await ReadAsync(first)).GetProperty("id").GetString()!;
+
+        var response = await _client.PutAsJsonAsync($"/scim/v2/Groups/{firstId}", new
+        {
+            displayName = "rename-target",
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("uniqueness", error.GetProperty("scimType").GetString());
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /scim/v2/Groups/{id}")]
     [Endpoint("PUT /scim/v2/Groups/{id}")]
     [Endpoint("PATCH /scim/v2/Groups/{id}")]
@@ -445,6 +498,13 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
             active = true,
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private static async Task AssertInvalidValueAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await ReadAsync(response);
+        Assert.Equal("invalidValue", error.GetProperty("scimType").GetString());
     }
 
     private static async Task<JsonElement> ReadAsync(HttpResponseMessage response)

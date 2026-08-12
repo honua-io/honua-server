@@ -490,7 +490,17 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await ReplaceRolesAsync(connection, transaction, canonicalId, NormalizeRoles(provisioning.Roles), cancellationToken).ConfigureAwait(false);
+            var replacementRoles = NormalizeRoles(provisioning.Roles);
+            if (provisioning.Active)
+            {
+                // A PUT may reactivate a deprovisioned user whose durable SCIM group
+                // memberships were intentionally retained. Reconcile those memberships in
+                // the same transaction so the user and group role projections cannot diverge.
+                var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
+                replacementRoles = NormalizeRoles([.. replacementRoles, .. groupRoles]);
+            }
+
+            await ReplaceRolesAsync(connection, transaction, canonicalId, replacementRoles, cancellationToken).ConfigureAwait(false);
             var replaced = await ReadUserByCanonicalIdAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return replaced;

@@ -29,6 +29,8 @@ internal static partial class ScimEndpoints
     private const int MaxExternalIdLength = 256;
     private const int MaxDisplayNameLength = 512;
     private const int MaxEmailLength = 320;
+    private const int MaxGroupDisplayNameLength = 256;
+    private const int MaxGroupMemberValueLength = 256;
 
     /// <summary>Log category for SCIM endpoints.</summary>
     internal sealed class ScimEndpointsLog;
@@ -358,11 +360,18 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "displayName is required.", "invalidValue");
         }
 
+        var displayName = input.DisplayName.Trim();
+        var memberIds = ExtractMemberIds(input.Members);
+        if (ValidateGroupInput(displayName, memberIds) is { } validationError)
+        {
+            return validationError;
+        }
+
         var created = await store.CreateGroupAsync(
             new ScimGroupProvisioning
             {
-                DisplayName = input.DisplayName.Trim(),
-                MemberUserIds = ExtractMemberIds(input.Members),
+                DisplayName = displayName,
+                MemberUserIds = memberIds,
             },
             context.RequestAborted).ConfigureAwait(false);
 
@@ -410,14 +419,29 @@ internal static partial class ScimEndpoints
             return ScimErrorResult(StatusCodes.Status400BadRequest, "displayName is required.", "invalidValue");
         }
 
-        var replaced = await store.ReplaceGroupAsync(
-            id,
-            new ScimGroupProvisioning
-            {
-                DisplayName = input.DisplayName.Trim(),
-                MemberUserIds = ExtractMemberIds(input.Members),
-            },
-            context.RequestAborted).ConfigureAwait(false);
+        var displayName = input.DisplayName.Trim();
+        var memberIds = ExtractMemberIds(input.Members);
+        if (ValidateGroupInput(displayName, memberIds) is { } validationError)
+        {
+            return validationError;
+        }
+
+        ScimGroup? replaced;
+        try
+        {
+            replaced = await store.ReplaceGroupAsync(
+                id,
+                new ScimGroupProvisioning
+                {
+                    DisplayName = displayName,
+                    MemberUserIds = memberIds,
+                },
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            return ScimErrorResult(StatusCodes.Status409Conflict, "A group with that displayName already exists.", "uniqueness");
+        }
 
         if (replaced is null)
         {
@@ -449,6 +473,11 @@ internal static partial class ScimEndpoints
         if (!TryResolveMemberPatch(patch, out var change))
         {
             return ScimErrorResult(StatusCodes.Status400BadRequest, "Unsupported PATCH operation; only the 'members' attribute is patchable.", "invalidValue");
+        }
+
+        if (ValidateGroupMembers([.. change.Add, .. change.Remove]) is { } validationError)
+        {
+            return validationError;
         }
 
         var updated = await store.UpdateMembersAsync(id, change, context.RequestAborted).ConfigureAwait(false);
@@ -605,6 +634,23 @@ internal static partial class ScimEndpoints
                 .Where(v => !string.IsNullOrWhiteSpace(v))
                 .Select(v => v!.Trim())
                 .ToList();
+
+    private static IResult? ValidateGroupInput(string displayName, IReadOnlyList<string> memberIds)
+    {
+        if (displayName.Length > MaxGroupDisplayNameLength)
+        {
+            return ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"displayName must be at most {MaxGroupDisplayNameLength} characters.", "invalidValue");
+        }
+
+        return ValidateGroupMembers(memberIds);
+    }
+
+    private static IResult? ValidateGroupMembers(IReadOnlyList<string> memberIds)
+        => memberIds.Any(static memberId => memberId.Length > MaxGroupMemberValueLength)
+            ? ScimErrorResult(StatusCodes.Status400BadRequest,
+                $"member value must be at most {MaxGroupMemberValueLength} characters.", "invalidValue")
+            : null;
 
     // ---- Patch resolution -------------------------------------------------------------
 

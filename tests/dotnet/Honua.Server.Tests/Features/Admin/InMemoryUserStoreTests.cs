@@ -159,6 +159,37 @@ public sealed class InMemoryUserStoreTests
     }
 
     [Fact]
+    public async Task ReplaceUser_DuplicateIssuerScopedExternalId_ThrowsWithoutChangingOwner()
+    {
+        var store = new InMemoryUserStore();
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "owner@example.com",
+            ExternalId = "shared-subject",
+            ExternalIssuer = "https://issuer.example.com",
+        });
+        await store.CreateUserAsync(new ScimUserProvisioning
+        {
+            UserName = "replacement@example.com",
+            ExternalId = "original-subject",
+            ExternalIssuer = "https://issuer.example.com",
+        });
+
+        var replace = () => store.ReplaceUserAsync("replacement@example.com", new ScimUserProvisioning
+        {
+            UserName = "replacement@example.com",
+            ExternalId = "shared-subject",
+            ExternalIssuer = "https://issuer.example.com",
+        });
+
+        await replace.Should().ThrowAsync<InvalidOperationException>();
+        (await store.GetUserByPrincipalIdAsync("shared-subject", "https://issuer.example.com"))!
+            .UserId.Should().Be("owner@example.com");
+        (await store.GetUserAsync("replacement@example.com"))!
+            .ExternalId.Should().Be("original-subject");
+    }
+
+    [Fact]
     public async Task ExternalId_SurvivesRoleUpdates_DeactivationAndGroupSync()
     {
         var store = new InMemoryUserStore();

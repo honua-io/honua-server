@@ -19,6 +19,7 @@ namespace Honua.Server.Features.Admin.Services;
 internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 {
     private readonly ConcurrentDictionary<string, ManagedUser> _users = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _externalIdWriteLock = new();
 
     /// <summary>
     /// Seeds a user into the store (for testing).
@@ -149,29 +150,33 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         // or externalId is reported to the caller (SCIM 409) rather than silently
         // overwriting.
         var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? null : provisioning.ExternalId.Trim();
-        if (FindByUserNameInternal(provisioning.UserName) is not null ||
-            (externalId is not null && FindByExternalIdInternal(externalId, provisioning.ExternalIssuer) is not null))
+        lock (_externalIdWriteLock)
         {
-            return Task.FromResult<ManagedUser?>(null);
+            if (FindByUserNameInternal(provisioning.UserName) is not null ||
+                (externalId is not null && FindByExternalIdInternal(externalId, provisioning.ExternalIssuer) is not null))
+            {
+                return Task.FromResult<ManagedUser?>(null);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var user = new ManagedUser
+            {
+                UserId = provisioning.UserName,
+                ExternalId = externalId,
+                ExternalIssuer = NormalizeIssuer(provisioning.ExternalIssuer),
+                DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
+                Email = provisioning.Email,
+                ProvisioningSource = "scim",
+                IsActive = provisioning.Active,
+                Roles = NormalizeRoles(provisioning.Roles),
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            // Serialize external-id validation with writes so two concurrent requests cannot
+            // both claim the same issuer-scoped subject under different user names.
+            return Task.FromResult(_users.TryAdd(user.UserId, user) ? user : null);
         }
-
-        var now = DateTimeOffset.UtcNow;
-        var user = new ManagedUser
-        {
-            UserId = provisioning.UserName,
-            ExternalId = externalId,
-            ExternalIssuer = NormalizeIssuer(provisioning.ExternalIssuer),
-            DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
-            Email = provisioning.Email,
-            ProvisioningSource = "scim",
-            IsActive = provisioning.Active,
-            Roles = NormalizeRoles(provisioning.Roles),
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-
-        // Guard against a concurrent create racing on the same key.
-        return Task.FromResult(_users.TryAdd(user.UserId, user) ? user : null);
     }
 
     public Task<ManagedUser?> FindByUserNameAsync(string userName, CancellationToken cancellationToken = default)
@@ -200,33 +205,47 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
     {
         ArgumentNullException.ThrowIfNull(provisioning);
 
-        if (!_users.TryGetValue(userId, out var existing))
+        lock (_externalIdWriteLock)
         {
-            return Task.FromResult<ManagedUser?>(null);
-        }
+            if (!_users.TryGetValue(userId, out var existing))
+            {
+                return Task.FromResult<ManagedUser?>(null);
+            }
 
-        var updated = new ManagedUser
-        {
-            UserId = existing.UserId,
-            // external_id is only overwritten when the IdP supplies one: losing the stable
-            // subject on a PUT that omits it would orphan in-flight deferred snapshots
-            // keyed by that subject (honua-server#3141).
-            ExternalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? existing.ExternalId : provisioning.ExternalId.Trim(),
-            ExternalIssuer = string.IsNullOrWhiteSpace(provisioning.ExternalId)
+            var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId)
+                ? existing.ExternalId
+                : provisioning.ExternalId.Trim();
+            var externalIssuer = string.IsNullOrWhiteSpace(provisioning.ExternalId)
                 ? existing.ExternalIssuer
-                : NormalizeIssuer(provisioning.ExternalIssuer),
-            DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
-            Email = provisioning.Email,
-            ProvisioningSource = existing.ProvisioningSource,
-            ProviderId = existing.ProviderId,
-            IsActive = provisioning.Active,
-            Roles = NormalizeRoles(provisioning.Roles),
-            CreatedAt = existing.CreatedAt,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
+                : NormalizeIssuer(provisioning.ExternalIssuer);
+            if (externalId is not null && _users.Values.Any(user =>
+                !user.UserId.Equals(existing.UserId, StringComparison.OrdinalIgnoreCase) &&
+                ExternalIdEquals(user, externalId, externalIssuer, requireIssuerMatch: true)))
+            {
+                throw new InvalidOperationException($"Another user already has externalId '{externalId}'.");
+            }
 
-        _users[userId] = updated;
-        return Task.FromResult<ManagedUser?>(updated);
+            var updated = new ManagedUser
+            {
+                UserId = existing.UserId,
+                // external_id is only overwritten when the IdP supplies one: losing the stable
+                // subject on a PUT that omits it would orphan in-flight deferred snapshots
+                // keyed by that subject (honua-server#3141).
+                ExternalId = externalId,
+                ExternalIssuer = externalIssuer,
+                DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
+                Email = provisioning.Email,
+                ProvisioningSource = existing.ProvisioningSource,
+                ProviderId = existing.ProviderId,
+                IsActive = provisioning.Active,
+                Roles = NormalizeRoles(provisioning.Roles),
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            _users[userId] = updated;
+            return Task.FromResult<ManagedUser?>(updated);
+        }
     }
 
     public Task<ManagedUser?> SetActiveAsync(string userId, bool active, CancellationToken cancellationToken = default)
