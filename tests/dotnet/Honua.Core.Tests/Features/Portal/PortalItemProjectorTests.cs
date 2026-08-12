@@ -180,6 +180,48 @@ public sealed class PortalItemProjectorTests
         items.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(MetadataV2LifecycleStatus.Draft)]
+    [InlineData(MetadataV2LifecycleStatus.Archived)]
+    [InlineData(MetadataV2LifecycleStatus.Retired)]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_LayerlessInactiveService_OmitsItem(MetadataV2LifecycleStatus lifecycle)
+    {
+        var service = BuildService(
+            "service.parcels",
+            "Parcels",
+            ServiceProtocols.FeatureServer,
+            publicAccess: true) with
+        {
+            Status = new MetadataV2Status { Lifecycle = lifecycle }
+        };
+        var snapshot = BuildLayerlessSnapshot(service);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_LayerlessActiveService_ProjectsItem()
+    {
+        var service = BuildService(
+            "service.parcels",
+            "Parcels",
+            ServiceProtocols.FeatureServer,
+            publicAccess: true);
+        var snapshot = BuildLayerlessSnapshot(service);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().ContainSingle();
+        items[0].Id.Should().Be("service.parcels");
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void ProjectItem_UnpermittedPrincipal_ReturnsNull()
@@ -303,6 +345,17 @@ public sealed class PortalItemProjectorTests
             AccessPolicy = resourceAccess,
         };
         return BuildSnapshotWithResource(service, resource);
+    }
+
+    private static MetadataV2GraphSnapshot BuildLayerlessSnapshot(MetadataV2Service service)
+    {
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Services = [service],
+        };
+        return new MetadataV2GraphSnapshot(graph, "\"etag\"", DateTimeOffset.UnixEpoch);
     }
 
     private static MetadataV2GraphSnapshot BuildSnapshotWithResource(
