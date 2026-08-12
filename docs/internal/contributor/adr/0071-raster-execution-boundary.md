@@ -287,11 +287,15 @@ a layer.
   execution engine, so a failed pre-execution admission or worker-image gate
   fails the job rather than retrying on an alternate engine.
 - Automatic retries stay on the same worker placement and occur only for
-  classified retryable failures. A retry is a newly planned attempt, not an
-  implicit continuation: its attempt record is appended rather than replacing
-  the failed attempt's record, the prior attempt remains auditable, its
-  staged outputs are cleaned up or retained by policy, and the retry reuses a
-  stable idempotency key.
+  classified retryable failures. The first admitted attempt pins the worker
+  image by immutable digest and pins the raster execution-contract version;
+  every automatic retry must reuse both pins even during a worker rollout. A
+  version change requires an explicitly approved replan/new job and is never
+  an automatic retry. A retry is a newly planned attempt, not an implicit
+  continuation: its attempt record is appended rather than replacing the
+  failed attempt's record, the prior attempt remains auditable, its staged
+  outputs are cleaned up or retained by policy, and the retry reuses a stable
+  idempotency key.
 - Every job with declared outputs owns a durable output-set manifest keyed by
   job. Before dispatch it records the complete required logical-output set and
   references each prepared sink intent. The attempt-fenced transition to

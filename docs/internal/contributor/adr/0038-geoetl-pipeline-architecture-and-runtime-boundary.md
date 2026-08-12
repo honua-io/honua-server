@@ -9,11 +9,13 @@ controlling engine and placement decision. As of ADR-0071's 2026-08-11
 single-engine amendment (honua-server#3085, #3167), this ADR's instruction to
 delegate heavy spatial transforms to PostGIS applies to non-raster,
 database-native transforms (large-scale reprojection, `ST_Buffer`, spatial
-joins) only. Raster work always executes on the isolated native GDAL worker,
-locally or through a batch backend selected by static operator configuration;
-PostGIS is a serving/storage plane and registration target for raster, not an
-execution destination. The GeoETL-specific rollout and worker names below
-remain historical decisions for GeoETL, not a universal raster topology.
+joins) only. Ordinary raster GP and GeoETL raster transforms execute on the
+isolated native GDAL worker, locally or through a batch backend selected by
+static operator configuration. Bounded request-side raster serving remains on
+ADR-0071's pure-managed/PostGIS serving paths; PostGIS is not a raster GP or
+GeoETL-transform execution destination. The GeoETL-specific rollout and worker
+names below remain historical decisions for GeoETL, not a universal raster
+topology.
 
 ## Context
 
