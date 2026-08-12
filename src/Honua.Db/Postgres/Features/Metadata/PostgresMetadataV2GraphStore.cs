@@ -120,14 +120,22 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
         CancellationToken cancellationToken)
     {
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await TryBuildCompatSnapshotFromV1CatalogAsync(connection, transaction: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<MetadataV2GraphSnapshot?> TryBuildCompatSnapshotFromV1CatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         // Read the V1 catalog from the same schema the store qualifies its v2 tables
         // with (validated + quoted to keep it injection-safe).
         var catalogSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(_schemaName);
         var sql = MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog
             .Replace(MetadataV2CompatSnapshotSql.CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal);
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);
 
         try
@@ -215,10 +223,22 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         if (expectedEtag is not null)
         {
-            if (current is null || !string.Equals(current.Value.Etag, expectedEtag, StringComparison.Ordinal))
+            // A V1-only deployment has no v2 current row, but GetCurrentAsync returns an
+            // exact synthesized compatibility ETag that callers legitimately use for the
+            // first mutation. Recompute that compatibility snapshot after acquiring the
+            // authoritative environment lock so V1 catalog changes are detected just like
+            // a stale v2 pointer. No other non-null ETag is accepted without a v2 current.
+            var actualEtag = current?.Etag;
+            if (current is null)
+            {
+                actualEtag = (await TryBuildCompatSnapshotFromV1CatalogAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false))?.Etag;
+            }
+
+            if (!string.Equals(actualEtag, expectedEtag, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {current?.Etag ?? "<none>"}.");
+                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {actualEtag ?? "<none>"}.");
             }
         }
 

@@ -128,6 +128,53 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_V1OnlyFirstMutation_RequiresExactSynthesizedCompatibilityEtag()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await SeedV1CatalogAsync(
+                fixture.DataSource, schema, serviceName: "legacy_upgrade", layerId: 801, layerName: "Legacy Upgrade");
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var compatibility = await store.GetCurrentAsync();
+            var firstMutation = compatibility.Graph with
+            {
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Resources =
+                [
+                    .. compatibility.Graph.Resources,
+                    new MetadataV2Resource
+                    {
+                        Metadata = new MetadataV2ObjectMetadata { Id = "res-first-v2", Name = "first-v2-mutation" },
+                        Type = MetadataV2ResourceType.FeatureDataset,
+                    },
+                ],
+            };
+
+            Func<Task> wrongEtag = () => store.SaveAsync(firstMutation, expectedEtag: "wrong-v1-compat-etag");
+            await wrongEtag.Should().ThrowAsync<InvalidOperationException>();
+            (await store.TryGetPersistedCurrentAsync()).Should().BeNull(
+                "a wrong compatibility ETag must not bootstrap a v2 pointer");
+
+            var saved = await store.SaveAsync(firstMutation, expectedEtag: compatibility.Etag);
+            saved.Graph.Revision.Should().Be(1);
+            saved.Graph.Resources.Should().Contain(resource => resource.Metadata.Id == "res-first-v2");
+
+            var persisted = await store.TryGetPersistedCurrentAsync();
+            persisted.Should().NotBeNull();
+            persisted!.Etag.Should().Be(saved.Etag);
+            persisted.Graph.Resources.Should().Contain(resource => resource.Metadata.Id == "res-layer-801",
+                "the first v2 mutation must preserve the V1 compatibility base");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_BareLayerWithNoServicePublication_StillSynthesizesCollection()
     {
         // The CITE OGC API Features seed (docker/cite/ogc-api-features/seed.sql) inserts ONLY
