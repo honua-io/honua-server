@@ -4,6 +4,7 @@
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -21,10 +22,10 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal sealed class GeoprocessingJobArtifactService
 {
-    internal const string TypedRasterExecutionNotSupportedCode = "RASTER_SOURCE_EXECUTION_NOT_SUPPORTED";
+    internal const string TypedRasterExecutionNotSupportedCode = "RASTER_SOURCE_REFERENCE_REQUIRES_RESOLUTION";
     private const string TypedRasterExecutionNotSupportedMessage =
-        "Typed raster source execution is disabled until #3090 adds authenticated v2 worker resolution; "
-        + "use the existing catalog layerId/rasterId path.";
+        "Direct durable raster references require authenticated server-side resolution; "
+        + "use the catalog layerId/rasterId path. Bounded inline raster sources remain supported.";
 
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
@@ -51,17 +52,6 @@ internal sealed class GeoprocessingJobArtifactService
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
-
-    /// <summary>
-    /// Binds raster-id selectors to their owning layer before the shared submit-time layer gate.
-    /// This is metadata-only and therefore cannot read or expose raster bytes before access is
-    /// authorized.
-    /// </summary>
-    public Task<AnalysisPlan> BindRasterSourceLayerIdsAsync(
-        AnalysisPlan plan,
-        CancellationToken cancellationToken)
-        => GeoprocessingRasterSourceResolution.BindLayerIdsAsync(
-            plan, _processCatalog, _rasterSourceResolver, cancellationToken);
 
     /// <summary>
     /// Validates typed raster descriptors and parameter bindings before an approval proposal
@@ -173,59 +163,70 @@ internal sealed class GeoprocessingJobArtifactService
     };
 
     /// <summary>
-    /// Refuses typed raster execution until the v2 worker admission/resolution path from #3090
-    /// is available. Contract authoring and spec projection remain testable, but no local or
-    /// remote backend can receive a descriptor it does not understand.
+    /// Refuses client-supplied durable descriptors before they can run under worker credentials.
+    /// Authenticated catalog selectors are resolved to descriptors later in the submit pipeline;
+    /// bounded typed inline sources contain no ambient object-store authority and remain valid.
     /// </summary>
     public static void EnsureTypedRasterExecutionSupported(AnalysisPlan plan)
     {
         var violation = GetTypedRasterExecutionViolation(plan);
         if (violation is not null)
         {
-            throw new GeoprocessingValidationException(
-                $"{violation.Code}: {violation.Message}");
+            throw new GeoprocessingValidationException($"{violation.Code}: {violation.Message}");
         }
     }
 
-    /// <summary>
-    /// Returns the structured pre-flight violation that mirrors the submit-time typed-raster
-    /// execution gate, or <see langword="null"/> when the plan uses only executable inputs.
-    /// </summary>
+    /// <summary>Returns a structured violation for a client-supplied durable raster descriptor.</summary>
     public static GeoprocessingValidationFailure? GetTypedRasterExecutionViolation(AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
+        foreach (var step in plan.Steps)
         {
-            var step = plan.Steps[stepIndex];
-            if (step.RasterSources is not { Count: > 0 })
+            if (step.RasterSources?.Any(source => source.Value is not InlineRasterSourceDescriptor) == true)
             {
-                continue;
+                return new GeoprocessingValidationFailure
+                {
+                    Code = TypedRasterExecutionNotSupportedCode,
+                    Message = TypedRasterExecutionNotSupportedMessage,
+                    FieldPath = $"steps[{step.StepId}].raster_sources",
+                };
             }
-
-            return new GeoprocessingValidationFailure
-            {
-                Code = TypedRasterExecutionNotSupportedCode,
-                Message = TypedRasterExecutionNotSupportedMessage,
-                FieldPath = $"steps[{step.StepId}].raster_sources",
-            };
         }
 
         return null;
     }
 
     /// <summary>
-    /// Resolves any native raster/surface step that references a registered catalog raster
-    /// by layerId/rasterId, materializing the bytes onto the canonical base64 <c>source</c>
-    /// input the worker reads (#2264). Returns the original plan unchanged when no step
-    /// requires resolution.
+    /// Binds raster-id selectors to their owning layer before the shared submit-time layer gate.
+    /// This is metadata-only and therefore cannot read or expose raster bytes before access is
+    /// authorized.
     /// </summary>
-    public Task<AnalysisPlan> ResolveRasterSourcesAsync(AnalysisPlan plan, CancellationToken cancellationToken)
+    public Task<AnalysisPlan> BindRasterSourceLayerIdsAsync(
+        AnalysisPlan plan,
+        CancellationToken cancellationToken)
+        => GeoprocessingRasterSourceResolution.BindLayerIdsAsync(
+            plan, _processCatalog, _rasterSourceResolver, cancellationToken);
+
+    /// <summary>
+    /// Resolves any native raster/surface step that references a registered catalog raster
+    /// by layerId/rasterId to an immutable descriptor. The serving process performs no full
+    /// object read and never places raster bytes in the durable job record (#2264/#3090).
+    /// </summary>
+    public Task<AnalysisPlan> ResolveRasterSourcesAsync(
+        AnalysisPlan plan,
+        JobSecurityContext submitterSecurityContext,
+        string jobId,
+        CancellationToken cancellationToken)
         => GeoprocessingRasterSourceResolution.ResolveAsync(
             plan,
             _processCatalog,
             _rasterSourceResolver,
-            _executorOptions.CurrentValue.MaxArtifactBytes,
+            new RasterSecurityContextReference
+            {
+                TenantId = submitterSecurityContext.TenantId ?? "default",
+                AuthorizationSnapshotReference = $"job:{jobId}:submitter",
+            },
             cancellationToken);
 
     /// <summary>

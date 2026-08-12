@@ -5,16 +5,15 @@ using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Submit-side resolution of native raster/surface process inputs from a registered
-/// catalog raster (#2264). Native raster processes read a base64 <c>source</c> the
-/// worker decodes; this helper lets a plan instead reference a catalog raster by
-/// <c>layerId</c>/<c>rasterId</c> and materializes the resolved bytes onto the
-/// <c>source</c> step input BEFORE the spec is projected, so the worker contract is
-/// unchanged.
+/// catalog raster (#2264/#3090). This helper binds a catalog <c>layerId</c>/<c>rasterId</c>
+/// selector to an immutable typed descriptor after authorization. Object bytes remain
+/// in storage and the selected worker opens the descriptor directly.
 ///
 /// <para>
 /// A step is eligible only when its catalog process declares the native raster-source
@@ -35,8 +34,8 @@ internal static class GeoprocessingRasterSourceResolution
 
     /// <summary>
     /// Resolves raster-id selectors to their owning catalog layer and binds that layer onto the
-    /// plan before the shared layer gate runs. This phase performs metadata lookup only; raster
-    /// bytes are not read until <see cref="ResolveAsync"/> runs after authorization.
+    /// plan before the shared layer gate runs. This phase performs catalog lookup only; provider
+    /// object metadata is not resolved until <see cref="ResolveAsync"/> runs after authorization.
     /// </summary>
     public static async Task<AnalysisPlan> BindLayerIdsAsync(
         AnalysisPlan plan,
@@ -85,15 +84,15 @@ internal static class GeoprocessingRasterSourceResolution
     }
 
     /// <summary>
-    /// Returns a plan whose eligible native-raster steps have their <c>source</c>
-    /// populated from the resolved catalog raster. Returns the original plan unchanged
-    /// when no step requires resolution.
+    /// Returns a plan whose eligible native-raster steps have their <c>source</c> typed
+    /// binding populated from the resolved catalog raster. Returns the original plan
+    /// unchanged when no step requires resolution.
     /// </summary>
     public static async Task<AnalysisPlan> ResolveAsync(
         AnalysisPlan plan,
         IProcessCatalog catalog,
         IGeoprocessingRasterSourceResolver? resolver,
-        long maxBytes,
+        RasterSecurityContextReference securityContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -118,10 +117,10 @@ internal static class GeoprocessingRasterSourceResolution
             }
 
             var resolution = await resolver
-                .ResolveAsync(reference, maxBytes, cancellationToken)
+                .ResolveAsync(reference, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!resolution.Found || resolution.Bytes is null)
+            if (!resolution.Found || resolution.Descriptor is null)
             {
                 throw new GeoprocessingValidationException(
                     $"Step '{step.StepId}' could not resolve its raster source: "
@@ -129,7 +128,7 @@ internal static class GeoprocessingRasterSourceResolution
             }
 
             rewritten ??= [.. plan.Steps];
-            rewritten[i] = WithResolvedSource(step, resolution.Bytes);
+            rewritten[i] = WithResolvedSource(step, resolution.Descriptor, securityContext);
         }
 
         if (rewritten is null)
@@ -208,8 +207,9 @@ internal static class GeoprocessingRasterSourceResolution
         ArgumentNullException.ThrowIfNull(definition);
 
         return DeclaresNativeRasterSource(definition)
-            && step.Inputs.TryGetValue(SourceInput, out var source)
-            && !string.IsNullOrWhiteSpace(source);
+            && (step.RasterSources.ContainsKey(SourceInput)
+                || (step.Inputs.TryGetValue(SourceInput, out var source)
+                    && !string.IsNullOrWhiteSpace(source)));
     }
 
     private static bool DeclaresNativeRasterSource(ProcessDefinition definition)
@@ -231,14 +231,19 @@ internal static class GeoprocessingRasterSourceResolution
         return hasSource && hasRasterId;
     }
 
-    private static AnalysisPlanStep WithResolvedSource(AnalysisPlanStep step, byte[] bytes)
+    private static AnalysisPlanStep WithResolvedSource(
+        AnalysisPlanStep step,
+        RasterSourceDescriptor descriptor,
+        RasterSecurityContextReference securityContext)
     {
-        var inputs = new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal)
+        var rasterSources = new Dictionary<string, RasterSourceDescriptor>(
+            step.RasterSources,
+            StringComparer.Ordinal)
         {
-            [SourceInput] = Convert.ToBase64String(bytes),
+            [SourceInput] = descriptor with { SecurityContext = securityContext },
         };
 
-        return step with { Inputs = inputs };
+        return step with { RasterSources = rasterSources };
     }
 
     private static AnalysisPlanStep WithResolvedLayerId(AnalysisPlanStep step, int layerId)
