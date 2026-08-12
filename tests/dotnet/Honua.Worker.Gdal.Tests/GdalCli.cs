@@ -119,6 +119,7 @@ internal static class GdalCli
         var runner = new ProcessGdalCommandRunner(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
             Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+            Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
         var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)

@@ -152,6 +152,7 @@ services:
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
       FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
+      FileStorage__AzureBlob__ConnectionString: "${HONUA_AZURE_STORAGE_CONNECTION_STRING:-}"
       # GDAL consumes standard AWS credential variables out of band; credentials
       # never enter the durable raster-source descriptor.
       AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"

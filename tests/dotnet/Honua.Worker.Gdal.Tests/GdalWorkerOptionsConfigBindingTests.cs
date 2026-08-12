@@ -96,6 +96,20 @@ public sealed class GdalWorkerOptionsConfigBindingTests
         options.ForcePathStyle.Should().BeTrue();
     }
 
+    [UnitTest]
+    public void AddGdalProcessExecutors_BindsRegisteredAzureConnectionForVsiReads()
+    {
+        const string connectionString =
+            "DefaultEndpointsProtocol=https;AccountName=registered;AccountKey=secret;EndpointSuffix=core.windows.net";
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["FileStorage:AzureBlob:ConnectionString"] = connectionString,
+        });
+
+        provider.GetRequiredService<IOptions<AzureBlobOptions>>().Value.ConnectionString
+            .Should().Be(connectionString);
+    }
+
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)
     {
         var configuration = new ConfigurationBuilder()

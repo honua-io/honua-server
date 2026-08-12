@@ -184,6 +184,9 @@ public static class GdalWorkerServiceCollectionExtensions
         services
             .AddOptions<AwsS3Options>()
             .Bind(configuration.GetSection("FileStorage:AwsS3"));
+        services
+            .AddOptions<AzureBlobOptions>()
+            .Bind(configuration.GetSection("FileStorage:AzureBlob"));
 
         if (mode == GdalProcessExecutorMode.Container)
         {

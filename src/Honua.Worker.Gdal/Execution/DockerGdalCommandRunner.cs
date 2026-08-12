@@ -43,6 +43,7 @@ internal sealed partial class DockerGdalCommandRunner(
     IOptions<GdalContainerExecutionOptions> options,
     IOptions<GdalHardeningOptions> hardening,
     IOptions<AwsS3Options> s3Options,
+    IOptions<AzureBlobOptions> azureOptions,
     ILogger<DockerGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
@@ -57,14 +58,18 @@ internal sealed partial class DockerGdalCommandRunner(
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
 
         var opts = options.Value;
+        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments),
-            s3Options.Value);
+            referencesRemoteVsi,
+            s3Options.Value,
+            azureOptions.Value,
+            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
+            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
         var dockerArgs = BuildDockerRunArguments(opts, tool, arguments, workingDirectory, hardeningEnv);
 
         Log.DispatchingToContainer(logger, tool, opts.Image, workingDirectory);
-        return invoker.RunAsync(opts.DockerExecutable, dockerArgs, cancellationToken);
+        return invoker.RunAsync(opts.DockerExecutable, dockerArgs, hardeningEnv, cancellationToken);
     }
 
     /// <summary>
@@ -128,8 +133,8 @@ internal sealed partial class DockerGdalCommandRunner(
             args.Add(options.User);
         }
 
-        // Propagate the GDAL hardening environment into the container so the
-        // driver-skip / remote-VSI-disable policy applies inside the image too (#2765).
+        // Propagate the GDAL environment by NAME. The container-runtime process
+        // receives the values out of band, so credentials never enter argv/logs.
         args.AddRange(envArgs);
 
         // Identical-path bind mount: the executor's absolute workspace paths must

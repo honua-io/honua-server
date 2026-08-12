@@ -18,6 +18,7 @@ namespace Honua.Worker.Gdal.Execution;
 internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
     IOptions<AwsS3Options> s3Options,
+    IOptions<AzureBlobOptions> azureOptions,
     ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
@@ -49,10 +50,14 @@ internal sealed partial class ProcessGdalCommandRunner(
         // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
         // remote virtual-filesystem handlers. Applied by overwriting the inherited
         // environment so a value set on the worker process cannot weaken the policy.
+        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments),
-            s3Options.Value);
+            referencesRemoteVsi,
+            s3Options.Value,
+            azureOptions.Value,
+            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
+            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
         foreach (var kvp in hardeningEnv)
         {
             startInfo.Environment[kvp.Key] = kvp.Value;

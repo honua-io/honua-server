@@ -314,6 +314,7 @@ public sealed class GdalWorkerExecutorTests
             new ProcessGdalCommandRunner(
                 Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
                 Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
                 NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorConvertJobExecutor>.Instance);
@@ -475,6 +476,7 @@ public sealed class GdalWorkerExecutorTests
             new ProcessGdalCommandRunner(
                 Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
                 Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
                 NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorReprojectJobExecutor>.Instance);

@@ -82,6 +82,7 @@ public sealed class DockerGdalCommandRunnerTests
             Options.Create(new GdalContainerExecutionOptions()),
             Options.Create(new GdalHardeningOptions()),
             Options.Create(new AwsS3Options()),
+            Options.Create(new AzureBlobOptions()),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
         var result = await runner.RunAsync(
@@ -115,6 +116,7 @@ public sealed class DockerGdalCommandRunnerTests
                 ServiceUrl = "https://object-store.example.test",
                 ForcePathStyle = true,
             }),
+            Options.Create(new AzureBlobOptions()),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
         await runner.RunAsync(
@@ -124,23 +126,60 @@ public sealed class DockerGdalCommandRunnerTests
             CancellationToken.None);
 
         invoker.Invocations.Should().ContainSingle();
-        var args = invoker.Invocations.Single().Arguments;
-        args.Should().ContainInOrder("-e", "AWS_S3_ENDPOINT=https://object-store.example.test");
-        args.Should().ContainInOrder("-e", "AWS_HTTPS=YES");
-        args.Should().ContainInOrder("-e", "AWS_VIRTUAL_HOSTING=FALSE");
+        var invocation = invoker.Invocations.Single();
+        invocation.Arguments.Should().ContainInOrder("-e", "AWS_S3_ENDPOINT");
+        invocation.Arguments.Should().ContainInOrder("-e", "AWS_HTTPS");
+        invocation.Arguments.Should().ContainInOrder("-e", "AWS_VIRTUAL_HOSTING");
+        invocation.Arguments.Should().NotContain(a => a.Contains("object-store.example.test", StringComparison.Ordinal));
+        invocation.Environment!["AWS_S3_ENDPOINT"].Should().Be("https://object-store.example.test");
+        invocation.Environment["AWS_HTTPS"].Should().Be("YES");
+        invocation.Environment["AWS_VIRTUAL_HOSTING"].Should().Be("FALSE");
+    }
+
+    [UnitTest]
+    public async Task RunAsync_ReferencedAzureInput_ProjectsConnectionStringOutOfBand()
+    {
+        const string connectionString =
+            "DefaultEndpointsProtocol=https;AccountName=registered;AccountKey=secret;EndpointSuffix=core.windows.net";
+        var invoker = new FakeDockerCommandInvoker(_ => new GdalCommandResult { ExitCode = 0 });
+        var runner = new DockerGdalCommandRunner(
+            invoker,
+            Options.Create(new GdalContainerExecutionOptions()),
+            Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()),
+            Options.Create(new AzureBlobOptions { ConnectionString = connectionString }),
+            NullLogger<DockerGdalCommandRunner>.Instance);
+
+        await runner.RunAsync(
+            "gdalwarp",
+            new[] { "/vsiaz/registered-container/input.tif", "/scratch/op/out.tif" },
+            "/scratch/op",
+            CancellationToken.None);
+
+        invoker.Invocations.Should().ContainSingle();
+        var invocation = invoker.Invocations.Single();
+        invocation.Arguments.Should().ContainInOrder("-e", "AZURE_STORAGE_CONNECTION_STRING");
+        invocation.Arguments.Should().NotContain(a => a.Contains("AccountKey", StringComparison.Ordinal));
+        invocation.Environment!["AZURE_STORAGE_CONNECTION_STRING"].Should().Be(connectionString);
     }
 
     private sealed class FakeDockerCommandInvoker(Func<IReadOnlyList<string>, GdalCommandResult> behavior)
         : IDockerCommandInvoker
     {
-        public List<(string Executable, IReadOnlyList<string> Arguments)> Invocations { get; } = [];
+        public List<(
+            string Executable,
+            IReadOnlyList<string> Arguments,
+            IReadOnlyDictionary<string, string>? Environment)>
+            Invocations
+        { get; } = [];
 
         public Task<GdalCommandResult> RunAsync(
             string executable,
             IReadOnlyList<string> arguments,
+            IReadOnlyDictionary<string, string>? environment,
             CancellationToken cancellationToken)
         {
-            Invocations.Add((executable, arguments));
+            Invocations.Add((executable, arguments, environment));
             return Task.FromResult(behavior(arguments));
         }
 

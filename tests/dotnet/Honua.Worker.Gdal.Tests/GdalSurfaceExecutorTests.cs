@@ -309,6 +309,7 @@ public sealed class GdalSurfaceExecutorTests
             new ProcessGdalCommandRunner(
                 Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
                 Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
                 NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalSurfaceJobExecutor>.Instance);

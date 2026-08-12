@@ -312,12 +312,28 @@ public sealed class GdalUntrustedInputHardeningTests
                 Region = "us-west-2",
                 ServiceUrl = "http://minio:9000/",
                 ForcePathStyle = true,
-            });
+            },
+            inputReferencesS3Vsi: true);
 
         env["AWS_REGION"].Should().Be("us-west-2");
         env["AWS_S3_ENDPOINT"].Should().Be("http://minio:9000");
         env["AWS_HTTPS"].Should().Be("NO");
         env["AWS_VIRTUAL_HOSTING"].Should().Be("FALSE");
+    }
+
+    [UnitTest]
+    public void Hardening_TrustedAzureVsiInvocation_ProjectsConnectionString()
+    {
+        const string connectionString =
+            "DefaultEndpointsProtocol=https;AccountName=registered;AccountKey=secret;EndpointSuffix=core.windows.net";
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            azureOptions: new AzureBlobOptions { ConnectionString = connectionString },
+            inputReferencesAzureVsi: true);
+
+        env["AZURE_STORAGE_CONNECTION_STRING"].Should().Be(connectionString);
+        env.Should().NotContainKey("AWS_S3_ENDPOINT");
     }
 
     [UnitTest]
@@ -343,6 +359,10 @@ public sealed class GdalUntrustedInputHardeningTests
             .Should().BeTrue();
         GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/scratch/op/input.tif" })
             .Should().BeFalse();
+        GdalRuntimeHardening.ArgumentsReferenceS3Vsi(new[] { "/vsis3/bucket/input.tif" })
+            .Should().BeTrue();
+        GdalRuntimeHardening.ArgumentsReferenceAzureVsi(new[] { "/vsiaz/container/input.tif" })
+            .Should().BeTrue();
     }
 
     [UnitTest]
@@ -369,14 +389,16 @@ public sealed class GdalUntrustedInputHardeningTests
             "/scratch/op",
             env);
 
-        // Each hardening var appears as a `-e KEY=VALUE` pair before the image.
+        // Each hardening var appears as a `-e KEY` pair before the image. Values are
+        // passed to the Docker process environment so secrets never enter argv.
         args.Should().Contain("-e");
-        args.Should().Contain(a => a.StartsWith("GDAL_SKIP=", StringComparison.Ordinal));
-        args.Should().Contain(a => a.StartsWith("CPL_VSIL_CURL_ALLOWED_EXTENSIONS=", StringComparison.Ordinal));
+        args.Should().Contain("GDAL_SKIP");
+        args.Should().Contain("CPL_VSIL_CURL_ALLOWED_EXTENSIONS");
+        args.Should().NotContain(a => a.Contains('='));
 
         var imageIndex = args.ToList().IndexOf(GdalContainerExecutionOptions.DefaultImage);
-        var lastEnvValueIndex = args.ToList().FindLastIndex(a => a.StartsWith("GDAL_", StringComparison.Ordinal));
-        lastEnvValueIndex.Should().BeLessThan(imageIndex, "docker flags must precede the image ref");
+        var lastEnvKeyIndex = args.ToList().FindLastIndex(a => a.StartsWith("GDAL_", StringComparison.Ordinal));
+        lastEnvKeyIndex.Should().BeLessThan(imageIndex, "docker flags must precede the image ref");
     }
 
     [UnitTest]
@@ -387,6 +409,7 @@ public sealed class GdalUntrustedInputHardeningTests
         var runner = new ProcessGdalCommandRunner(
             Options.Create(new GdalHardeningOptions()),
             Options.Create(new AwsS3Options()),
+            Options.Create(new AzureBlobOptions()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
 
         var (tool, args) = OperatingSystem.IsWindows()

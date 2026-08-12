@@ -241,6 +241,17 @@ public static class CogRasterHeaderProbe
             candidate.Tag == TiffConstants.TagModelPixelScaleTag);
         if (entry.Tag != TiffConstants.TagModelPixelScaleTag)
         {
+            if (entries.Any(candidate =>
+                    candidate.Tag == TiffConstants.TagModelTransformationTag))
+            {
+                // A transformation matrix can rotate, shear, or scale the grid. Treating
+                // it as the identity grid would under-estimate the ground extent used by
+                // gdalwarp and defeat the pre-spawn output-grid guard. Until the bounded
+                // probe derives all transformed corners, reject this georeferencing form.
+                throw new InvalidDataException(
+                    "TIFF ModelTransformation georeferencing is not supported by bounded raster admission.");
+            }
+
             // This mirrors GDAL's identity-grid interpretation for an unreferenced TIFF.
             return new RasterSourcePixelScale(1d, 1d);
         }
