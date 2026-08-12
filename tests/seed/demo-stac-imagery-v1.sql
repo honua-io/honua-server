@@ -206,9 +206,9 @@ BEGIN
 
         BEGIN
             INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
-            VALUES (probe_objectid, probe_layer_id, NULL, '{"probe":"insert"}'::jsonb);
+            VALUES (probe_objectid, probe_layer_id, NULL, jsonb_build_object('probe', 'insert'));
             UPDATE honua.features
-               SET attributes = '{"probe":"update"}'::jsonb
+               SET attributes = jsonb_build_object('probe', 'update')
              WHERE objectid = probe_objectid;
             DELETE FROM honua.features WHERE objectid = probe_objectid;
 
