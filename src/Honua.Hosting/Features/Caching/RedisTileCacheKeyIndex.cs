@@ -17,9 +17,10 @@ namespace Honua.Infrastructure.Caching;
 ///   <item><description>a hash of <c>key → sizeBytes</c> so the evictor can honor the configured
 ///   byte-size quota without re-reading every tile.</description></item>
 /// </list>
-/// Index updates are best-effort bookkeeping: any Redis failure is swallowed so a tile request never
-/// fails because of eviction accounting. This is the canonical binding that replaces relying solely
-/// on the Redis server <c>maxmemory-policy allkeys-lru</c> setting.
+/// Access-only index updates are best-effort bookkeeping, so eviction accounting cannot fail a tile
+/// request. Write updates also advance lifecycle state and therefore surface Redis failures to the
+/// cache-write boundary. This is the canonical binding that replaces relying solely on the Redis
+/// server <c>maxmemory-policy allkeys-lru</c> setting.
 /// </summary>
 internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
 {
@@ -115,11 +116,21 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
                 _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
             }
 
-            await transaction.ExecuteAsync().ConfigureAwait(false);
+            var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+            if (clearExpiration && !committed)
+            {
+                throw new RedisException("Tile-cache write state transaction was not committed.");
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            // Eviction accounting must never fail a tile request.
+            if (clearExpiration)
+            {
+                Log.RecordWriteFailed(_logger, ex);
+                throw;
+            }
+
+            // Access-only eviction accounting must never fail a tile request.
             Log.RecordAccessFailed(_logger, ex);
         }
     }
@@ -439,5 +450,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
 
         [LoggerMessage(EventId = 9269, Level = LogLevel.Warning, Message = "Failed to renew Redis tile-cache mutation lease {LeaseKey}; cancelling the storage mutation.")]
         public static partial void MutationLeaseRenewalFailed(ILogger logger, string leaseKey, Exception exception);
+
+        [LoggerMessage(EventId = 9270, Level = LogLevel.Warning, Message = "Failed to commit Redis tile-cache write generation and expiration state.")]
+        public static partial void RecordWriteFailed(ILogger logger, Exception exception);
     }
 }

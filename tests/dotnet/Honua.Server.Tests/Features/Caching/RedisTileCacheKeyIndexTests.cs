@@ -11,6 +11,40 @@ namespace Honua.Server.Tests.Features.Caching;
 
 public sealed class RedisTileCacheKeyIndexTests
 {
+    [Fact]
+    public async Task RecordWriteAsync_WhenTransactionIsNotCommitted_Throws()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(false);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var act = async () => await index.RecordWriteAsync("tile-key", 42);
+
+        await act.Should().ThrowAsync<RedisException>()
+            .WithMessage("*write state transaction was not committed*");
+    }
+
+    [Fact]
+    public async Task RecordAccessAsync_WhenRedisFails_RemainsBestEffort()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>())
+            .Returns(Task.FromException<bool>(new RedisException("unavailable")));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var act = async () => await index.RecordAccessAsync("tile-key", 42);
+
+        await act.Should().NotThrowAsync();
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

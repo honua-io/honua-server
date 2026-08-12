@@ -27,10 +27,11 @@ public readonly record struct TileCacheIndexSnapshot(
 /// the whole keyspace rather than honoring Honua's per-tileset quotas).
 /// </summary>
 /// <remarks>
-/// Implementations must be safe to call from the hot tile-serve path: index updates are
-/// fire-and-forget bookkeeping, so failures (e.g. a Redis outage) must never fail the tile request.
-/// The <see cref="NullTileCacheKeyIndex" /> no-op is registered when Redis is not configured,
-/// keeping the baseline serve path allocation-free and unchanged.
+/// Implementations must be safe to call from the hot tile-serve path. Access records are
+/// fire-and-forget bookkeeping, so their failures must never fail the tile request. Write records
+/// also advance lifecycle fencing and expiration state, so implementations surface those failures
+/// to the cache-write boundary. The <see cref="NullTileCacheKeyIndex" /> no-op is registered when
+/// Redis is not configured, keeping the baseline serve path allocation-free and unchanged.
 /// </remarks>
 public interface ITileCacheKeyIndex
 {
@@ -51,7 +52,9 @@ public interface ITileCacheKeyIndex
     Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Records a newly written tile and clears any explicit-expiration marker for the key.
+    /// Records a newly written tile, advances its write generation, and clears any
+    /// explicit-expiration marker for the key. Durable implementations surface failures so the
+    /// cache-write boundary can treat an uncommitted lifecycle update as a failed cache write.
     /// </summary>
     /// <param name="key">The tile cache key (the storage object key).</param>
     /// <param name="sizeBytes">The stored tile size in bytes.</param>
