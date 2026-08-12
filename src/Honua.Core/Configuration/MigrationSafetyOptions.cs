@@ -79,7 +79,7 @@ public sealed record MigrationSafetyOptions
     /// When <see langword="true"/> (default), the migration runner rejects pending contract-phase
     /// migrations that lack the compatibility-review marker instead of applying them.
     /// </summary>
-    public bool Enforce { get; init; } = true;
+    public bool Enforce { get; set; } = true;
 
     /// <summary>
     /// Policy for applying pending <em>annotated</em> contract-phase migrations on an existing database
@@ -89,7 +89,7 @@ public sealed record MigrationSafetyOptions
     /// <see cref="Core.Configuration.ContractApplyPolicy.Auto"/> to opt back into unattended apply. Fresh
     /// installs always provision fully regardless of this setting.
     /// </summary>
-    public ContractApplyPolicy ContractApplyPolicy { get; init; } = ContractApplyPolicy.Gate;
+    public ContractApplyPolicy ContractApplyPolicy { get; set; } = ContractApplyPolicy.Gate;
 
     /// <summary>
     /// Optional pre-migration backup command. When set, the runner executes it via the platform shell
@@ -98,5 +98,5 @@ public sealed record MigrationSafetyOptions
     /// configuration-source only and is never writable through an admin API or the database (RCE guard).
     /// A typical value is a <c>pg_dump</c> invocation.
     /// </summary>
-    public string? BackupCommand { get; init; }
+    public string? BackupCommand { get; set; }
 }
