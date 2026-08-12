@@ -30,7 +30,8 @@
     <PackageVersion Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.7.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
+    <!-- SSH.NET 2026.0.0 requires BouncyCastle.Cryptography >= 2.7.0. -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.7.0" />
     <PackageVersion Include="Confluent.Kafka" Version="2.14.2" />
     <PackageVersion Include="dbup-postgresql" Version="7.0.1" />
     <PackageVersion Include="DuckDB.NET.Data.Full" Version="1.5.0" />
@@ -131,6 +132,10 @@
     <PackageVersion Include="Snowflake.Data" Version="5.7.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.12.14" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
+    <!-- Testcontainers 4.11.0 resolves SSH.NET 2025.1.0 transitively. Pin the first
+         patched release for GHSA-q939-rpr3-3284 (CVE-2026-48798). The direct
+         references remain test-only in Honua.TestKit and Honua.Db.Oracle.Tests. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- Test-only: independent XML-DSig reference implementation used to generate signed SAML
          assertions in tests that validate the AOT-safe in-server verifier (#508). Not referenced
          by any shipped project. -->

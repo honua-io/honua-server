@@ -5195,6 +5195,8 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithLegacyLayerIdsParam_AndUnknownLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithProjectedBboxLayer_AllowsSseHandshake",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithServiceIdAndForeignLayer_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithServiceIdOnlyAndNoRoutableLayers_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithServiceIdOnly_ScopesSessionToRoutableStorageLayers",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithTemporalFilterOnNonTimeAwareLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithTemporalFilterOnTimeAwareLayer_AllowsSseHandshake",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithUnsupportedFilterLanguage_ReturnsBadRequest",
