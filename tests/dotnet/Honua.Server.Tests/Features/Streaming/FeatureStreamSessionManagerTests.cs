@@ -701,6 +701,32 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public async Task RefreshRoutability_CanceledRead_DoesNotThrottleImmediateRetry()
+    {
+        var snapshot = await new TestMetadataV2GraphProvider(
+            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
+        var provider = new CancelFirstMetadataV2GraphProvider(snapshot);
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => provider)
+            .BuildServiceProvider();
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions()),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics(),
+            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
+        using var cancellation = new CancellationTokenSource();
+
+        var canceledRefresh = manager.RefreshRoutabilityAsync(cancellation.Token).AsTask();
+        await provider.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRefresh);
+        Assert.True(await manager.RefreshRoutabilityAsync());
+        Assert.Equal(2, provider.ReadCount);
+    }
+
+    [UnitTest]
     public void Broadcast_WithBboxFilter_OnlyDeliversIntersectingEvents()
     {
         var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
@@ -1546,6 +1572,33 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         {
             Interlocked.Increment(ref _readCount);
             return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(snapshot);
+    }
+
+    private sealed class CancelFirstMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        private int _readCount;
+
+        public int ReadCount => Volatile.Read(ref _readCount);
+
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                FirstReadStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            return snapshot;
         }
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
