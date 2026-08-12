@@ -134,7 +134,7 @@ internal sealed class ImageServerTileHandler
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
                 var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
-                var tileCacheTenantScope = ResolveTileCacheTenantScope(context);
+                var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
@@ -342,7 +342,7 @@ internal sealed class ImageServerTileHandler
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
             var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
-            var tileCacheTenantScope = ResolveTileCacheTenantScope(context);
+            var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
             var window = new RasterTileWindow
             {
                 MinX = bounds.XMin,
@@ -507,7 +507,4 @@ internal sealed class ImageServerTileHandler
             $"tenant:{tenantId.Length}:{tenantId}|auth:{authenticationType.Length}:{authenticationType}|principal:{principalId.Length}:{principalId}");
     }
 
-    private static string? ResolveTileCacheTenantScope(HttpContext context)
-        => context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema
-            ?? context.RequestServices.GetService<ITenantContext>()?.TenantId;
 }

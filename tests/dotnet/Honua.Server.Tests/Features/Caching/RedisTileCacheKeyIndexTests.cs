@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FluentAssertions;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -254,6 +255,43 @@ public sealed class RedisTileCacheKeyIndexTests
         var result = await index.MarkExpiredAsync("tile-key");
 
         result.Should().Be(added);
+    }
+
+    [Theory]
+    [InlineData(0, TileCacheExpirationMarkResult.NotCurrent)]
+    [InlineData(1, TileCacheExpirationMarkResult.AlreadyMarked)]
+    [InlineData(2, TileCacheExpirationMarkResult.Added)]
+    public async Task TryMarkExpiredIfCurrentAsync_UsesOneAtomicGenerationCheckedScript(
+        long redisResult,
+        TileCacheExpirationMarkResult expected)
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script =>
+                    script.Contains("current_version", StringComparison.Ordinal) &&
+                    script.Contains("SADD", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)redisResult));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var entry = new TileCacheEntry(
+            "tile-key",
+            42,
+            DateTimeOffset.UtcNow,
+            WriteVersion: "version-1");
+
+        var result = await index.TryMarkExpiredIfCurrentAsync(entry);
+
+        result.Should().Be(expected);
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("current_version", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys => keys.Length == 3),
+            Arg.Is<RedisValue[]>(values =>
+                values[0].ToString() == "tile-key" && values[1].ToString() == "version-1"),
+            CommandFlags.DemandMaster);
     }
 
     [Fact]

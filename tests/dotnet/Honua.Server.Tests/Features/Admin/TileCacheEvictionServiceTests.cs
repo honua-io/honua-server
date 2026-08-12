@@ -235,5 +235,12 @@ public sealed class TileCacheEvictionServiceTests
             TileCacheEntry entry,
             CancellationToken cancellationToken = default)
             => Task.FromResult(!RejectCurrent);
+
+        public Task<TileCacheExpirationMarkResult> TryMarkExpiredIfCurrentAsync(
+            TileCacheEntry entry,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(RejectCurrent
+                ? TileCacheExpirationMarkResult.NotCurrent
+                : TileCacheExpirationMarkResult.Added);
     }
 }

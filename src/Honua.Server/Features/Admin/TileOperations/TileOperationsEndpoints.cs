@@ -83,7 +83,7 @@ internal static class TileOperationsEndpoints
         }
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
-        var tenantScope = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+        var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
 
         var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
         var totalCount = 0;
@@ -186,14 +186,15 @@ internal static class TileOperationsEndpoints
         try
         {
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+            var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
 
             // Config-driven dispatch: when a batch backend is configured (issue #1697)
             // submit through the execution-job → batch path; otherwise fall back to the
             // in-process channel worker, preserving the default single-pod behavior.
             var batchService = context.RequestServices.GetService<ITileCacheJobService>();
             var jobId = batchService is { IsEnabled: true }
-                ? await batchService.SubmitAsync(request, schemaName, cancellationToken).ConfigureAwait(false)
-                : await jobService.StartAsync(request, schemaName, cancellationToken).ConfigureAwait(false);
+                ? await batchService.SubmitAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false)
+                : await jobService.StartAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,

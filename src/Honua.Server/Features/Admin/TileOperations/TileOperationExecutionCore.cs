@@ -69,7 +69,8 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationProgress started,
         TileOperationStartRequest request,
         IServiceProvider serviceProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tenantScope = null)
     {
         ArgumentNullException.ThrowIfNull(started);
         ArgumentNullException.ThrowIfNull(request);
@@ -86,8 +87,8 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
-            "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
-            "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
+            "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
+            "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,

@@ -67,6 +67,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     public async Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -75,7 +76,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
         var targetLayerIds = await TileCacheTargetResolver.ResolveLayerIdsAsync(
             request,
             _graphProvider,
@@ -255,6 +256,7 @@ internal interface ITileCacheJobService
     Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
+        string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

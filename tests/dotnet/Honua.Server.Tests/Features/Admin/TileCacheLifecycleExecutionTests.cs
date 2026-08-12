@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
@@ -93,6 +94,30 @@ public sealed class TileCacheLifecycleExecutionTests
         index.Removed.Should().BeEquivalentTo([tenantAKey]);
         index.Remaining.Should().BeEquivalentTo([tenantBKey]);
         await storage.DidNotReceive().DeleteAsync(tenantBKey, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Delete_DefaultTenantScope_MatchesEntriesWithoutSchemaRouting()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100, "public");
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage,
+            tenantId: "public");
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.SuccessfulTiles.Should().Be(1);
+        index.Removed.Should().ContainSingle().Which.Should().Be(InBoundKey);
     }
 
     [UnitTest]
@@ -765,6 +790,8 @@ public sealed class TileCacheLifecycleExecutionTests
         ITileCacheGenerationCheckpointStore? checkpointStore = null,
         IMetadataV2GraphProvider? graphProvider = null,
         string? schemaName = null,
+        string? tenantScope = null,
+        string? tenantId = null,
         CancellationToken cancellationToken = default)
     {
         var services = new ServiceCollection();
@@ -777,6 +804,13 @@ public sealed class TileCacheLifecycleExecutionTests
             var schemaContext = Substitute.For<ISchemaContext>();
             schemaContext.CurrentSchema.Returns(schemaName);
             services.AddSingleton(schemaContext);
+        }
+
+        if (tenantId is not null)
+        {
+            var tenantContext = Substitute.For<ITenantContext>();
+            tenantContext.TenantId.Returns(tenantId);
+            services.AddSingleton(tenantContext);
         }
         using var provider = services.BuildServiceProvider();
 
@@ -804,7 +838,7 @@ public sealed class TileCacheLifecycleExecutionTests
             request.LayerId,
             request.TileMatrixSetId);
 
-        return await core.ExecuteAsync(started, request, provider, cancellationToken);
+        return await core.ExecuteAsync(started, request, provider, cancellationToken, tenantScope);
     }
 
     private static CloudFile StoredTile(string key) => new()
@@ -952,6 +986,34 @@ public sealed class TileCacheLifecycleExecutionTests
             TileCacheEntry entry,
             CancellationToken cancellationToken = default)
             => Task.FromResult(!RejectConditionalRemove && _entries.ContainsKey(entry.Key));
+
+        public async Task<TileCacheExpirationMarkResult> TryMarkExpiredIfCurrentAsync(
+            TileCacheEntry entry,
+            CancellationToken cancellationToken = default)
+        {
+            if (BeforeExpirationMarkerAsync is not null)
+            {
+                await BeforeExpirationMarkerAsync(cancellationToken);
+            }
+
+            if (string.Equals(entry.Key, FailingExpirationKey, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("transient");
+            }
+
+            if (RejectConditionalRemove || !_entries.ContainsKey(entry.Key))
+            {
+                return TileCacheExpirationMarkResult.NotCurrent;
+            }
+
+            if (Expired.Contains(entry.Key))
+            {
+                return TileCacheExpirationMarkResult.AlreadyMarked;
+            }
+
+            Expired.Add(entry.Key);
+            return TileCacheExpirationMarkResult.Added;
+        }
     }
 
     private sealed class FailingCheckpointStore : ITileCacheGenerationCheckpointStore

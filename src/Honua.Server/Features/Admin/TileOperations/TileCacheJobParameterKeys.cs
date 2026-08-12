@@ -49,6 +49,13 @@ internal static class TileCacheJobParameterKeys
     public const string SchemaName = "honua.tilecache.schema_name";
 
     /// <summary>
+    /// Resolved tile-cache ownership scope captured at submission. This equals the schema when
+    /// schema routing is active and otherwise carries the request tenant (including the default
+    /// tenant) so background lifecycle work matches the ImageServer write path.
+    /// </summary>
+    public const string TenantScope = "honua.tilecache.tenant_scope";
+
+    /// <summary>
     /// Output compression for archive/publish artifacts. Reserved for forward
     /// compatibility with tippecanoe-style workers; the managed writer currently
     /// emits uncompressed tiles.

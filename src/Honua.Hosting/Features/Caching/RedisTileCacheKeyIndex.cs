@@ -102,6 +102,23 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         end
         return #expired
         """;
+    private const string TryMarkExpiredIfCurrentScript = """
+        if not redis.call('ZSCORE', KEYS[1], ARGV[1]) then
+            return 0
+        end
+        local current_version = redis.call('HGET', KEYS[2], ARGV[1])
+        if ARGV[2] == '' then
+            if current_version then
+                return 0
+            end
+        elseif current_version ~= ARGV[2] then
+            return 0
+        end
+        if redis.call('SADD', KEYS[3], ARGV[1]) == 1 then
+            return 2
+        end
+        return 1
+        """;
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
@@ -664,6 +681,35 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         return entry.WriteVersion is null
             ? currentVersion.IsNull
             : string.Equals((string?)currentVersion, entry.WriteVersion, StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc />
+    public async Task<TileCacheExpirationMarkResult> TryMarkExpiredIfCurrentAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return TileCacheExpirationMarkResult.NotCurrent;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var result = await _redis.GetDatabase().ScriptEvaluateAsync(
+                TryMarkExpiredIfCurrentScript,
+                new RedisKey[] { LastAccessSetKey, WriteVersionHashKey, ExpiredSetKey },
+                new RedisValue[] { entry.Key, entry.WriteVersion ?? string.Empty },
+                CommandFlags.DemandMaster).ConfigureAwait(false);
+            return result.IsNull
+                ? TileCacheExpirationMarkResult.NotCurrent
+                : (TileCacheExpirationMarkResult)(long)result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            Log.ExpirationWriteFailed(_logger, ex);
+            throw;
+        }
     }
 
     private static async Task<long> PruneStorageExpirationsAsync(IDatabase database, long nowUnixMilliseconds)

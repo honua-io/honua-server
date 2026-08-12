@@ -74,6 +74,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 job.Spec.Parameters,
                 out var request,
                 out var schemaName,
+                out var tenantScope,
                 out var parseError))
         {
             Log.InvalidSpec(_logger, job.OperationId, parseError);
@@ -126,7 +127,12 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 maxTilesCeiling,
                 scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>());
 
-            finalProgress = await core.ExecuteAsync(started, request, scope.ServiceProvider, cancellationToken)
+            finalProgress = await core.ExecuteAsync(
+                    started,
+                    request,
+                    scope.ServiceProvider,
+                    cancellationToken,
+                    tenantScope)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

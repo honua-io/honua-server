@@ -29,6 +29,7 @@ internal sealed partial class TileOperationExecutionCore
         bool deleteBytes,
         IMetadataV2GraphProvider graphProvider,
         IServiceProvider serviceProvider,
+        string? tenantScope,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
@@ -81,7 +82,7 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var targetLayers = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
-        var tenantScope = serviceProvider.GetService<ISchemaContext>()?.CurrentSchema;
+        tenantScope ??= TileCacheTenantScope.Resolve(serviceProvider);
         var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits, tenantScope);
 
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
@@ -253,28 +254,23 @@ internal sealed partial class TileOperationExecutionCore
                     // a miss. Set-add is idempotent, so always write the marker: an expiration-read
                     // failure must not be mistaken for prior success. Holding the same per-key fence
                     // as RecordWriteAsync orders the marker against concurrent regeneration.
-                    var markerAdded = false;
-                    var entryStillCurrent = false;
+                    var markResult = TileCacheExpirationMarkResult.NotCurrent;
                     await mutationCoordinator!.ExecuteSerializedAsync(
                         entry.Key,
                         async mutationToken =>
                         {
-                            if (!await mutationCoordinator.IsCurrentAsync(entry, mutationToken).ConfigureAwait(false))
-                            {
-                                return;
-                            }
-
-                            entryStillCurrent = true;
-                            markerAdded = await keyIndex.MarkExpiredAsync(entry.Key, mutationToken).ConfigureAwait(false);
+                            markResult = await mutationCoordinator
+                                .TryMarkExpiredIfCurrentAsync(entry, mutationToken)
+                                .ConfigureAwait(false);
                         },
                         cancellationToken).ConfigureAwait(false);
-                    if (!entryStillCurrent)
+                    if (markResult == TileCacheExpirationMarkResult.NotCurrent)
                     {
                         excluded++;
                         release = false;
                     }
 
-                    if (markerAdded)
+                    if (markResult == TileCacheExpirationMarkResult.Added)
                     {
                         mutations++;
                     }

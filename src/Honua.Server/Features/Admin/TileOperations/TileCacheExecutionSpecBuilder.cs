@@ -26,6 +26,17 @@ internal static class TileCacheExecutionSpecBuilder
         TileOperationStartRequest request,
         string? schemaName,
         TileCacheBatchOptions options)
+        => Build(request, schemaName, tenantScope: null, options);
+
+    /// <summary>
+    /// Builds a durable execution spec and captures the tile-cache ownership scope separately
+    /// from the optional routed database schema.
+    /// </summary>
+    public static ExecutionJobSpec Build(
+        TileOperationStartRequest request,
+        string? schemaName,
+        string? tenantScope,
+        TileCacheBatchOptions options)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
@@ -96,6 +107,11 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
         }
 
+        if (!string.IsNullOrWhiteSpace(tenantScope))
+        {
+            parameters[TileCacheJobParameterKeys.TenantScope] = tenantScope;
+        }
+
         // Backend-specific coordinates (AWS Batch job-definition/queue ARNs,
         // Kubernetes namespace/image overrides, target artifact bucket) are merged
         // last so an operator can pin them per deployment without changing code.
@@ -130,11 +146,23 @@ internal static class TileCacheExecutionSpecBuilder
         out TileOperationStartRequest request,
         out string? schemaName,
         out string error)
+        => TryParse(parameters, out request, out schemaName, out _, out error);
+
+    /// <summary>
+    /// Reconstructs a tile operation together with its routed schema and persisted cache scope.
+    /// </summary>
+    public static bool TryParse(
+        IReadOnlyDictionary<string, string> parameters,
+        out TileOperationStartRequest request,
+        out string? schemaName,
+        out string? tenantScope,
+        out string error)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         request = null!;
         schemaName = null;
+        tenantScope = null;
         error = string.Empty;
 
         if (!parameters.TryGetValue(TileCacheJobParameterKeys.Operation, out var operation)
@@ -229,6 +257,12 @@ internal static class TileCacheExecutionSpecBuilder
             && !string.IsNullOrWhiteSpace(schema))
         {
             schemaName = schema;
+        }
+
+        if (parameters.TryGetValue(TileCacheJobParameterKeys.TenantScope, out var scope)
+            && !string.IsNullOrWhiteSpace(scope))
+        {
+            tenantScope = scope;
         }
 
         var parsedRequest = new TileOperationStartRequest
