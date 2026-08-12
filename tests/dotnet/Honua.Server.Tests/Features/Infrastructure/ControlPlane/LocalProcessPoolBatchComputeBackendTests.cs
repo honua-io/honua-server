@@ -188,6 +188,23 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task GetCapabilities_IgnoresUnusableEmptyPrefixAttestation()
+    {
+        using var backend = CreateBackend(workerContracts:
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = "env",
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            }
+        ]);
+
+        var capabilities = await backend.GetCapabilitiesAsync();
+
+        capabilities.MaxSupportedContractVersion.Should().Be(1);
+    }
+
+    [Fact]
     public async Task StartAsync_WithoutExecutable_ReturnsFailed()
     {
         using var backend = CreateBackend();

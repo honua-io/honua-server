@@ -73,6 +73,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         var configuredMaximum = _options.WorkerContracts
             .Where(contract => !string.IsNullOrWhiteSpace(contract.Executable))
+            .Where(contract => contract.ArgumentPrefix.Count > 0 || contract.IsSelfContained)
             .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
             .DefaultIfEmpty(1)
             .Max();
