@@ -15,7 +15,12 @@ namespace Honua.Core.Features.Tiles;
 /// <param name="Key">The tile cache key.</param>
 /// <param name="SizeBytes">The stored tile size in bytes.</param>
 /// <param name="LastAccessUtc">The last time the entry was read (UTC).</param>
-public readonly record struct TileCacheEntry(string Key, long SizeBytes, DateTimeOffset LastAccessUtc);
+/// <param name="WriteVersion">Opaque version of the most recent successful cache write.</param>
+public readonly record struct TileCacheEntry(
+    string Key,
+    long SizeBytes,
+    DateTimeOffset LastAccessUtc,
+    string? WriteVersion = null);
 
 /// <summary>
 /// Pure size-quota / LRU eviction policy for the tile cache (#1837). Given the current cache

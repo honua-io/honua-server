@@ -328,6 +328,56 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_ServiceFilter_UsesStorageLayerIdInsteadOfServiceLocalIndex()
+    {
+        const string storageLayerKey = "prefix/imageserver/tiles/42/webmercatorquad/default/abc/2/1/1.png";
+        const string localIndexKey = "prefix/imageserver/tiles/7/webmercatorquad/default/abc/2/1/1.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(storageLayerKey, 100);
+        index.Seed(localIndexKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
+            .AddResource("resource", "resource")
+            .AddStorageBinding("binding", "resource", "features", storageLayerId: 42)
+            .AddService("service", "service")
+            .AddPublication("publication", "service", "resource", layerIndex: 7, storageBindingId: "binding")
+            .Build());
+
+        var result = await ExecuteAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            ServiceId = "service",
+            TileMatrixSetId = "WebMercatorQuad"
+        }, index, storage, graphProvider: graphProvider);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        index.Removed.Should().BeEquivalentTo([storageLayerKey]);
+        index.Remaining.Should().BeEquivalentTo([localIndexKey]);
+    }
+
+    [UnitTest]
+    public async Task Delete_WhenConcurrentWriteReplacesSnapshot_LeavesFreshEntryTracked()
+    {
+        var index = new StatefulKeyIndex { RejectConditionalRemove = true };
+        index.Seed(InBoundKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad"
+        }, index, storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        result.FailedTiles.Should().Be(1);
+        index.Removed.Should().BeEmpty();
+        index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
     public async Task Delete_WithBbox_OnlyRemovesTilesInsideExtent()
     {
         const string inside = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
@@ -422,6 +472,8 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public bool SnapshotAvailable { get; set; } = true;
 
+        public bool RejectConditionalRemove { get; set; }
+
         public bool IsEnabled => true;
 
         public IReadOnlyList<string> Remaining => [.. _entries.Keys];
@@ -471,6 +523,19 @@ public sealed class TileCacheLifecycleExecutionTests
             }
 
             return Task.CompletedTask;
+        }
+
+        public async Task<bool> TryRemoveAsync(
+            TileCacheEntry entry,
+            CancellationToken cancellationToken = default)
+        {
+            if (RejectConditionalRemove)
+            {
+                return false;
+            }
+
+            await RemoveAsync(entry.Key, cancellationToken);
+            return true;
         }
     }
 }

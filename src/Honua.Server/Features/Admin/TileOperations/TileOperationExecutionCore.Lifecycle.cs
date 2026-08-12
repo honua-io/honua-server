@@ -73,7 +73,7 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var targetLayers = await ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
+        var targetLayers = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits);
 
         var snapshot = await keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
@@ -145,6 +145,12 @@ internal sealed partial class TileOperationExecutionCore
                         throw new InvalidOperationException(
                             "The tile remained in cloud storage after the delete attempt.");
                     }
+
+                    if (!await keyIndex.TryRemoveAsync(entry, cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "The tile cache entry was replaced by a concurrent write after deletion.");
+                    }
                 }
                 else
                 {
@@ -170,9 +176,6 @@ internal sealed partial class TileOperationExecutionCore
             {
                 if (deleteBytes)
                 {
-                    // The index drop follows the successful storage delete and also clears any prior
-                    // explicit-expiration marker for this key.
-                    await keyIndex.RemoveAsync(entry.Key, cancellationToken).ConfigureAwait(false);
                     bytesReleased += entry.SizeBytes;
                     mutations++;
                 }

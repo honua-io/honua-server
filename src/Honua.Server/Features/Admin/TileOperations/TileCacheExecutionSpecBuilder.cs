@@ -254,16 +254,21 @@ internal static class TileCacheExecutionSpecBuilder
     /// <c>(service, gridset, style)</c> window share this key so the execution runtime serializes
     /// them under an exclusive lease and two replicas cannot mutate the same window at once.
     /// </summary>
-    public static string BuildPartitionKey(TileOperationStartRequest request)
+    public static string BuildPartitionKey(
+        TileOperationStartRequest request,
+        IReadOnlyList<int>? resolvedLayerIds = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var serviceSegment = string.IsNullOrWhiteSpace(request.ServiceId) ? "_" : request.ServiceId.Trim();
+        var targetSegment = resolvedLayerIds is { Count: > 0 }
+            ? string.Join(',', resolvedLayerIds.Distinct().Order())
+            : request.LayerId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "_";
         var gridsetSegment = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
             ? DefaultTileMatrixSetId
-            : request.TileMatrixSetId.Trim();
-        var styleSegment = string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style.Trim();
+            : GeneratedTileCacheKey.Sanitize(request.TileMatrixSetId);
+        var styleSegment = GeneratedTileCacheKey.Sanitize(
+            string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style);
 
-        return $"tilecache:{serviceSegment}:{gridsetSegment}:{styleSegment}";
+        return $"tilecache:{targetSegment}:{gridsetSegment}:{styleSegment}";
     }
 }

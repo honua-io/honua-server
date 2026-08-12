@@ -102,4 +102,20 @@ public interface ITileCacheKeyIndex
     /// <param name="key">The tile cache key to remove.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     Task RemoveAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes the snapshotted index entry only if no successful cache write has replaced it.
+    /// This prevents a lifecycle delete from erasing bookkeeping for an object regenerated after
+    /// the storage deletion but before the index mutation.
+    /// </summary>
+    /// <param name="entry">The exact entry observed in the lifecycle snapshot.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><see langword="true"/> when the observed entry was removed; otherwise false.</returns>
+    async Task<bool> TryRemoveAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        await RemoveAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 }

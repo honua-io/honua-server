@@ -24,6 +24,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 {
     private const string LastAccessSetKey = "honua:tile-cache:lru";
     private const string SizeHashKey = "honua:tile-cache:size";
+    private const string WriteVersionHashKey = "honua:tile-cache:write-version";
     private const string ExpiredSetKey = "honua:tile-cache:expired";
 
     private readonly IConnectionMultiplexer _redis;
@@ -71,6 +72,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             _ = transaction.HashSetAsync(SizeHashKey, key, sizeBytes);
             if (clearExpiration)
             {
+                _ = transaction.HashSetAsync(WriteVersionHashKey, key, Guid.NewGuid().ToString("N"));
                 _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
             }
 
@@ -161,6 +163,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             }
 
             var sizes = await db.HashGetAsync(SizeHashKey, fields).ConfigureAwait(false);
+            var writeVersions = await db.HashGetAsync(WriteVersionHashKey, fields).ConfigureAwait(false);
 
             var entries = new List<TileCacheEntry>(ranked.Length);
             for (var i = 0; i < ranked.Length; i++)
@@ -173,7 +176,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
                 var size = sizes[i].TryParse(out long parsed) ? parsed : 0L;
                 var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)ranked[i].Score);
-                entries.Add(new TileCacheEntry(key, size, lastAccess));
+                var writeVersion = writeVersions[i].HasValue ? (string?)writeVersions[i] : null;
+                entries.Add(new TileCacheEntry(key, size, lastAccess, writeVersion));
             }
 
             return new TileCacheIndexSnapshot(entries, IsAvailable: true);
@@ -201,12 +205,45 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetRemoveAsync(LastAccessSetKey, key);
             _ = transaction.HashDeleteAsync(SizeHashKey, key);
+            _ = transaction.HashDeleteAsync(WriteVersionHashKey, key);
             _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
             await transaction.ExecuteAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.RemoveFailed(_logger, ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryRemoveAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var transaction = db.CreateTransaction();
+            transaction.AddCondition(entry.WriteVersion is null
+                ? Condition.HashNotExists(WriteVersionHashKey, entry.Key)
+                : Condition.HashEqual(WriteVersionHashKey, entry.Key, entry.WriteVersion));
+            _ = transaction.SortedSetRemoveAsync(LastAccessSetKey, entry.Key);
+            _ = transaction.HashDeleteAsync(SizeHashKey, entry.Key);
+            _ = transaction.HashDeleteAsync(WriteVersionHashKey, entry.Key);
+            _ = transaction.SetRemoveAsync(ExpiredSetKey, entry.Key);
+            return await transaction.ExecuteAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.RemoveFailed(_logger, ex);
+            return false;
         }
     }
 

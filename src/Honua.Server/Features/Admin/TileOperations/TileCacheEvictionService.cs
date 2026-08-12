@@ -68,6 +68,7 @@ internal sealed partial class TileCacheEvictionService(
         }
 
         var evicted = 0;
+        var entriesByKey = snapshot.Entries.ToDictionary(static entry => entry.Key, StringComparer.Ordinal);
         foreach (var key in victims)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -92,7 +93,11 @@ internal sealed partial class TileCacheEvictionService(
                 }
             }
 
-            await _keyIndex.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            if (!entriesByKey.TryGetValue(key, out var victim)
+                || !await _keyIndex.TryRemoveAsync(victim, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
             evicted++;
         }
 

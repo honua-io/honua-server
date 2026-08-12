@@ -76,13 +76,10 @@ internal static class TileOperationsEndpoints
         HashSet<int>? layerFilter = null;
         if (!string.IsNullOrWhiteSpace(serviceId))
         {
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var service = snapshot.FindService(serviceId);
-            layerFilter = service is null
-                ? []
-                : [.. snapshot.PublicationsForService(service.Metadata.Id)
-                    .Where(static p => p.LayerIndex.HasValue)
-                    .Select(static p => p.LayerIndex!.Value)];
+            layerFilter = [.. await TileCacheTargetResolver.ResolveLayerIdsAsync(
+                new TileOperationStartRequest { Operation = "inventory", ServiceId = serviceId },
+                graphProvider,
+                cancellationToken).ConfigureAwait(false)];
         }
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);

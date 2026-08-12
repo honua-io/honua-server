@@ -143,7 +143,7 @@ internal sealed partial class TileOperationExecutionCore
             throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
-        var layerIds = await ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
+        var layerIds = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         if (layerIds.Count == 0)
         {
             throw new InvalidOperationException("Unable to resolve a target layer for tile operation.");
@@ -993,42 +993,14 @@ internal sealed partial class TileOperationExecutionCore
         }
     }
 
-    private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
-        TileOperationStartRequest request,
-        IMetadataV2GraphProvider graphProvider,
-        CancellationToken cancellationToken)
-    {
-        if (request.LayerId.HasValue)
-        {
-            return [request.LayerId.Value];
-        }
-
-        if (string.IsNullOrWhiteSpace(request.ServiceId))
-        {
-            return [];
-        }
-
-        return await ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId, cancellationToken).ConfigureAwait(false);
-    }
-
     private static async Task<int[]> ResolveServiceLayerIdsAsync(
         IMetadataV2GraphProvider graphProvider,
         string serviceId,
         CancellationToken cancellationToken)
-    {
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = snapshot.FindService(serviceId);
-        if (service is null)
-        {
-            return [];
-        }
-
-        return snapshot.PublicationsForService(service.Metadata.Id)
-            .Where(static p => p.LayerIndex.HasValue)
-            .Select(static p => p.LayerIndex!.Value)
-            .Distinct()
-            .ToArray();
-    }
+        => [.. await TileCacheTargetResolver.ResolveLayerIdsAsync(
+            new TileOperationStartRequest { Operation = "resolve", ServiceId = serviceId },
+            graphProvider,
+            cancellationToken).ConfigureAwait(false)];
 
     private List<TileCoordinate> BuildTileCoordinates(TileOperationStartRequest request)
     {

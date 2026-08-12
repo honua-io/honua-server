@@ -238,7 +238,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
             ServiceId = "svc-1",
             TileMatrixSetId = "WebMercatorQuad",
             Style = "night"
-        }).Should().Be("tilecache:svc-1:WebMercatorQuad:night");
+        }, [42]).Should().Be("tilecache:42:webmercatorquad:night");
     }
 
     [UnitTest]
@@ -250,10 +250,33 @@ public sealed class TileCacheExecutionSpecBuilderTests
 
         // Two operations on the same (service, gridset, style) window share a partition key so the
         // runtime serializes them under one exclusive lease; a different style is a different window.
-        TileCacheExecutionSpecBuilder.BuildPartitionKey(a)
-            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(b));
-        TileCacheExecutionSpecBuilder.BuildPartitionKey(a)
-            .Should().NotBe(TileCacheExecutionSpecBuilder.BuildPartitionKey(c));
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a, [7])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(b, [7]));
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(a, [7])
+            .Should().NotBe(TileCacheExecutionSpecBuilder.BuildPartitionKey(c, [7]));
+    }
+
+    [UnitTest]
+    public void BuildPartitionKey_CanonicalizesAliasesUsedByGeneratedKeys()
+    {
+        var serviceRequest = new TileOperationStartRequest
+        {
+            Operation = "seed",
+            ServiceId = "svc",
+            TileMatrixSetId = "Web/MercatorQuad",
+            Style = "a/b"
+        };
+        var layerRequest = serviceRequest with
+        {
+            Operation = "delete",
+            ServiceId = null,
+            LayerId = 42,
+            TileMatrixSetId = "Web_MercatorQuad",
+            Style = "a_b"
+        };
+
+        TileCacheExecutionSpecBuilder.BuildPartitionKey(serviceRequest, [42])
+            .Should().Be(TileCacheExecutionSpecBuilder.BuildPartitionKey(layerRequest, [42]));
     }
 
     [UnitTest]
