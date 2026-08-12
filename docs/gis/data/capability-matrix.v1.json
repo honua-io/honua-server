@@ -29,7 +29,7 @@
       "category": "ControlPlane",
       "edition": "Community",
       "entryCount": 369,
-      "provingTestCount": 1010,
+      "provingTestCount": 1020,
       "maturity": {
         "implemented": 369
       },
@@ -1613,7 +1613,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 322,
+      "provingTestCount": 323,
       "maturity": {
         "implemented": 45
       },
@@ -1678,7 +1678,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 15,
+      "provingTestCount": 16,
       "maturity": {
         "implemented": 2
       },
@@ -1833,7 +1833,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 249,
+      "provingTestCount": 252,
       "maturity": {
         "implemented": 21
       },
@@ -1952,7 +1952,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 13,
-      "provingTestCount": 64,
+      "provingTestCount": 65,
       "maturity": {
         "implemented": 13
       },
@@ -2004,7 +2004,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 104,
+      "provingTestCount": 111,
       "maturity": {
         "implemented": 12
       },
