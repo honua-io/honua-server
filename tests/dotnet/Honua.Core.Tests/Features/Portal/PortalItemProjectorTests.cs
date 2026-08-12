@@ -289,6 +289,7 @@ public sealed class PortalItemProjectorTests
             },
             Protocols = [protocol],
             AccessPolicy = publicAccess ? AnonymousPolicy() : null,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
     private static AccessPolicy AnonymousPolicy() => new() { AllowAnonymous = true };

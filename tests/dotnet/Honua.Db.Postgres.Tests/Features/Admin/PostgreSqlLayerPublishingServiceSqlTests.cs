@@ -2642,6 +2642,7 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-parcels", Name = "parcels" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
                     Protocols = [ServiceProtocols.FeatureServer],
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 },
             ],
             Resources =
@@ -2765,12 +2766,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-retired", Name = "shared" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
                     Protocols = [ServiceProtocols.FeatureServer],
+                    Status = retiredStatus,
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-active", Name = "shared" },
                     ServiceType = MetadataV2ServiceType.EsriFeatureService,
                     Protocols = [ServiceProtocols.FeatureServer],
+                    Status = activeStatus,
                 },
             ],
             Resources =
@@ -3066,12 +3069,14 @@ public sealed class PostgreSqlLayerPublishingServiceSqlTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-aggregate", Name = "shared" },
-                    Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures]
+                    Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures],
+                    Status = activeStatus,
                 },
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service-feature", Name = "shared" },
-                    Protocols = [ServiceProtocols.FeatureServer]
+                    Protocols = [ServiceProtocols.FeatureServer],
+                    Status = activeStatus,
                 }
             ],
             Resources =
