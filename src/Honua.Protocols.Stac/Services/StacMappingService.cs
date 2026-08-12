@@ -51,6 +51,7 @@ internal sealed class StacMappingService
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
+        MetadataV2Service service,
         int layerIndex,
         IFeatureReader featureReader,
         string baseUrl,
@@ -59,11 +60,13 @@ internal sealed class StacMappingService
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(featureReader);
 
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
         var stacBase = $"{baseUrl}/stac";
         var displayName = ResolveDisplayName(publication, resource, layerIndex);
+        var governance = resource.WithStacServiceGovernanceFallbacks(service.Metadata);
 
         var links = ImmutableArray.CreateBuilder<Link>();
 
@@ -106,6 +109,20 @@ internal sealed class StacMappingService
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
 
+        foreach (var governanceLink in governance.Links.Where(link =>
+                     string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase)))
+        {
+            links.Add(new Link
+            {
+                Href = governanceLink.Href,
+                Rel = governanceLink.Rel,
+                Type = governanceLink.Type,
+                Title = governanceLink.Title,
+                HrefLang = governanceLink.Hreflang
+            });
+        }
+
         var extent = await BuildStacExtentV2Async(
             resource,
             layerIndex,
@@ -118,12 +135,93 @@ internal sealed class StacMappingService
             Id = collectionId,
             Title = displayName,
             Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
-            License = resource.ResolveLicense(),
+            License = resource.ResolveLicense(service.Metadata),
+            Providers = BuildProviders(governance),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
             Links = links.ToImmutable(),
             StacExtensions = resource.ResolveDeclaredExtensions()
         };
+    }
+
+    private static ImmutableArray<StacProvider>? BuildProviders(MetadataV2ObjectMetadata metadata)
+    {
+        var publisher = string.IsNullOrWhiteSpace(metadata.Publisher)
+            ? null
+            : metadata.Publisher.Trim();
+        var attribution = string.IsNullOrWhiteSpace(metadata.Attribution)
+            ? null
+            : metadata.Attribution.Trim();
+        var authoredContactName = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Name)
+            ? null
+            : metadata.ContactPoint.Name.Trim();
+        var contactUrl = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
+            ? null
+            : metadata.ContactPoint.Url.Trim();
+        var contactEmail = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Email)
+            ? null
+            : metadata.ContactPoint.Email.Trim();
+        var contactName = authoredContactName ?? ResolveContactProviderName(contactUrl, contactEmail);
+        var contactMatchesPublisher = publisher is not null && string.Equals(
+            publisher,
+            contactName,
+            StringComparison.OrdinalIgnoreCase);
+        var providers = ImmutableArray.CreateBuilder<StacProvider>();
+
+        if (publisher is not null)
+        {
+            providers.Add(new StacProvider
+            {
+                Name = publisher,
+                Roles = contactMatchesPublisher
+                    ? ImmutableArray.Create(
+                        StacConstants.ProviderRoles.Producer,
+                        StacConstants.ProviderRoles.Host)
+                    : ImmutableArray.Create(StacConstants.ProviderRoles.Producer),
+                Description = attribution,
+                Url = contactMatchesPublisher ? contactUrl : null
+            });
+        }
+        if (attribution is not null &&
+            !string.Equals(attribution, publisher, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(attribution, contactName, StringComparison.OrdinalIgnoreCase))
+        {
+            providers.Add(new StacProvider { Name = attribution });
+        }
+
+        if (contactName is not null && !contactMatchesPublisher)
+        {
+            providers.Add(new StacProvider
+            {
+                Name = contactName,
+                Roles = ImmutableArray.Create(StacConstants.ProviderRoles.Host),
+                Url = contactUrl
+            });
+        }
+
+        return providers.Count == 0 ? null : providers.ToImmutable();
+    }
+
+    private static string? ResolveContactProviderName(string? contactUrl, string? contactEmail)
+    {
+        if (contactUrl is not null &&
+            Uri.TryCreate(contactUrl, UriKind.Absolute, out var parsedContactUrl) &&
+            (string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(parsedContactUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+            string.IsNullOrEmpty(parsedContactUrl.UserInfo))
+        {
+            return parsedContactUrl.Host;
+        }
+
+        if (contactEmail is null)
+        {
+            return null;
+        }
+
+        var separator = contactEmail.LastIndexOf('@');
+        return separator >= 0 && separator < contactEmail.Length - 1
+            ? contactEmail[(separator + 1)..]
+            : contactEmail;
     }
 
     internal static string ResolveDisplayName(

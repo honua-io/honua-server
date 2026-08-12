@@ -116,6 +116,21 @@ internal sealed class LayerMetadataResponse
     /// <summary>The layer name.</summary>
     public required string LayerName { get; init; }
 
+    /// <summary>SPDX license expression or <c>proprietary</c>, when authored.</summary>
+    public string? License { get; init; }
+
+    /// <summary>Public attribution, when authored.</summary>
+    public string? Attribution { get; init; }
+
+    /// <summary>Data producer or source organization, when authored.</summary>
+    public string? Publisher { get; init; }
+
+    /// <summary>Absolute license documentation URL, when authored.</summary>
+    public string? LicenseUrl { get; init; }
+
+    /// <summary>Absolute source documentation URL, when authored.</summary>
+    public string? SourceUrl { get; init; }
+
     /// <summary>Access policy for the layer.</summary>
     public AccessPolicyResponse? AccessPolicy { get; init; }
 
@@ -131,6 +146,24 @@ internal sealed class LayerMetadataResponse
 /// </summary>
 internal sealed class UpdateLayerMetadataRequest
 {
+    /// <summary>
+    /// SPDX license expression or <c>proprietary</c>. Null preserves the current value;
+    /// an empty string clears it.
+    /// </summary>
+    public string? License { get; init; }
+
+    /// <summary>Attribution text. Null preserves the current value; an empty string clears it.</summary>
+    public string? Attribution { get; init; }
+
+    /// <summary>Publisher text. Null preserves the current value; an empty string clears it.</summary>
+    public string? Publisher { get; init; }
+
+    /// <summary>License documentation HTTP(S) URL. Null preserves; an empty string clears.</summary>
+    public string? LicenseUrl { get; init; }
+
+    /// <summary>Source documentation HTTP(S) URL. Null preserves; an empty string clears.</summary>
+    public string? SourceUrl { get; init; }
+
     /// <summary>Access policy updates.</summary>
     public UpdateAccessPolicyRequest? AccessPolicy { get; init; }
 

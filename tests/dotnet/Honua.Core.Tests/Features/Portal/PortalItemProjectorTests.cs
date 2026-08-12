@@ -157,6 +157,31 @@ public sealed class PortalItemProjectorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_RetiredPublication_OmitsItem()
+    {
+        var active = BuildSnapshot(
+            BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
+            resourceAccess: AnonymousPolicy());
+        var graph = active.Graph with
+        {
+            Publications =
+            [
+                active.Graph.Publications.Single() with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                }
+            ]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"retired\"", DateTimeOffset.UnixEpoch);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void ProjectItem_UnpermittedPrincipal_ReturnsNull()
     {
         var snapshot = BuildSnapshot(
@@ -287,13 +312,20 @@ public sealed class PortalItemProjectorTests
         {
             Revision = 1,
             Environment = "test",
-            Resources = [resource],
+            Resources =
+            [
+                resource with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+                }
+            ],
             Services = [service],
             Publications =
             [
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = resource.Metadata.Id,
                     ServiceId = service.Metadata.Id,
                     PublicationType = MetadataV2PublicationType.EsriFeatureLayer,

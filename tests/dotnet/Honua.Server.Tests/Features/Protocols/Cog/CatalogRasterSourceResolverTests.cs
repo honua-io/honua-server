@@ -122,18 +122,21 @@ public sealed class CatalogRasterSourceResolverTests
         var services = layers.Select((_, index) => new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"service-{index}", Name = $"service-{index}" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         }).ToArray();
         var resources = layers.Select((_, index) => new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{index}", Name = $"resource-{index}" },
             StorageBindingIds = [$"binding-{index}"],
             PrimaryStorageBindingId = $"binding-{index}",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         }).ToArray();
         var bindings = layers.Select((layer, index) => new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"binding-{index}", Name = $"binding-{index}" },
             ResourceId = resources[index].Metadata.Id,
             StorageLayerId = layer.StorageLayerId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         }).ToArray();
         var publications = layers.Select((layer, index) => new MetadataV2Publication
         {
@@ -142,6 +145,7 @@ public sealed class CatalogRasterSourceResolverTests
             ResourceId = resources[index].Metadata.Id,
             StorageBindingId = bindings[index].Metadata.Id,
             LayerIndex = layer.PublicationLayerId,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         }).ToArray();
 
         return new MetadataV2GraphSnapshot(

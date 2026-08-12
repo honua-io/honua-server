@@ -33,6 +33,7 @@ internal static class MapServerPublicationResolver
         // legend (honua-server#3046 regression). Dedupe by numeric ID keeps the
         // handler/worker dictionary lookups collision-free.
         var candidatePublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
             .OrderBy(static publication => publication.PublicationType switch
             {
                 MetadataV2PublicationType.EsriMapLayer => 0,

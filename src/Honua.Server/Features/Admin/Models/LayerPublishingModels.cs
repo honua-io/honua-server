@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Admin.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -36,6 +37,26 @@ public sealed class PublishLayerRequest
     /// </summary>
     [StringLength(1000)]
     public string? Description { get; init; }
+
+    /// <summary>Optional SPDX license expression or the literal <c>proprietary</c>.</summary>
+    [StringLength(LayerSourceGovernance.MaxLicenseLength)]
+    public string? License { get; init; }
+
+    /// <summary>Optional attribution surfaced by public protocol metadata.</summary>
+    [StringLength(LayerSourceGovernance.MaxAttributionLength)]
+    public string? Attribution { get; init; }
+
+    /// <summary>Optional data producer or source organization.</summary>
+    [StringLength(LayerSourceGovernance.MaxPublisherLength)]
+    public string? Publisher { get; init; }
+
+    /// <summary>Optional absolute HTTP(S) URL for license documentation.</summary>
+    [StringLength(LayerSourceGovernance.MaxUrlLength)]
+    public string? LicenseUrl { get; init; }
+
+    /// <summary>Optional absolute HTTP(S) URL for source documentation.</summary>
+    [StringLength(LayerSourceGovernance.MaxUrlLength)]
+    public string? SourceUrl { get; init; }
 
     /// <summary>
     /// Geometry column name.

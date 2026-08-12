@@ -230,15 +230,15 @@ internal static partial class MapServerEndpoints
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!publication.IsRoutable(resource))
             {
                 continue;
             }
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? snapshot.ResolveStorageLayerId(resource!)
                 ?? publicLayerId;
-            descriptors.Add(new TileLayerDescriptor(publicLayerId, storageLayerId, resource));
+            descriptors.Add(new TileLayerDescriptor(publicLayerId, storageLayerId, resource!));
         }
 
         return [.. descriptors.OrderBy(static layer => layer.PublicLayerId)];

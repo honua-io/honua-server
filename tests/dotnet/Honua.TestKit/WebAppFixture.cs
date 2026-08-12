@@ -247,6 +247,18 @@ public sealed class WebAppFixture : IAsyncLifetime
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.GetCurrentSnapshot(this);
 
     /// <summary>
+    /// Mutates the common metadata block for the canonical resource published at
+    /// <paramref name="layerIndex"/>.
+    /// </summary>
+    public void MutateV2ResourceObjectMetadata(
+        int layerIndex,
+        Func<MetadataV2ObjectMetadata, MetadataV2ObjectMetadata> mutate)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.MutateResourceObjectMetadata(
+            this,
+            layerIndex,
+            mutate);
+
+    /// <summary>
     /// Adds or replaces a Metadata v2 schema field on the resource published at
     /// <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.

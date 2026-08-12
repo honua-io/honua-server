@@ -373,6 +373,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 Id = "svc-srid-feature",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Protocols = [MetadataV2ServiceProtocols.FeatureServer]
         });
         services.Add(new MetadataV2Service
@@ -382,6 +383,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 Id = "svc-srid-odata",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Protocols = [MetadataV2ServiceProtocols.OData]
         });
         services.Add(new MetadataV2Service
@@ -391,6 +393,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 Id = "svc-srid-stac",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/stac",
             Protocols = [MetadataV2ServiceProtocols.Stac]
         });
@@ -401,6 +404,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 Id = "svc-srid-ogc-features",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/ogc/features",
             Protocols = [MetadataV2ServiceProtocols.OgcFeatures]
         });
@@ -419,6 +423,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-feature-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-feature",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -436,6 +441,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-odata-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-odata",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -453,6 +459,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-stac-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-stac",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
@@ -470,6 +477,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Id = $"pub-srid-ogc-features-{layerIndex}",
                     Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 ServiceId = "svc-srid-ogc-features",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",

@@ -1082,10 +1082,11 @@ internal static class WmtsRequestHandlers
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (resource is null)
+            if (!snapshot.IsRoutable(publication))
             {
                 continue;
             }
+            var routableResource = resource!;
 
             // Prefer the publication's protocol-facing LayerIndex (legacy GeoServices-style
             // int handle); fall back to the storage binding's StorageLayerId for graphs
@@ -1099,13 +1100,13 @@ internal static class WmtsRequestHandlers
 
             var identifier = publication.LayerIndex.HasValue
                 ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
-                : publication.ServiceLocalId ?? publication.Metadata.Name ?? resource.Metadata.Name;
+                : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
 
-            var candidate = new WmtsLayer(resource, publication, storageLayerId.Value, identifier);
-            if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+            var candidate = new WmtsLayer(routableResource, publication, storageLayerId.Value, identifier);
+            if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
-                byResource[resource.Metadata.Id] = candidate;
+                byResource[routableResource.Metadata.Id] = candidate;
             }
         }
 

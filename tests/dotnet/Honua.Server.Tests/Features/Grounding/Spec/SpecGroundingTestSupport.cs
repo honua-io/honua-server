@@ -131,7 +131,8 @@ internal static class SpecGroundingTestSupport
                         Id = "grounding-service",
                         Name = "grounding",
                         Description = "Grounding test service"
-                    }
+                    },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
                 }
             ]
         };
