@@ -150,6 +150,7 @@ internal static partial class ScimEndpoints
             new ScimUserProvisioning
             {
                 UserName = input.UserName.Trim(),
+                ExternalId = input.ExternalId,
                 DisplayName = input.DisplayName,
                 Email = SelectEmail(input.Emails),
                 Active = input.Active,
@@ -158,7 +159,7 @@ internal static partial class ScimEndpoints
 
         if (created is null)
         {
-            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName already exists.", "uniqueness");
+            return ScimErrorResult(StatusCodes.Status409Conflict, "A user with that userName or externalId already exists.", "uniqueness");
         }
 
         ScimLog.UserProvisioned(logger, created.UserId);
@@ -201,18 +202,29 @@ internal static partial class ScimEndpoints
         }
 
         var existing = await store.GetUserAsync(id, context.RequestAborted).ConfigureAwait(false);
-        var replaced = await store.ReplaceUserAsync(
-            id,
-            new ScimUserProvisioning
-            {
-                UserName = input.UserName.Trim(),
-                DisplayName = input.DisplayName,
-                Email = SelectEmail(input.Emails),
-                Active = input.Active,
-                // Roles are owned by group membership sync; PUT preserves the current set.
-                Roles = existing?.Roles ?? [],
-            },
-            context.RequestAborted).ConfigureAwait(false);
+        ManagedUser? replaced;
+        try
+        {
+            replaced = await store.ReplaceUserAsync(
+                id,
+                new ScimUserProvisioning
+                {
+                    UserName = input.UserName.Trim(),
+                    ExternalId = input.ExternalId,
+                    DisplayName = input.DisplayName,
+                    Email = SelectEmail(input.Emails),
+                    Active = input.Active,
+                    // Roles are owned by group membership sync; PUT preserves the current set.
+                    Roles = existing?.Roles ?? [],
+                },
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // The durable store rejects an externalId already owned by another user
+            // (unique index, honua-server#3141); report SCIM uniqueness rather than 500.
+            return ScimErrorResult(StatusCodes.Status409Conflict, "Another user already has that externalId.", "uniqueness");
+        }
 
         if (replaced is null)
         {
@@ -495,6 +507,7 @@ internal static partial class ScimEndpoints
     private static ScimUser ToScimUser(ManagedUser user) => new()
     {
         Id = user.UserId,
+        ExternalId = user.ExternalId,
         UserName = user.UserId,
         DisplayName = user.DisplayName,
         Active = user.IsActive,

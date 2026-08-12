@@ -11,7 +11,10 @@ namespace Honua.Server.Features.Admin.Services;
 /// In-memory user store for the admin API surface. Also backs the SCIM 2.0 provisioning
 /// surface (<see cref="IScimUserStore"/>, #510) over the same record set so users created by
 /// an identity provider are immediately visible to the admin endpoints.
-/// Will be replaced by a persistent implementation when #496/#498 land.
+/// Default for no-database/test profiles only: on Postgres profiles the durable
+/// <c>PostgresUserStore</c> registered by <c>AddPostgreSqlServices</c> takes precedence
+/// (#3141), because a node-local store cannot answer managed-membership queries across
+/// replicas or restarts (honua-server#3081).
 /// </summary>
 internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 {
@@ -55,8 +58,20 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
     public Task<ManagedUser?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        _users.TryGetValue(userId, out var user);
-        return Task.FromResult(user);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Task.FromResult<ManagedUser?>(null);
+        }
+
+        if (_users.TryGetValue(userId, out var user))
+        {
+            return Task.FromResult<ManagedUser?>(user);
+        }
+
+        // Fall back to the stable external subject (SCIM externalId / OIDC sub) so a
+        // deferred security snapshot keyed by the OIDC subject resolves the managed record
+        // even when the SCIM userName differs from the subject (honua-server#3141).
+        return Task.FromResult(FindByExternalIdInternal(userId));
     }
 
     public Task<ManagedUser?> UpdateUserRolesAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
@@ -69,6 +84,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var updated = new ManagedUser
         {
             UserId = existing.UserId,
+            ExternalId = existing.ExternalId,
             DisplayName = existing.DisplayName,
             Email = existing.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -102,8 +118,11 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
         // SCIM userName is the IdP-owned, unique login identifier; reuse it as the stable
         // user id so re-provisioning is idempotent on the same key. A conflicting userName
-        // is reported to the caller (SCIM 409) rather than silently overwriting.
-        if (FindByUserNameInternal(provisioning.UserName) is not null)
+        // or externalId is reported to the caller (SCIM 409) rather than silently
+        // overwriting.
+        var externalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? null : provisioning.ExternalId.Trim();
+        if (FindByUserNameInternal(provisioning.UserName) is not null ||
+            (externalId is not null && FindByExternalIdInternal(externalId) is not null))
         {
             return Task.FromResult<ManagedUser?>(null);
         }
@@ -112,6 +131,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var user = new ManagedUser
         {
             UserId = provisioning.UserName,
+            ExternalId = externalId,
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = "scim",
@@ -159,6 +179,10 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         var updated = new ManagedUser
         {
             UserId = existing.UserId,
+            // external_id is only overwritten when the IdP supplies one: losing the stable
+            // subject on a PUT that omits it would orphan in-flight deferred snapshots
+            // keyed by that subject (honua-server#3141).
+            ExternalId = string.IsNullOrWhiteSpace(provisioning.ExternalId) ? existing.ExternalId : provisioning.ExternalId.Trim(),
             DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,
             Email = provisioning.Email,
             ProvisioningSource = existing.ProvisioningSource,
@@ -247,11 +271,18 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return _users.Values.FirstOrDefault(u => u.UserId.Equals(userName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private ManagedUser? FindByExternalIdInternal(string externalId)
+        => string.IsNullOrWhiteSpace(externalId)
+            ? null
+            : _users.Values.FirstOrDefault(u =>
+                u.ExternalId is not null && u.ExternalId.Equals(externalId, StringComparison.OrdinalIgnoreCase));
+
     private static ManagedUser Deactivate(ManagedUser existing) => Clone(existing, isActive: false, roles: []);
 
     private static ManagedUser Clone(ManagedUser existing, bool isActive, IReadOnlyList<string> roles) => new()
     {
         UserId = existing.UserId,
+        ExternalId = existing.ExternalId,
         DisplayName = existing.DisplayName,
         Email = existing.Email,
         ProvisioningSource = existing.ProvisioningSource,

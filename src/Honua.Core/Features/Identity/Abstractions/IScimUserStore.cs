@@ -66,6 +66,14 @@ public sealed class ScimUserProvisioning
     public required string UserName { get; init; }
 
     /// <summary>
+    /// The SCIM <c>externalId</c> — a stable identifier owned by the provisioning identity
+    /// provider, conventionally the OIDC subject. Optional; when supplied it must be unique
+    /// across users and is indexed so the identity resolves by subject as well as by
+    /// <c>userName</c> (honua-server#3141).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>
     /// Display name. Falls back to <see cref="UserName"/> when the IdP omits it.
     /// </summary>
     public string? DisplayName { get; init; }

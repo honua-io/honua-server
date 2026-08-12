@@ -84,6 +84,32 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /scim/v2/Users")]
+    public async Task CreateUser_WithExternalId_RoundTripsAndResolvesByStableSubject()
+    {
+        // #3141: the IdP-owned externalId (conventionally the OIDC subject) must persist,
+        // round-trip on the SCIM resource, and resolve the SAME managed record as the
+        // userName — deferred security snapshots capture the OIDC subject, not the SCIM
+        // userName.
+        var response = await _client.PostAsJsonAsync("/scim/v2/Users", new
+        {
+            userName = "subject-user@example.com",
+            externalId = "auth0|abc123",
+            displayName = "Subject User",
+            active = true,
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var user = await ReadAsync(response);
+        Assert.Equal("auth0|abc123", user.GetProperty("externalId").GetString());
+
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        var bySubject = await store.GetUserAsync("auth0|abc123");
+        Assert.NotNull(bySubject);
+        Assert.Equal("subject-user@example.com", bySubject!.UserId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /scim/v2/Users")]
     public async Task CreateUser_DuplicateUserName_ReturnsConflict()
     {
         await CreateUserAsync("dup@example.com");
