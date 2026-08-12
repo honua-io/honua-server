@@ -72,6 +72,11 @@ BEGIN
 END
 $schema_contract$;
 
+-- Serialize the missing-relation decision across concurrent seed invocations.
+-- Key 0 in this namespace belongs to migration 067/105 change writers; key 1
+-- is reserved for the relation-recovery decision and is held through commit.
+SELECT pg_advisory_xact_lock(144047712, 1);
+
 SELECT set_config(
     'honua.seed_features_missing',
     (to_regclass('honua.features') IS NULL)::text,
@@ -91,6 +96,7 @@ SELECT set_config(
 DO $change_tracking$
 BEGIN
     IF to_regclass('honua.feature_changes') IS NULL
+       OR to_regclass('honua.replicas') IS NULL
        OR to_regclass('honua.sync_generation') IS NULL
        OR to_regprocedure('honua.resolve_feature_public_objectid(integer,bigint,jsonb)') IS NULL
        OR to_regprocedure('honua.track_feature_changes()') IS NULL THEN
@@ -100,6 +106,28 @@ BEGIN
     END IF;
 END
 $change_tracking$;
+
+-- There is no replica epoch or complete relation-loss rebaseline contract.
+-- Migration 061 establishes a generation baseline, but cannot reconstruct
+-- deletes after the live relation is lost. Refuse to preserve ambiguous history
+-- or registered replica cursors rather than silently diverging offline copies.
+DO $recovery_replica_safety$
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        -- Current feature and version change writers use this transaction-scoped
+        -- generation lock. Holding it through recovery makes the history check,
+        -- relation DDL, fixture writes, and sequence alignment one serial cutover.
+        PERFORM pg_advisory_xact_lock(144047712, 0);
+
+        IF EXISTS (SELECT 1 FROM honua.feature_changes)
+           OR EXISTS (SELECT 1 FROM honua.replicas) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Missing honua.features with retained replica state requires an operator rebaseline';
+        END IF;
+    END IF;
+END
+$recovery_replica_safety$;
 
 -- The metadata graph can outlive the physical demo relation across database
 -- resets or partial reseeds. Only a missing relation enters this DDL path;

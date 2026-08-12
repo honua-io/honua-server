@@ -25,7 +25,6 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             await using var dataSource = NpgsqlDataSource.Create(connectionString);
             await CreateMetadataV2TablesAsync(dataSource);
             await CreateChangeTrackingTablesAsync(dataSource);
-            await ExecuteAsync(dataSource, RetainedFeatureChangeSql);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
                 .Should().BeNull("the regression must start from the live failure state");
@@ -63,6 +62,28 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(changeStateBeforeLegacyRecovery);
 
             await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            await ExecuteAsync(dataSource, RetainedFeatureChangeSql);
+            var retainedChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+            Func<Task> applyWithLostHistory = () => ExecuteAsync(dataSource, seed);
+            var historyFailure = await applyWithLostHistory.Should().ThrowAsync<PostgresException>();
+            historyFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("ambiguous retained history must fail before relation recovery");
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(retainedChangeState);
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.metadata_v2_snapshots"))
+                .Should().Be(0);
+            await ExecuteAsync(dataSource, "DELETE FROM honua.feature_changes");
+
+            await ExecuteAsync(dataSource, RetainedReplicaSql);
+            Func<Task> applyWithRegisteredReplica = () => ExecuteAsync(dataSource, seed);
+            var replicaFailure = await applyWithRegisteredReplica.Should().ThrowAsync<PostgresException>();
+            replicaFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("registered replica cursors must fail before relation recovery");
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.replicas"))
+                .Should().Be(1, "the seed must not invent replica invalidation semantics");
+            await ExecuteAsync(dataSource, "DELETE FROM honua.replicas");
+
             await ExecuteAsync(dataSource, seed);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
@@ -145,6 +166,99 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task Apply_ConcurrentRecovery_RechecksMissingStateBeforeDefaultWriter()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync(
+            nameof(Apply_ConcurrentRecovery_RechecksMissingStateBeforeDefaultWriter));
+        var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database!;
+        var writerGateHeld = false;
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await CreateMetadataV2TablesAsync(dataSource);
+            await CreateChangeTrackingTablesAsync(dataSource);
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            var seed = RenderSeed(injectFailure: false);
+
+            await using var coordinator = await dataSource.OpenConnectionAsync();
+            await using (var writerGate = coordinator.CreateCommand())
+            {
+                writerGate.CommandText =
+                    $"SELECT pg_advisory_lock({WriterGateLockNamespace}, {WriterGateLockKey})";
+                await writerGate.ExecuteNonQueryAsync();
+                writerGateHeld = true;
+            }
+
+            await using var recoveryBlocker = await dataSource.OpenConnectionAsync();
+            await using var recoveryBlockerTransaction = await recoveryBlocker.BeginTransactionAsync();
+            await using (var recoveryLock = recoveryBlocker.CreateCommand())
+            {
+                recoveryLock.Transaction = recoveryBlockerTransaction;
+                recoveryLock.CommandText =
+                    $"SELECT pg_advisory_xact_lock({RecoveryLockNamespace}, {RecoveryLockKey})";
+                await recoveryLock.ExecuteNonQueryAsync();
+            }
+
+            var firstSeed = ExecuteAsync(dataSource, seed);
+            await WaitForAdvisoryWaitersAsync(
+                dataSource,
+                RecoveryLockNamespace,
+                RecoveryLockKey,
+                expectedCount: 1);
+
+            var secondSeed = ExecuteAsync(dataSource, InjectWriterGate(seed));
+            await WaitForAdvisoryWaitersAsync(
+                dataSource,
+                RecoveryLockNamespace,
+                RecoveryLockKey,
+                expectedCount: 2);
+
+            await recoveryBlockerTransaction.CommitAsync();
+            await firstSeed.WaitAsync(TimeSpan.FromSeconds(30));
+            await WaitForAdvisoryWaitersAsync(
+                dataSource,
+                WriterGateLockNamespace,
+                WriterGateLockKey,
+                expectedCount: 1);
+
+            var featureMaxBeforeWriter = await ScalarInt64Async(dataSource, FeatureMaxObjectIdSql);
+            var changeMaxBeforeWriter = await ScalarInt64Async(dataSource, FeatureChangeMaxObjectIdSql);
+            var writerObjectId = await ScalarInt64Async(dataSource, InsertDefaultFeatureSql);
+
+            await using (var releaseWriterGate = coordinator.CreateCommand())
+            {
+                releaseWriterGate.CommandText =
+                    $"SELECT pg_advisory_unlock({WriterGateLockNamespace}, {WriterGateLockKey})";
+                await releaseWriterGate.ExecuteNonQueryAsync();
+                writerGateHeld = false;
+            }
+
+            await secondSeed.WaitAsync(TimeSpan.FromSeconds(30));
+            writerObjectId.Should().BeGreaterThan(featureMaxBeforeWriter);
+            writerObjectId.Should().BeGreaterThan(changeMaxBeforeWriter);
+            (await ScalarInt64Async(dataSource,
+                    $"SELECT count(*) FROM honua.features WHERE objectid = {writerObjectId}"))
+                .Should().Be(1, "the healthy second seed must not overwrite the concurrent writer");
+            (await ScalarStringAsync(dataSource, SequenceStateSql))
+                .Should().Be($"{writerObjectId}:t", "the healthy second seed must not rewind the sequence");
+            (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
+        }
+        finally
+        {
+            if (writerGateHeld)
+            {
+                await using var cleanupDataSource = NpgsqlDataSource.Create(connectionString);
+                await ExecuteAsync(
+                    cleanupDataSource,
+                    $"SELECT pg_advisory_unlock({WriterGateLockNamespace}, {WriterGateLockKey})");
+            }
+
+            await fixture.DropDatabaseAsync(databaseName);
+        }
+    }
+
     private static string RenderSeed(bool injectFailure, string schema = "honua")
     {
         var seedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
@@ -176,6 +290,48 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
 
         return rendered.Insert(commit, "SELECT 1 / 0; -- injected regression failure\n");
+    }
+
+    private static string InjectWriterGate(string seed)
+    {
+        const string marker = "DO $change_tracking$";
+        if (!seed.Contains(marker, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Demo STAC seed has no change-tracking boundary.");
+        }
+
+        return seed.Replace(
+            marker,
+            $"SELECT pg_advisory_xact_lock({WriterGateLockNamespace}, {WriterGateLockKey});\n\n{marker}",
+            StringComparison.Ordinal);
+    }
+
+    private static async Task WaitForAdvisoryWaitersAsync(
+        NpgsqlDataSource dataSource,
+        int lockNamespace,
+        int lockKey,
+        int expectedCount)
+    {
+        var query = $"""
+            SELECT count(*)
+              FROM pg_locks
+             WHERE locktype = 'advisory'
+               AND classid = {lockNamespace}::oid
+               AND objid = {lockKey}::oid
+               AND NOT granted
+            """;
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (await ScalarInt64Async(dataSource, query) >= expectedCount)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        throw new TimeoutException(
+            $"Expected {expectedCount} waiters for advisory lock ({lockNamespace}, {lockKey}).");
     }
 
     private static async Task CreateMetadataV2TablesAsync(NpgsqlDataSource dataSource)
@@ -354,6 +510,11 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private const string CurrentRevisionSql =
         "SELECT revision FROM honua.metadata_v2_current WHERE environment = 'seed-regression'";
+
+    private const int RecoveryLockNamespace = 144047712;
+    private const int RecoveryLockKey = 1;
+    private const int WriterGateLockNamespace = 144047713;
+    private const int WriterGateLockKey = 0;
 
     private const string RequiredIndexesSql =
         """
@@ -653,6 +814,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             layer_id INT PRIMARY KEY,
             primary_key_column TEXT
         );
+        CREATE TABLE honua.replicas (
+            replica_id TEXT PRIMARY KEY
+        );
         CREATE TABLE honua.feature_changes (
             change_id BIGSERIAL PRIMARY KEY,
             generation BIGINT NOT NULL,
@@ -684,6 +848,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             1,
             990000000)
         """;
+
+    private const string RetainedReplicaSql =
+        "INSERT INTO honua.replicas (replica_id) VALUES ('retained-replica')";
 
     private const string MetadataV2TablesSql =
         """
