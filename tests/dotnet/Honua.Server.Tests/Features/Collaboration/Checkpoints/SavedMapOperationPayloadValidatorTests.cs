@@ -120,7 +120,11 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":null}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport","args":null}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"},"disabled":null}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"click"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"navigate"}}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":null}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":0}}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":25}}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","y":0,"w":1,"h":1}]}}""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.
@@ -132,6 +136,29 @@ public sealed class SavedMapOperationPayloadValidatorTests
         SavedMapOperationPayloadValidator.TryValidate(kind, Parse(payload), out var error)
             .Should().BeFalse();
         error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void TryValidate_ReplacementInteractionCollectionOutsideSharedLimits_IsRejected()
+    {
+        var duplicateIds = """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"}},{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"}}]}""";
+        var oversizedId = "{" + $"\"interactions\":[{{\"id\":\"{new string('i', 201)}\","
+            + "\"on\":{\"ref\":\"map\",\"event\":\"viewportChange\"},"
+            + "\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\"}}]}";
+        var excessFanOut = "{\"interactions\":["
+            + string.Join(",", Enumerable.Range(1, 9).Select(index =>
+                $"{{\"id\":\"i{index}\",\"on\":{{\"ref\":\"map\",\"event\":\"viewportChange\"}},"
+                + "\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\"}}"))
+            + "]}";
+
+        foreach (var payload in new[] { duplicateIds, oversizedId, excessFanOut })
+        {
+            SavedMapOperationPayloadValidator.TryValidate(
+                SavedMapOperationKind.ReplaceWebMapDocument, Parse(payload), out var error)
+                .Should().BeFalse();
+            error.Should().NotBeNullOrWhiteSpace();
+        }
     }
 
     /// <summary>

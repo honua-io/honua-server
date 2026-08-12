@@ -338,6 +338,8 @@ internal static class SavedMapOperationPayloadValidator
             return false;
         }
 
+        var interactionIds = new HashSet<string>(StringComparer.Ordinal);
+        var fanOut = new Dictionary<(string Ref, string Event), int>();
         foreach (var interaction in interactions.EnumerateArray())
         {
             const string subject = "An interaction in the document-replace payload";
@@ -350,6 +352,20 @@ internal static class SavedMapOperationPayloadValidator
             if (!TryRejectUnmappedMembers(interaction, InteractionMembers, subject, out error)
                 || !TryValidateRequiredString(interaction, "id", out error))
             {
+                return false;
+            }
+
+            var interactionId = interaction.GetProperty("id").GetString()!;
+            if (interactionId.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+            {
+                error = $"{subject}'s 'id' must be "
+                    + $"{StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer.";
+                return false;
+            }
+
+            if (!interactionIds.Add(interactionId))
+            {
+                error = $"The document-replace payload repeats interaction id '{interactionId}'; interaction ids must be unique.";
                 return false;
             }
 
@@ -366,6 +382,14 @@ internal static class SavedMapOperationPayloadValidator
                 return false;
             }
 
+            var eventRef = on.GetProperty("ref").GetString()!;
+            var eventName = on.GetProperty("event").GetString()!;
+            if (!StudioInteractionVocabulary.IsEventName(eventName))
+            {
+                error = $"{subject}'s 'on.event' must be one of: {string.Join(", ", StudioInteractionVocabulary.EventNames)}.";
+                return false;
+            }
+
             if (!interaction.TryGetProperty("do", out var action) || action.ValueKind != JsonValueKind.Object)
             {
                 error = $"{subject} requires an object 'do'.";
@@ -376,6 +400,13 @@ internal static class SavedMapOperationPayloadValidator
                 || !TryValidateRequiredString(action, "ref", out error)
                 || !TryValidateRequiredString(action, "verb", out error))
             {
+                return false;
+            }
+
+            var actionVerb = action.GetProperty("verb").GetString()!;
+            if (!StudioInteractionVocabulary.IsActionVerb(actionVerb))
+            {
+                error = $"{subject}'s 'do.verb' must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}.";
                 return false;
             }
 
@@ -391,6 +422,19 @@ internal static class SavedMapOperationPayloadValidator
                 error = $"{subject}'s 'disabled' must be a boolean.";
                 return false;
             }
+
+            var eventSource = (eventRef, eventName);
+            var eventSourceCount = fanOut.TryGetValue(eventSource, out var existingCount)
+                ? existingCount + 1
+                : 1;
+            if (eventSourceCount > StudioInteractionVocabulary.MaxInteractionsPerEventSource)
+            {
+                error = $"At most {StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions may share "
+                    + $"the same event source; '{eventRef}'/'{eventName}' exceeds that limit.";
+                return false;
+            }
+
+            fanOut[eventSource] = eventSourceCount;
         }
 
         error = string.Empty;
@@ -429,11 +473,21 @@ internal static class SavedMapOperationPayloadValidator
                 return false;
             }
 
-            if (grid.TryGetProperty("columns", out var columns)
-                && (columns.ValueKind != JsonValueKind.Number || !columns.TryGetInt32(out _)))
+            if (grid.TryGetProperty("columns", out var columns))
             {
-                error = "The document-replace payload's 'layout.grid.columns' must be an integer.";
-                return false;
+                if (columns.ValueKind != JsonValueKind.Number || !columns.TryGetInt32(out var columnCount))
+                {
+                    error = "The document-replace payload's 'layout.grid.columns' must be an integer.";
+                    return false;
+                }
+
+                if (columnCount < StudioInteractionVocabulary.MinGridColumns
+                    || columnCount > StudioInteractionVocabulary.MaxGridColumns)
+                {
+                    error = "The document-replace payload's 'layout.grid.columns' must be between "
+                        + $"{StudioInteractionVocabulary.MinGridColumns} and {StudioInteractionVocabulary.MaxGridColumns}.";
+                    return false;
+                }
             }
         }
 
