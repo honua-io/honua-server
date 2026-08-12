@@ -48,10 +48,11 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
+        var isEmpty = features.Length == 0;
 
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
 
-        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields);
+        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, isEmpty, runtimeFields, outFields);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -80,6 +81,7 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         int srid,
         bool returnZ,
+        bool isEmpty,
         List<(string name, IArrowType type)> runtimeFields,
         string[]? outFields)
     {
@@ -126,7 +128,7 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ, isEmpty);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -546,7 +548,8 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        bool returnZ)
+        bool returnZ,
+        bool isEmpty)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -556,11 +559,13 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // The resource's declared geometry type is known even for zero-row results, so it is
-        // always advertised rather than degrading to an unknown-types empty list.
-        var geometryTypesPart =
-            $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
-        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}}}}}}}";
+        var geometryTypesPart = isEmpty
+            ? "[]"
+            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
+        var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
+            ? $@",""crs"":{projJson}"
+            : string.Empty;
+        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
         return metadata;

@@ -74,6 +74,9 @@ public sealed class GeoArrowQueryFormatterTests
         geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
             .GetProperty("geometry_types").EnumerateArray()
             .Select(e => e.GetString()).Should().Equal("Point");
+        using var extensionDoc = JsonDocument.Parse(geometryField.Metadata["ARROW:extension:metadata"]);
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("crs").GetRawText()
+            .Should().Be(extensionDoc.RootElement.GetProperty("crs").GetRawText());
 
         // Verify attribute values
         var nameArray = batch.Column("name").Should().BeOfType<StringArray>().Which;
@@ -430,7 +433,7 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsGeoArrowAsync_EmptyResult_PreservesKnownGeometryTypeAndCrsMetadata()
+    public async Task FormatAsGeoArrowAsync_EmptyResult_KeepsEmptyGeometryTypesAndMatchingCrsMetadata()
     {
         var layer = CreateLayer(
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
@@ -451,12 +454,14 @@ public sealed class GeoArrowQueryFormatterTests
         var geometryField = reader.Schema.GetFieldByName("geometry");
         geometryField.Metadata["ARROW:extension:metadata"].Should().Be(ExpectedWgs84ExtensionMetadata());
 
-        // The resource's geometry type is known even with zero rows, so schema-level
-        // GeoParquet metadata keeps advertising it instead of degrading to [].
+        // GeoParquet requires an empty geometry_types array when no values were observed.
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
-        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
-            .GetProperty("geometry_types").EnumerateArray()
-            .Select(e => e.GetString()).Should().Equal("Point");
+        var geoColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geoColumn.GetProperty("geometry_types").GetArrayLength().Should().Be(0);
+
+        using var extensionDoc = JsonDocument.Parse(geometryField.Metadata["ARROW:extension:metadata"]);
+        geoColumn.GetProperty("crs").GetRawText()
+            .Should().Be(extensionDoc.RootElement.GetProperty("crs").GetRawText());
     }
 
     [Fact]
