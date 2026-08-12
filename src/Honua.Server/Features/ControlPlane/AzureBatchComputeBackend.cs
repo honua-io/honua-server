@@ -6,6 +6,7 @@ using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Microsoft.Extensions.Options;
 
 #if !HONUA_EXCLUDE_AZURE
 namespace Honua.ControlPlane;
@@ -24,6 +25,7 @@ namespace Honua.ControlPlane;
 /// </remarks>
 internal sealed partial class AzureBatchComputeBackend(
     IAzureBatchClient batchClient,
+    IOptions<ControlPlaneOptions> options,
     ILogger<AzureBatchComputeBackend> logger) : IBatchComputeBackend
 {
     internal const string BackendIdentifier = "honua-azure-batch";
@@ -40,20 +42,33 @@ internal sealed partial class AzureBatchComputeBackend(
     private const string EnvPrefix = "azure.batch.env.";
     private const string GenericEnvPrefix = "env.";
 
+    internal AzureBatchComputeBackend(
+        IAzureBatchClient batchClient,
+        ILogger<AzureBatchComputeBackend> logger)
+        : this(batchClient, Options.Create(new ControlPlaneOptions()), logger)
+    {
+    }
+
     public string BackendName => BackendIdentifier;
 
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.AzureBatch;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new BatchComputeBackendCapabilities
+    {
+        var imageContracts = options.Value.AzureBatch.ImageMaxSupportedContractVersions;
+        var configuredImageMaximum = imageContracts.Count == 0
+            ? 1
+            : imageContracts.Values.Max();
+        return Task.FromResult(new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
             SupportsArtifactStaging = true,
-            MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            MaxSupportedContractVersion = Math.Max(1, configuredImageMaximum)
         });
+    }
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -66,6 +81,17 @@ internal sealed partial class AzureBatchComputeBackend(
         var accountUrl = RequireParameter(parameters, ParamAccountUrl);
         var poolId = RequireParameter(parameters, ParamPoolId);
         var commandLine = GetParameter(parameters, ParamCommandLine) ?? DefaultCommandLine;
+        var containerImage = GetParameter(parameters, ParamContainerImage) ?? job.Spec.Artifact?.Trim();
+        var imageContractVersion = ResolveImageMaxSupportedContractVersion(containerImage);
+        if (job.Spec.ContractVersion > imageContractVersion)
+        {
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = $"Azure Batch worker image '{containerImage ?? "<none>"}' supports execution contract "
+                    + $"version {imageContractVersion}, but the job requires version {job.Spec.ContractVersion}."
+            };
+        }
 
         var submission = new AzureBatchJobSubmission
         {
@@ -73,7 +99,7 @@ internal sealed partial class AzureBatchComputeBackend(
             JobId = BuildJobId(job.OperationId),
             PoolId = poolId,
             CommandLine = commandLine,
-            ContainerImage = GetParameter(parameters, ParamContainerImage) ?? job.Spec.Artifact,
+            ContainerImage = containerImage,
             ContainerRunOptions = GetParameter(parameters, ParamContainerRunOptions),
             MaxTaskRetryCount = ParseIntOrDefault(parameters, ParamMaxTaskRetryCount, 2),
             TaskTimeout = ParseTimeoutMinutes(parameters, ParamTaskTimeoutMinutes, defaultMinutes: 120),
@@ -487,8 +513,21 @@ internal sealed partial class AzureBatchComputeBackend(
 
         ApplyEnvironmentSettings(settings, parameters, GenericEnvPrefix);
         ApplyEnvironmentSettings(settings, parameters, EnvPrefix);
+        // Stamp after pass-through settings so a workload cannot override the contract gate.
+        settings["HONUA_CONTRACT_VERSION"] = job.Spec.ContractVersion.ToString(CultureInfo.InvariantCulture);
 
         return settings;
+    }
+
+    private int ResolveImageMaxSupportedContractVersion(string? image)
+    {
+        if (image is not null &&
+            options.Value.AzureBatch.ImageMaxSupportedContractVersions.TryGetValue(image, out var configuredVersion))
+        {
+            return Math.Max(1, configuredVersion);
+        }
+
+        return 1;
     }
 
     private static void ApplyEnvironmentSettings(

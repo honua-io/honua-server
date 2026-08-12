@@ -41,6 +41,12 @@ internal sealed class ControlPlaneOptions
     public KubernetesExecutionOptions Kubernetes { get; set; } = new();
 
     /// <summary>
+    /// Optional Azure Batch worker-image contract attestations. Unlisted images remain
+    /// compatible with only the v1 execution contract during rolling deployments.
+    /// </summary>
+    public AzureBatchExecutionOptions AzureBatch { get; set; } = new();
+
+    /// <summary>
     /// Optional versioned platform release that co-versions the serving and geoprocessing planes
     /// (ADR-0060 WS2). When declared, both catalogs project their artifact from it: deploy targets
     /// without an explicit artifact inherit <see cref="PlatformReleaseOptions.ServingArtifactReference"/>
@@ -283,6 +289,20 @@ internal sealed class KubernetesExecutionOptions
     /// automatically without relying on the canonical runtime's retention.
     /// </summary>
     public int? DefaultTtlSecondsAfterFinished { get; set; } = 3600;
+}
+
+/// <summary>
+/// Configuration model for Azure Batch worker-image execution contracts.
+/// </summary>
+internal sealed class AzureBatchExecutionOptions
+{
+    /// <summary>
+    /// Exact image-reference to maximum-contract attestations for images selectable through
+    /// <c>azure.batch.container_image</c> or an execution workload's artifact reference.
+    /// Unlisted images are treated as v1 workers.
+    /// </summary>
+    public Dictionary<string, int> ImageMaxSupportedContractVersions { get; set; } =
+        new(StringComparer.Ordinal);
 }
 
 /// <summary>
