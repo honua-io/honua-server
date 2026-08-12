@@ -219,6 +219,58 @@ public sealed class RedisTileCacheKeyIndexTests
             options => options.WithStrictOrdering());
     }
 
+    [Fact]
+    public async Task ReadPagesAsync_DiscardsLegacyEntriesMissingLifecycleMetadata()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZSCAN", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)"0"));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("SPOP", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(RedisResult.Create((RedisValue)0));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYLEX", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(CreateSnapshotResult(cursor: string.Empty, rawCount: 0));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var snapshot = await index.SnapshotWithStatusAsync();
+
+        snapshot.IsAvailable.Should().BeTrue();
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("HEXISTS', KEYS[4]", StringComparison.Ordinal) &&
+                script.Contains("SADD', KEYS[7]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys => keys.Length == 7),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script =>
+                script.Contains("SPOP", StringComparison.Ordinal) &&
+                script.Contains("HDEL', KEYS[4]", StringComparison.Ordinal) &&
+                script.Contains("SET', KEYS[9]", StringComparison.Ordinal)),
+            Arg.Is<RedisKey[]>(keys => keys.Length == 9),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+    }
+
     private static RedisResult CreateSnapshotResult(
         string cursor,
         int rawCount,

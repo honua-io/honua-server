@@ -154,12 +154,51 @@ internal static class GeoServicesCloudTileCache
                 // quota-manage it and lifecycle deletion can fence this exact write.
                 if (keyIndex is { IsEnabled: true })
                 {
-                    await keyIndex.RecordWriteAsync(
-                        objectKey,
-                        data.LongLength,
-                        recordedExpiresAt,
-                        tenantScope,
-                        mutationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await keyIndex.RecordWriteAsync(
+                            objectKey,
+                            data.LongLength,
+                            recordedExpiresAt,
+                            tenantScope,
+                            mutationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (
+                        exception is not OutOfMemoryException &&
+                        !mutationToken.IsCancellationRequested)
+                    {
+                        // Upload and lifecycle-state commit are one serialized cache mutation.
+                        // If Redis cannot make the object discoverable to eviction/lifecycle
+                        // readers, remove the just-uploaded bytes before releasing the fence.
+                        var storageRolledBack = false;
+                        try
+                        {
+                            storageRolledBack = await storage.DeleteAsync(objectKey, mutationToken)
+                                .ConfigureAwait(false);
+                            if (!storageRolledBack)
+                            {
+                                storageRolledBack = await storage.GetMetadataAsync(objectKey, mutationToken)
+                                    .ConfigureAwait(false) is null;
+                            }
+
+                            if (!storageRolledBack)
+                            {
+                                throw new InvalidOperationException(
+                                    $"The uploaded tile '{objectKey}' remained in storage after its lifecycle-state commit failed.");
+                            }
+                        }
+                        catch (Exception rollbackException) when (rollbackException is not OutOfMemoryException)
+                        {
+                            HonuaTelemetry.RecordException(Activity.Current, rollbackException);
+                        }
+
+                        if (storageRolledBack)
+                        {
+                            await keyIndex.RemoveAsync(objectKey, mutationToken).ConfigureAwait(false);
+                        }
+
+                        throw;
+                    }
                 }
             }
 

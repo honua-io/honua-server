@@ -103,4 +103,75 @@ public sealed class GeoServicesCloudTileCacheTests
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    public async Task TryWriteAsync_FailedIndexCommit_RollsBackUploadInsideMutationFence()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                Provider = CloudStorageProvider.Local
+            }));
+
+        var keyIndex = Substitute.For<ITileCacheKeyIndex, ITileCacheMutationCoordinator>();
+        keyIndex.IsEnabled.Returns(true);
+        keyIndex.RecordWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<long>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("Redis commit failed.")));
+
+        var mutationCoordinator = (ITileCacheMutationCoordinator)keyIndex;
+        var fenceHeld = false;
+        mutationCoordinator.ExecuteSerializedAsync(
+                ObjectKey,
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => ExecuteUnderFenceAsync(
+                callInfo.ArgAt<Func<CancellationToken, Task>>(1)));
+        storage.DeleteAsync(ObjectKey, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                fenceHeld.Should().BeTrue();
+                return Task.FromResult(true);
+            });
+
+        await GeoServicesCloudTileCache.TryWriteAsync(
+            storage,
+            new CloudStorageOptions { Enabled = true },
+            ObjectKey,
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            "1.png",
+            ImmutableDictionary<string, string>.Empty,
+            CancellationToken.None,
+            keyIndex,
+            tenantScope: "tenant_a");
+
+        await storage.Received(1).DeleteAsync(ObjectKey, Arg.Any<CancellationToken>());
+        await keyIndex.Received(1).RemoveAsync(ObjectKey, Arg.Any<CancellationToken>());
+
+        async Task ExecuteUnderFenceAsync(Func<CancellationToken, Task> mutation)
+        {
+            fenceHeld = true;
+            try
+            {
+                await mutation(CancellationToken.None);
+            }
+            finally
+            {
+                fenceHeld = false;
+            }
+        }
+    }
 }
