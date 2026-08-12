@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace Honua.Core.Features.Tiles;
 
 /// <summary>
-/// No-op <see cref="ITileCacheKeyIndex" /> registered when tile-cache eviction is disabled or no
-/// Redis backing store is configured (#1917). Keeps the hot tile-serve path unchanged: every method
+/// No-op <see cref="ITileCacheKeyIndex" /> registered when no Redis backing store is configured.
+/// Keeps the hot tile-serve path unchanged: every method
 /// is a cheap no-op and <see cref="IsEnabled" /> is <see langword="false" /> so callers can skip
 /// building access records entirely.
 /// </summary>

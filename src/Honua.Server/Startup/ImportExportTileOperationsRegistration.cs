@@ -165,18 +165,12 @@ internal static class ImportExportTileOperationsRegistration
             services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
         }
 
-        // Live size-quota / LRU tile-cache evictor (#1917). The pure LRU policy and quota options
-        // landed in #1837; this binds them to a live Redis tile-key index on the hot serve path.
-        // The Redis-backed index is registered only when both eviction is enabled (so the baseline
-        // serve path stays untouched) and a Redis multiplexer is present; otherwise a no-op index
-        // keeps the hot path allocation-free. The evictor service + scheduled sweep are always
-        // registered but no-op when the resolved index is disabled.
-        var evictionEnabled = configuration
-            .GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName)
-            .GetSection("Eviction")
-            .GetValue<bool>("Enabled");
+        // The live Redis tile-key index backs both optional quota eviction (#1917) and operator
+        // expire/delete lifecycle operations (#2661). Register it whenever Redis is present so
+        // lifecycle correctness does not depend on the independent eviction opt-in. The eviction
+        // service still checks TileOptions:Eviction:Enabled before sweeping.
         var redisConfigured = services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer));
-        if (evictionEnabled && redisConfigured)
+        if (redisConfigured)
         {
             services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(sp =>
                 new RedisTileCacheKeyIndex(

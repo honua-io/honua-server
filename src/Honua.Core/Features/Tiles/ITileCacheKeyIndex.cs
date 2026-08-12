@@ -29,13 +29,13 @@ public readonly record struct TileCacheIndexSnapshot(
 /// <remarks>
 /// Implementations must be safe to call from the hot tile-serve path: index updates are
 /// fire-and-forget bookkeeping, so failures (e.g. a Redis outage) must never fail the tile request.
-/// The <see cref="NullTileCacheKeyIndex" /> no-op is registered when eviction is disabled or Redis is
-/// not configured, keeping the baseline serve path allocation-free and unchanged.
+/// The <see cref="NullTileCacheKeyIndex" /> no-op is registered when Redis is not configured,
+/// keeping the baseline serve path allocation-free and unchanged.
 /// </remarks>
 public interface ITileCacheKeyIndex
 {
     /// <summary>
-    /// Whether the index is live (eviction enabled and a backing store is available). When
+    /// Whether the index is live (a backing store is available). When
     /// <see langword="false" /> the hot path can skip building access records entirely.
     /// </summary>
     bool IsEnabled { get; }

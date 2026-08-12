@@ -21,12 +21,15 @@ namespace Honua.Infrastructure.Caching;
 /// fails because of eviction accounting. This is the canonical binding that replaces relying solely
 /// on the Redis server <c>maxmemory-policy allkeys-lru</c> setting.
 /// </summary>
-internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
+internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
 {
     private const string LastAccessSetKey = "honua:tile-cache:lru";
     private const string SizeHashKey = "honua:tile-cache:size";
     private const string WriteVersionHashKey = "honua:tile-cache:write-version";
     private const string ExpiredSetKey = "honua:tile-cache:expired";
+    private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
+    private static readonly TimeSpan MutationLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MutationLeaseRetryDelay = TimeSpan.FromMilliseconds(25);
     private const string SnapshotScript = """
         local ranked = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
         local snapshot = {}
@@ -269,6 +272,58 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             Log.RemoveFailed(_logger, ex);
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task ExecuteSerializedAsync(
+        string key,
+        Func<CancellationToken, Task> mutation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(mutation);
+
+        var database = _redis.GetDatabase();
+        var leaseKey = MutationLeaseKeyPrefix + key;
+        var owner = Guid.NewGuid().ToString("N");
+        while (!await database.LockTakeAsync(leaseKey, owner, MutationLeaseDuration).ConfigureAwait(false))
+        {
+            await Task.Delay(MutationLeaseRetryDelay, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await mutation(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await database.LockReleaseAsync(leaseKey, owner).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsCurrentAsync(
+        TileCacheEntry entry,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(entry.Key))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var database = _redis.GetDatabase();
+        var score = await database.SortedSetScoreAsync(LastAccessSetKey, entry.Key).ConfigureAwait(false);
+        if (!score.HasValue)
+        {
+            return false;
+        }
+
+        var currentVersion = await database.HashGetAsync(WriteVersionHashKey, entry.Key).ConfigureAwait(false);
+        return entry.WriteVersion is null
+            ? currentVersion.IsNull
+            : string.Equals((string?)currentVersion, entry.WriteVersion, StringComparison.Ordinal);
     }
 
     private static partial class Log

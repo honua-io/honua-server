@@ -108,28 +108,43 @@ internal static class GeoServicesCloudTileCache
 
         try
         {
-            using var stream = new MemoryStream(data, writable: false);
-            var upload = await storage.UploadAsync(new FileUploadRequest
+            async Task UploadAndRecordAsync(CancellationToken mutationToken)
             {
-                Content = stream,
-                FileName = fileName,
-                ContentType = contentType,
-                SizeBytes = data.LongLength,
-                TimeToLive = ResolveTileCacheTtl(storageOptions),
-                Metadata = metadata,
-                ObjectKeyOverride = objectKey,
-                EnableChunkedUpload = false
-            }, cancellationToken).ConfigureAwait(false);
+                using var stream = new MemoryStream(data, writable: false);
+                var upload = await storage.UploadAsync(new FileUploadRequest
+                {
+                    Content = stream,
+                    FileName = fileName,
+                    ContentType = contentType,
+                    SizeBytes = data.LongLength,
+                    TimeToLive = ResolveTileCacheTtl(storageOptions),
+                    Metadata = metadata,
+                    ObjectKeyOverride = objectKey,
+                    EnableChunkedUpload = false
+                }, mutationToken).ConfigureAwait(false);
 
-            if (!upload.Success)
-            {
-                return;
+                if (!upload.Success)
+                {
+                    return;
+                }
+
+                // Newly stored tile: record it in the live LRU index so the evictor can
+                // quota-manage it and lifecycle deletion can fence this exact write.
+                if (keyIndex is { IsEnabled: true })
+                {
+                    await keyIndex.RecordWriteAsync(objectKey, data.LongLength, mutationToken).ConfigureAwait(false);
+                }
             }
 
-            // Newly stored tile: record it in the live LRU index so the evictor can quota-manage it (#1917).
-            if (keyIndex is { IsEnabled: true })
+            if (keyIndex is ITileCacheMutationCoordinator mutationCoordinator)
             {
-                await keyIndex.RecordWriteAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
+                await mutationCoordinator
+                    .ExecuteSerializedAsync(objectKey, UploadAndRecordAsync, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await UploadAndRecordAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

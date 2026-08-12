@@ -67,6 +67,53 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_MaxTiles_TruncatesDeterministicWindowAndReportsWarning()
+    {
+        const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
+        const string second = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(first, 100);
+        index.Seed(second, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 1,
+        }, index, storage);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.TotalTiles.Should().Be(1);
+        result.SuccessfulTiles.Should().Be(1);
+        result.Warnings.Should().ContainSingle().Which.Should().Contain("truncated");
+        index.Removed.Should().BeEquivalentTo([first]);
+        index.Remaining.Should().BeEquivalentTo([second]);
+    }
+
+    [UnitTest]
+    public async Task Delete_WhenIndexIsDisabled_FailsInsteadOfReportingFalseSuccess()
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad",
+            },
+            NullTileCacheKeyIndex.Instance,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        result.ErrorMessage.Should().Contain("not configured");
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Delete_WhenStorageDeleteFails_LeavesKeyTracked()
     {
         var index = new StatefulKeyIndex();
@@ -375,6 +422,47 @@ public sealed class TileCacheLifecycleExecutionTests
         result.FailedTiles.Should().Be(1);
         index.Removed.Should().BeEmpty();
         index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Delete_HoldsMutationFenceAcrossStorageDeletion()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var deleteStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDelete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            deleteStarted.SetResult();
+            await releaseDelete.Task;
+            return true;
+        });
+
+        var deleteTask = ExecuteAsync(new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+        }, index, storage);
+        await deleteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var writerEntered = false;
+        var writerTask = index.ExecuteSerializedAsync(
+            InBoundKey,
+            _ =>
+            {
+                writerEntered = true;
+                return Task.CompletedTask;
+            });
+        await Task.Delay(50);
+        writerEntered.Should().BeFalse();
+
+        releaseDelete.SetResult();
+        (await deleteTask).Status.Should().Be(OperationStatus.Completed);
+        await writerTask;
+        writerEntered.Should().BeTrue();
     }
 
     [UnitTest]
@@ -460,9 +548,10 @@ public sealed class TileCacheLifecycleExecutionTests
         Provider = CloudStorageProvider.Local,
     };
 
-    private sealed class StatefulKeyIndex : ITileCacheKeyIndex
+    private sealed class StatefulKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
     {
         private readonly ConcurrentDictionary<string, long> _entries = new(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _mutationFence = new(1, 1);
 
         public ConcurrentBag<string> Removed { get; } = [];
 
@@ -537,5 +626,26 @@ public sealed class TileCacheLifecycleExecutionTests
             await RemoveAsync(entry.Key, cancellationToken);
             return true;
         }
+
+        public async Task ExecuteSerializedAsync(
+            string key,
+            Func<CancellationToken, Task> mutation,
+            CancellationToken cancellationToken = default)
+        {
+            await _mutationFence.WaitAsync(cancellationToken);
+            try
+            {
+                await mutation(cancellationToken);
+            }
+            finally
+            {
+                _mutationFence.Release();
+            }
+        }
+
+        public Task<bool> IsCurrentAsync(
+            TileCacheEntry entry,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(!RejectConditionalRemove && _entries.ContainsKey(entry.Key));
     }
 }

@@ -46,18 +46,25 @@ internal sealed partial class TileOperationExecutionCore
         var keyIndex = serviceProvider.GetService<ITileCacheKeyIndex>();
         if (keyIndex is not { IsEnabled: true })
         {
-            // No live index means no generated tiles are tracked to act on. This is a clean no-op
-            // (expire still invalidated the HTTP layer above); report zero work rather than failing.
             TileOperationLog.LifecycleIndexUnavailable(_logger, request.Operation);
             return progress with
             {
-                Status = OperationStatus.Completed,
-                TotalTiles = 0,
-                ProcessedTiles = 0,
-                SuccessfulTiles = 0,
-                FailedTiles = 0,
+                Status = OperationStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = $"{request.Operation} completed (no tracked tiles)"
+                ErrorMessage = "The tile cache index is not configured; no cache entries were changed.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var mutationCoordinator = keyIndex as ITileCacheMutationCoordinator;
+        if (deleteBytes && mutationCoordinator is null)
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "The tile cache index does not support fenced storage deletion; no cache entries were changed.",
+                CurrentPhase = "Failed"
             };
         }
 
@@ -92,6 +99,17 @@ internal sealed partial class TileOperationExecutionCore
 
         // Deterministic ordinal order so a resumed attempt processes the window in the same order.
         matched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
+        var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
+        string[] warnings = [];
+        if (matched.Count > maxTiles)
+        {
+            var originalCount = matched.Count;
+            matched.RemoveRange(maxTiles, matched.Count - maxTiles);
+            warnings =
+            [
+                $"The cache lifecycle window matched {originalCount} tiles and was truncated to the {maxTiles}-tile safety cap."
+            ];
+        }
 
         var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
         var checkpointEnabled = _checkpointStore is not null && generationId is not null;
@@ -121,6 +139,7 @@ internal sealed partial class TileOperationExecutionCore
         {
             TotalTiles = total,
             SuccessfulTiles = affected,
+            Warnings = warnings,
             CurrentPhase = phase
         };
         await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
@@ -135,22 +154,31 @@ internal sealed partial class TileOperationExecutionCore
             {
                 if (deleteBytes)
                 {
-                    // Storage-first ordering (mirrors TileCacheEvictionService.SweepAsync): only drop
-                    // the index entry once the byte is gone, so a failed delete leaves the key tracked
-                    // for a retry rather than orphaning a tile in cloud storage.
-                    if (!await TileCacheStorageDeletion
-                            .DeleteOrConfirmMissingAsync(storage!, entry.Key, cancellationToken)
-                            .ConfigureAwait(false))
-                    {
-                        throw new InvalidOperationException(
-                            "The tile remained in cloud storage after the delete attempt.");
-                    }
+                    await mutationCoordinator!.ExecuteSerializedAsync(
+                        entry.Key,
+                        async mutationToken =>
+                        {
+                            if (!await mutationCoordinator.IsCurrentAsync(entry, mutationToken).ConfigureAwait(false))
+                            {
+                                throw new InvalidOperationException(
+                                    "The tile cache entry was replaced by a concurrent write before deletion.");
+                            }
 
-                    if (!await keyIndex.TryRemoveAsync(entry, cancellationToken).ConfigureAwait(false))
-                    {
-                        throw new InvalidOperationException(
-                            "The tile cache entry was replaced by a concurrent write after deletion.");
-                    }
+                            if (!await TileCacheStorageDeletion
+                                    .DeleteOrConfirmMissingAsync(storage!, entry.Key, mutationToken)
+                                    .ConfigureAwait(false))
+                            {
+                                throw new InvalidOperationException(
+                                    "The tile remained in cloud storage after the delete attempt.");
+                            }
+
+                            if (!await keyIndex.TryRemoveAsync(entry, mutationToken).ConfigureAwait(false))
+                            {
+                                throw new InvalidOperationException(
+                                    "The tile cache entry changed while deletion held its mutation fence.");
+                            }
+                        },
+                        cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
