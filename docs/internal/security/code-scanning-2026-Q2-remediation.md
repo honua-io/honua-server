@@ -12,19 +12,35 @@ so the dashboard only carries actionable findings going forward.
 
 ## Refreshed image digests
 
+### .NET bases (generated from Dockerfiles)
+
+The marked inventory below is rendered from every digest-pinned
+`DOTNET_*_IMAGE` default in the root and `docker/` Dockerfiles. Regenerate it
+with `scripts/ci/base-image-mirrors.sh --inventory-markdown`; PR Gate runs the
+same script in verification mode so Dockerfile pins and this evidence cannot
+drift.
+
+<!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
+| Dockerfile | Build argument | Image reference |
+| --- | --- | --- |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:c4b29bf368004ad9076c1ab9bc91fb373561e3905b4345637e14e8b8c57e3be8` |
+| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:851e6e04fff95d33a02c725373dc0ac624734986f2dc9028887077347ecffa96` |
+| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+<!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
+
+### Other pinned serving bases
+
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `Dockerfile` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
-| `Dockerfile` | runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine` | `@sha256:27b6b84beeede74fd16886177d360799c8e4299ceadfbd64eef57bafead7878a` |
-| `docker/Dockerfile.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0-alpine` | `@sha256:d8ee39817ca03a3757288e83c37ed73cc969a286c603b827c7cbe33add1c2d1c` |
-| `docker/Dockerfile.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine` | `@sha256:ad7cd1ed2e913fbd806f8ecc0e8bb8e9e8fb7cfd4d3fa43be9aa0b4cd8008bf5` |
 | `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73` |
 | `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73` |
-| `docker/Dockerfile.lambda` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
 | `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:6228848061d53f16eb774d4f1ddfce45c973376ad38da844dff144cc3e11e517` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
-| `docker/Dockerfile.lambda.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
-| `docker/Dockerfile.lambda.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `@sha256:894098eafc82e5fa02ba9f2b71d426dc78252876b9e914caae77ed95cfce185a` |
 
 The Functions images were previously the only platform-published Dockerfiles
 without a manifest digest; the unpinned `:4-appservice` tag is what produced the
@@ -33,9 +49,10 @@ upstream contents deterministic so nightly Trivy stops re-uploading the same
 advisories under shifting layers and (b) brings the Functions image in line with
 the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
-explicit PR per published image. Auxiliary developer/simple Dockerfiles
-(`docker/Dockerfile.dev`, `docker/Dockerfile.lambda.aot.simple`) are outside
-this platform publish matrix and retain their existing image references.
+explicit PR per published image. The generated .NET inventory also records the
+digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
+the platform publish matrix. Floating developer images such as
+`docker/Dockerfile.dev` are not security inventory pins and are not listed.
 
 ### Nightly mirror derives from these pins
 
@@ -377,7 +394,7 @@ contributed none of the 588 alerts audited on 2026-07-30.
 | Source (SARIF category) | Open | Severity | Disposition |
 | --- | ---: | --- | --- |
 | `trivy-functions-aot-amd64` | 581 | 578 HIGH / 3 CRITICAL | **Stale signal.** Every instance was last observed between 2026-03-13 and 2026-04-13 and none has been re-observed since, because `deploy-platform-images.yml` only ran on `v*` tag pushes — a category with no new SARIF upload keeps its findings open indefinitely. The weekly schedule and `scan_only` dispatch added here re-upload the same category from `refs/heads/trunk` using the same local `honua-platform-scan:*` image name, so GitHub retires every finding the rebuilt image no longer carries. The controlled 2026-07-24 scan of the rebuilt image measured 51 remaining HIGH/CRITICAL records, down from 784 on the untouched base. |
-| `.github/workflows/security-nightly.yml:container-security-scan` | 6 | 5 HIGH / 1 MEDIUM | **Fixed at the root.** All six are `Microsoft.NETCore.App.Runtime.linux-musl-x64` **10.0.8** advisories (CVE-2026-47302, CVE-2026-50524, CVE-2026-50528, CVE-2026-50651, CVE-2026-50659, CVE-2026-57108), each with fixed version 10.0.10. See "Runtime patch level" below. |
+| `.github/workflows/security-nightly.yml:container-security-scan` | 6 | 5 HIGH / 1 MEDIUM | **Fixed at the root.** All six are `Microsoft.NETCore.App.Runtime.linux-musl-x64` **10.0.8** advisories (CVE-2026-47302, CVE-2026-50524, CVE-2026-50528, CVE-2026-50651, CVE-2026-50659, CVE-2026-57108), each with fixed version 10.0.10. The later 10.0.10 base was refreshed again to 10.0.11 for CVE-2026-62901. See "Runtime patch level" below. |
 | CodeQL `cs/xml/missing-validation` (alert #3069) | 1 | MEDIUM | **Fixed at the root** — see "WPS 2.0 XML request validation" above. |
 
 None of those 588 is cleared by an ignore-file entry, a suppression, or a UI
@@ -390,16 +407,18 @@ a way to run again. (The dismissals recorded earlier in this note belong to the
 
 The nightly container gate scans the image built from the top-level `Dockerfile`,
 which is framework-dependent and therefore inherits the .NET shared framework
-from its runtime base. The previously pinned `aspnet:10.0-alpine` digest carried
-`DOTNET_VERSION=10.0.8`; the digest pinned above carries
-`DOTNET_VERSION=10.0.10` / `ASPNET_VERSION=10.0.10`, which is the fixed version
-named by all six advisories, so the next nightly scan retires them.
+from its runtime base. The 2026-07-24 `aspnet:10.0-alpine` refresh moved the
+runtime from 10.0.8 to 10.0.10 and fixed the six advisories above. The current
+digest carries `DOTNET_VERSION=10.0.11` / `ASPNET_VERSION=10.0.11`, the fixed
+version for CVE-2026-62901.
 
 The AOT and Lambda images publish self-contained, so their embedded runtime comes
-from the SDK base rather than a runtime image. Both refreshed
+from the SDK base rather than a runtime image. Both current
 `mcr.microsoft.com/dotnet/sdk:10.0{,-alpine}` digests ship
-`DOTNET_VERSION=10.0.10` (`DOTNET_SDK_VERSION=10.0.302`), keeping every published
-lane on the same patch level.
+`DOTNET_VERSION=10.0.11` / `ASPNET_VERSION=10.0.11`
+(`DOTNET_SDK_VERSION=10.0.400`), keeping every published lane on the same patch
+level. The `runtime-deps` bases contain native runtime dependencies only; they
+do not carry a separate .NET shared framework.
 
 ## Audit follow-up
 
