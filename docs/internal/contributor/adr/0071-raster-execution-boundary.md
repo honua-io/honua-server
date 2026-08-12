@@ -94,11 +94,33 @@ numerical raster/terrain operations listed below.
 The GDAL worker runs in one of two placements — a local worker pool, or a
 remote batch backend such as AWS Batch — chosen by **static operator
 configuration**, optionally a simple size threshold (for example, "local
-under N decoded megapixels, AWS Batch above it"). Operators configure the
+under N decoded-work bytes, AWS Batch above it"). Operators configure the
 rule ahead of time. When the rule includes a threshold, a bounded admission
 router evaluates each job's decoded size against that configured threshold;
 it does not evaluate capabilities, live health, or an open-ended cost model.
 The resulting placement is recorded on the job for observability.
+
+For this threshold, **decoded size** has one normative meaning. All arithmetic
+is checked and occurs before durable submission:
+
+1. A raster surface contributes
+   `width × height × band count × ceil(bits per sample / 8)` bytes.
+2. The input contribution is the sum of every raster input, not the largest
+   input, even when an implementation could read the inputs sequentially.
+3. The process definition enumerates every full-grid output or intermediate
+   admission surface it can materialize. The router derives each surface's
+   post-transform grid, band count, and sample width from the validated process
+   request and adds all of them. Scalar or metadata-only results contribute
+   zero output bytes.
+4. The job's decoded size is the checked sum of the input and admission-surface
+   contributions. It is a deterministic conservative routing proxy, not a
+   prediction of exact resident memory.
+
+If any required dimension, band count, sample width, or output grid cannot be
+bounded, or if the calculation overflows, the job cannot qualify for local
+placement: the router selects the configured remote placement or fails closed
+when none exists. Worker memory, dimension, scratch, and output limits remain
+independent safety gates after placement.
 
 PostGIS Raster is a **serving/storage plane and registration target only**:
 bounded, data-resident reads; persisted overviews; materialized tiles; and the
@@ -421,8 +443,8 @@ different result or duplicating a partially committed output.
 ### Operator configuration and semantic pinning
 
 Operators configure placement statically, by workload, tenant, deployment
-profile, and resource budget — for example, "local for jobs under N decoded
-megapixels, AWS Batch above it." The placement rule is set ahead of time and
+profile, and resource budget — for example, "local for jobs under N decoded-
+work bytes, AWS Batch above it." The placement rule is set ahead of time and
 applies uniformly. A fixed rule applies directly; a threshold rule is
 evaluated for each job by the bounded admission router and the result is
 recorded for observability. This router is not the rejected dynamic planner:
