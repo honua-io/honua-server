@@ -52,6 +52,50 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
         _rolesTable = SchemaSearchPath.QualifyTable("managed_user_roles", schemaName);
     }
 
+    /// <summary>
+    /// Seeds (upserts) a user into the store, replacing activation state and roles (for
+    /// testing — the durable counterpart of <c>InMemoryUserStore.Seed</c>, so fixture-based
+    /// integration tests can restore a deterministic baseline before each test against the
+    /// shared <c>honua.managed_users</c> record set).
+    /// </summary>
+    internal async Task SeedAsync(ManagedUser user, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        var upsert = $"""
+            INSERT INTO {_usersTable} (user_id, external_id, display_name, email, provisioning_source, provider_id, is_active, created_at, updated_at)
+            VALUES (@user_id, @external_id, @display_name, @email, @provisioning_source, @provider_id, @is_active, @created_at, @updated_at)
+            ON CONFLICT (user_id) DO UPDATE SET
+                external_id = EXCLUDED.external_id,
+                display_name = EXCLUDED.display_name,
+                email = EXCLUDED.email,
+                provisioning_source = EXCLUDED.provisioning_source,
+                provider_id = EXCLUDED.provider_id,
+                is_active = EXCLUDED.is_active,
+                updated_at = EXCLUDED.updated_at
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using (var command = new NpgsqlCommand(upsert, connection, transaction))
+        {
+            command.Parameters.AddWithValue("user_id", NpgsqlDbType.Varchar, user.UserId);
+            command.Parameters.AddWithValue("external_id", NpgsqlDbType.Varchar, (object?)user.ExternalId ?? DBNull.Value);
+            command.Parameters.AddWithValue("display_name", NpgsqlDbType.Varchar, user.DisplayName);
+            command.Parameters.AddWithValue("email", NpgsqlDbType.Varchar, (object?)user.Email ?? DBNull.Value);
+            command.Parameters.AddWithValue("provisioning_source", NpgsqlDbType.Varchar, user.ProvisioningSource);
+            command.Parameters.AddWithValue("provider_id", NpgsqlDbType.Uuid, (object?)user.ProviderId ?? DBNull.Value);
+            command.Parameters.AddWithValue("is_active", NpgsqlDbType.Boolean, user.IsActive);
+            command.Parameters.AddWithValue("created_at", NpgsqlDbType.TimestampTz, user.CreatedAt);
+            command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, user.UpdatedAt);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await ReplaceRolesAsync(connection, transaction, user.UserId, NormalizeRoles(user.Roles), cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     // ---- IUserStore ------------------------------------------------------------------
 
     /// <inheritdoc />
