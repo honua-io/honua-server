@@ -334,15 +334,20 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         List<StudioValidationDiagnostic> diagnostics)
     {
         var body = envelope.Body!.Value;
-        if (!body.TryGetProperty("interactions", out var rawInteractions) &&
-            !body.TryGetProperty("layout", out _))
+        var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
+        var hasLayout = body.TryGetProperty("layout", out var rawLayout);
+        if (!hasInteractions && !hasLayout)
         {
             return;
         }
 
-        if (rawInteractions.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null or JsonValueKind.Array))
+        if (!ValidateCompositionWireShape(
+                hasInteractions,
+                rawInteractions,
+                hasLayout,
+                rawLayout,
+                diagnostics))
         {
-            diagnostics.Add(Error("studio.interactions.array", "/body/interactions", "interactions must be an array."));
             return;
         }
 
@@ -363,6 +368,283 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         ValidateInteractions(composition, diagnostics);
         ValidateLayout(composition, diagnostics);
     }
+
+    private static bool ValidateCompositionWireShape(
+        bool hasInteractions,
+        JsonElement rawInteractions,
+        bool hasLayout,
+        JsonElement rawLayout,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var canDeserialize = true;
+        if (hasInteractions)
+        {
+            if (rawInteractions.ValueKind != JsonValueKind.Array)
+            {
+                diagnostics.Add(Error("studio.interactions.array", "/body/interactions", "interactions must be an array."));
+                canDeserialize = false;
+            }
+            else
+            {
+                var index = 0;
+                foreach (var interaction in rawInteractions.EnumerateArray())
+                {
+                    var path = $"/body/interactions/{index}";
+                    if (!ValidateClosedObject(
+                            interaction,
+                            ["id", "on", "do", "disabled"],
+                            path,
+                            "studio.interaction.object",
+                            "studio.interaction.member.unknown",
+                            diagnostics))
+                    {
+                        canDeserialize = false;
+                        index++;
+                        continue;
+                    }
+
+                    canDeserialize &= ValidateRequiredString(
+                        interaction, "id", path, "studio.interaction.id.required", diagnostics);
+
+                    if (!interaction.TryGetProperty("on", out var on)
+                        || !ValidateClosedObject(
+                            on,
+                            ["ref", "event"],
+                            $"{path}/on",
+                            "studio.interaction.event.object",
+                            "studio.interaction.event.member.unknown",
+                            diagnostics))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.event.required",
+                            $"{path}/on",
+                            "interaction on must be an object."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        canDeserialize &= ValidateRequiredString(
+                            on, "ref", $"{path}/on", "studio.interaction.event.ref.required", diagnostics);
+                        canDeserialize &= ValidateRequiredString(
+                            on, "event", $"{path}/on", "studio.interaction.event.name.required", diagnostics);
+                    }
+
+                    if (!interaction.TryGetProperty("do", out var action)
+                        || !ValidateClosedObject(
+                            action,
+                            ["ref", "verb", "args"],
+                            $"{path}/do",
+                            "studio.interaction.action.object",
+                            "studio.interaction.action.member.unknown",
+                            diagnostics))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.action.required",
+                            $"{path}/do",
+                            "interaction do must be an object."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        canDeserialize &= ValidateRequiredString(
+                            action, "ref", $"{path}/do", "studio.interaction.action.ref.required", diagnostics);
+                        canDeserialize &= ValidateRequiredString(
+                            action, "verb", $"{path}/do", "studio.interaction.action.verb.required", diagnostics);
+                        if (action.TryGetProperty("args", out var args) && args.ValueKind != JsonValueKind.Object)
+                        {
+                            diagnostics.Add(Error(
+                                "studio.interaction.args.object",
+                                $"{path}/do/args",
+                                "do.args must be a JSON object."));
+                        }
+                    }
+
+                    if (interaction.TryGetProperty("disabled", out var disabled)
+                        && disabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.interaction.disabled.boolean",
+                            $"{path}/disabled",
+                            "interaction disabled must be a boolean."));
+                        canDeserialize = false;
+                    }
+
+                    index++;
+                }
+            }
+        }
+
+        if (hasLayout)
+        {
+            if (!ValidateClosedObject(
+                    rawLayout,
+                    ["grid", "items"],
+                    "/body/layout",
+                    "studio.layout.object",
+                    "studio.layout.member.unknown",
+                    diagnostics))
+            {
+                canDeserialize = false;
+            }
+            else
+            {
+                if (rawLayout.TryGetProperty("grid", out var grid))
+                {
+                    if (!ValidateClosedObject(
+                            grid,
+                            ["columns"],
+                            "/body/layout/grid",
+                            "studio.layout.grid.object",
+                            "studio.layout.grid.member.unknown",
+                            diagnostics))
+                    {
+                        canDeserialize = false;
+                    }
+                    else if (grid.TryGetProperty("columns", out var columns)
+                        && (columns.ValueKind != JsonValueKind.Number || !columns.TryGetInt32(out _)))
+                    {
+                        diagnostics.Add(Error(
+                            "studio.layout.grid.columns.integer",
+                            "/body/layout/grid/columns",
+                            "layout grid columns must be an integer."));
+                        canDeserialize = false;
+                    }
+                }
+
+                if (rawLayout.TryGetProperty("items", out var items))
+                {
+                    if (items.ValueKind != JsonValueKind.Array)
+                    {
+                        diagnostics.Add(Error(
+                            "studio.layout.items.array",
+                            "/body/layout/items",
+                            "layout items must be an array."));
+                        canDeserialize = false;
+                    }
+                    else
+                    {
+                        var index = 0;
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            var path = $"/body/layout/items/{index}";
+                            if (!ValidateClosedObject(
+                                    item,
+                                    ["ref", "x", "y", "w", "h"],
+                                    path,
+                                    "studio.layout.item.object",
+                                    "studio.layout.item.member.unknown",
+                                    diagnostics))
+                            {
+                                canDeserialize = false;
+                                index++;
+                                continue;
+                            }
+
+                            canDeserialize &= ValidateRequiredString(
+                                item, "ref", path, "studio.layout.item.ref.required", diagnostics);
+                            canDeserialize &= ValidateRequiredIntegerPair(
+                                item,
+                                "x",
+                                "y",
+                                path,
+                                "studio.layout.item.origin.required",
+                                "studio.layout.item.origin.integer",
+                                "layout item must declare integer x and y coordinates.",
+                                diagnostics);
+                            canDeserialize &= ValidateRequiredIntegerPair(
+                                item,
+                                "w",
+                                "h",
+                                path,
+                                "studio.layout.item.size.required",
+                                "studio.layout.item.size.integer",
+                                "layout item must declare integer w and h dimensions.",
+                                diagnostics);
+                            index++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return canDeserialize;
+    }
+
+    private static bool ValidateClosedObject(
+        JsonElement value,
+        IReadOnlyList<string> allowedMembers,
+        string path,
+        string objectCode,
+        string unknownMemberCode,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            diagnostics.Add(Error(objectCode, path, "value must be a JSON object."));
+            return false;
+        }
+
+        foreach (var member in value.EnumerateObject())
+        {
+            if (allowedMembers.Contains(member.Name, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            diagnostics.Add(Error(
+                unknownMemberCode,
+                $"{path}/{EscapeJsonPointerSegment(member.Name)}",
+                $"member '{member.Name}' is not defined by the ADR-0030 composition schema."));
+        }
+
+        return true;
+    }
+
+    private static bool ValidateRequiredString(
+        JsonElement value,
+        string memberName,
+        string path,
+        string code,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (value.TryGetProperty(memberName, out var member) && member.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(code, $"{path}/{memberName}", $"{memberName} must be a string."));
+        return false;
+    }
+
+    private static bool ValidateRequiredIntegerPair(
+        JsonElement value,
+        string firstName,
+        string secondName,
+        string path,
+        string requiredCode,
+        string integerCode,
+        string message,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var hasFirst = value.TryGetProperty(firstName, out var first);
+        var hasSecond = value.TryGetProperty(secondName, out var second);
+        if (!hasFirst || !hasSecond)
+        {
+            diagnostics.Add(Error(requiredCode, path, message));
+        }
+
+        if ((!hasFirst || first.ValueKind == JsonValueKind.Number && first.TryGetInt32(out _))
+            && (!hasSecond || second.ValueKind == JsonValueKind.Number && second.TryGetInt32(out _)))
+        {
+            return true;
+        }
+
+        diagnostics.Add(Error(integerCode, path, message));
+        return false;
+    }
+
+    private static string EscapeJsonPointerSegment(string value)
+        => value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
 
     private static void ValidateInteractions(
         StudioCompositionBody composition,
@@ -424,8 +706,7 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     $"do.verb must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}."));
             }
 
-            if (interaction.Do.Args is
-                { ValueKind: not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined })
+            if (interaction.Do.Args is { ValueKind: not JsonValueKind.Object })
             {
                 diagnostics.Add(Error(
                     "studio.interaction.args.object",

@@ -239,6 +239,88 @@ public sealed class StudioPackageValidatorInteractionsTests
     }
 
     [Theory]
+    [InlineData("interactions", "studio.interactions.array")]
+    [InlineData("layout", "studio.layout.object")]
+    public void Validate_ExplicitNullCompositionBlock_Fails(string memberName, string expectedCode)
+    {
+        var summary = ValidateBody(
+            $$"""{"format":"honua_map_package.v1","layers":[],"{{memberName}}":null}""");
+
+        AssertInvalidWith(summary, expectedCode);
+    }
+
+    [Theory]
+    [InlineData("\"y\":0")]
+    [InlineData("\"x\":0")]
+    public void Validate_LayoutItemMissingEitherOriginCoordinate_Fails(string coordinateJson)
+    {
+        var summary = ValidateBody(
+            $$"""
+            {
+              "format": "honua_map_package.v1",
+              "widgets": [{ "id": "area-chart", "kind": "chart" }],
+              "layout": { "items": [{ "ref": "widget:area-chart", {{coordinateJson}}, "w": 6, "h": 4 }] }
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.layout.item.origin.required");
+    }
+
+    [UnitTest]
+    public void Validate_UnknownMembersInsideStandardOwnedBlocks_FailAtExactPaths()
+    {
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "widgets": [{ "id": "area-chart", "kind": "chart" }],
+              "interactions": [{
+                "id": "i1",
+                "on": { "ref": "layer:parcels", "event": "featureSelect", "typoEvent": true },
+                "do": { "ref": "widget:area-chart", "verb": "setFilter", "typoAction": true },
+                "typoInteraction": true
+              }],
+              "layout": {
+                "grid": { "columns": 12, "typoGrid": true },
+                "items": [{ "ref": "widget:area-chart", "x": 0, "y": 0, "w": 6, "h": 4, "typoItem": true }],
+                "typoLayout": true
+              }
+            }
+            """);
+
+        Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/interactions/0/typoInteraction");
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/interactions/0/on/typoEvent");
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/interactions/0/do/typoAction");
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/layout/typoLayout");
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/layout/grid/typoGrid");
+        Assert.Contains(summary.Diagnostics, d => d.Path == "/body/layout/items/0/typoItem");
+    }
+
+    [Theory]
+    [InlineData("\"args\":null", "studio.interaction.args.object")]
+    [InlineData("\"disabled\":null", "studio.interaction.disabled.boolean")]
+    public void Validate_NullTypedInteractionMember_Fails(string memberJson, string expectedCode)
+    {
+        var summary = ValidateBody(
+            $$"""
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "interactions": [{
+                "id": "i1",
+                "on": { "ref": "layer:parcels", "event": "featureSelect" },
+                "do": { "ref": "map", "verb": "setViewport"{{(memberJson.StartsWith("\"args", StringComparison.Ordinal) ? ", " + memberJson : string.Empty)}} },
+                {{(memberJson.StartsWith("\"disabled", StringComparison.Ordinal) ? memberJson : "\"disabled\":false")}}
+              }]
+            }
+            """);
+
+        AssertInvalidWith(summary, expectedCode);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(25)]
     [InlineData(-3)]
