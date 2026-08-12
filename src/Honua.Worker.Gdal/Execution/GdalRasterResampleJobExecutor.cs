@@ -138,11 +138,14 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 return JobExecutionResult.Failed($"Invalid resample inputs: {gridError}");
             }
 
-            if (!GdalOutputGridGuard.TryAdmitResolution(
+            if (!GdalOutputGridGuard.TryAdmitResolutionWithFootprint(
                     inputDims.Width * scaleX,
                     inputDims.Height * scaleY,
                     cellSizeX,
                     cellSizeY,
+                    inputDims.Bands > 0 && inputDims.BitsPerSample > 0
+                        ? checked((long)inputDims.Bands * ((inputDims.BitsPerSample + 7L) / 8L))
+                        : 8L,
                     opts,
                     out var resolutionError))
             {

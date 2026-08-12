@@ -43,6 +43,66 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_V2JobWithUnattestedImage_FailsBeforeCreate()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            DefaultImage = "honua/worker:v2",
+            DefaultImageMaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+        });
+        var job = CreateJob("job-old-image", image: "honua/worker:v1") with
+        {
+            Spec = CreateJob("job-old-image", image: "honua/worker:v1").Spec with
+            {
+                ContractVersion = RasterSourceContract.JobContractVersion,
+            }
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("supports execution contract version 1");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!);
+    }
+
+    [Fact]
+    public async Task StartAsync_V2JobWithAttestedOverrideImage_CreatesJob()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "job-uid-v2" }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            ImageMaxSupportedContractVersions = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["honua/worker:v2"] = RasterSourceContract.JobContractVersion,
+            }
+        });
+        var job = CreateJob("job-v2-image", image: "honua/worker:v2") with
+        {
+            Spec = CreateJob("job-v2-image", image: "honua/worker:v2").Spec with
+            {
+                ContractVersion = RasterSourceContract.JobContractVersion,
+            }
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(manifest =>
+                manifest.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "2"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StartAsync_WithNoImage_ReturnsFailed()
     {
         var client = Substitute.For<IKubernetesJobClient>();
@@ -1560,7 +1620,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var monitor = Substitute.For<IOptionsMonitor<KubernetesExecutionOptions>>();
         monitor.CurrentValue.Returns(options ?? new KubernetesExecutionOptions
         {
-            DefaultNamespace = "default"
+            DefaultNamespace = "default",
+            DefaultImageMaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
         });
         return new KubernetesJobBatchComputeBackend(
             client,

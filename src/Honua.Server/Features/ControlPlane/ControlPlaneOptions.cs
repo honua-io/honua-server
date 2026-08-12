@@ -218,6 +218,20 @@ internal sealed class KubernetesExecutionOptions
     public string? DefaultImage { get; set; }
 
     /// <summary>
+    /// Highest execution contract supported by <see cref="DefaultImage"/>. Defaults to v1 so a
+    /// control-plane rollout cannot send a newer durable spec to an older worker image unless the
+    /// deployment explicitly attests that image's contract.
+    /// </summary>
+    public int DefaultImageMaxSupportedContractVersion { get; set; } = 1;
+
+    /// <summary>
+    /// Exact image-reference to maximum-contract attestations for images selectable by a job's
+    /// artifact or <c>k8s.image</c> override. Unlisted overrides are treated as v1 workers.
+    /// </summary>
+    public Dictionary<string, int> ImageMaxSupportedContractVersions { get; set; } =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Fallback image pull policy (<c>Always</c>, <c>IfNotPresent</c>, <c>Never</c>).
     /// </summary>
     public string? DefaultImagePullPolicy { get; set; }

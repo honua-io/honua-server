@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
@@ -44,15 +43,23 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.KubernetesJob;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new BatchComputeBackendCapabilities
+    {
+        var snapshot = options.CurrentValue;
+        var configuredImageMaximum = snapshot.ImageMaxSupportedContractVersions.Count == 0
+            ? 1
+            : snapshot.ImageMaxSupportedContractVersions.Values.Max();
+        return Task.FromResult(new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
             SupportsRetry = true,
             SupportsArtifactStaging = true,
-            MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            MaxSupportedContractVersion = Math.Max(
+                snapshot.DefaultImageMaxSupportedContractVersion,
+                configuredImageMaximum)
         });
+    }
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -72,6 +79,17 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Failed,
                 Message = "No container image resolved for the Kubernetes execution job."
+            };
+        }
+
+        var imageContractVersion = ResolveImageMaxSupportedContractVersion(image);
+        if (job.Spec.ContractVersion > imageContractVersion)
+        {
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = $"Kubernetes worker image '{image}' supports execution contract version "
+                    + $"{imageContractVersion}, but the job requires version {job.Spec.ContractVersion}."
             };
         }
 
@@ -627,6 +645,19 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
         var snapshot = options.CurrentValue;
         return Normalize(snapshot.DefaultImage);
+    }
+
+    private int ResolveImageMaxSupportedContractVersion(string image)
+    {
+        var snapshot = options.CurrentValue;
+        if (snapshot.ImageMaxSupportedContractVersions.TryGetValue(image, out var configuredVersion))
+        {
+            return Math.Max(1, configuredVersion);
+        }
+
+        return string.Equals(Normalize(snapshot.DefaultImage), image, StringComparison.Ordinal)
+            ? Math.Max(1, snapshot.DefaultImageMaxSupportedContractVersion)
+            : 1;
     }
 
     private (string Namespace, string Name) ResolveCoordinates(ExecutionJobRecord job)
