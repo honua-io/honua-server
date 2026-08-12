@@ -9,6 +9,7 @@ using Apache.Arrow.Types;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
@@ -58,17 +59,21 @@ public sealed class GeoArrowQueryFormatterTests
         schema.FieldsList.Select(f => f.Name)
             .Should().Equal("objectid", "name", "created", "geometry");
 
-        // Verify GeoArrow extension metadata on geometry field
+        // Verify GeoArrow extension metadata on geometry field (golden content)
         var geometryField = schema.GetFieldByName("geometry");
         geometryField.Metadata.Should().ContainKey("ARROW:extension:name");
         geometryField.Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
         geometryField.Metadata.Should().ContainKey("ARROW:extension:metadata");
+        geometryField.Metadata["ARROW:extension:metadata"].Should().Be(ExpectedWgs84ExtensionMetadata());
 
         // Verify schema-level geo metadata
         schema.Metadata.Should().ContainKey("geo");
         using var geoDoc = JsonDocument.Parse(schema.Metadata["geo"]);
         geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
         geoDoc.RootElement.GetProperty("version").GetString().Should().Be("1.1.0");
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("Point");
 
         // Verify attribute values
         var nameArray = batch.Column("name").Should().BeOfType<StringArray>().Which;
@@ -268,7 +273,7 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsGeoArrowAsync_ExtensionMetadata_ContainsGeometryTypesAndOmitsCrsFor4326()
+    public async Task FormatAsGeoArrowAsync_ExtensionMetadata_IsGeoArrow02Conformant()
     {
         var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         var feature = Feature.Create(
@@ -290,14 +295,32 @@ public sealed class GeoArrowQueryFormatterTests
 
         var geometryField = reader.Schema.GetFieldByName("geometry");
         var extensionMetadata = geometryField.Metadata["ARROW:extension:metadata"];
+
+        // Golden assertion: the exact extension metadata is the authoritative EPSG:4326
+        // PROJJSON paired with crs_type, and nothing else.
+        extensionMetadata.Should().Be(ExpectedWgs84ExtensionMetadata());
+
         using var doc = JsonDocument.Parse(extensionMetadata);
 
-        doc.RootElement.GetProperty("geometry_types").EnumerateArray()
-            .Select(e => e.GetString()).Should().Contain("Point");
+        // GeoArrow 0.2 supports only crs, crs_type, and edges as extension metadata keys.
+        doc.RootElement.EnumerateObject().Select(p => p.Name)
+            .Should().BeEquivalentTo(["crs", "crs_type"],
+                "GeoArrow 0.2 extension metadata supports only crs, crs_type, and edges");
 
-        // EPSG:4326 omits CRS key (implies OGC:CRS84), matching GeoParquet convention
-        doc.RootElement.TryGetProperty("crs", out _).Should().BeFalse(
-            "CRS key should be omitted for EPSG:4326 (implies OGC:CRS84 per GeoParquet 1.1.0 spec)");
+        // The output CRS is declared as PROJJSON resolving to EPSG:4326.
+        doc.RootElement.GetProperty("crs_type").GetString().Should().Be("projjson");
+        var crs = doc.RootElement.GetProperty("crs");
+        crs.ValueKind.Should().Be(JsonValueKind.Object, "GeoArrow producers should write PROJJSON");
+        crs.GetProperty("id").GetProperty("authority").GetString().Should().Be("EPSG");
+        crs.GetProperty("id").GetProperty("code").GetInt32().Should().Be(4326);
+
+        // Planar edges must be declared by omitting the edges key ("planar" is not a valid value).
+        doc.RootElement.TryGetProperty("edges", out _).Should().BeFalse(
+            "planar edges are represented by omitting the edges key per GeoArrow 0.2");
+
+        // geometry_types is GeoParquet column metadata, not a GeoArrow extension metadata key.
+        doc.RootElement.TryGetProperty("geometry_types", out _).Should().BeFalse(
+            "geometry_types is not a supported GeoArrow extension metadata key");
     }
 
     [Fact]
@@ -321,18 +344,18 @@ public sealed class GeoArrowQueryFormatterTests
         using var stream = new MemoryStream(payload);
         using var reader = new ArrowStreamReader(stream);
 
+        // geometry_types lives only in schema-level GeoParquet metadata; the GeoArrow
+        // extension metadata stays CRS-only.
         var extensionMetadata = reader.Schema.GetFieldByName("geometry")
             .Metadata["ARROW:extension:metadata"];
-        using var doc = JsonDocument.Parse(extensionMetadata);
-        doc.RootElement.GetProperty("geometry_types").EnumerateArray()
-            .Select(e => e.GetString()).Should().Contain("Point Z");
+        extensionMetadata.Should().Be(ExpectedWgs84ExtensionMetadata());
 
-        // Schema-level geo metadata should also show Z
+        // Schema-level geo metadata should show Z
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
         var columns = geoDoc.RootElement.GetProperty("columns");
         var geomCol = columns.GetProperty("geometry");
         geomCol.GetProperty("geometry_types").EnumerateArray()
-            .Select(e => e.GetString()).Should().Contain("Point Z");
+            .Select(e => e.GetString()).Should().Equal("Point Z");
     }
 
     [Fact]
@@ -407,7 +430,7 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsGeoArrowAsync_EmptyResult_EmitsEmptyGeometryTypes()
+    public async Task FormatAsGeoArrowAsync_EmptyResult_PreservesKnownGeometryTypeAndCrsMetadata()
     {
         var layer = CreateLayer(
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
@@ -424,17 +447,16 @@ public sealed class GeoArrowQueryFormatterTests
         using var stream = new MemoryStream(payload);
         using var reader = new ArrowStreamReader(stream);
 
-        // Extension metadata on geometry field should have empty geometry_types
+        // Golden assertion: extension metadata is identical for empty and populated results.
         var geometryField = reader.Schema.GetFieldByName("geometry");
-        var extMeta = geometryField.Metadata["ARROW:extension:metadata"];
-        using var extDoc = JsonDocument.Parse(extMeta);
-        extDoc.RootElement.GetProperty("geometry_types").GetArrayLength().Should().Be(0,
-            "empty results must emit geometry_types: [] per GeoParquet 1.1.0 §4.1");
+        geometryField.Metadata["ARROW:extension:metadata"].Should().Be(ExpectedWgs84ExtensionMetadata());
 
-        // Schema-level geo metadata should also have empty geometry_types
+        // The resource's geometry type is known even with zero rows, so schema-level
+        // GeoParquet metadata keeps advertising it instead of degrading to [].
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
         geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
-            .GetProperty("geometry_types").GetArrayLength().Should().Be(0);
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("Point");
     }
 
     [Fact]
@@ -481,6 +503,18 @@ public sealed class GeoArrowQueryFormatterTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*GeoArrow*returnM=true*XY and XYZ geometries*");
+    }
+
+    /// <summary>
+    /// The exact GeoArrow 0.2 extension metadata the formatter must emit for EPSG:4326
+    /// output: the authoritative catalog PROJJSON plus <c>crs_type</c>, with planar edges
+    /// declared by omitting <c>edges</c> and no GeoParquet-only keys.
+    /// </summary>
+    private static string ExpectedWgs84ExtensionMetadata()
+    {
+        GeoParquetProjJsonCatalog.TryGetProjJson(4326, out var projJson).Should().BeTrue(
+            "the embedded PROJJSON catalog must contain EPSG:4326");
+        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)

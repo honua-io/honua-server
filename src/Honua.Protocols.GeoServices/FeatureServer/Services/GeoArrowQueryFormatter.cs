@@ -8,6 +8,7 @@ using Apache.Arrow.Ipc;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
@@ -47,11 +48,10 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
-        var isEmpty = features.Length == 0;
 
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
 
-        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, isEmpty, runtimeFields, outFields);
+        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -80,7 +80,6 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         int srid,
         bool returnZ,
-        bool isEmpty,
         List<(string name, IArrowType type)> runtimeFields,
         string[]? outFields)
     {
@@ -93,16 +92,24 @@ internal sealed class GeoArrowQueryFormatter
 
         if (includeGeometry)
         {
-            var extensionMetadata = BuildExtensionMetadata(resource, srid, returnZ, isEmpty);
+            var fieldMetadata = new Dictionary<string, string>
+            {
+                [ArrowExtensionNameKey] = GeoArrowExtensionName
+            };
+
+            // GeoArrow 0.2: when no supported extension metadata key applies,
+            // ARROW:extension:metadata must be omitted entirely (never an empty object).
+            var extensionMetadata = BuildExtensionMetadata(srid);
+            if (extensionMetadata is not null)
+            {
+                fieldMetadata[ArrowExtensionMetadataKey] = extensionMetadata;
+            }
+
             var geometryField = new Apache.Arrow.Field(
                 GeometryColumnName,
                 BinaryType.Default,
                 nullable: true,
-                new Dictionary<string, string>
-                {
-                    [ArrowExtensionNameKey] = GeoArrowExtensionName,
-                    [ArrowExtensionMetadataKey] = extensionMetadata
-                });
+                fieldMetadata);
             fields.Add(geometryField);
         }
 
@@ -119,7 +126,7 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ, isEmpty);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -511,22 +518,35 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static string BuildExtensionMetadata(MetadataV2Resource resource, int srid, bool returnZ, bool isEmpty)
+    private static string? BuildExtensionMetadata(int srid)
     {
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        var geometryTypesPart = isEmpty
-            ? "[]"
-            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
-        return $@"{{""geometry_types"":{geometryTypesPart},""edges"":""planar""}}";
+        // GeoArrow 0.2 (https://geoarrow.org/extension-types.html) supports only `crs`,
+        // `crs_type`, and `edges` in ARROW:extension:metadata:
+        // - `crs` is emitted as the authoritative PROJJSON for the output SRID. GeoArrow has
+        //   no default CRS (omission means "unknown"), so the known output CRS must always be
+        //   declared. Coordinates stay (x, y) / (longitude, latitude) per the GeoArrow
+        //   axis-order rule regardless of the axis order encoded in the CRS definition.
+        // - Planar/linear edges are declared by omitting `edges`; `"edges":"planar"` is not a
+        //   valid value.
+        // - `geometry_types` is not a GeoArrow key; it belongs only in the schema-level
+        //   GeoParquet `geo` metadata (see BuildSchemaMetadata).
+        if (!GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson))
+        {
+            // No supported extension metadata key applies; the caller omits
+            // ARROW:extension:metadata entirely per the GeoArrow spec.
+            return null;
+        }
+
+        return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        bool returnZ,
-        bool isEmpty)
+        bool returnZ)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -536,9 +556,10 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        var geometryTypesPart = isEmpty
-            ? "[]"
-            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
+        // The resource's declared geometry type is known even for zero-row results, so it is
+        // always advertised rather than degrading to an unknown-types empty list.
+        var geometryTypesPart =
+            $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
         var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
