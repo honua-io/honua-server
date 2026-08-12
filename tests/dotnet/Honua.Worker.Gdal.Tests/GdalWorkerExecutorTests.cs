@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
@@ -312,6 +313,7 @@ public sealed class GdalWorkerExecutorTests
         var executor = new GdalVectorConvertJobExecutor(
             new ProcessGdalCommandRunner(
                 Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
                 NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorConvertJobExecutor>.Instance);
@@ -472,6 +474,7 @@ public sealed class GdalWorkerExecutorTests
         var executor = new GdalVectorReprojectJobExecutor(
             new ProcessGdalCommandRunner(
                 Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
                 NullLogger<ProcessGdalCommandRunner>.Instance),
             GdalJobFactory.Options(scratch),
             NullLogger<GdalVectorReprojectJobExecutor>.Instance);

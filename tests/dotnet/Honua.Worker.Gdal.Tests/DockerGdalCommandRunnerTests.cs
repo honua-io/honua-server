@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,6 +81,7 @@ public sealed class DockerGdalCommandRunnerTests
             invoker,
             Options.Create(new GdalContainerExecutionOptions()),
             Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()),
             NullLogger<DockerGdalCommandRunner>.Instance);
 
         var result = await runner.RunAsync(
@@ -97,6 +99,35 @@ public sealed class DockerGdalCommandRunnerTests
         invocation.Arguments.Should().ContainInOrder("-v", "/scratch/op:/scratch/op");
         invocation.Arguments.Should().ContainInOrder("--entrypoint", "gdalwarp");
         invocation.Arguments.Should().ContainInOrder(GdalContainerExecutionOptions.DefaultImage, "-t_srs", "EPSG:3857");
+    }
+
+    [UnitTest]
+    public async Task RunAsync_ReferencedS3Input_ProjectsEndpointIntoContainer()
+    {
+        var invoker = new FakeDockerCommandInvoker(_ => new GdalCommandResult { ExitCode = 0 });
+        var runner = new DockerGdalCommandRunner(
+            invoker,
+            Options.Create(new GdalContainerExecutionOptions()),
+            Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options
+            {
+                Region = "us-east-1",
+                ServiceUrl = "https://object-store.example.test",
+                ForcePathStyle = true,
+            }),
+            NullLogger<DockerGdalCommandRunner>.Instance);
+
+        await runner.RunAsync(
+            "gdalwarp",
+            new[] { "/vsis3/registered-bucket/input.tif", "/scratch/op/out.tif" },
+            "/scratch/op",
+            CancellationToken.None);
+
+        invoker.Invocations.Should().ContainSingle();
+        var args = invoker.Invocations.Single().Arguments;
+        args.Should().ContainInOrder("-e", "AWS_S3_ENDPOINT=https://object-store.example.test");
+        args.Should().ContainInOrder("-e", "AWS_HTTPS=YES");
+        args.Should().ContainInOrder("-e", "AWS_VIRTUAL_HOSTING=FALSE");
     }
 
     private sealed class FakeDockerCommandInvoker(Func<IReadOnlyList<string>, GdalCommandResult> behavior)

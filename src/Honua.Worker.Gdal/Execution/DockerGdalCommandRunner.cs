@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -41,6 +42,7 @@ internal sealed partial class DockerGdalCommandRunner(
     IDockerCommandInvoker invoker,
     IOptions<GdalContainerExecutionOptions> options,
     IOptions<GdalHardeningOptions> hardening,
+    IOptions<AwsS3Options> s3Options,
     ILogger<DockerGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
@@ -57,7 +59,8 @@ internal sealed partial class DockerGdalCommandRunner(
         var opts = options.Value;
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments));
+            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments),
+            s3Options.Value);
         var dockerArgs = BuildDockerRunArguments(opts, tool, arguments, workingDirectory, hardeningEnv);
 
         Log.DispatchingToContainer(logger, tool, opts.Image, workingDirectory);

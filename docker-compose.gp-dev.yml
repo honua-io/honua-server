@@ -148,6 +148,14 @@ services:
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # Per-job scratch root (already set in the image; pinned here for clarity).
       GdalWorker__ScratchRoot: "/tmp/honua-gdal-worker"
+      # Keep referenced /vsis3 reads on the same registered object store as the API.
+      FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
+      FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
+      FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
+      # GDAL consumes standard AWS credential variables out of band; credentials
+      # never enter the durable raster-source descriptor.
+      AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
     depends_on:
       redis:
         condition: service_healthy

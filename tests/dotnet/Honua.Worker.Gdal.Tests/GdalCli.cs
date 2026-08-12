@@ -3,6 +3,7 @@
 
 using System.Linq;
 using System.Text;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -117,6 +118,7 @@ internal static class GdalCli
     {
         var runner = new ProcessGdalCommandRunner(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+            Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
         var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)

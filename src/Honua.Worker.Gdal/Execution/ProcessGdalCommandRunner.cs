@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text;
+using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// </summary>
 internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
+    IOptions<AwsS3Options> s3Options,
     ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
 {
     /// <inheritdoc />
@@ -49,7 +51,8 @@ internal sealed partial class ProcessGdalCommandRunner(
         // environment so a value set on the worker process cannot weaken the policy.
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments));
+            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments),
+            s3Options.Value);
         foreach (var kvp in hardeningEnv)
         {
             startInfo.Environment[kvp.Key] = kvp.Value;

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -27,10 +28,15 @@ internal static class GdalRuntimeHardening
     /// invocation keeps remote VSI enabled; a pure local-scratch invocation (every
     /// untrusted-blob executor) gets the remote handlers neutralized.
     /// </param>
+    /// <param name="s3Options">
+    /// Execution-owned S3 endpoint settings projected only for trusted remote-VSI
+    /// invocations. The durable job descriptor remains limited to bucket and key.
+    /// </param>
     /// <returns>An ordered map of environment variable name to value.</returns>
     public static IReadOnlyDictionary<string, string> BuildEnvironment(
         GdalHardeningOptions options,
-        bool inputReferencesRemoteVsi)
+        bool inputReferencesRemoteVsi,
+        AwsS3Options? s3Options = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -59,7 +65,44 @@ internal static class GdalRuntimeHardening
             env["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR";
         }
 
+        if (inputReferencesRemoteVsi && s3Options is not null)
+        {
+            AddS3Environment(env, s3Options);
+        }
+
         return env;
+    }
+
+    private static void AddS3Environment(Dictionary<string, string> env, AwsS3Options options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.Region))
+        {
+            env["AWS_REGION"] = options.Region.Trim();
+        }
+
+        if (options.ForcePathStyle)
+        {
+            env["AWS_VIRTUAL_HOSTING"] = "FALSE";
+        }
+
+        if (string.IsNullOrWhiteSpace(options.ServiceUrl))
+        {
+            return;
+        }
+
+        var serviceUrl = options.ServiceUrl.Trim().TrimEnd('/');
+        if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var endpoint)
+            || (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                "FileStorage:AwsS3:ServiceUrl must be an absolute HTTP or HTTPS URL for GDAL /vsis3 access.");
+        }
+
+        // The worker image pins GDAL >= 3.11, where AWS_S3_ENDPOINT accepts a full
+        // URL. Keeping the scheme preserves the registered endpoint's transport;
+        // AWS_HTTPS is also set for clarity and compatibility with older dev CLIs.
+        env["AWS_S3_ENDPOINT"] = serviceUrl;
+        env["AWS_HTTPS"] = endpoint.Scheme == Uri.UriSchemeHttps ? "YES" : "NO";
     }
 
     /// <summary>

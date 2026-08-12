@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -301,6 +302,41 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
+    public void Hardening_TrustedVsiInvocation_ProjectsRegisteredS3Endpoint()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            new AwsS3Options
+            {
+                Region = "us-west-2",
+                ServiceUrl = "http://minio:9000/",
+                ForcePathStyle = true,
+            });
+
+        env["AWS_REGION"].Should().Be("us-west-2");
+        env["AWS_S3_ENDPOINT"].Should().Be("http://minio:9000");
+        env["AWS_HTTPS"].Should().Be("NO");
+        env["AWS_VIRTUAL_HOSTING"].Should().Be("FALSE");
+    }
+
+    [UnitTest]
+    public void Hardening_LocalInvocation_DoesNotExposeS3Endpoint()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options
+            {
+                ServiceUrl = "http://minio:9000",
+                ForcePathStyle = true,
+            });
+
+        env.Should().NotContainKey("AWS_S3_ENDPOINT");
+        env.Should().NotContainKey("AWS_VIRTUAL_HOSTING");
+    }
+
+    [UnitTest]
     public void Hardening_ArgumentsReferenceVsi_DetectsVsiPaths()
     {
         GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/vsis3/bucket/x.nc" })
@@ -350,6 +386,7 @@ public sealed class GdalUntrustedInputHardeningTests
         // GDAL_SKIP back so we can prove the runner set it on the child environment.
         var runner = new ProcessGdalCommandRunner(
             Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
 
         var (tool, args) = OperatingSystem.IsWindows()

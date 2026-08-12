@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal;
 using Honua.Worker.Gdal.Execution;
@@ -76,6 +77,23 @@ public sealed class GdalWorkerOptionsConfigBindingTests
 
         worker.AllowedRasterInputFormats.Should().BeEquivalentTo(new[] { "TIFF", "PNG", "JPEG" });
         hardening.SkipDrivers.Should().Contain("JP2OpenJPEG").And.Contain("VRT").And.Contain("NITF");
+    }
+
+    [UnitTest]
+    public void AddGdalProcessExecutors_BindsRegisteredS3EndpointForVsiReads()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["FileStorage:AwsS3:Region"] = "us-west-2",
+            ["FileStorage:AwsS3:ServiceUrl"] = "http://minio:9000",
+            ["FileStorage:AwsS3:ForcePathStyle"] = "true",
+        });
+
+        var options = provider.GetRequiredService<IOptions<AwsS3Options>>().Value;
+
+        options.Region.Should().Be("us-west-2");
+        options.ServiceUrl.Should().Be("http://minio:9000");
+        options.ForcePathStyle.Should().BeTrue();
     }
 
     private static ServiceProvider BuildProvider(IDictionary<string, string?> configValues)
