@@ -6,6 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.Server.Tests.Infrastructure.Telemetry;
@@ -353,12 +354,15 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             [sink],
             Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
             NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => new ThrowingMetadataV2GraphProvider())
+            .BuildServiceProvider();
         using var manager = new FeatureStreamSessionManager(
             Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 }),
             NullLogger<FeatureStreamSessionManager>.Instance,
             TestTelemetry.CreateFeatureStreamMetrics(),
-            metadataProvider: new ThrowingMetadataV2GraphProvider(),
-            routabilityGuard: new FeatureStreamRoutabilityGuard());
+            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
         using var session = manager.CreateSession("WebSocket", "metadata-failure");
         var publisher = new FeatureStreamPublisher(
             _store,

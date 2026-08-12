@@ -9,6 +9,7 @@ using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -639,12 +640,15 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         var snapshot = await new TestMetadataV2GraphProvider(
             new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
         var provider = new CountingMetadataV2GraphProvider(snapshot);
+        using var services = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => provider)
+            .BuildServiceProvider();
         using var manager = new FeatureStreamSessionManager(
             Options.Create(new FeatureStreamOptions()),
             NullLogger<FeatureStreamSessionManager>.Instance,
             TestTelemetry.CreateFeatureStreamMetrics(),
-            metadataProvider: provider,
-            routabilityGuard: new FeatureStreamRoutabilityGuard());
+            routabilityGuard: new FeatureStreamRoutabilityGuard(),
+            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
 
         Assert.True(await manager.RefreshRoutabilityAsync());
         Assert.True(await manager.RefreshRoutabilityAsync());
@@ -996,6 +1000,9 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         var metadataSnapshot = await new TestMetadataV2GraphProvider(
             new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
         var metadataProvider = new BlockingMetadataV2GraphProvider(metadataSnapshot);
+        using var metadataServices = new ServiceCollection()
+            .AddScoped<IMetadataV2GraphProvider>(_ => metadataProvider)
+            .BuildServiceProvider();
         using var localManager = new FeatureStreamSessionManager(
             options,
             NullLogger<FeatureStreamSessionManager>.Instance,
@@ -1006,8 +1013,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             NullLogger<FeatureStreamSessionManager>.Instance,
             TestTelemetry.CreateFeatureStreamMetrics(),
             redis,
-            metadataProvider,
-            new FeatureStreamRoutabilityGuard());
+            new FeatureStreamRoutabilityGuard(),
+            metadataServices.GetRequiredService<IServiceScopeFactory>());
         using var remoteSession = remoteManager.CreateSession("WebSocket", "ordered-remote");
 
         localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 201)));

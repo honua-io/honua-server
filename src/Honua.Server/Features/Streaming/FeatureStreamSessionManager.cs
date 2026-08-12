@@ -39,7 +39,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly ILogger<FeatureStreamSessionManager> _logger;
     private readonly FeatureStreamMetrics _metrics;
     private readonly IConnectionMultiplexer? _redis;
-    private readonly IMetadataV2GraphProvider? _metadataProvider;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
@@ -65,7 +64,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         ILogger<FeatureStreamSessionManager> logger,
         FeatureStreamMetrics metrics,
         IConnectionMultiplexer? redis = null,
-        IMetadataV2GraphProvider? metadataProvider = null,
         FeatureStreamRoutabilityGuard? routabilityGuard = null,
         IServiceScopeFactory? serviceScopeFactory = null)
     {
@@ -73,7 +71,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _redis = redis;
-        _metadataProvider = metadataProvider;
         _routabilityGuard = routabilityGuard;
         _serviceScopeFactory = serviceScopeFactory;
 
@@ -129,7 +126,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// </summary>
     public async ValueTask<bool> RefreshRoutabilityAsync(CancellationToken cancellationToken = default)
     {
-        if ((_metadataProvider is null && _serviceScopeFactory is null) || _routabilityGuard is null)
+        if (_serviceScopeFactory is null || _routabilityGuard is null)
         {
             return true;
         }
@@ -150,9 +147,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
             }
 
-            var snapshot = _serviceScopeFactory is null
-                ? await _metadataProvider!.GetCurrentAsync(cancellationToken).ConfigureAwait(false)
-                : await ReadScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await ReadScopedMetadataAsync(cancellationToken).ConfigureAwait(false);
             _routabilityGuard.Update(snapshot);
             Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
             return true;
