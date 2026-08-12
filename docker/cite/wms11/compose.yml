@@ -88,7 +88,10 @@ services:
         aliases:
           - cite.opengeospatial.org
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:80/OGCTestData/wms/1.1.1/null.xml"]
+      # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1 first and
+      # nginx only listens on IPv4 by default, so a localhost probe fails as
+      # "connection refused" and marks the stub unhealthy (validated in run 31551940430).
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:80/OGCTestData/wms/1.1.1/null.xml"]
       interval: 10s
       timeout: 5s
       retries: 5
