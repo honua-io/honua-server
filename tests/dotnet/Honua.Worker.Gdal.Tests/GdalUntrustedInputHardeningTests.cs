@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -480,12 +481,20 @@ public sealed class GdalUntrustedInputHardeningTests
             ["AZURE_STORAGE_CONNECTION_STRING"] = "ambient-azure",
             [referencedVariable] = "referenced-secret"
         };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:AwsS3:AccessKeyId"] = $"env:{referencedVariable}"
+            })
+            .Build();
         var hardeningEnvironment = GdalRuntimeHardening.BuildEnvironment(
             new GdalHardeningOptions(),
             inputReferencesRemoteVsi: false,
             new AwsS3Options
             {
-                AccessKeyId = $"env:{referencedVariable}",
+                // Mirrors PostConfigure: the option contains the resolved secret, while the raw
+                // IConfiguration value retains the referenced environment-variable name.
+                AccessKeyId = "referenced-secret",
                 SecretAccessKey = "must-not-be-forwarded"
             },
             new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" });
@@ -495,10 +504,11 @@ public sealed class GdalUntrustedInputHardeningTests
             hardeningEnvironment,
             new AwsS3Options
             {
-                AccessKeyId = $"env:{referencedVariable}",
+                AccessKeyId = "referenced-secret",
                 SecretAccessKey = "must-not-be-forwarded"
             },
-            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" });
+            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" },
+            configuration);
 
         environment.Should().ContainKey("PATH");
         environment.Should().ContainKey("GDAL_SKIP");

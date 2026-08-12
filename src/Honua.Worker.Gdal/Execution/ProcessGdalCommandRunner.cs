@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,7 +20,8 @@ internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
     IOptions<AwsS3Options> s3Options,
     IOptions<AzureBlobOptions> azureOptions,
-    ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
+    ILogger<ProcessGdalCommandRunner> logger,
+    IConfiguration? configuration = null) : IGdalCommandRunner
 {
     private static readonly string[] InheritedCloudCredentialVariables =
     [
@@ -81,7 +83,8 @@ internal sealed partial class ProcessGdalCommandRunner(
             startInfo.Environment,
             hardeningEnv,
             s3Options.Value,
-            azureOptions.Value);
+            azureOptions.Value,
+            configuration);
 
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
@@ -140,7 +143,8 @@ internal sealed partial class ProcessGdalCommandRunner(
         IDictionary<string, string?> environment,
         IReadOnlyDictionary<string, string> hardeningEnvironment,
         AwsS3Options s3Options,
-        AzureBlobOptions azureOptions)
+        AzureBlobOptions azureOptions,
+        IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(hardeningEnvironment);
@@ -151,6 +155,12 @@ internal sealed partial class ProcessGdalCommandRunner(
         AddEnvironmentReference(sensitiveNames, s3Options.AccessKeyId);
         AddEnvironmentReference(sensitiveNames, s3Options.SecretAccessKey);
         AddEnvironmentReference(sensitiveNames, azureOptions.ConnectionString);
+        if (configuration is not null)
+        {
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:AccessKeyId"]);
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:SecretAccessKey"]);
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AzureBlob:ConnectionString"]);
+        }
 
         // ProcessStartInfo starts with a copy of the worker's complete environment. Strip every
         // known cloud credential and configured env: indirection before re-adding only the values
