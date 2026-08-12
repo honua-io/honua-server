@@ -226,6 +226,7 @@ DO $tracking_behavior$
 DECLARE
     probe_layer_id CONSTANT integer := -2147483647;
     probe_objectid CONSTANT bigint := -9223372036854775807;
+    probe_public_objectid CONSTANT bigint := -9223372036854775000;
     first_change_id bigint;
     observed_changes text;
 BEGIN
@@ -234,10 +235,18 @@ BEGIN
       FROM honua.feature_changes;
 
     BEGIN
+        INSERT INTO honua.layers (layer_id, primary_key_column)
+        VALUES (probe_layer_id, 'probe_public_objectid');
         INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
-        VALUES (probe_objectid, probe_layer_id, NULL, jsonb_build_object('probe', 'insert'));
+        VALUES (
+            probe_objectid,
+            probe_layer_id,
+            NULL,
+            jsonb_build_object('probe_public_objectid', probe_public_objectid, 'probe', 'insert'));
         UPDATE honua.features
-           SET attributes = jsonb_build_object('probe', 'update')
+           SET attributes = jsonb_build_object(
+               'probe_public_objectid', probe_public_objectid,
+               'probe', 'update')
          WHERE objectid = probe_objectid;
         DELETE FROM honua.features WHERE objectid = probe_objectid;
 
@@ -250,8 +259,11 @@ BEGIN
            AND layer_id = probe_layer_id
            AND objectid = probe_objectid;
 
-        IF observed_changes IS DISTINCT FROM
-           '1:-9223372036854775807,2:-9223372036854775807,3:-9223372036854775807' THEN
+        IF observed_changes IS DISTINCT FROM format(
+            '1:%s,2:%s,3:%s',
+            probe_public_objectid,
+            probe_public_objectid,
+            probe_public_objectid) THEN
             RAISE EXCEPTION USING
                 ERRCODE = '55000',
                 MESSAGE = 'Demo STAC seed requires migration 105 feature change-tracking behavior';

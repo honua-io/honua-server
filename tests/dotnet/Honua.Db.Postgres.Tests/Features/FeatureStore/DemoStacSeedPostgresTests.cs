@@ -69,6 +69,19 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(changeStateBeforeLegacyRecovery);
 
             await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            await ExecuteAsync(dataSource, StorageObjectIdOnlyResolverSql);
+            var changeStateBeforeHostileResolverRecovery = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+            Func<Task> applyWithHostileResolver = () => ExecuteAsync(dataSource, seed);
+            var hostileResolverFailure = await applyWithHostileResolver.Should().ThrowAsync<PostgresException>();
+            hostileResolverFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("a resolver that ignores configured public IDs must roll back relation recovery");
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.metadata_v2_snapshots"))
+                .Should().Be(0, "hostile resolver behavior must not publish metadata");
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql))
+                .Should().Be(changeStateBeforeHostileResolverRecovery);
+
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
             await ExecuteAsync(dataSource, RetainedFeatureChangeSql);
             var retainedChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
             Func<Task> applyWithLostHistory = () => ExecuteAsync(dataSource, seed);
@@ -954,6 +967,19 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private const string TrackingFunctionOidSql =
         "SELECT 'honua.track_feature_changes()'::regprocedure::oid::bigint";
+
+    private const string StorageObjectIdOnlyResolverSql =
+        """
+        CREATE OR REPLACE FUNCTION honua.resolve_feature_public_objectid(
+            target_layer_id INT,
+            storage_objectid BIGINT,
+            row_attributes JSONB)
+        RETURNS BIGINT AS $$
+        BEGIN
+            RETURN storage_objectid;
+        END;
+        $$ LANGUAGE plpgsql STABLE;
+        """;
 
     private const string TriggerTypeSql =
         """
