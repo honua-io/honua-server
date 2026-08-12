@@ -455,7 +455,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         + "instead of the negotiated drawingInfo JSON. Repro: POST /ogc/styles (X-Style-Id: any, valid MapLibre body), "
         + "then GET /ogc/styles/{id} with Accept: application/vnd.esri.drawinginfo+json. "
         + "Expected: drawingInfo JSON (or 406 if unsupported for standalone styles). "
-        + "See src/Honua.Server/Features/Styling/OgcStyleProjection.cs GetCatalogStylesheetAsync.")]
+        + "Tracked by #3188. See src/Honua.Server/Features/Styling/OgcStyleProjection.cs GetCatalogStylesheetAsync.")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_StandaloneStyle_AcceptEsriDrawingInfo_ReturnsDrawingInfo()
@@ -480,7 +480,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         + "style catalog), so updating a style you just created returns 404. Repro: POST /ogc/styles with "
         + "X-Style-Id: my-style (201), then PUT /ogc/styles/my-style with a valid MapLibre body -> 404. "
         + "Expected: 204 with the catalog style updated. "
-        + "See src/Honua.Server/Features/Styling/OgcStyleProjection.cs UpdateStyleAsync.")]
+        + "Tracked by #3188. See src/Honua.Server/Features/Styling/OgcStyleProjection.cs UpdateStyleAsync.")]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
     public async Task PutStyle_StandaloneStyle_UpdatesCatalogStyle()
