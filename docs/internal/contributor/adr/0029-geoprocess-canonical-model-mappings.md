@@ -196,14 +196,16 @@ model. Must not add domain types to `Honua.Core`.
   `tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/ProcessCatalogTests.cs`
   and [the geoprocessing operations reference](../../../reference/geoprocessing-operations.md)
   as the current authoritative count and per-family breakdown, not this ADR.)
-  For heavyweight `surface.*` and
-  `raster.*` workloads this ticket adds PostGIS-backed primitives
-  (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`) that
-  serve bounded, data-resident reads behind the canonical worker boundary.
-  ADR-0071 controls GP execution: every `raster.*`/`surface.*` GP invocation
-  runs on the isolated native GDAL worker, locally or through a batch backend
-  selected by static operator configuration; these PostGIS primitives are not
-  an alternative GP execution path. The handler/executor wiring that
+  This ticket added the PostGIS-backed analysis primitives
+  `ISurfaceAnalysisService` and
+  `IRasterStore.ComputeZonalStatisticsAsync`. ADR-0071's later single-engine
+  amendment retires them from GP routing: their slope, aspect, hillshade,
+  zonal-statistics, and derived-raster behavior is analysis, not bounded
+  serving. They must remain non-routable unless a future ADR explicitly
+  supersedes the single-engine decision. Every `raster.*`/`surface.*` GP
+  invocation instead runs on the isolated native GDAL worker, locally or
+  through a batch backend selected by static operator configuration. The
+  handler/executor wiring that
   dispatches catalog entries to the GDAL worker remains follow-on work and is
   not part of this ticket, so the catalog addition still does not introduce a
   new execution surface. Destructive

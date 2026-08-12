@@ -69,9 +69,11 @@ never executes GP analysis.
 The GDAL worker runs in one of two placements — a local worker pool, or a
 remote batch backend such as AWS Batch — chosen by **static operator
 configuration**, optionally a simple size threshold (for example, "local
-under N decoded megapixels, AWS Batch above it"). Placement is deployment
-configuration set ahead of time, not a per-job planner decision, and is
-recorded on the job for observability.
+under N decoded megapixels, AWS Batch above it"). Operators configure the
+rule ahead of time. When the rule includes a threshold, a bounded admission
+router evaluates each job's decoded size against that configured threshold;
+it does not evaluate capabilities, live health, or an open-ended cost model.
+The resulting placement is recorded on the job for observability.
 
 PostGIS Raster is a **serving/storage plane and registration target only**:
 bounded, data-resident reads; persisted overviews; materialized tiles; and the
@@ -79,10 +81,10 @@ target GP outputs register into through the canonical reference/ingest
 contracts. PostGIS participates as a raster data source under the same
 reference contracts. It never claims or executes a GP job.
 
-A PostGIS fast-path may be added later, but only as an optimization behind
-the same GDAL-worker job contract — same request/response shape, same
-telemetry, same golden-fixture-pinned semantics — never as an independently
-selectable engine and never reintroducing a planner.
+Optimizations within this decision may improve PostGIS data access, serving,
+or output registration, but may not execute a raster GP operation in PostGIS.
+Any proposal to add PostGIS analysis as a second physical engine requires a
+new amendment that explicitly supersedes this single-engine decision.
 
 The canonical process definition remains independent of physical placement.
 Protocol adapters and SDKs submit the same process contract regardless of
@@ -125,16 +127,20 @@ algebra, reclassification, spectral indices, statistics, zonal statistics,
 terrain derivatives, arbitrary format decode/encode, COG construction,
 NetCDF/HDF/GRIB conversion, and large mosaics or warps — executes on the GDAL
 worker under envelope 2 or 3. There is no per-operation or per-job choice
-between PostGIS and GDAL; the operation's predicted cost only informs which
-static placement threshold it falls under, not which engine runs it.
+between PostGIS and GDAL. When operators configure a decoded-size threshold,
+that bounded measurement selects local or remote placement; it never selects
+the execution engine.
 
 ### Placement and durable record
 
-Placement (local vs. remote backend) is decided once, by static operator
-configuration, before a job is submitted — not per job, and not by a planner
-evaluating capability, cost, database health, or operator policy at dispatch
+Placement (local vs. remote backend) is decided once before a job is
+submitted. A deployment-wide or workload-specific fixed placement needs no
+per-job routing. If operators configure a decoded-size threshold, a bounded
+admission router makes the necessary per-job comparison against that static
+rule. It never chooses an engine or evaluates capabilities, live database
+health, mutable operator policy, or an open-ended cost model at dispatch
 time. Authorization and source/output accessibility are still checked before
-dispatch, and admission still fails closed if the configured backend or
+dispatch, and admission still fails closed if the selected backend or
 worker-image contract is unavailable.
 
 Every durable raster job owns an append-only sequence of attempt-scoped
@@ -142,13 +148,14 @@ records, kept for auditability and incident reconstruction rather than to
 justify a choice between engines: an immutable attempt identifier and
 current-attempt fencing token, the placement (local or the configured remote
 backend), runtime/worker-image contract version, input residency, cost
-estimate, output sink, and any applicable operator override. A new attempt —
-whether a same-placement retry or a post-failure replan — appends a new
-record; it never updates or replaces a prior one. The attempt identifier also
-scopes the executor outcome and staged artifacts so operators can reconstruct
+estimate, output sink, and any applicable operator override. A same-placement
+retry appends a new attempt record; it never updates or replaces a prior one.
+The attempt identifier also scopes the executor outcome and staged artifacts
+so operators can reconstruct
 which attempt produced each side effect. Static process catalog runtime
 profiles may declare a default placement, but there is no capability/cost
-registry and no placement-planner service evaluating that default per job.
+registry or placement-planner service. A configured threshold router performs
+only the bounded comparison described above.
 
 Numeric placement thresholds remain configuration informed by benchmark and
 production evidence. This ADR deliberately does not freeze universal values.
@@ -387,20 +394,20 @@ different result or duplicating a partially committed output.
 
 Operators configure placement statically, by workload, tenant, deployment
 profile, and resource budget — for example, "local for jobs under N decoded
-megapixels, AWS Batch above it." This is deployment configuration, not a
-per-job planner decision: it is set ahead of time, applies uniformly, and is
-recorded on each job for observability. If the configured backend is
-unavailable, admission fails closed with an actionable error rather than
-silently retrying on a different engine or weakening the gate.
+megapixels, AWS Batch above it." The placement rule is set ahead of time and
+applies uniformly. A fixed rule applies directly; a threshold rule is
+evaluated for each job by the bounded admission router and the result is
+recorded for observability. This router is not the rejected dynamic planner:
+it has no capability, cost, or health policy to optimize. If the selected
+backend is unavailable, admission fails closed with an actionable error
+rather than silently retrying on a different engine or weakening the gate.
 
 Raster semantics — NoData, grid origin and alignment, extent, CRS, pixel type
 and rounding, resampling, edge behavior, and output registration — are defined
 once, by the GDAL worker's canonical behavior, and pinned by golden-output
-fixtures. There is no second engine's semantics to reconcile against. A future
-PostGIS fast-path may be added only as an optimization that reproduces the
-GDAL worker's pinned output for the operations it covers, verified against the
-same fixtures, and only behind the same job contract — not as an
-independently selectable engine.
+fixtures. There is no second engine's semantics to reconcile against.
+PostGIS-side optimizations under this decision are limited to data access,
+serving, and registration; raster GP analysis remains on the GDAL worker.
 
 ### Raster and 3D boundary
 
@@ -439,7 +446,7 @@ ADR-0065's advanced imagery boundary to evolve independently.
 
 - Every raster GP job pays worker dispatch cost, and remote placement adds
   queue/staging/network cost; there is no PostGIS in-database shortcut for
-  data-resident work today. A future fast-path is deferred, not eliminated.
+  data-resident GP work under this decision.
 - Operators still need to choose and validate a placement threshold per
   deployment profile, even though it is static configuration rather than a
   runtime decision.
@@ -456,8 +463,8 @@ ADR-0065's advanced imagery boundary to evolve independently.
   a cross-engine semantic oracle, database raster-load governance, and a
   placement-planner subsystem whose only job was managing a choice Honua does
   not need to offer. PostGIS remains the serving/storage plane; it never
-  executes GP analysis. A PostGIS fast-path may return later strictly as an
-  optimization behind the same GDAL-worker job contract, without a planner.
+  executes GP analysis. Data-access, serving, and registration optimizations
+  do not weaken that boundary.
 - **GDAL in the web image.** Rejected because it violates the native-AOT,
   cold-start, memory, and dependency boundary.
 - **Per-job dynamic local-vs-Batch placement from a cost/health model.**
@@ -528,17 +535,18 @@ registry, or cross-engine semantic equivalence:
 - **All raster GP executes on the isolated GDAL worker.** There is no per-job
   engine selection, and PostGIS never executes GP analysis.
 - **Local vs. AWS Batch placement is static operator configuration**
-  (optionally a simple size threshold), recorded on the job for observability
-  — not a per-job planner decision.
+  (optionally a simple size threshold). A bounded admission router evaluates
+  a configured threshold per job and records the result; it is not the
+  rejected capability/cost/health planner.
 - **PostGIS Raster is a serving/storage plane and registration target only**:
   bounded, data-resident reads; persisted overviews; materialized tiles; and
   an ingest/registration target for GP outputs.
 - **Raster semantics are defined once**, by the GDAL worker's canonical
   behavior, and pinned by golden-output fixtures — there is no cross-engine
   oracle to reconcile against.
-- **A PostGIS fast-path may return later strictly as an optimization** behind
-  the same GDAL-worker job contract, without a planner or a second
-  independently selectable engine.
+- **PostGIS optimizations remain serving/storage-only.** Executing GP analysis
+  in PostGIS would introduce a second physical engine and requires a future
+  amendment that supersedes this decision.
 
 The following planner-family tickets, originally cited by this ADR's
 "Implementation and verification" section, are closed as not planned under
