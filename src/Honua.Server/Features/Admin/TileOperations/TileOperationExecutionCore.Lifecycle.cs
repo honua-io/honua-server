@@ -57,13 +57,13 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var mutationCoordinator = keyIndex as ITileCacheMutationCoordinator;
-        if (deleteBytes && mutationCoordinator is null)
+        if (mutationCoordinator is null)
         {
             return progress with
             {
                 Status = OperationStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "The tile cache index does not support fenced storage deletion; no cache entries were changed.",
+                ErrorMessage = "The tile cache index does not support fenced lifecycle mutations; no cache entries were changed.",
                 CurrentPhase = "Failed"
             };
         }
@@ -183,13 +183,14 @@ internal sealed partial class TileOperationExecutionCore
                 else
                 {
                     // Keep the bytes and quota entry, but make the hot read path treat the object as
-                    // a miss. A successful regenerated write atomically clears this marker. On a
-                    // retry, do not repeat a marker write that already succeeded in a prior attempt.
-                    if (!await keyIndex.IsExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false))
-                    {
-                        await keyIndex.MarkExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false);
-                        mutations++;
-                    }
+                    // a miss. Set-add is idempotent, so always write the marker: an expiration-read
+                    // failure must not be mistaken for prior success. Holding the same per-key fence
+                    // as RecordWriteAsync orders the marker against concurrent regeneration.
+                    await mutationCoordinator!.ExecuteSerializedAsync(
+                        entry.Key,
+                        mutationToken => keyIndex.MarkExpiredAsync(entry.Key, mutationToken),
+                        cancellationToken).ConfigureAwait(false);
+                    mutations++;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

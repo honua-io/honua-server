@@ -286,7 +286,71 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
-    public async Task Expire_AfterPartialFailure_DoesNotRecountOrRemarkPriorSuccesses()
+    public async Task Expire_DoesNotReadExpirationBeforeIdempotentMarkerWrite()
+    {
+        var index = new StatefulKeyIndex { FailExpirationReads = true };
+        index.Seed(InBoundKey, 100);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "expire",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            Substitute.For<ICloudFileStorage>());
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        index.ExpirationReadCount.Should().Be(0);
+        index.Expired.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
+    public async Task Expire_HoldsMutationFenceAgainstConcurrentWrite()
+    {
+        var markerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseMarker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var index = new StatefulKeyIndex
+        {
+            BeforeExpirationMarkerAsync = async _ =>
+            {
+                markerStarted.SetResult();
+                await releaseMarker.Task;
+            }
+        };
+        index.Seed(InBoundKey, 100);
+
+        var expireTask = ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "expire",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            Substitute.For<ICloudFileStorage>());
+        await markerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var writerEntered = false;
+        var writerTask = index.ExecuteSerializedAsync(
+            InBoundKey,
+            _ =>
+            {
+                writerEntered = true;
+                return Task.CompletedTask;
+            });
+        await Task.Delay(50);
+        writerEntered.Should().BeFalse();
+
+        releaseMarker.SetResult();
+        (await expireTask).Status.Should().Be(OperationStatus.Completed);
+        await writerTask;
+        writerEntered.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Expire_AfterPartialFailure_ReplaysIdempotentMarkersWithoutRecountingPriorSuccesses()
     {
         const string key1 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
         const string key2 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
@@ -559,6 +623,12 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public string? FailingExpirationKey { get; set; }
 
+        public bool FailExpirationReads { get; set; }
+
+        public int ExpirationReadCount { get; private set; }
+
+        public Func<CancellationToken, Task>? BeforeExpirationMarkerAsync { get; set; }
+
         public bool SnapshotAvailable { get; set; } = true;
 
         public bool RejectConditionalRemove { get; set; }
@@ -579,7 +649,15 @@ public sealed class TileCacheLifecycleExecutionTests
             => RecordAccessAsync(key, sizeBytes, cancellationToken);
 
         public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
-            => Task.FromResult(Expired.Contains(key));
+        {
+            ExpirationReadCount++;
+            if (FailExpirationReads)
+            {
+                throw new InvalidOperationException("expiration read unavailable");
+            }
+
+            return Task.FromResult(Expired.Contains(key));
+        }
 
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>(
@@ -589,19 +667,22 @@ public sealed class TileCacheLifecycleExecutionTests
             CancellationToken cancellationToken = default)
             => new(await SnapshotAsync(cancellationToken), SnapshotAvailable);
 
-        public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+        public async Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
         {
+            if (BeforeExpirationMarkerAsync is not null)
+            {
+                await BeforeExpirationMarkerAsync(cancellationToken);
+            }
+
             if (string.Equals(key, FailingExpirationKey, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("transient");
             }
 
-            if (_entries.ContainsKey(key))
+            if (_entries.ContainsKey(key) && !Expired.Contains(key))
             {
                 Expired.Add(key);
             }
-
-            return Task.CompletedTask;
         }
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
