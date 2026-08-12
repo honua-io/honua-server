@@ -247,10 +247,11 @@ public static class CogRasterHeaderProbe
 
         var entry = entries.FirstOrDefault(candidate =>
             candidate.Tag == TiffConstants.TagModelPixelScaleTag);
+        var tiepointEntry = entries.FirstOrDefault(candidate =>
+            candidate.Tag == TiffConstants.TagModelTiepointTag);
         if (entry.Tag != TiffConstants.TagModelPixelScaleTag)
         {
-            if (entries.Any(candidate =>
-                    candidate.Tag == TiffConstants.TagModelTiepointTag))
+            if (tiepointEntry.Tag == TiffConstants.TagModelTiepointTag)
             {
                 // A tiepoint without ModelPixelScale is a GCP-style transform, not an identity
                 // grid. GDAL can derive an extent that the bounded probe cannot conservatively
@@ -261,6 +262,42 @@ public static class CogRasterHeaderProbe
 
             // This mirrors GDAL's identity-grid interpretation for an unreferenced TIFF.
             return new RasterSourcePixelScale(1d, 1d);
+        }
+
+        if (tiepointEntry.Tag != TiffConstants.TagModelTiepointTag)
+        {
+            throw new InvalidDataException(
+                "TIFF ModelPixelScale georeferencing without ModelTiepoint is not supported by bounded raster admission.");
+        }
+
+        // Accept only the ordinary affine GeoTIFF form that GDAL will use as the same transform
+        // modeled by this admission probe: one finite six-DOUBLE raster-to-model tiepoint.
+        if (tiepointEntry.Type != TiffConstants.TypeDouble
+            || tiepointEntry.Count != 6
+            || tiepointEntry.IsInline)
+        {
+            throw new InvalidDataException(
+                "TIFF ModelTiepoint must contain one external six-DOUBLE tiepoint.");
+        }
+
+        const int tiepointBytes = 6 * sizeof(double);
+        var tiepointData = await probe
+            .ReadAsync(tiepointEntry.ValueOrOffset, tiepointBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (tiepointData.Length < tiepointBytes)
+        {
+            throw new InvalidDataException("TIFF ModelTiepoint data is truncated.");
+        }
+
+        for (var offset = 0; offset < tiepointBytes; offset += sizeof(double))
+        {
+            var value = parser.IsLittleEndian
+                ? BinaryPrimitives.ReadDoubleLittleEndian(tiepointData.AsSpan(offset))
+                : BinaryPrimitives.ReadDoubleBigEndian(tiepointData.AsSpan(offset));
+            if (!double.IsFinite(value))
+            {
+                throw new InvalidDataException("TIFF ModelTiepoint values must be finite numbers.");
+            }
         }
 
         // GeoTIFF ModelPixelScale is exactly three DOUBLE values. Even in BigTIFF the

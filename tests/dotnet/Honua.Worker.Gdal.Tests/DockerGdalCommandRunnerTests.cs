@@ -127,6 +127,7 @@ public sealed class DockerGdalCommandRunnerTests
 
         invoker.Invocations.Should().ContainSingle();
         var invocation = invoker.Invocations.Single();
+        invocation.Arguments.Should().ContainInOrder("--network", "bridge");
         invocation.Arguments.Should().ContainInOrder("-e", "AWS_S3_ENDPOINT");
         invocation.Arguments.Should().ContainInOrder("-e", "AWS_HTTPS");
         invocation.Arguments.Should().ContainInOrder("-e", "AWS_VIRTUAL_HOSTING");
@@ -158,9 +159,31 @@ public sealed class DockerGdalCommandRunnerTests
 
         invoker.Invocations.Should().ContainSingle();
         var invocation = invoker.Invocations.Single();
+        invocation.Arguments.Should().ContainInOrder("--network", "bridge");
         invocation.Arguments.Should().ContainInOrder("-e", "AZURE_STORAGE_CONNECTION_STRING");
         invocation.Arguments.Should().NotContain(a => a.Contains("AccountKey", StringComparison.Ordinal));
         invocation.Environment!["AZURE_STORAGE_CONNECTION_STRING"].Should().Be(connectionString);
+    }
+
+    [UnitTest]
+    public async Task RunAsync_LocalScratchInput_RetainsHermeticNetwork()
+    {
+        var invoker = new FakeDockerCommandInvoker(_ => new GdalCommandResult { ExitCode = 0 });
+        var runner = new DockerGdalCommandRunner(
+            invoker,
+            Options.Create(new GdalContainerExecutionOptions()),
+            Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()),
+            Options.Create(new AzureBlobOptions()),
+            NullLogger<DockerGdalCommandRunner>.Instance);
+
+        await runner.RunAsync(
+            "gdalwarp",
+            new[] { "/scratch/op/input.tif", "/scratch/op/out.tif" },
+            "/scratch/op",
+            CancellationToken.None);
+
+        invoker.Invocations.Single().Arguments.Should().ContainInOrder("--network", "none");
     }
 
     private sealed class FakeDockerCommandInvoker(Func<IReadOnlyList<string>, GdalCommandResult> behavior)

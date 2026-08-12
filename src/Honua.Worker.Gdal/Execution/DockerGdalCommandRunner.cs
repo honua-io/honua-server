@@ -66,7 +66,22 @@ internal sealed partial class DockerGdalCommandRunner(
             azureOptions.Value,
             GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
             GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
-        var dockerArgs = BuildDockerRunArguments(opts, tool, arguments, workingDirectory, hardeningEnv);
+        var network = referencesRemoteVsi ? opts.RemoteVsiNetwork : opts.Network;
+        if (referencesRemoteVsi
+            && (string.IsNullOrWhiteSpace(network)
+                || string.Equals(network, "none", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "GdalContainer:RemoteVsiNetwork must enable networking for trusted remote VSI inputs.");
+        }
+
+        var dockerArgs = BuildDockerRunArguments(
+            opts,
+            tool,
+            arguments,
+            workingDirectory,
+            hardeningEnv,
+            network);
 
         Log.DispatchingToContainer(logger, tool, opts.Image, workingDirectory);
         return invoker.RunAsync(opts.DockerExecutable, dockerArgs, hardeningEnv, cancellationToken);
@@ -104,7 +119,8 @@ internal sealed partial class DockerGdalCommandRunner(
         string tool,
         IReadOnlyList<string> toolArguments,
         string workspace,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null,
+        string? network = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
@@ -121,10 +137,11 @@ internal sealed partial class DockerGdalCommandRunner(
             "--rm",
         };
 
-        if (!string.IsNullOrWhiteSpace(options.Network))
+        var effectiveNetwork = network ?? options.Network;
+        if (!string.IsNullOrWhiteSpace(effectiveNetwork))
         {
             args.Add("--network");
-            args.Add(options.Network);
+            args.Add(effectiveNetwork);
         }
 
         if (!string.IsNullOrWhiteSpace(options.User))
