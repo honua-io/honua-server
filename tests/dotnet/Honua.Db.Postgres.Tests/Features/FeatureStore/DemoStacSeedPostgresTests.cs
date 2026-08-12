@@ -47,6 +47,21 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().BeNull("a missing change-tracking contract must roll back relation recovery");
 
             await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            var currentTrackingFunctionOid = await ScalarInt64Async(dataSource, TrackingFunctionOidSql);
+            await InstallMigration067ChangeTrackingFunctionAsync(dataSource);
+            (await ScalarInt64Async(dataSource, TrackingFunctionOidSql))
+                .Should().Be(currentTrackingFunctionOid, "CREATE OR REPLACE preserves the stale function OID");
+            var changeStateBeforeLegacyRecovery = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+            Func<Task> applyWithMigration067Tracker = () => ExecuteAsync(dataSource, seed);
+            var legacyFailure = await applyWithMigration067Tracker.Should().ThrowAsync<PostgresException>();
+            legacyFailure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("stale tracking behavior must roll back relation recovery");
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.metadata_v2_snapshots"))
+                .Should().Be(0, "stale tracking behavior must not publish metadata");
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql)).Should().Be(changeStateBeforeLegacyRecovery);
+
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
             await ExecuteAsync(dataSource, seed);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
@@ -65,11 +80,12 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1);
             var firstTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
+            var firstIndexOids = await ScalarStringAsync(dataSource, IndexOidsSql);
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
 
-            await ExecuteAsync(dataSource, seed);
+            await AssertHealthyRerunAvoidsSchemaDdlAsync(dataSource, seed);
 
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7, "reapplying the seed must replace, not duplicate, fixture rows");
@@ -78,6 +94,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(1, "reapplying the seed must not duplicate its migration-owned trigger");
             (await ScalarInt64Async(dataSource, TriggerOidSql))
                 .Should().Be(firstTriggerOid, "an idempotent rerun must not drop and recreate the valid trigger");
+            (await ScalarStringAsync(dataSource, IndexOidsSql))
+                .Should().Be(firstIndexOids, "a healthy rerun must retain every recovered index identity");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity, "publication ids and bindings must remain stable");
 
@@ -170,6 +188,28 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         await ExecuteAsync(dataSource, migration[contractStart..contractEnd]);
     }
 
+    private static async Task InstallMigration067ChangeTrackingFunctionAsync(NpgsqlDataSource dataSource)
+    {
+        var migrationPath = Path.Join(
+            AppContext.BaseDirectory,
+            "Migrations",
+            "067_SerializeChangeLogGenerationAllocation.sql");
+        var migration = File.ReadAllText(migrationPath);
+        var contractStart = migration.IndexOf(
+            "CREATE OR REPLACE FUNCTION honua.track_feature_changes()",
+            StringComparison.Ordinal);
+        var contractEnd = migration.IndexOf(
+            "CREATE OR REPLACE FUNCTION honua.track_version_edits()",
+            contractStart,
+            StringComparison.Ordinal);
+        if (contractStart < 0 || contractEnd < 0)
+        {
+            throw new InvalidOperationException("Migration 067 does not contain its feature tracking contract.");
+        }
+
+        await ExecuteAsync(dataSource, migration[contractStart..contractEnd]);
+    }
+
     private static async Task CreateMigrationIndexContractAsync(NpgsqlDataSource dataSource)
     {
         var statements = new List<string>();
@@ -202,9 +242,34 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     {
         await ExecuteAsync(dataSource, ChangeTrackingExerciseSql);
         (await ScalarStringAsync(dataSource, ChangeTrackingOperationsSql))
-            .Should().Be("1:990001,2:990001,3:990001");
+            .Should().Be("1:880001,2:880001,3:880001");
         (await ScalarInt64Async(dataSource, NonIncreasingChangeGenerationCountSql))
             .Should().Be(0, "insert, update, and delete generations must be strictly increasing");
+    }
+
+    private static async Task AssertHealthyRerunAvoidsSchemaDdlAsync(
+        NpgsqlDataSource dataSource,
+        string seed)
+    {
+        await using var blocker = await dataSource.OpenConnectionAsync();
+        await using var blockerTransaction = await blocker.BeginTransactionAsync();
+        await using var lockCommand = blocker.CreateCommand();
+        lockCommand.Transaction = blockerTransaction;
+        lockCommand.CommandText = "LOCK TABLE honua.features IN ROW EXCLUSIVE MODE";
+        await lockCommand.ExecuteNonQueryAsync();
+
+        try
+        {
+            var boundedSeed = seed.Replace(
+                "BEGIN;\n",
+                "BEGIN;\nSET LOCAL lock_timeout = '1s';\n",
+                StringComparison.Ordinal);
+            await ExecuteAsync(dataSource, boundedSeed);
+        }
+        finally
+        {
+            await blockerTransaction.RollbackAsync();
+        }
     }
 
     private static async Task AssertHostileTriggerRejectedAsync(NpgsqlDataSource dataSource, string seed)
@@ -328,6 +393,13 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
            AND table_relation.relname = 'features'
         """;
 
+    private const string IndexOidsSql =
+        """
+        SELECT string_agg(indexrelid::text, ',' ORDER BY indexrelid)
+          FROM pg_index
+         WHERE indrelid = 'honua.features'::regclass
+        """;
+
     private const string MigrationIndexReferenceTableSql =
         """
         CREATE SCHEMA migration_index_contract;
@@ -410,6 +482,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
            AND tgname = 'trigger_track_feature_changes'
            AND NOT tgisinternal
         """;
+
+    private const string TrackingFunctionOidSql =
+        "SELECT 'honua.track_feature_changes()'::regprocedure::oid::bigint";
 
     private const string TriggerTypeSql =
         """
@@ -519,10 +594,16 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
     private const string ChangeTrackingExerciseSql =
         """
+        INSERT INTO honua.layers (layer_id, primary_key_column)
+        VALUES (90999, 'custom_id');
         INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
-        VALUES (990001, 90999, ST_SetSRID(ST_MakePoint(-156.5, 20.8), 4326), '{"stage":"insert"}'::jsonb);
+        VALUES (
+            990001,
+            90999,
+            ST_SetSRID(ST_MakePoint(-156.5, 20.8), 4326),
+            '{"custom_id":880001,"stage":"insert"}'::jsonb);
         UPDATE honua.features
-           SET attributes = '{"stage":"update"}'::jsonb
+           SET attributes = '{"custom_id":880001,"stage":"update"}'::jsonb
          WHERE objectid = 990001 AND layer_id = 90999;
         DELETE FROM honua.features
          WHERE objectid = 990001 AND layer_id = 90999;

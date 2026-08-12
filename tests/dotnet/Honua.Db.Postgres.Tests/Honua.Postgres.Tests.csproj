@@ -36,6 +36,9 @@
     <None Include="..\..\..\src\Honua.Server\Migrations\105_AddChangeLogPublicObjectId.sql" Link="Migrations\105_AddChangeLogPublicObjectId.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\067_SerializeChangeLogGenerationAllocation.sql" Link="Migrations\067_SerializeChangeLogGenerationAllocation.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\..\..\src\Honua.Server\Migrations\001_CreateHonuaSchema.sql" Link="Migrations\001_CreateHonuaSchema.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -72,6 +72,11 @@ BEGIN
 END
 $schema_contract$;
 
+SELECT set_config(
+    'honua.seed_features_missing',
+    (to_regclass('honua.features') IS NULL)::text,
+    false);
+
 -- ---------------------------------------------------------------------------
 -- 1. Scene features in the shared honua.features table (layer_id discriminated).
 --    Geometry column is `geometry`; non-key attributes live in the `attributes`
@@ -97,52 +102,60 @@ END
 $change_tracking$;
 
 -- The metadata graph can outlive the physical demo relation across database
--- resets or partial reseeds. Recreate the migration-compatible relation before
--- publishing its binding so the seed never advertises a table that is absent.
-CREATE TABLE IF NOT EXISTS features (
-    objectid BIGSERIAL PRIMARY KEY,
-    layer_id INT NOT NULL,
-    geometry GEOMETRY,
-    attributes JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_features_layer_id ON features(layer_id);
-CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);
-CREATE INDEX IF NOT EXISTS idx_features_geography
-    ON features USING GIST ((ST_Transform(geometry, 4326)::geography));
-CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);
-CREATE INDEX IF NOT EXISTS idx_features_layer_objectid
-    ON features (layer_id, objectid);
-CREATE INDEX IF NOT EXISTS idx_features_attributes_gin
-    ON features USING GIN (attributes jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS idx_features_attributes_keys
-    ON features USING GIN ((attributes -> 'id'), (attributes -> 'objectid'), (attributes -> 'fid'));
-CREATE INDEX IF NOT EXISTS idx_features_geometry_nn
-    ON features USING GIST (geometry) WHERE geometry IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_features_geometry_3d
-    ON features USING GIST (geometry gist_geometry_ops_nd)
-    WHERE ST_NDims(geometry) > 2;
-CREATE INDEX IF NOT EXISTS idx_features_envelope
-    ON features USING GIST (ST_Envelope(geometry))
-    WHERE geometry IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_features_attr_dates
-    ON features USING BTREE ((attributes ->> 'created_date'))
-    WHERE (attributes ->> 'created_date') IS NOT NULL
-      AND (attributes ->> 'created_date') ~ '^\d{4}-\d{2}-\d{2}';
-CREATE INDEX IF NOT EXISTS idx_features_attr_timestamps
-    ON features USING BTREE ((attributes ->> 'updated_at'))
-    WHERE (attributes ->> 'updated_at') IS NOT NULL
-      AND (attributes ->> 'updated_at') ~ '^\d{4}-\d{2}-\d{2}';
-CREATE INDEX IF NOT EXISTS idx_features_temporal_attrs
-    ON features USING GIN (
-        (attributes -> 'date'),
-        (attributes -> 'created_at'),
-        (attributes -> 'updated_at'),
-        (attributes -> 'timestamp'),
-        (attributes -> 'datetime')
-    );
+-- resets or partial reseeds. Only a missing relation enters this DDL path;
+-- healthy reruns avoid CREATE TABLE/INDEX locks entirely.
+DO $feature_recovery$
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        EXECUTE $ddl$CREATE TABLE IF NOT EXISTS honua.features (
+            objectid BIGSERIAL PRIMARY KEY,
+            layer_id INT NOT NULL,
+            geometry GEOMETRY,
+            attributes JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_layer_id
+            ON honua.features(layer_id)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry
+            ON honua.features USING GIST(geometry)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geography
+            ON honua.features USING GIST ((ST_Transform(geometry, 4326)::geography))$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes
+            ON honua.features USING GIN(attributes)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_layer_objectid
+            ON honua.features (layer_id, objectid)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes_gin
+            ON honua.features USING GIN (attributes jsonb_path_ops)$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attributes_keys
+            ON honua.features USING GIN (
+                (attributes -> 'id'), (attributes -> 'objectid'), (attributes -> 'fid'))$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry_nn
+            ON honua.features USING GIST (geometry) WHERE geometry IS NOT NULL$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_geometry_3d
+            ON honua.features USING GIST (geometry gist_geometry_ops_nd)
+            WHERE ST_NDims(geometry) > 2$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_envelope
+            ON honua.features USING GIST (ST_Envelope(geometry))
+            WHERE geometry IS NOT NULL$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attr_dates
+            ON honua.features USING BTREE ((attributes ->> 'created_date'))
+            WHERE (attributes ->> 'created_date') IS NOT NULL
+              AND (attributes ->> 'created_date') ~ '^\d{4}-\d{2}-\d{2}'$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_attr_timestamps
+            ON honua.features USING BTREE ((attributes ->> 'updated_at'))
+            WHERE (attributes ->> 'updated_at') IS NOT NULL
+              AND (attributes ->> 'updated_at') ~ '^\d{4}-\d{2}-\d{2}'$ddl$;
+        EXECUTE $ddl$CREATE INDEX IF NOT EXISTS idx_features_temporal_attrs
+            ON honua.features USING GIN (
+                (attributes -> 'date'),
+                (attributes -> 'created_at'),
+                (attributes -> 'updated_at'),
+                (attributes -> 'timestamp'),
+                (attributes -> 'datetime'))$ddl$;
+    END IF;
+END
+$feature_recovery$;
 
 DO $tracking_trigger$
 DECLARE
@@ -174,6 +187,56 @@ BEGIN
     END IF;
 END
 $tracking_trigger$;
+
+-- CREATE OR REPLACE preserves a function OID, so catalog identity alone cannot
+-- distinguish migration 105 from an older tracker. Exercise the recovered
+-- attachment inside a rolled-back subtransaction and require the current
+-- public-object-id behavior before any resource is published.
+DO $tracking_behavior$
+DECLARE
+    probe_layer_id CONSTANT integer := -2147483647;
+    probe_objectid CONSTANT bigint := -9223372036854775807;
+    first_change_id bigint;
+    observed_changes text;
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        SELECT coalesce(max(change_id), 0)
+          INTO first_change_id
+          FROM honua.feature_changes;
+
+        BEGIN
+            INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
+            VALUES (probe_objectid, probe_layer_id, NULL, '{"probe":"insert"}'::jsonb);
+            UPDATE honua.features
+               SET attributes = '{"probe":"update"}'::jsonb
+             WHERE objectid = probe_objectid;
+            DELETE FROM honua.features WHERE objectid = probe_objectid;
+
+            SELECT string_agg(
+                       format('%s:%s', operation, coalesce(public_objectid::text, 'null')),
+                       ',' ORDER BY change_id)
+              INTO observed_changes
+              FROM honua.feature_changes
+             WHERE change_id > first_change_id
+               AND layer_id = probe_layer_id
+               AND objectid = probe_objectid;
+
+            IF observed_changes IS DISTINCT FROM
+               '1:-9223372036854775807,2:-9223372036854775807,3:-9223372036854775807' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = '55000',
+                    MESSAGE = 'Demo STAC seed requires migration 105 feature change-tracking behavior';
+            END IF;
+
+            RAISE EXCEPTION USING
+                ERRCODE = 'P0001',
+                MESSAGE = 'rollback demo STAC tracking probe';
+        EXCEPTION
+            WHEN SQLSTATE 'P0001' THEN NULL;
+        END;
+    END IF;
+END
+$tracking_behavior$;
 
 DELETE FROM features WHERE layer_id IN (90810, 90820);
 
