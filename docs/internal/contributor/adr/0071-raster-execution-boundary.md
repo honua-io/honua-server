@@ -1,138 +1,156 @@
-# ADR-0071: PostGIS-first, database-SLO-aware raster execution boundary
+# ADR-0071: Raster execution boundary — single GDAL-worker engine, PostGIS as serving/storage plane
 
 ## Status
 
-Accepted (2026-08). This is the controlling raster engine and placement
-decision for honua-server#3085 and honua-server#3086.
+Accepted (2026-08); amended 2026-08-11 (see Amendments). This is the
+controlling raster engine and placement decision for honua-server#3085 and
+honua-server#3086. The dual-engine, database-SLO-aware placement design this
+ADR originally adopted is superseded by the single-engine decision recorded on
+honua-server#3085 and tracked to this document by honua-server#3167; read the
+Amendments section before relying on this document's engine-selection
+language.
 
 ## Context
 
-Honua has several legitimate raster execution locations:
+Honua has a small number of raster execution locations, and only one of them
+runs GP:
 
 - the native-AOT web process can perform bounded, pure-managed COG and Zarr
   reads;
-- PostGIS Raster provides data-local serving and analysis, including operations
-  whose database implementation uses GDAL internally;
-- the managed job substrate can orchestrate asynchronous PostGIS work;
-- the native GP worker provides GDAL utilities without adding native
-  dependencies to the serving image; and
-- remote batch backends such as AWS Batch can isolate bursty, high-memory, and
-  high-scratch jobs from the database and serving fleet.
+- PostGIS Raster provides data-local serving: bounded reads, persisted
+  overviews, materialized tiles, and a registration target for GP outputs —
+  including serving-side operations whose database implementation uses GDAL
+  internally, which does not make PostGIS a GP execution engine;
+- the native GP worker is the raster execution engine: it runs every raster
+  GP job, either as a local worker pool or on a remote batch backend such as
+  AWS Batch, selected by static operator configuration rather than per job;
+  and
+- object storage exchanges large inputs, intermediate products, and outputs
+  by typed reference.
 
 Earlier decisions describe parts of this boundary. ADR-0029 introduced
 PostGIS-backed raster and surface primitives behind the canonical process
-model. ADR-0038 keeps native dependencies out of the serving image and says
-heavy spatial transforms should delegate to PostGIS. ADR-0057 says heavy raster
-GP uses the GDAL worker. Proposed ADR-0060 describes local and remote execution
-backends. Read separately, they do not decide which engine and placement the
-same canonical raster operation should use.
+model — capability, not an execution mandate. ADR-0038 keeps native
+dependencies out of the serving image. ADR-0057 says raster GP uses the GDAL
+worker. ADR-0060 describes local and remote execution backends. Read together
+they now agree on a single answer: raster GP always executes on the GDAL
+worker; PostGIS participates only as a data source and registration/serving
+target.
 
-The unresolved boundary creates four risks:
+An earlier version of this ADR instead proposed a dual-engine design — per-job
+selection between PostGIS and GDAL, and between local and remote placement,
+driven by a capability/cost registry and live database health. That design is
+rejected (2026-08-11; see Amendments) because it created four costs without a
+corresponding benefit:
 
-1. Treating "delegate to PostGIS" as permission to run unbounded analysis on
-   the primary database can damage request-serving SLOs.
-2. Treating a raster process ID as permanently native duplicates PostGIS
-   capabilities and moves database-resident data unnecessarily.
-3. Moving large raster payloads inline through the web heap and durable job
-   store defeats worker and Batch isolation.
-4. Switching engines implicitly on failure can change numerical semantics or
-   duplicate partially materialized results.
+1. It required duplicate executors for every operation implemented in both
+   PostGIS and GDAL.
+2. It required a cross-engine semantic oracle to prove the two
+   implementations agreed, and a planner to keep them from silently
+   diverging.
+3. It required database raster-load governance (a dedicated managed PostGIS
+   worker profile, admission, and health signals) purely to make PostGIS a
+   safe execution target — governance a database serving/storage plane does
+   not otherwise need.
+4. The simplest protection for the primary database's serving SLO is not
+   running raster analysis in the database at all, which a capability/cost
+   planner could only approximate.
+
+The remaining risk this ADR still resolves is moving large raster payloads
+inline through the web heap and durable job store, which defeats worker and
+Batch isolation; the reference-based artifact transport below addresses it.
 
 ## Decision
 
-Adopt **PostGIS-first for capability and data locality, database-SLO-aware for
-placement**.
+Adopt a **single raster execution engine**. All raster GP jobs execute on the
+isolated native GDAL worker. There is no per-job engine selection and PostGIS
+never executes GP analysis.
 
-PostGIS-first is a preference, not an unconditional execution rule. Honua uses
-PostGIS when the operation is supported, the inputs are data-resident or cheap
-to stage, and predicted work fits the configured database resource budget.
-Honua uses isolated native GDAL when format support, external data locality,
-scratch or memory demand, burst isolation, or protection of the database SLO
-makes it the safer engine.
+The GDAL worker runs in one of two placements — a local worker pool, or a
+remote batch backend such as AWS Batch — chosen by **static operator
+configuration**, optionally a simple size threshold (for example, "local
+under N decoded megapixels, AWS Batch above it"). Placement is deployment
+configuration set ahead of time, not a per-job planner decision, and is
+recorded on the job for observability.
 
-The canonical process definition remains independent of the physical engine.
+PostGIS Raster is a **serving/storage plane and registration target only**:
+bounded, data-resident reads; persisted overviews; materialized tiles; and the
+target GP outputs register into through the canonical reference/ingest
+contracts. PostGIS participates as a raster data source under the same
+reference contracts. It never claims or executes a GP job.
+
+A PostGIS fast-path may be added later, but only as an optimization behind
+the same GDAL-worker job contract — same request/response shape, same
+telemetry, same golden-fixture-pinned semantics — never as an independently
+selectable engine and never reintroducing a planner.
+
+The canonical process definition remains independent of physical placement.
 Protocol adapters and SDKs submit the same process contract regardless of
-whether a particular job runs in PostGIS, a local native worker, or a remote
-batch backend.
+whether a particular job runs on the local worker pool or a remote batch
+backend.
 
 ### Plane responsibilities and dependency boundary
 
 | Plane | Responsibility | Raster dependency policy |
 | --- | --- | --- |
 | Native-AOT web | Protocol adaptation, authorization, validation, metadata-only planning, bounded request execution, job submission, and bounded pure-managed COG/Zarr reads | No GDAL libraries, CLI tools, bindings, or transitive native packages |
-| PostGIS | Default engine for bounded and data-resident raster serving and analysis | PostGIS use of database-side GDAL is allowed; it does not make an otherwise unbounded job safe |
-| Managed PostGIS raster worker | Durable orchestration, cancellation, retries, and result registration for asynchronous database raster work | No local GDAL; uses a dedicated runtime profile and governed database connections |
-| Local native GP worker | Modest native-format or compute-heavy raster jobs, including on-premises and air-gapped deployments | GDAL is allowed and isolated from public ingress |
-| Remote native backend | Bursty, database-disruptive, object-store-local, high-memory, or high-scratch raster jobs | A versioned GDAL worker image runs through `IBatchComputeBackend`, including AWS Batch or another configured backend |
+| PostGIS | Serving/storage plane: bounded, data-resident raster serving and a registration target for GP outputs | Database-side GDAL is allowed for storage/serving functions only; PostGIS never executes a GP job |
+| Local native GP worker | **The** raster execution engine for local placement: format conversion and every native raster algorithm | GDAL is allowed and isolated from public ingress |
+| Remote native backend | The same GDAL worker image, for placements selected by static operator configuration (bursty, high-memory, or high-scratch profiles) | A versioned GDAL worker image runs through `IBatchComputeBackend`, including AWS Batch or another configured backend |
 | Object storage | Exchange of large immutable inputs, intermediate products, and outputs | Typed references cross process boundaries; payload bytes do not travel in durable job specifications |
 
-The serving image may issue bounded PostGIS raster queries as part of a request.
-It must not claim the dedicated asynchronous PostGIS raster profile or host a
-local GDAL execution path. Installing GDAL in the PostGIS service or native
-worker does not weaken the no-GDAL web-image invariant.
+The serving image may issue bounded PostGIS raster serving queries as part of
+a request. It must not host a local GDAL execution path. Installing GDAL in
+the PostGIS service or native worker does not weaken the no-GDAL web-image
+invariant.
 
 ### Execution envelopes
 
-Honua selects one of four execution envelopes:
+Honua selects one of three execution envelopes:
 
 1. **Bounded request execution.** Use for metadata, identify/sample, bounded
-   tiles and exports, request-sized clip/resample/reprojection, cached
-   statistics, and similarly predictable work. Database-resident operations
-   prefer PostGIS. Pure-managed COG/Zarr reads remain limited to their declared
-   bounded-serving envelopes.
-2. **Durable PostGIS execution.** Use when a supported, data-resident operation
-   should remain in PostGIS but exceeds a request budget. A dedicated managed
-   raster worker owns the job lifecycle and uses separate database admission,
-   concurrency, timeout, cancellation, and tenant controls.
-3. **Durable local native execution.** Use a GDAL worker for moderate native
-   jobs where local capacity, latency, deployment topology, or air-gapped
-   operation favors local placement.
-4. **Durable remote native execution.** Use AWS Batch or another
-   `IBatchComputeBackend` for bursty jobs, object-store-local bulk work, large
-   decoded surfaces, high or unpredictable scratch/memory, or jobs whose
-   predicted database impact would threaten the database SLO.
+   tiles and exports, request-sized clip/resample/reprojection served from
+   PostGIS, cached statistics, and similarly predictable serving work. Pure
+   managed COG/Zarr reads remain limited to their declared bounded-serving
+   envelopes. This envelope never runs raster GP algorithms.
+2. **Durable local native execution.** The GDAL worker runs on the local
+   worker pool, per static operator configuration or a size threshold.
+3. **Durable remote native execution.** The GDAL worker runs on AWS Batch or
+   another `IBatchComputeBackend`, per the same static configuration, for
+   bursty jobs, object-store-local bulk work, large decoded surfaces, or
+   high/unpredictable scratch and memory demand.
 
-Typical PostGIS-preferred operations include bounded clip/window, mosaic,
-reproject/resample, rendering functions, map algebra, reclassification,
-spectral indices, statistics, zonal statistics, and terrain derivatives when
-their inputs and predicted cost fit the database budget. This list expresses a
-capability preference, not a promise that every instance runs synchronously or
-in PostGIS.
+Every raster GP operation — clip/window, mosaic, reproject/resample, map
+algebra, reclassification, spectral indices, statistics, zonal statistics,
+terrain derivatives, arbitrary format decode/encode, COG construction,
+NetCDF/HDF/GRIB conversion, and large mosaics or warps — executes on the GDAL
+worker under envelope 2 or 3. There is no per-operation or per-job choice
+between PostGIS and GDAL; the operation's predicted cost only informs which
+static placement threshold it falls under, not which engine runs it.
 
-Typical native-preferred operations include arbitrary format decode/encode,
-COG construction, NetCDF/HDF/GRIB conversion, bulk external-object transforms,
-large mosaics or warps, and algorithms whose supported PostGIS implementation
-or semantics have not been proven. Capability and benchmark evidence, rather
-than this ADR, determines the permanent per-operation support matrix.
+### Placement and durable record
 
-### Selection and durable record
+Placement (local vs. remote backend) is decided once, by static operator
+configuration, before a job is submitted — not per job, and not by a planner
+evaluating capability, cost, database health, or operator policy at dispatch
+time. Authorization and source/output accessibility are still checked before
+dispatch, and admission still fails closed if the configured backend or
+worker-image contract is unavailable.
 
-Engine selection happens before execution and before a worker claims work that
-can mutate state. The raster execution planner uses metadata rather than raster
-payload bytes and evaluates, in order:
+Every durable raster job owns an append-only sequence of attempt-scoped
+records, kept for auditability and incident reconstruction rather than to
+justify a choice between engines: an immutable attempt identifier and
+current-attempt fencing token, the placement (local or the configured remote
+backend), runtime/worker-image contract version, input residency, cost
+estimate, output sink, and any applicable operator override. A new attempt —
+whether a same-placement retry or a post-failure replan — appends a new
+record; it never updates or replaces a prior one. The attempt identifier also
+scopes the executor outcome and staged artifacts so operators can reconstruct
+which attempt produced each side effect. Static process catalog runtime
+profiles may declare a default placement, but there is no capability/cost
+registry and no placement-planner service evaluating that default per job.
 
-1. authorization and source/output accessibility;
-2. engine capability and required algorithm semantics;
-3. input residency and staging cost;
-4. predicted decoded pixels, bands, source count, output size, memory, scratch,
-   database work, and duration;
-5. request, database, local-worker, and remote-backend budgets and health; and
-6. operator policy and backend availability.
-
-Every durable raster job owns an append-only sequence of attempt-scoped routing
-records. Before any executor attempt starts—including the initial selection, a
-same-engine retry, a pre-execution fallback, or a post-failure replan—the
-durable coordinator appends a record with an immutable attempt identifier and
-current-attempt fencing token, selected engine, placement, runtime/worker-image
-contract version, input
-residency, cost estimate, output sink, decision reason, and applicable operator
-override. A new selection or retry never updates or replaces a prior record.
-The attempt identifier also scopes the executor outcome and staged artifacts so
-operators can reconstruct which decision produced each side effect. Static
-process catalog runtime profiles may declare capabilities or defaults, but they
-are not a sufficient placement decision.
-
-Numeric routing thresholds remain configuration informed by benchmark and
+Numeric placement thresholds remain configuration informed by benchmark and
 production evidence. This ADR deliberately does not freeze universal values.
 
 ### Artifact transport
@@ -205,20 +223,18 @@ a layer.
 
 ### Failure, fallback, retry, and idempotency
 
-- A job does not silently switch engines or placement after a mutating attempt
-  starts. This includes PostGIS materialization, object publication, catalog
-  registration, and overwrite of an existing output.
-- A pre-execution fallback is allowed only when no externally visible mutation
-  occurred, the alternate engine is declared semantically compatible, policy
-  permits it, and a new attempt-scoped routing record is appended before
-  execution.
-- A post-failure change of engine is a newly planned attempt, not an internal
-  retry. Its routing record is appended rather than replacing the failed
-  attempt's record. The prior attempt remains auditable and its staged outputs
-  are either cleaned up or retained according to policy.
-- Automatic retries stay on the selected engine and placement and occur only
-  for classified retryable failures. They append a new attempt record and reuse
-  a stable idempotency key.
+- A job does not silently move to a different placement after a mutating
+  attempt starts. This includes PostGIS output materialization, object
+  publication, catalog registration, and overwrite of an existing output.
+- There is no cross-engine fallback: the GDAL worker is the only raster
+  execution engine, so a failed pre-execution admission or worker-image gate
+  fails the job rather than retrying on an alternate engine.
+- Automatic retries stay on the same worker placement and occur only for
+  classified retryable failures. A retry is a newly planned attempt, not an
+  implicit continuation: its attempt record is appended rather than replacing
+  the failed attempt's record, the prior attempt remains auditable, its
+  staged outputs are cleaned up or retained by policy, and the retry reuses a
+  stable idempotency key.
 - Every job with declared outputs owns a durable output-set manifest keyed by
   job. Before dispatch it records the complete required logical-output set and
   references each prepared sink intent. The attempt-fenced transition to
@@ -364,28 +380,27 @@ a layer.
   selected executor, and cleans uncommitted staging artifacts without deleting
   a previously committed result.
 
-These rules prevent a timeout in one engine from producing a second,
-numerically different result or duplicating a partially committed output in
-another engine.
+These rules prevent a timeout or retry from producing a second, numerically
+different result or duplicating a partially committed output.
 
-### Operator policy and semantic parity
+### Operator configuration and semantic pinning
 
-Operators may cap, prefer, deny, or force an engine or placement by workload,
-tenant, deployment profile, and resource budget. A force rule constrains
-preference and fallback; it never bypasses capability compatibility,
-authorization, input/output locality and access, semantic equivalence, or hard
-database/local/remote admission and resource budgets. If the forced choice is
-unavailable or ineligible under any hard gate, admission fails closed with an
-actionable error; Honua does not override the choice or weaken the gate
-silently. Database-health admission may promote eligible work from PostGIS to
-native execution before the attempt starts or defer it in the queue.
+Operators configure placement statically, by workload, tenant, deployment
+profile, and resource budget — for example, "local for jobs under N decoded
+megapixels, AWS Batch above it." This is deployment configuration, not a
+per-job planner decision: it is set ahead of time, applies uniformly, and is
+recorded on each job for observability. If the configured backend is
+unavailable, admission fails closed with an actionable error rather than
+silently retrying on a different engine or weakening the gate.
 
-Operations implemented by both PostGIS and GDAL share a canonical contract for
-NoData, grid origin and alignment, extent, CRS, pixel type and rounding,
-resampling, edge behavior, and output registration. Where algorithms are not
-semantically equivalent, they are distinct capabilities or require explicit
-selection; the planner must not present them as interchangeable fallback
-engines.
+Raster semantics — NoData, grid origin and alignment, extent, CRS, pixel type
+and rounding, resampling, edge behavior, and output registration — are defined
+once, by the GDAL worker's canonical behavior, and pinned by golden-output
+fixtures. There is no second engine's semantics to reconcile against. A future
+PostGIS fast-path may be added only as an optimization that reproduces the
+GDAL worker's pinned output for the operations it covers, verified against the
+same fixtures, and only behind the same job contract — not as an
+independently selectable engine.
 
 ### Raster and 3D boundary
 
@@ -407,41 +422,57 @@ ADR-0065's advanced imagery boundary to evolve independently.
 
 ### Positive
 
-- The public web image remains small, native-AOT, and free of GDAL while Honua
-  retains the breadth of PostGIS Raster and isolated GDAL.
-- Database-resident work avoids unnecessary export and transfer when it fits
-  the database budget.
-- AWS Batch and other remote backends become genuine database-protection and
-  burst-capacity mechanisms instead of universal GP destinations.
-- One canonical process can be placed differently without protocol or SDK
-  drift, and every decision remains explainable from the job record.
-- Typed references remove large raster copies from the web heap and durable job
-  store.
+- The public web image remains small, native-AOT, and free of GDAL.
+- One raster execution engine means one semantic surface: NoData, grid, CRS,
+  pixel type, resampling, and output registration are defined once, by the
+  GDAL worker, and pinned by golden-output fixtures instead of reconciled
+  across two implementations.
+- Static placement configuration is simple to reason about, audit, and change
+  without a planner subsystem; local vs. Batch stays explainable straight
+  from operator configuration and the per-job placement record.
+- Typed references remove large raster copies from the web heap and durable
+  job store.
+- PostGIS keeps its role as a fast, data-resident serving and storage plane
+  without carrying raster GP execution risk into the primary database's SLO.
 
 ### Negative
 
-- Honua must maintain capability, cost, health, and semantic evidence for more
-  than one raster engine.
-- Operators gain additional worker profiles, database governance settings, and
-  routing policy to understand.
-- Some jobs require staging between PostGIS and object storage, trading transfer
-  and storage cost for isolation.
-- Cross-engine tests and versioned worker contracts become release gates before
-  dynamic placement can be trusted broadly.
+- Every raster GP job pays worker dispatch cost, and remote placement adds
+  queue/staging/network cost; there is no PostGIS in-database shortcut for
+  data-resident work today. A future fast-path is deferred, not eliminated.
+- Operators still need to choose and validate a placement threshold per
+  deployment profile, even though it is static configuration rather than a
+  runtime decision.
+- Local and remote worker images must stay in version lockstep with the
+  golden-output fixtures that pin raster semantics; drift there is now the
+  primary raster-correctness risk instead of cross-engine parity.
 
 ## Alternatives considered
 
-- **PostGIS for every supported operation.** Rejected because supported does
-  not mean safe for the primary database under every input size or concurrency
-  level.
-- **GDAL for every GP raster operation.** Rejected because it duplicates mature
-  PostGIS capability and needlessly exports data-resident rasters.
+- **PostGIS as a raster GP execution engine, selected per job alongside
+  GDAL.** Rejected 2026-08-11. The original design chose PostGIS vs. GDAL per
+  job from a capability/cost registry informed by input residency, predicted
+  work, and live database health. That required duplicate PostGIS executors,
+  a cross-engine semantic oracle, database raster-load governance, and a
+  placement-planner subsystem whose only job was managing a choice Honua does
+  not need to offer. PostGIS remains the serving/storage plane; it never
+  executes GP analysis. A PostGIS fast-path may return later strictly as an
+  optimization behind the same GDAL-worker job contract, without a planner.
 - **GDAL in the web image.** Rejected because it violates the native-AOT,
   cold-start, memory, and dependency boundary.
-- **Always use remote Batch when configured.** Rejected because small local or
-  data-resident work pays avoidable queue, staging, and cloud costs.
-- **Automatic cross-engine fallback after failure.** Rejected because it hides
-  semantic changes and cannot safely reason about partial mutation.
+- **Per-job dynamic local-vs-Batch placement from a cost/health model.**
+  Rejected 2026-08-11 in favor of static operator configuration (optionally a
+  size threshold). Trunk reality was already effectively single-placement per
+  deployment profile; a dynamic model added a planner for a decision
+  operators can make once, ahead of time.
+- **Always dispatch to remote Batch regardless of job size.** Rejected
+  because small local or data-resident work would pay avoidable queue,
+  staging, and cloud costs; static configuration may include a simple size
+  threshold instead.
+- **Automatic engine or placement fallback after failure.** Rejected because
+  it hides semantic changes and cannot safely reason about partial mutation;
+  retries stay on the same worker and placement (see Failure, fallback,
+  retry, and idempotency above).
 
 ## Implementation and verification
 
@@ -451,19 +482,86 @@ owns policy; the following tickets own contracts and implementation:
 - serving-image and security invariants: #3087 and #3068;
 - source/output reference contracts and removal of inline COG transport: #3088,
   #3089, and #3090;
-- capability, cost, placement, and worker-profile contracts: #3091, #3092,
-  #3093, and #3094;
-- PostGIS execution and database governance: #3095, #3096, and #3097;
 - durable ingest and storage policy: #3098 and #3099;
-- cross-engine semantics and synchronous budgets: #3100 and #3101;
+- synchronous budgets and durable promotion: #3101;
 - bounded COG/Zarr paths and raster function chains: #3102, #3103, and #2438;
-- execution telemetry and orthomosaic handoff: #3104 and #3105.
+- execution telemetry (placement, artifact, and Batch-cost observability) and
+  orthomosaic handoff: #3104 and #3105.
 
-Verification must prove that a large registered COG and a PostGIS-backed raster
-can execute through an eligible AWS Batch path without raster bytes entering the
-web process or Redis; bounded data-resident operations prefer PostGIS; web and
-database admission are independent; cross-engine fixtures prevent silent
-semantic drift; and the canonical serving image contains no GDAL bytes.
+The capability/cost-registry, placement-planner, PostGIS-executor, and
+cross-engine-oracle tickets this ADR originally cited (#3091, #3092, #3093,
+#3094, #3095, #3096, #3097, and #3100) are closed as not planned under the
+2026-08-11 single-engine decision; see Amendments.
+
+Verification must prove that a large registered COG can execute through the
+local worker pool or an eligible AWS Batch path without raster bytes entering
+the web process or Redis; web and worker admission are independent;
+golden-output fixtures pin the GDAL worker's raster semantics and catch silent
+drift; static placement is recorded and observable per job; and the canonical
+serving image contains no GDAL bytes.
+
+## Amendments
+
+### 2026-08-11 — Single-engine decision (honua-io/honua-server#3085, #3167)
+
+The dual-engine design this ADR originally adopted — "PostGIS-first for
+capability and data locality, database-SLO-aware for placement," with per-job
+engine selection (PostGIS vs. GDAL) and placement (local vs. AWS Batch) chosen
+by a capability/cost-registry-driven planner — is rejected. Decision recorded
+on the parent epic (honua-server#3085):
+
+> The original epic proposed a dual-engine design — per-job engine selection
+> (PostGIS vs GDAL) and placement (local vs Batch) from a capability/cost
+> registry, input residency, predicted work, live database health, and
+> operator policy. That conditional-execution complexity is explicitly
+> rejected: it required duplicate PostGIS executors, a cross-engine semantic
+> oracle, database raster-load governance, and a planner subsystem whose only
+> job was managing a choice we do not need to offer. Trunk reality was already
+> effectively single-engine (static per-process GDAL profiles; PostGIS GP
+> primitives unconsumed), and the simplest database-SLO protection is never
+> running analysis in the database.
+
+Effective decision, replacing everything this document previously said about
+dynamic engine selection, database-SLO-aware placement, a capability/cost
+registry, or cross-engine semantic equivalence:
+
+- **All raster GP executes on the isolated GDAL worker.** There is no per-job
+  engine selection, and PostGIS never executes GP analysis.
+- **Local vs. AWS Batch placement is static operator configuration**
+  (optionally a simple size threshold), recorded on the job for observability
+  — not a per-job planner decision.
+- **PostGIS Raster is a serving/storage plane and registration target only**:
+  bounded, data-resident reads; persisted overviews; materialized tiles; and
+  an ingest/registration target for GP outputs.
+- **Raster semantics are defined once**, by the GDAL worker's canonical
+  behavior, and pinned by golden-output fixtures — there is no cross-engine
+  oracle to reconcile against.
+- **A PostGIS fast-path may return later strictly as an optimization** behind
+  the same GDAL-worker job contract, without a planner or a second
+  independently selectable engine.
+
+The following planner-family tickets, originally cited by this ADR's
+"Implementation and verification" section, are closed as not planned under
+this decision: #3091 (capability/raster-cost registry), #3092 (dynamic
+engine/placement planner), #3093 (per-job local vs. Batch selection), #3094
+(dedicated managed PostGIS raster worker profile), #3095 (surface/zonal
+PostGIS primitives wired into GP), #3096 (PostGIS executors for overlapping
+operations), #3097 (isolate/govern asynchronous database raster work), and
+#3100 (cross-engine semantic oracle).
+
+This amendment also corrects per-job engine-selection language that this
+ADR's original landing (honua-io/honua-server#3106) introduced into
+ADR-0029, ADR-0038, ADR-0057, and ADR-0060; those ADRs' own status/context
+notes have been updated to match. ADR-0031's amendments from the same PR
+describe engine-agnostic output-publication fencing (attempt records,
+compare-and-set commits, output-set manifests) and did not require
+correction — that model is unaffected by how many engines exist to produce
+an attempt's output.
+
+The durable output-publication fencing model defined above (attempt records,
+compare-and-set commits, output-set manifests, cancellation/terminalization)
+remains accurate: it governs how a single execution attempt publishes its
+result safely, independent of engine count.
 
 ## References
 
@@ -473,5 +571,6 @@ semantic drift; and the canonical serving image contains no GDAL bytes.
 - [ADR-0057: Geoprocessing Capability Boundaries](0057-geoprocessing-capability-boundaries.md)
 - [ADR-0060: Two-Plane Operability Architecture](0060-two-plane-operability-architecture.md)
 - [ADR-0065: ImageServer Photogrammetric Analytics](0065-imageserver-photogrammetric-analytics.md)
-- honua-io/honua-server#3085 - raster strategy epic
-- honua-io/honua-server#3086 - this decision
+- honua-io/honua-server#3085 - raster strategy epic; single-engine decision of record
+- honua-io/honua-server#3086 - original execution-boundary decision (amended above)
+- honua-io/honua-server#3167 - this amendment

@@ -4,12 +4,12 @@ Status: Proposed
 Date: 2026-07-04
 
 Raster specialization: [ADR-0071](0071-raster-execution-boundary.md) controls
-raster engine and placement within the execution/GP plane. A configured batch
-backend is an eligible placement, not a universal destination: bounded,
-data-resident raster work may prefer PostGIS only when its capabilities,
-data-locality, and database SLO budget all qualify, while native execution must
-likewise satisfy its capability, locality/staging, and worker-budget gates.
-Large raster inputs and outputs cross the plane by typed artifact reference.
+raster engine and placement within the execution/GP plane. As of ADR-0071's
+2026-08-11 single-engine amendment (honua-server#3085, #3167), all raster GP
+runs on the isolated GDAL worker; local vs. a configured batch backend is
+static operator configuration, not a per-job placement decision, and PostGIS
+never executes raster GP. Large raster inputs and outputs cross the plane by
+typed artifact reference.
 
 ## Context
 
@@ -33,13 +33,12 @@ Adopt a **two-plane, substrate-neutral operability architecture**: Honua owns th
 - **Serving plane (`IDeployBackend`)** — stateless request/response; rolling replace with health-gating; proxy-fronted.
 - **Execution/GP plane (`IBatchComputeBackend`)** — stateless batch jobs (inputs from store → outputs to store); submit / track / retry / cancel / collect; scheduler-fronted.
 
-For raster jobs, the execution plane includes governed durable PostGIS work as
-well as local and remote native workers. The planner defined by ADR-0071 chooses
-among them before an attempt starts. `IBatchComputeBackend` is the
-substrate-neutral dispatch seam for eligible local-process-pool and remote
-native placements; governed PostGIS execution remains behind its database
-executor rather than bypassing the planner or creating a parallel native-job
-lifecycle.
+For raster jobs, the execution plane is the isolated GDAL worker, run either
+as a local process pool or on a remote backend. ADR-0071 makes that placement
+static operator configuration, not a per-job planner decision.
+`IBatchComputeBackend` is the substrate-neutral dispatch seam for the remote
+placement; there is no governed PostGIS execution path to bypass or duplicate,
+since PostGIS never executes raster GP.
 
 ### Blue/green is NOT the primitive
 Because compute is stateless, the primitive is **(statelessness) + (a Honua-owned cutover semantic: rolling replace + health-gate + keep-old-until-healthy) + (a thin executor)** — *not* AWS/K8s-native blue/green. Coupling ops to a cloud's deployment strategy breaks on-prem/air-gapped and is unnecessary given stateless compute.

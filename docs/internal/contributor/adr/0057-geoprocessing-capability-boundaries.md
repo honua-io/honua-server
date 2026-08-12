@@ -5,9 +5,12 @@
 Accepted (2026-06)
 
 For raster processes, [ADR-0071](0071-raster-execution-boundary.md) controls
-physical engine and workload placement. "One canonical GP engine" in this ADR
-means one server-owned process contract and result semantics; it does not mean
-one physical compute engine.
+physical engine and workload placement. As of ADR-0071's 2026-08-11
+single-engine amendment (honua-server#3085, #3167), raster GP has exactly one
+physical compute engine — the isolated GDAL worker, local or AWS Batch by
+static operator configuration. "One canonical GP engine" in this ADR means one
+server-owned process contract and result semantics; for raster it now also
+means one physical compute engine.
 
 ## Context
 
@@ -95,17 +98,17 @@ GPU dependency enters the baseline image. With no backend configured the lane
 advertises itself unavailable with a clear message (no silent stub). Credentials
 resolve through the existing secure-connection/secret mechanism.
 
-### 4. Raster GP uses the selected PostGIS or isolated-native engine
+### 4. Raster GP always runs on the isolated native GDAL worker
 
 Raster/terrain GP remains a set of canonical server processes, but physical
-execution follows ADR-0071. Bounded, data-resident work prefers PostGIS when it
-fits the database resource and serving-SLO budget. External-format,
-high-scratch, bursty, or database-disruptive work uses utilities shipped in the
-native GDAL worker (`gdal_calc`, `gdal_grid`, `gdal_contour`, `gdal_proximity`,
-`gdal_viewshed`, `gdal_polygonize`/`gdal_rasterize`, `gdaldem`) locally or in a
-remote backend such as AWS Batch. Neither path adds numerical or native
-dependencies to the AOT serving image. Equivalent implementations must honor
-the shared semantics and selection record defined by ADR-0071.
+execution follows ADR-0071: every raster GP job runs on the isolated native
+GDAL worker, using utilities shipped there (`gdal_calc`, `gdal_grid`,
+`gdal_contour`, `gdal_proximity`, `gdal_viewshed`,
+`gdal_polygonize`/`gdal_rasterize`, `gdaldem`), locally or on a remote backend
+such as AWS Batch selected by static operator configuration. PostGIS never
+executes raster GP; neither path adds numerical or native dependencies to the
+AOT serving image. Raster semantics are defined once by the GDAL worker and
+pinned by the golden-output fixtures defined in ADR-0071.
 
 ## Scope Out
 
@@ -145,7 +148,7 @@ the shared semantics and selection record defined by ADR-0071.
 - [ADR-0026: AI-First Operator Contract](0026-ai-first-operator-contract.md)
 - [ADR-0029: Geoprocess Canonical Model Mappings](0029-geoprocess-canonical-model-mappings.md)
 - [ADR-0038: GeoETL Pipeline Architecture and Runtime Boundary](0038-geoetl-pipeline-architecture-and-runtime-boundary.md)
-- [ADR-0071: PostGIS-First, Database-SLO-Aware Raster Execution Boundary](0071-raster-execution-boundary.md)
+- [ADR-0071: Raster Execution Boundary — Single GDAL-Worker Engine, PostGIS as Serving/Storage Plane](0071-raster-execution-boundary.md)
 - Epic: honua-io/honua-server#1259 (port Esri GP services) — holistic plan in its comments
 - honua-io/honua-server#2239 (raster map-algebra + spectral indices), #2240
   (proximity/terrain pack), #2241 (imagery/ML cloud delegation)
