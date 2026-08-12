@@ -28,6 +28,10 @@ runs GP:
 - orthomosaic production is the explicit exception governed by ADR-0073: it
   runs only in the dedicated `photogrammetry-worker`, then hands its validated
   raster output to this ADR's registration, serving, and later-analysis path;
+- imagery classification, segmentation, and object detection are the explicit
+  ADR-0057 managed-inference exception: `imagery.classify` delegates to a
+  configured cloud inference provider, then hands any raster result to this
+  ADR's typed-artifact and registration path;
   and
 - object storage exchanges large inputs, intermediate products, and outputs
   by typed reference.
@@ -68,7 +72,8 @@ Batch isolation; the reference-based artifact transport below addresses it.
 ## Decision
 
 Adopt a **single ordinary raster-analysis execution engine**. Except for the
-dedicated orthomosaic-production capability controlled by ADR-0073, all raster
+dedicated orthomosaic-production capability controlled by ADR-0073 and the
+managed imagery/ML inference lane controlled by ADR-0057, all ordinary raster
 GP jobs execute on the isolated native GDAL worker. There is no per-job engine
 selection and PostGIS never executes GP analysis.
 
@@ -78,6 +83,13 @@ qualified `photogrammetry-worker`. Its validated output crosses back as a
 canonical typed raster artifact. Registration, serving, and any subsequent
 raster analysis of that artifact follow this decision. This exception does not
 create a second engine for the ordinary raster operations listed below.
+
+The managed-inference exception is equally narrow: classification,
+segmentation, and object detection execute through `imagery.classify` on the
+configured cloud provider. Any raster output returns as a canonical typed
+artifact; its registration, serving, and subsequent ordinary raster analysis
+follow this decision. Managed inference is not an alternate engine for the
+numerical raster/terrain operations listed below.
 
 The GDAL worker runs in one of two placements — a local worker pool, or a
 remote batch backend such as AWS Batch — chosen by **static operator
@@ -113,6 +125,7 @@ backend.
 | Local native GP worker | **The** ordinary raster-analysis execution engine for local placement: format conversion and native raster algorithms other than ADR-0073 photogrammetry | GDAL is allowed and isolated from public ingress |
 | Remote native backend | The same GDAL worker image, for placements selected by static operator configuration (bursty, high-memory, or high-scratch profiles) | A versioned GDAL worker image runs through `IBatchComputeBackend`, including AWS Batch or another configured backend |
 | Dedicated photogrammetry worker | ADR-0073 orthomosaic production only; publishes a validated canonical raster artifact back through the shared handoff | Separately qualified optional image and dependency surface; never hosted by the general GP/GDAL worker |
+| Managed imagery inference | ADR-0057 classification, segmentation, and object detection only; publishes any raster result through the shared typed-artifact handoff | Provider-hosted model runtime; never becomes an alternate numerical raster/terrain engine |
 | Object storage | Exchange of large immutable inputs, intermediate products, and outputs | Typed references cross process boundaries; payload bytes do not travel in durable job specifications |
 
 The serving image may issue bounded PostGIS raster serving queries as part of
@@ -432,6 +445,10 @@ serving, and registration; raster GP analysis remains on the GDAL worker.
   executes only in the dedicated `photogrammetry-worker`, never the general
   GP/GDAL worker. Its registered output is a canonical raster artifact;
   subsequent serving and raster analysis follow this decision.
+- Imagery classification, segmentation, and object detection are the explicit
+  ADR-0057 exception: `imagery.classify` delegates to managed cloud inference.
+  Any raster result crosses back through the typed-artifact handoff; subsequent
+  serving and ordinary raster analysis follow this decision.
 - Point clouds (LAS/LAZ/COPC), meshes, scene-layer generation, stereo feature
   matching, and general 3D reconstruction are not raster engines. They use
   separate native capability families and worker dependencies. If they produce
@@ -548,10 +565,10 @@ Effective decision, replacing everything this document previously said about
 dynamic engine selection, database-SLO-aware placement, a capability/cost
 registry, or cross-engine semantic equivalence:
 
-- **All ordinary raster analysis GP executes on the isolated GDAL worker.**
-  ADR-0073's dedicated photogrammetry runtime is the explicit orthomosaic-
-  production exception; there is no per-job engine selection, and PostGIS
-  never executes GP analysis.
+- **All ordinary non-ML raster analysis GP executes on the isolated GDAL
+  worker.** ADR-0073's dedicated photogrammetry runtime and ADR-0057's managed
+  imagery/ML inference lane are the explicit specialized-runtime exceptions;
+  there is no per-job engine selection, and PostGIS never executes GP analysis.
 - **Local vs. AWS Batch placement is static operator configuration**
   (optionally a simple size threshold). A bounded admission router evaluates
   a configured threshold per job and records the result; it is not the
