@@ -29,6 +29,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200,
+          "pattern": "\\S",
           "description": "Stable identifier, unique within the document's interactions block. bind_interaction replaces an existing interaction with the same id."
         },
         "on": {

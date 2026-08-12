@@ -115,7 +115,7 @@ internal static class StudioMcpSchemas
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
             "on": {
               "type": "object",
               "required": ["ref", "event"],
@@ -163,7 +163,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
-            "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
+            "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
           }
         }
         """;

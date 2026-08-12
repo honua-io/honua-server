@@ -436,6 +436,39 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
+    public void CompositionInteractionIdSchemas_RejectWhitespaceLikeTheHandlers()
+    {
+        var bindInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "interaction": {
+                "id": " ",
+                "on": { "ref": "map", "event": "viewportChange" },
+                "do": { "ref": "map", "verb": "setViewport" }
+              }
+            }
+            """);
+        var removeInput = JObject.Parse("""
+            {
+              "draftId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              "generation": 1,
+              "interactionId": " "
+            }
+            """);
+
+        var liveBind = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.BindInteractionArgumentSchema));
+        var liveRemove = LoadSchemaFromJson(SerializeLive(StudioMcpSchemas.RemoveInteractionArgumentSchema));
+        var standardBind = LoadSchema(Path.Join(SchemaRoot, "tools", "bind_interaction.schema.json"));
+        var standardRemove = LoadSchema(Path.Join(SchemaRoot, "tools", "remove_interaction.schema.json"));
+
+        bindInput.IsValid(liveBind).Should().BeFalse();
+        bindInput.IsValid(standardBind).Should().BeFalse();
+        removeInput.IsValid(liveRemove).Should().BeFalse();
+        removeInput.IsValid(standardRemove).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void KnownGapStandardTools_AreDocumented_AndDoNotFailOnAbsence()
     {
         // Records the standard tools Honua has NOT yet implemented as discrete
