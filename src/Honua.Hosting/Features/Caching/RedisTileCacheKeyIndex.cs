@@ -28,7 +28,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     private const string WriteVersionHashKey = "honua:tile-cache:write-version";
     private const string ExpiredSetKey = "honua:tile-cache:expired";
     private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
-    private static readonly TimeSpan MutationLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DefaultMutationLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DefaultMutationLeaseRenewalInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MutationLeaseRetryDelay = TimeSpan.FromMilliseconds(25);
     private const string SnapshotScript = """
         local ranked = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
@@ -45,11 +46,33 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
+    private readonly TimeSpan _mutationLeaseDuration;
+    private readonly TimeSpan _mutationLeaseRenewalInterval;
 
     public RedisTileCacheKeyIndex(IConnectionMultiplexer redis, ILogger<RedisTileCacheKeyIndex> logger)
+        : this(redis, logger, DefaultMutationLeaseDuration, DefaultMutationLeaseRenewalInterval)
+    {
+    }
+
+    internal RedisTileCacheKeyIndex(
+        IConnectionMultiplexer redis,
+        ILogger<RedisTileCacheKeyIndex> logger,
+        TimeSpan mutationLeaseDuration,
+        TimeSpan mutationLeaseRenewalInterval)
     {
         _redis = redis ?? throw new ArgumentNullException(nameof(redis));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseDuration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mutationLeaseRenewalInterval, TimeSpan.Zero);
+        if (mutationLeaseRenewalInterval >= mutationLeaseDuration)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mutationLeaseRenewalInterval),
+                "The mutation lease must be renewed before it expires.");
+        }
+
+        _mutationLeaseDuration = mutationLeaseDuration;
+        _mutationLeaseRenewalInterval = mutationLeaseRenewalInterval;
     }
 
     /// <inheritdoc />
@@ -286,19 +309,87 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         var database = _redis.GetDatabase();
         var leaseKey = MutationLeaseKeyPrefix + key;
         var owner = Guid.NewGuid().ToString("N");
-        while (!await database.LockTakeAsync(leaseKey, owner, MutationLeaseDuration).ConfigureAwait(false))
+        while (!await database.LockTakeAsync(leaseKey, owner, _mutationLeaseDuration).ConfigureAwait(false))
         {
             await Task.Delay(MutationLeaseRetryDelay, cancellationToken).ConfigureAwait(false);
         }
 
+        using var renewalStop = new CancellationTokenSource();
+        using var leaseLost = new CancellationTokenSource();
+        using var mutationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            leaseLost.Token);
+        var renewalTask = RenewMutationLeaseAsync(
+            database,
+            leaseKey,
+            owner,
+            leaseLost,
+            renewalStop.Token);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await mutation(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await mutation(mutationCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (
+                leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException(
+                    $"Lost the distributed tile-cache mutation lease for key '{key}'.",
+                    ex);
+            }
         }
         finally
         {
+            await renewalStop.CancelAsync().ConfigureAwait(false);
+            await renewalTask.ConfigureAwait(false);
             await database.LockReleaseAsync(leaseKey, owner).ConfigureAwait(false);
+        }
+
+        if (leaseLost.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"Lost the distributed tile-cache mutation lease for key '{key}'.");
+        }
+    }
+
+    private async Task RenewMutationLeaseAsync(
+        IDatabase database,
+        RedisKey leaseKey,
+        RedisValue owner,
+        CancellationTokenSource leaseLost,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(_mutationLeaseRenewalInterval, cancellationToken).ConfigureAwait(false);
+                bool extended;
+                try
+                {
+                    extended = await database.LockExtendAsync(leaseKey, owner, _mutationLeaseDuration)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+                {
+                    Log.MutationLeaseRenewalFailed(_logger, leaseKey.ToString()!, ex);
+                    await leaseLost.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+
+                if (!extended)
+                {
+                    Log.MutationLeaseLost(_logger, leaseKey.ToString()!);
+                    await leaseLost.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected when the serialized mutation completes or fails.
         }
     }
 
@@ -342,5 +433,11 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
 
         [LoggerMessage(EventId = 9267, Level = LogLevel.Warning, Message = "Failed to write a tile-cache expiration marker to Redis.")]
         public static partial void ExpirationWriteFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9268, Level = LogLevel.Warning, Message = "Lost Redis tile-cache mutation lease {LeaseKey} during a storage mutation.")]
+        public static partial void MutationLeaseLost(ILogger logger, string leaseKey);
+
+        [LoggerMessage(EventId = 9269, Level = LogLevel.Warning, Message = "Failed to renew Redis tile-cache mutation lease {LeaseKey}; cancelling the storage mutation.")]
+        public static partial void MutationLeaseRenewalFailed(ILogger logger, string leaseKey, Exception exception);
     }
 }
