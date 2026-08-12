@@ -16,7 +16,7 @@ This release corrects source-generated binding for options that previously used
 `init`-only properties. Explicit values under the following sections now take effect
 instead of silently retaining their defaults: `Alerts` (including delivery channels),
 `AuditLog:ChainVerification`, `AuditLog:Export:Dispatch`, `Deployment`, `Federation`,
-`Limits:Validation`, `Database:MigrationSafety`,
+`Limits:Validation`, `Database:MigrationSafety`, `Database:StartupResilience`,
 `Database:QueryCache`, `Scenes` access policies, `SecureConfiguration`,
 `Spec:CostEstimator`, `TemporaryFiles`, `TileOptions`, and
 `Geoprocessing:Workspace`.
