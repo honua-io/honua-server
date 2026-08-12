@@ -74,34 +74,29 @@ public sealed partial class ConfigurationBindingShapeTests
         }
 
         var typesByName = ParseTypes(sources);
-        var pending = new Stack<string>(boundRootNames);
+        var pending = new Stack<TypeShape>(
+            boundRootNames.SelectMany(rootName =>
+                typesByName.TryGetValue(rootName, out var rootShapes) ? rootShapes : []));
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
 
-        while (pending.TryPop(out var typeName))
+        while (pending.TryPop(out var typeShape))
         {
-            if (!visited.Add(typeName) || !typesByName.TryGetValue(typeName, out var typeShapes))
+            if (!visited.Add(typeShape.QualifiedName))
             {
                 continue;
             }
 
-            foreach (var typeShape in typeShapes)
+            foreach (var property in typeShape.Properties)
             {
-                foreach (var property in typeShape.Properties)
+                if (property.IsInitOnly)
                 {
-                    if (property.IsInitOnly)
-                    {
-                        violations.Add($"{typeShape.Path}: {typeShape.Name}.{property.Name}");
-                    }
+                    violations.Add($"{typeShape.Path}: {typeShape.QualifiedName}.{property.Name}");
+                }
 
-                    foreach (Match match in TypeIdentifierPattern().Matches(property.TypeName))
-                    {
-                        var referencedTypeName = match.Value;
-                        if (typesByName.ContainsKey(referencedTypeName))
-                        {
-                            pending.Push(referencedTypeName);
-                        }
-                    }
+                foreach (var referencedType in ResolveReferencedTypes(property.TypeName, typeShape, typesByName))
+                {
+                    pending.Push(referencedType);
                 }
             }
         }
@@ -116,47 +111,47 @@ public sealed partial class ConfigurationBindingShapeTests
     private static HashSet<string> DiscoverConfigurationBoundRoots(IEnumerable<string> sources)
     {
         var roots = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var rawSource in sources)
+        foreach (var source in sources.Select(StripCommentsAndLiterals))
         {
-            var source = StripCommentsAndLiterals(rawSource);
-
-            foreach (Match match in ChainedAddOptionsPattern().Matches(source))
+            foreach (Match match in ChainedAddOptionsPattern()
+                         .Matches(source)
+                         .Where(match => ContainsConfigurationBind(match.Groups["tail"].Value)))
             {
-                if (ContainsConfigurationBind(match.Groups["tail"].Value))
-                {
-                    roots.Add(SimpleTypeName(match.Groups["type"].Value));
-                }
+                roots.Add(SimpleTypeName(match.Groups["type"].Value));
             }
 
             var boundVariables = VariableBindPattern()
                 .Matches(source)
                 .Select(match => match.Groups["variable"].Value)
                 .ToHashSet(StringComparer.Ordinal);
-            foreach (Match match in AddOptionsVariablePattern().Matches(source))
+            foreach (Match match in AddOptionsVariablePattern()
+                         .Matches(source)
+                         .Where(match => boundVariables.Contains(match.Groups["variable"].Value)))
             {
-                if (boundVariables.Contains(match.Groups["variable"].Value))
-                {
-                    roots.Add(SimpleTypeName(match.Groups["type"].Value));
-                }
+                roots.Add(SimpleTypeName(match.Groups["type"].Value));
             }
 
-            foreach (Match match in ConfigurePattern().Matches(source))
+            foreach (var typeName in ConfigurePattern()
+                         .Matches(source)
+                         .Select(match => new
+                         {
+                             Name = SimpleTypeName(match.Groups["type"].Value),
+                             Tail = match.Groups["tail"].Value
+                         })
+                         .Where(candidate =>
+                             !string.Equals(candidate.Name, "TOptions", StringComparison.Ordinal) &&
+                             ContainsConfigurationBind(candidate.Tail))
+                         .Select(candidate => candidate.Name))
             {
-                var typeName = SimpleTypeName(match.Groups["type"].Value);
-                if (!string.Equals(typeName, "TOptions", StringComparison.Ordinal) &&
-                    ContainsConfigurationBind(match.Groups["tail"].Value))
-                {
-                    roots.Add(typeName);
-                }
+                roots.Add(typeName);
             }
 
             // GetSection(T.SectionName).Bind(instance): the section expression names the bound
             // type directly. This shape appears both standalone and inside Configure<T>(options
             // => ...) lambdas, whose delegate overload the generic scan above ignores.
-            foreach (Match match in SectionNameBindPattern().Matches(source))
-            {
-                roots.Add(SimpleTypeName(match.Groups["type"].Value));
-            }
+            roots.UnionWith(SectionNameBindPattern()
+                .Matches(source)
+                .Select(match => SimpleTypeName(match.Groups["type"].Value)));
 
             // section.Bind(local) where the local was created with `new T()` (for example the
             // provider options in AddMySqlServices). Recover T from the local's declaration.
@@ -173,13 +168,11 @@ public sealed partial class ConfigurationBindingShapeTests
                 typeNames.Add(SimpleTypeName(match.Groups["type"].Value));
             }
 
-            foreach (Match match in BindArgumentPattern().Matches(source))
-            {
-                if (newInstanceTypesByVariable.TryGetValue(match.Groups["argument"].Value, out var typeNames))
-                {
-                    roots.UnionWith(typeNames);
-                }
-            }
+            roots.UnionWith(BindArgumentPattern()
+                .Matches(source)
+                .Select(match => match.Groups["argument"].Value)
+                .Where(newInstanceTypesByVariable.ContainsKey)
+                .SelectMany(argument => newInstanceTypesByVariable[argument]));
         }
 
         return roots;
@@ -199,9 +192,15 @@ public sealed partial class ConfigurationBindingShapeTests
         IReadOnlyDictionary<string, string> sources)
     {
         var typesByName = new Dictionary<string, List<TypeShape>>(StringComparer.Ordinal);
-        foreach (var (path, rawSource) in sources)
+        foreach (var (path, source) in sources.Select(pair =>
+                     (pair.Key, Source: StripCommentsAndLiterals(pair.Value))))
         {
-            var source = StripCommentsAndLiterals(rawSource);
+            var namespaceName = NamespacePattern().Match(source).Groups["namespace"].Value;
+            var usingNamespaces = UsingNamespacePattern()
+                .Matches(source)
+                .Select(match => match.Groups["namespace"].Value)
+                .ToHashSet(StringComparer.Ordinal);
+
             foreach (Match typeMatch in TypeDeclarationPattern().Matches(source))
             {
                 var openBrace = typeMatch.Groups["brace"].Index;
@@ -213,13 +212,10 @@ public sealed partial class ConfigurationBindingShapeTests
 
                 var body = source[(openBrace + 1)..closeBrace];
                 var properties = new List<PropertyShape>();
-                foreach (Match propertyMatch in AutoPropertyPattern().Matches(body))
+                foreach (Match propertyMatch in AutoPropertyPattern()
+                             .Matches(body)
+                             .Where(propertyMatch => BraceDepthAt(body, propertyMatch.Index) == 0))
                 {
-                    if (BraceDepthAt(body, propertyMatch.Index) != 0)
-                    {
-                        continue;
-                    }
-
                     properties.Add(new PropertyShape(
                         propertyMatch.Groups["name"].Value,
                         propertyMatch.Groups["type"].Value,
@@ -236,11 +232,82 @@ public sealed partial class ConfigurationBindingShapeTests
                     typesByName.Add(typeName, shapes);
                 }
 
-                shapes.Add(new TypeShape(typeName, path, properties));
+                shapes.Add(new TypeShape(
+                    typeName,
+                    namespaceName,
+                    path,
+                    usingNamespaces,
+                    properties));
             }
         }
 
         return typesByName;
+    }
+
+    private static IEnumerable<TypeShape> ResolveReferencedTypes(
+        string propertyTypeName,
+        TypeShape declaringType,
+        IReadOnlyDictionary<string, List<TypeShape>> typesByName)
+    {
+        foreach (var candidateName in QualifiedTypeIdentifierPattern()
+                     .Matches(propertyTypeName)
+                     .Select(match => match.Value)
+                     .Distinct(StringComparer.Ordinal))
+        {
+            var simpleName = SimpleTypeName(candidateName);
+            if (!typesByName.TryGetValue(simpleName, out var shapes))
+            {
+                continue;
+            }
+
+            if (candidateName.Contains('.', StringComparison.Ordinal))
+            {
+                foreach (var shape in shapes.Where(shape =>
+                             string.Equals(shape.QualifiedName, candidateName, StringComparison.Ordinal)))
+                {
+                    yield return shape;
+                }
+
+                continue;
+            }
+
+            var sameNamespace = shapes
+                .Where(shape => string.Equals(
+                    shape.Namespace,
+                    declaringType.Namespace,
+                    StringComparison.Ordinal))
+                .ToArray();
+            if (sameNamespace.Length > 0)
+            {
+                foreach (var shape in sameNamespace)
+                {
+                    yield return shape;
+                }
+
+                continue;
+            }
+
+            var imported = shapes
+                .Where(shape => declaringType.UsingNamespaces.Contains(shape.Namespace))
+                .ToArray();
+            if (imported.Select(shape => shape.QualifiedName).Distinct(StringComparer.Ordinal).Count() == 1)
+            {
+                foreach (var shape in imported)
+                {
+                    yield return shape;
+                }
+
+                continue;
+            }
+
+            if (shapes.Select(shape => shape.QualifiedName).Distinct(StringComparer.Ordinal).Count() == 1)
+            {
+                foreach (var shape in shapes)
+                {
+                    yield return shape;
+                }
+            }
+        }
     }
 
     private static int FindMatchingBrace(string source, int openBrace)
@@ -464,8 +531,15 @@ public sealed partial class ConfigurationBindingShapeTests
 
     private sealed record TypeShape(
         string Name,
+        string Namespace,
         string Path,
-        IReadOnlyList<PropertyShape> Properties);
+        IReadOnlySet<string> UsingNamespaces,
+        IReadOnlyList<PropertyShape> Properties)
+    {
+        public string QualifiedName => string.IsNullOrEmpty(Namespace)
+            ? Name
+            : $"{Namespace}.{Name}";
+    }
 
     [GeneratedRegex(
         @"AddOptions\s*<\s*(?<type>[\w.]+)\s*>\s*\(\s*\)(?<tail>.{0,1200}?)\s*;",
@@ -506,6 +580,14 @@ public sealed partial class ConfigurationBindingShapeTests
         RegexOptions.Singleline)]
     private static partial Regex AutoPropertyPattern();
 
-    [GeneratedRegex(@"\b[A-Z][A-Za-z0-9_]*\b")]
-    private static partial Regex TypeIdentifierPattern();
+    [GeneratedRegex(@"\bnamespace\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*[;{]")]
+    private static partial Regex NamespacePattern();
+
+    [GeneratedRegex(
+        @"^\s*using\s+(?<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;",
+        RegexOptions.Multiline)]
+    private static partial Regex UsingNamespacePattern();
+
+    [GeneratedRegex(@"\b[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*\b")]
+    private static partial Regex QualifiedTypeIdentifierPattern();
 }

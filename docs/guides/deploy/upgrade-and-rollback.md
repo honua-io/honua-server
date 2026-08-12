@@ -22,10 +22,9 @@ instead of silently retaining their defaults: `Alerts` (including delivery chann
 `Geoprocessing:Workspace`.
 
 Review those values before upgrading, especially environment variables already present
-in deployment manifests. Defaults are unchanged when a key is absent. Most notably,
-deployments that already set `Alerts:Enabled=true` or `Alerts__Enabled=true` will start
-the alert evaluator and dispatcher workers after restart; remove the setting or set it
-to `false` before upgrading if activation is not intended.
+in deployment manifests. Defaults are unchanged when a key is absent. Existing
+`Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
+the nested evaluation, dispatch, delivery-channel, and operations settings.
 
 ### SensorThings API
 

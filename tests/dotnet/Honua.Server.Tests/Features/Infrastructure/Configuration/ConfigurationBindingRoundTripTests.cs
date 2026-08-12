@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Federation.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Scene;
 using Honua.Server.Features.Admin.Federation;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
@@ -111,6 +112,27 @@ public sealed class ConfigurationBindingRoundTripTests
         Assert.Equal(1000, tiles.Eviction.MaxEntries);
         Assert.NotNull(tiles.TilesetLifecycle);
         Assert.Equal(120, tiles.TilesetLifecycle["roads"].TtlSeconds);
+    }
+
+    [UnitTest]
+    public void SceneDatasetOptions_MutablePolicyShape_IsBound()
+    {
+        var configuration = BuildConfiguration(
+            ("Scenes:Datasets:0:Id", "protected-scene"),
+            ("Scenes:Datasets:0:AssetRoot", "scenes/protected"),
+            ("Scenes:Datasets:0:AccessPolicy:AllowAnonymous", "true"),
+            ("Scenes:Datasets:0:AccessPolicy:AllowedRoles:0", "scene-reader"));
+        var services = new ServiceCollection();
+        services.AddOptions<SceneDatasetOptions>()
+            .Bind(configuration.GetSection(SceneDatasetOptions.SectionName));
+
+        using var provider = services.BuildServiceProvider();
+        var entry = Assert.Single(
+            provider.GetRequiredService<IOptions<SceneDatasetOptions>>().Value.Datasets);
+
+        var accessPolicy = Assert.IsType<SceneAccessPolicyOptions>(entry.AccessPolicy);
+        Assert.True(accessPolicy.AllowAnonymous);
+        Assert.Equal(["scene-reader"], Assert.IsType<string[]>(accessPolicy.AllowedRoles));
     }
 
     private static IConfigurationRoot BuildConfiguration(
