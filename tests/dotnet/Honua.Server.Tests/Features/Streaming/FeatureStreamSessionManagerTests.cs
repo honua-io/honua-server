@@ -635,6 +635,47 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public async Task RoutabilityGuard_OlderSnapshot_DoesNotReenableRetiredRoute()
+    {
+        const string serviceName = "versioned-stream";
+        const int storageLayerId = 43;
+        var activeGraph = new TestMetadataV2GraphBuilder()
+            .WithRevision(7)
+            .AddResource("res-versioned-stream", "Versioned Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddStorageBinding(
+                "binding-versioned-stream",
+                "res-versioned-stream",
+                "test.layers.versioned_stream",
+                storageLayerId: storageLayerId)
+            .AddService("svc-versioned-stream", serviceName)
+            .AddPublication(
+                "pub-versioned-stream",
+                "svc-versioned-stream",
+                "res-versioned-stream",
+                layerIndex: 1,
+                storageBindingId: "binding-versioned-stream")
+            .Build();
+        var retiredGraph = activeGraph with
+        {
+            Revision = 8,
+            Publications = activeGraph.Publications
+                .Select(publication => publication with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired },
+                })
+                .ToArray(),
+        };
+        var activeSnapshot = await new TestMetadataV2GraphProvider(activeGraph).GetCurrentAsync();
+        var retiredSnapshot = await new TestMetadataV2GraphProvider(retiredGraph).GetCurrentAsync();
+        var guard = new FeatureStreamRoutabilityGuard();
+
+        guard.Update(retiredSnapshot);
+        guard.Update(activeSnapshot);
+
+        Assert.False(guard.IsRoutable(serviceName, storageLayerId));
+    }
+
+    [UnitTest]
     public async Task RefreshRoutability_WithinBoundedInterval_ReusesCurrentRouteSet()
     {
         var snapshot = await new TestMetadataV2GraphProvider(

@@ -43,10 +43,36 @@ internal sealed class FeatureStreamRoutabilityGuard
             }
         }
 
-        Volatile.Write(ref _state, new RoutabilityState(snapshot.Graph.Revision, routes));
+        var next = new RoutabilityState(snapshot.Graph.Revision, routes);
+        while (true)
+        {
+            var current = Volatile.Read(ref _state);
+            if (next.Revision < current.Revision)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, next, current), current))
+            {
+                return;
+            }
+        }
     }
 
-    public void Invalidate() => Volatile.Write(ref _state, RoutabilityState.Empty);
+    public void Invalidate()
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _state);
+            var invalid = new RoutabilityState(
+                current.Revision,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
+            {
+                return;
+            }
+        }
+    }
 
     public bool IsRoutable(string serviceId, int layerId)
         => Volatile.Read(ref _state).Routes.Contains(RouteKey(serviceId, layerId));
