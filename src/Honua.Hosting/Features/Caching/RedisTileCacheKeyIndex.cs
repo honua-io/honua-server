@@ -24,6 +24,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 {
     private const string LastAccessSetKey = "honua:tile-cache:lru";
     private const string SizeHashKey = "honua:tile-cache:size";
+    private const string ExpiredSetKey = "honua:tile-cache:expired";
 
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisTileCacheKeyIndex> _logger;
@@ -39,6 +40,17 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
     /// <inheritdoc />
     public async Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        => await RecordAsync(key, sizeBytes, clearExpiration: false, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        => await RecordAsync(key, sizeBytes, clearExpiration: true, cancellationToken).ConfigureAwait(false);
+
+    private async Task RecordAsync(
+        string key,
+        long sizeBytes,
+        bool clearExpiration,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(key))
         {
@@ -57,12 +69,61 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetAddAsync(LastAccessSetKey, key, score);
             _ = transaction.HashSetAsync(SizeHashKey, key, sizeBytes);
+            if (clearExpiration)
+            {
+                _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
+            }
+
             await transaction.ExecuteAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Eviction accounting must never fail a tile request.
             Log.RecordAccessFailed(_logger, ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            return await _redis.GetDatabase().SetContainsAsync(ExpiredSetKey, key).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ExpirationReadFailed(_logger, ex);
+            // Fail closed: an unavailable lifecycle index must never allow bytes that may have
+            // been explicitly expired to be served as a cache hit.
+            return true;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            await _redis.GetDatabase().SetAddAsync(ExpiredSetKey, key).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.ExpirationWriteFailed(_logger, ex);
+            throw;
         }
     }
 
@@ -135,6 +196,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
             var transaction = db.CreateTransaction();
             _ = transaction.SortedSetRemoveAsync(LastAccessSetKey, key);
             _ = transaction.HashDeleteAsync(SizeHashKey, key);
+            _ = transaction.SetRemoveAsync(ExpiredSetKey, key);
             await transaction.ExecuteAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -153,5 +215,11 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
         [LoggerMessage(EventId = 9262, Level = LogLevel.Debug, Message = "Failed to remove a key from the Redis tile-cache LRU index.")]
         public static partial void RemoveFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9266, Level = LogLevel.Debug, Message = "Failed to read a tile-cache expiration marker from Redis.")]
+        public static partial void ExpirationReadFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 9267, Level = LogLevel.Warning, Message = "Failed to write a tile-cache expiration marker to Redis.")]
+        public static partial void ExpirationWriteFailed(ILogger logger, Exception exception);
     }
 }

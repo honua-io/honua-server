@@ -13,6 +13,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -139,7 +140,7 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
-    public async Task Expire_BoundedWindow_DropsIndexWithoutDeletingBytes()
+    public async Task Expire_BoundedWindow_MarksKeysStaleWithoutDeletingBytes()
     {
         var index = new StatefulKeyIndex();
         index.Seed(InBoundKey, 100);
@@ -159,8 +160,37 @@ public sealed class TileCacheLifecycleExecutionTests
 
         result.Status.Should().Be(OperationStatus.Completed);
         result.SuccessfulTiles.Should().Be(1);
-        index.Removed.Should().BeEquivalentTo([InBoundKey]);
+        index.Expired.Should().BeEquivalentTo([InBoundKey]);
+        index.Remaining.Should().BeEquivalentTo([InBoundKey, OtherLayerKey]);
         // Expire retains the bytes: storage delete is never called.
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Delete_UnresolvedService_MatchesNoTrackedLayers()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        index.Seed(OtherLayerKey, 100);
+
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var graphProvider = new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build());
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                ServiceId = "missing-service",
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage,
+            graphProvider: graphProvider);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.SuccessfulTiles.Should().Be(0);
+        index.Remaining.Should().BeEquivalentTo([InBoundKey, OtherLayerKey]);
         await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -199,10 +229,11 @@ public sealed class TileCacheLifecycleExecutionTests
         TileOperationStartRequest request,
         ITileCacheKeyIndex keyIndex,
         ICloudFileStorage storage,
-        ITileCacheGenerationCheckpointStore? checkpointStore = null)
+        ITileCacheGenerationCheckpointStore? checkpointStore = null,
+        IMetadataV2GraphProvider? graphProvider = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
+        services.AddSingleton(graphProvider ?? Substitute.For<IMetadataV2GraphProvider>());
         services.AddSingleton(Substitute.For<ITileProvider>());
         services.AddSingleton(keyIndex);
         services.AddSingleton(storage);
@@ -241,6 +272,8 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public ConcurrentBag<string> Removed { get; } = [];
 
+        public ConcurrentBag<string> Expired { get; } = [];
+
         public bool IsEnabled => true;
 
         public IReadOnlyList<string> Remaining => [.. _entries.Keys];
@@ -253,9 +286,25 @@ public sealed class TileCacheLifecycleExecutionTests
             return Task.CompletedTask;
         }
 
+        public Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+            => RecordAccessAsync(key, sizeBytes, cancellationToken);
+
+        public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
+            => Task.FromResult(Expired.Contains(key));
+
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>(
                 [.. _entries.Select(kvp => new TileCacheEntry(kvp.Key, kvp.Value, DateTimeOffset.UtcNow))]);
+
+        public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+        {
+            if (_entries.ContainsKey(key))
+            {
+                Expired.Add(key);
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
         {

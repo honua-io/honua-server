@@ -77,14 +77,7 @@ internal sealed partial class TileOperationExecutionCore
         var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits);
 
         var snapshot = await keyIndex.SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var matched = new List<TileCacheEntry>(snapshot.Count);
-        foreach (var entry in snapshot)
-        {
-            if (window.Matches(entry.Key))
-            {
-                matched.Add(entry);
-            }
-        }
+        var matched = snapshot.Where(entry => window.Matches(entry.Key)).ToList();
 
         // Deterministic ordinal order so a resumed attempt processes the window in the same order.
         matched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
@@ -122,32 +115,41 @@ internal sealed partial class TileOperationExecutionCore
             var entry = matched[i];
 
             var release = true;
-            if (deleteBytes)
+            try
             {
-                try
+                if (deleteBytes)
                 {
                     // Storage-first ordering (mirrors TileCacheEvictionService.SweepAsync): only drop
                     // the index entry once the byte is gone, so a failed delete leaves the key tracked
                     // for a retry rather than orphaning a tile in cloud storage.
                     await storage!.DeleteAsync(entry.Key, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                else
                 {
-                    TileOperationLog.LifecycleDeleteFailed(_logger, ex);
-                    failed++;
-                    newFailedUnits.Add(TruncateUnit(entry.Key));
-                    release = false;
+                    // Keep the bytes and quota entry, but make the hot read path treat the object as
+                    // a miss. A successful regenerated write atomically clears this marker.
+                    await keyIndex.MarkExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false);
                 }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                TileOperationLog.LifecycleMutationFailed(_logger, request.Operation, ex);
+                failed++;
+                newFailedUnits.Add(TruncateUnit(entry.Key));
+                release = false;
             }
 
             if (release)
             {
-                // Delete: index drop follows the successful storage delete. Expire: drop the index
-                // entry so the tile stops counting against the LRU quota and its natural object TTL
-                // regenerates it on the next request (bytes are intentionally retained).
-                await keyIndex.RemoveAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+                if (deleteBytes)
+                {
+                    // The index drop follows the successful storage delete and also clears any prior
+                    // explicit-expiration marker for this key.
+                    await keyIndex.RemoveAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+                    bytesReleased += entry.SizeBytes;
+                }
+
                 affected++;
-                bytesReleased += entry.SizeBytes;
             }
 
             processed++;
@@ -182,7 +184,10 @@ internal sealed partial class TileOperationExecutionCore
         {
             var counter = deleteBytes ? TileOperationMetrics.TilesDeleted : TileOperationMetrics.TilesExpired;
             counter.Add(affected, new TagList { { "operation", request.Operation } });
-            TileOperationMetrics.CacheBytesReleased.Add(bytesReleased, new TagList { { "operation", request.Operation } });
+            if (deleteBytes)
+            {
+                TileOperationMetrics.CacheBytesReleased.Add(bytesReleased, new TagList { { "operation", request.Operation } });
+            }
         }
 
         TileOperationLog.LifecycleWindowCompleted(_logger, request.Operation, matched.Count, affected);
@@ -211,13 +216,13 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        // Failed deletes leave the checkpoint in place so a fix-forward retry re-snapshots the index
-        // (which still tracks the failed keys) and reprocesses only what remains under the same id.
+        // Failed mutations leave the checkpoint in place so a fix-forward retry re-snapshots the
+        // index and reprocesses only what remains under the same id.
         return current with
         {
             Status = OperationStatus.Failed,
             CompletedAt = DateTimeOffset.UtcNow,
-            ErrorMessage = $"{failed} tiles failed to delete from the cache store.",
+            ErrorMessage = $"{failed} tiles failed during cache {request.Operation}.",
             CurrentPhase = $"{request.Operation} completed with failures"
         };
     }
@@ -302,10 +307,13 @@ internal sealed partial class TileOperationExecutionCore
             IReadOnlyList<int> targetLayers,
             TileLimits tileLimits)
         {
-            // No resolvable layer (no layerId and no service publications) means the window applies
-            // to every tracked layer; otherwise it is scoped to the resolved layer set.
+            // An unscoped internal request may target every layer. A named service that does not
+            // resolve must instead match nothing; treating its empty layer set as "all layers"
+            // would turn a misspelled service id into a deployment-wide lifecycle operation.
             var layers = new HashSet<int>(targetLayers);
-            var anyLayer = layers.Count == 0;
+            var anyLayer = layers.Count == 0
+                && string.IsNullOrWhiteSpace(request.ServiceId)
+                && !request.LayerId.HasValue;
 
             var gridset = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.TileMatrixSetId) ? "WebMercatorQuad" : request.TileMatrixSetId);
             var style = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style);

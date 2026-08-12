@@ -36,6 +36,12 @@ internal static class GeoServicesCloudTileCache
 
         try
         {
+            if (keyIndex is { IsEnabled: true }
+                && await keyIndex.IsExpiredAsync(objectKey, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
             var metadata = await storage.GetMetadataAsync(objectKey, cancellationToken).ConfigureAwait(false);
             if (metadata is null ||
                 (metadata.ExpiresAt.HasValue && metadata.ExpiresAt.Value <= DateTimeOffset.UtcNow))
@@ -45,6 +51,14 @@ internal static class GeoServicesCloudTileCache
 
             var data = await storage.DownloadBytesAsync(objectKey, cancellationToken).ConfigureAwait(false);
             if (data is not { Length: > 0 })
+            {
+                return null;
+            }
+
+            // Close the read/download race with an operator expiration. A marker created while
+            // object storage was being read must still turn this request into a cache miss.
+            if (keyIndex is { IsEnabled: true }
+                && await keyIndex.IsExpiredAsync(objectKey, cancellationToken).ConfigureAwait(false))
             {
                 return null;
             }
@@ -95,7 +109,7 @@ internal static class GeoServicesCloudTileCache
         try
         {
             using var stream = new MemoryStream(data, writable: false);
-            _ = await storage.UploadAsync(new FileUploadRequest
+            var upload = await storage.UploadAsync(new FileUploadRequest
             {
                 Content = stream,
                 FileName = fileName,
@@ -107,10 +121,15 @@ internal static class GeoServicesCloudTileCache
                 EnableChunkedUpload = false
             }, cancellationToken).ConfigureAwait(false);
 
+            if (!upload.Success)
+            {
+                return;
+            }
+
             // Newly stored tile: record it in the live LRU index so the evictor can quota-manage it (#1917).
             if (keyIndex is { IsEnabled: true })
             {
-                await keyIndex.RecordAccessAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
+                await keyIndex.RecordWriteAsync(objectKey, data.LongLength, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

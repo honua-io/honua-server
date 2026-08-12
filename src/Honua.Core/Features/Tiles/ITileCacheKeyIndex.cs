@@ -40,6 +40,30 @@ public interface ITileCacheKeyIndex
     Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Records a newly written tile and clears any explicit-expiration marker for the key.
+    /// </summary>
+    /// <param name="key">The tile cache key (the storage object key).</param>
+    /// <param name="sizeBytes">The stored tile size in bytes.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns whether an operator explicitly expired the key. The tile read path treats an
+    /// expired key as a miss even while its bytes remain in object storage.
+    /// </summary>
+    /// <param name="key">The tile cache key (the storage object key).</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks a key expired without deleting its stored bytes. A subsequent successful cache write
+    /// clears the marker through <see cref="RecordWriteAsync"/>.
+    /// </summary>
+    /// <param name="key">The tile cache key (the storage object key).</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Snapshots the current index as a set of <see cref="TileCacheEntry" /> records for the evictor
     /// to feed into <see cref="TileCacheQuotaPolicy.SelectEvictions" />.
     /// </summary>

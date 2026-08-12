@@ -64,9 +64,9 @@ internal static partial class TileOperationLog
     [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Bounded tile-cache {Operation} matched {Matched} tracked tile(s) and affected {Affected} in the requested window.")]
     public static partial void LifecycleWindowCompleted(ILogger logger, string operation, int matched, long affected);
 
-    [LoggerMessage(EventId = 9222, Level = LogLevel.Warning, Message = "Failed to delete a generated cache tile from the cloud tile store during a bounded delete; it remains tracked for a retry.")]
-    public static partial void LifecycleDeleteFailed(ILogger logger, Exception exception);
-
     [LoggerMessage(EventId = 9223, Level = LogLevel.Information, Message = "Bounded tile-cache {Operation} skipped: no live tile-key index is available, so no generated tiles are tracked to act on.")]
     public static partial void LifecycleIndexUnavailable(ILogger logger, string operation);
+
+    [LoggerMessage(EventId = 9224, Level = LogLevel.Warning, Message = "Failed to apply bounded tile-cache {Operation} mutation; the tile remains available for a retry.")]
+    public static partial void LifecycleMutationFailed(ILogger logger, string operation, Exception exception);
 }

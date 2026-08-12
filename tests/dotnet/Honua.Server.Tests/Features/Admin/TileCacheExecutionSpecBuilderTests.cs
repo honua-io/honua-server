@@ -208,6 +208,28 @@ public sealed class TileCacheExecutionSpecBuilderTests
     }
 
     [UnitTest]
+    public void BuildAndTryParse_DefaultTileMatrixSet_ForDurableJobs()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 8
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.TileMatrixSetId].Should().Be("WebMercatorQuad");
+
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "delete",
+            [TileCacheJobParameterKeys.LayerId] = "8"
+        };
+        TileCacheExecutionSpecBuilder.TryParse(parameters, out var decoded, out _, out var error).Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
+    }
+
+    [UnitTest]
     public void BuildPartitionKey_EncodesServiceGridsetStyle()
     {
         TileCacheExecutionSpecBuilder.BuildPartitionKey(new TileOperationStartRequest

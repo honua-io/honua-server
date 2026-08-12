@@ -19399,6 +19399,54 @@
         }
       }
     },
+    "/tile-operations/cache/inventory": {
+      "get": {
+        "tags": [
+          "Tile Operations"
+        ],
+        "summary": "Inventory Generated Tile Cache",
+        "description": "Returns tracked generated-tile counts, bytes, and per-zoom coverage. Optional service and gridset filters bound the inventory without scanning object storage.",
+        "operationId": "getTileCacheInventory",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Service whose published layers scope the inventory.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gridset",
+            "in": "query",
+            "required": false,
+            "description": "Tile matrix set identifier used to scope the inventory.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated tile-cache inventory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TileCacheInventoryResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/connections/{id}/tables/validate": {
       "post": {
         "tags": [
@@ -45319,6 +45367,70 @@
           },
           "Message": {
             "type": "string"
+          }
+        }
+      },
+      "TileCacheInventoryResult": {
+        "type": "object",
+        "description": "Response property names are PascalCase.",
+        "required": [
+          "Enabled",
+          "EntryCount",
+          "TotalBytes",
+          "PerZoom"
+        ],
+        "properties": {
+          "Enabled": {
+            "type": "boolean",
+            "description": "Whether a live tile-key index was available."
+          },
+          "ServiceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "Gridset": {
+            "type": "string",
+            "nullable": true
+          },
+          "EntryCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "TotalBytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "PerZoom": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TileCacheZoomCoverage"
+            }
+          }
+        }
+      },
+      "TileCacheZoomCoverage": {
+        "type": "object",
+        "required": [
+          "Zoom",
+          "Count",
+          "Bytes"
+        ],
+        "properties": {
+          "Zoom": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "Bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },

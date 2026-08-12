@@ -16,6 +16,8 @@ namespace Honua.Server.Features.Admin.TileOperations;
 /// </summary>
 internal static class TileCacheExecutionSpecBuilder
 {
+    private const string DefaultTileMatrixSetId = "WebMercatorQuad";
+
     /// <summary>
     /// Builds the execution-job spec for <paramref name="request"/>, encoding every
     /// behavior-changing tile parameter onto <see cref="ExecutionJobSpec.Parameters"/>.
@@ -44,10 +46,9 @@ internal static class TileCacheExecutionSpecBuilder
                 request.LayerId.Value.ToString(CultureInfo.InvariantCulture);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.TileMatrixSetId))
-        {
-            parameters[TileCacheJobParameterKeys.TileMatrixSetId] = request.TileMatrixSetId;
-        }
+        parameters[TileCacheJobParameterKeys.TileMatrixSetId] = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+            ? DefaultTileMatrixSetId
+            : request.TileMatrixSetId;
 
         if (request.MinZoom.HasValue)
         {
@@ -236,7 +237,7 @@ internal static class TileCacheExecutionSpecBuilder
             LayerId = layerId,
             MinZoom = minZoom,
             MaxZoom = maxZoom,
-            TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? null : tileMatrixSetId,
+            TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? DefaultTileMatrixSetId : tileMatrixSetId,
             Bbox = bbox,
             MaxTiles = maxTiles,
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
@@ -259,7 +260,7 @@ internal static class TileCacheExecutionSpecBuilder
 
         var serviceSegment = string.IsNullOrWhiteSpace(request.ServiceId) ? "_" : request.ServiceId.Trim();
         var gridsetSegment = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
-            ? "WebMercatorQuad"
+            ? DefaultTileMatrixSetId
             : request.TileMatrixSetId.Trim();
         var styleSegment = string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style.Trim();
 

@@ -141,6 +141,15 @@ public sealed class TileCacheEvictionServiceTests
         public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>([.. _entries]);
 
