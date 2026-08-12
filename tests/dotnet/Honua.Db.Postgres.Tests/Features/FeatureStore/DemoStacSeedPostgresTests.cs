@@ -120,7 +120,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             await ExecuteAsync(dataSource, seed);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
-                .Should().Be("honua.features");
+                .Should().NotBeNull("the recovered relation must exist regardless of regclass display qualification");
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7);
             (await ScalarInt64Async(dataSource, RequiredIndexesSql))
