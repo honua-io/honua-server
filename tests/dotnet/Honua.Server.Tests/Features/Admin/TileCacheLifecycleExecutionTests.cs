@@ -96,6 +96,28 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Expire_WhenSnapshottedEntryWasRemoved_DoesNotCreateOrphanMarker()
+    {
+        var index = new StatefulKeyIndex { RejectConditionalRemove = true };
+        index.Seed(InBoundKey, 100);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "expire",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            Substitute.For<ICloudFileStorage>());
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.TotalTiles.Should().Be(0);
+        result.SuccessfulTiles.Should().Be(0);
+        index.Expired.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Delete_MaxTiles_TruncatesDeterministicWindowAndReportsWarning()
     {
         const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";

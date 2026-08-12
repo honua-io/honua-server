@@ -145,6 +145,11 @@ internal static class GeoServicesCloudTileCache
                     return;
                 }
 
+                // Providers stamp the authoritative expiration after the upload completes (for
+                // example, local storage does so after copying the content). Prefer that value so
+                // Redis never prunes lifecycle state while the stored object is still valid.
+                var recordedExpiresAt = upload.File?.ExpiresAt ?? expiresAt;
+
                 // Newly stored tile: record it in the live LRU index so the evictor can
                 // quota-manage it and lifecycle deletion can fence this exact write.
                 if (keyIndex is { IsEnabled: true })
@@ -152,7 +157,7 @@ internal static class GeoServicesCloudTileCache
                     await keyIndex.RecordWriteAsync(
                         objectKey,
                         data.LongLength,
-                        expiresAt,
+                        recordedExpiresAt,
                         tenantScope,
                         mutationToken).ConfigureAwait(false);
                 }

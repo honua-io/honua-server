@@ -39,8 +39,19 @@ public sealed class GeoServicesCloudTileCacheTests
     public async Task TryWriteAsync_SuccessfulRegeneration_RecordsWriteToClearExpiration()
     {
         var storage = Substitute.For<ICloudFileStorage>();
+        var storedExpiresAt = DateTimeOffset.UtcNow.AddHours(3);
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new UploadResult { Success = true });
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = ObjectKey,
+                FileName = "1.png",
+                StoragePath = ObjectKey,
+                ContentType = "image/png",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = storedExpiresAt,
+                Provider = CloudStorageProvider.Local
+            }));
         var keyIndex = Substitute.For<ITileCacheKeyIndex>();
         keyIndex.IsEnabled.Returns(true);
         var data = new byte[] { 1, 2, 3 };
@@ -60,7 +71,7 @@ public sealed class GeoServicesCloudTileCacheTests
         await keyIndex.Received(1).RecordWriteAsync(
             ObjectKey,
             data.LongLength,
-            Arg.Any<DateTimeOffset>(),
+            storedExpiresAt,
             "tenant_a",
             Arg.Any<CancellationToken>());
     }

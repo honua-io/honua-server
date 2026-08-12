@@ -173,6 +173,7 @@ internal sealed partial class TileOperationExecutionCore
         var failed = 0L;
         var bytesReleased = 0L;
         var mutations = 0L;
+        var excluded = 0L;
         var newFailedUnits = deleteBytes
             ? new HashSet<string>(pendingDeleteUnits, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
@@ -253,13 +254,26 @@ internal sealed partial class TileOperationExecutionCore
                     // failure must not be mistaken for prior success. Holding the same per-key fence
                     // as RecordWriteAsync orders the marker against concurrent regeneration.
                     var markerAdded = false;
+                    var entryStillCurrent = false;
                     await mutationCoordinator!.ExecuteSerializedAsync(
                         entry.Key,
                         async mutationToken =>
                         {
+                            if (!await mutationCoordinator.IsCurrentAsync(entry, mutationToken).ConfigureAwait(false))
+                            {
+                                return;
+                            }
+
+                            entryStillCurrent = true;
                             markerAdded = await keyIndex.MarkExpiredAsync(entry.Key, mutationToken).ConfigureAwait(false);
                         },
                         cancellationToken).ConfigureAwait(false);
+                    if (!entryStillCurrent)
+                    {
+                        excluded++;
+                        release = false;
+                    }
+
                     if (markerAdded)
                     {
                         mutations++;
@@ -292,6 +306,7 @@ internal sealed partial class TileOperationExecutionCore
                 current = current with
                 {
                     ProcessedTiles = affected + failed,
+                    TotalTiles = total - excluded,
                     SuccessfulTiles = affected,
                     FailedTiles = failed,
                     ArchiveSizeBytes = bytesReleased,
@@ -328,6 +343,7 @@ internal sealed partial class TileOperationExecutionCore
 
         current = current with
         {
+            TotalTiles = total - excluded,
             ProcessedTiles = affected + failed,
             SuccessfulTiles = affected,
             FailedTiles = failed,
