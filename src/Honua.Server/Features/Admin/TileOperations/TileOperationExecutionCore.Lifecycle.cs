@@ -95,10 +95,15 @@ internal sealed partial class TileOperationExecutionCore
 
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
         var total = (long)matched.Count;
-        var affected = checkpoint?.CompletedUnitCount ?? 0L;
+        // The snapshot is the complete accounting window for this attempt. Delete retries no
+        // longer contain successfully removed keys, while expire retries still contain already
+        // expired keys; carrying the prior checkpoint count into either snapshot would make the
+        // reported and metered success count exceed TotalTiles.
+        var affected = 0L;
         var processed = 0L;
         var failed = 0L;
         var bytesReleased = 0L;
+        var mutations = 0L;
         var newFailedUnits = new HashSet<string>(StringComparer.Ordinal);
 
         var current = progress with
@@ -127,8 +132,13 @@ internal sealed partial class TileOperationExecutionCore
                 else
                 {
                     // Keep the bytes and quota entry, but make the hot read path treat the object as
-                    // a miss. A successful regenerated write atomically clears this marker.
-                    await keyIndex.MarkExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+                    // a miss. A successful regenerated write atomically clears this marker. On a
+                    // retry, do not repeat a marker write that already succeeded in a prior attempt.
+                    if (!await keyIndex.IsExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false))
+                    {
+                        await keyIndex.MarkExpiredAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+                        mutations++;
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -147,6 +157,7 @@ internal sealed partial class TileOperationExecutionCore
                     // explicit-expiration marker for this key.
                     await keyIndex.RemoveAsync(entry.Key, cancellationToken).ConfigureAwait(false);
                     bytesReleased += entry.SizeBytes;
+                    mutations++;
                 }
 
                 affected++;
@@ -180,10 +191,10 @@ internal sealed partial class TileOperationExecutionCore
             }
         }
 
-        if (affected > 0)
+        if (mutations > 0)
         {
             var counter = deleteBytes ? TileOperationMetrics.TilesDeleted : TileOperationMetrics.TilesExpired;
-            counter.Add(affected, new TagList { { "operation", request.Operation } });
+            counter.Add(mutations, new TagList { { "operation", request.Operation } });
             if (deleteBytes)
             {
                 TileOperationMetrics.CacheBytesReleased.Add(bytesReleased, new TagList { { "operation", request.Operation } });
@@ -317,7 +328,7 @@ internal sealed partial class TileOperationExecutionCore
 
             var gridset = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.TileMatrixSetId) ? "WebMercatorQuad" : request.TileMatrixSetId);
             var style = GeneratedTileCacheKey.Sanitize(string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style);
-            var format = string.IsNullOrWhiteSpace(request.Format) ? null : GeneratedTileCacheKey.Sanitize(request.Format);
+            var format = string.IsNullOrWhiteSpace(request.Format) ? null : NormalizeFormat(request.Format);
 
             // Unlike seeding (which defaults maxZoom to minZoom to produce a single level), a bounded
             // delete/expire defaults to the full supported zoom range so an operator who scopes only
@@ -343,6 +354,17 @@ internal sealed partial class TileOperationExecutionCore
                 Math.Max(bbox[0], bbox[2]),
                 Math.Max(bbox[1], bbox[3]),
                 hasBbox);
+        }
+
+        private static string NormalizeFormat(string format)
+        {
+            var sanitized = GeneratedTileCacheKey.Sanitize(format);
+            return sanitized switch
+            {
+                "jpeg" => "jpg",
+                "tiff" or "cog" => "tif",
+                _ => sanitized
+            };
         }
 
         public bool Matches(string key)

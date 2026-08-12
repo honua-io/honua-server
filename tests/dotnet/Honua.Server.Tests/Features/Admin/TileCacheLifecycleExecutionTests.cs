@@ -167,6 +167,67 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Expire_AfterPartialFailure_DoesNotRecountOrRemarkPriorSuccesses()
+    {
+        const string key1 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
+        const string key2 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        var index = new StatefulKeyIndex { FailingExpirationKey = key2 };
+        index.Seed(key1, 100);
+        index.Seed(key2, 100);
+        var checkpointStore = new InMemoryTileCacheGenerationCheckpointStore();
+        var request = new TileOperationStartRequest
+        {
+            Operation = "expire",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            GenerationId = "gen-expire-resume"
+        };
+
+        var first = await ExecuteAsync(request, index, Substitute.For<ICloudFileStorage>(), checkpointStore);
+        first.Status.Should().Be(OperationStatus.Failed);
+        first.SuccessfulTiles.Should().Be(1);
+        first.FailedTiles.Should().Be(1);
+
+        index.FailingExpirationKey = null;
+        var second = await ExecuteAsync(request, index, Substitute.For<ICloudFileStorage>(), checkpointStore);
+
+        second.Status.Should().Be(OperationStatus.Completed);
+        second.TotalTiles.Should().Be(2);
+        second.ProcessedTiles.Should().Be(2);
+        second.SuccessfulTiles.Should().Be(2);
+        second.FailedTiles.Should().Be(0);
+        index.Expired.Should().BeEquivalentTo([key1, key2]);
+    }
+
+    [Theory]
+    [InlineData("jpeg", "jpg")]
+    [InlineData("tiff", "tif")]
+    [InlineData("cog", "tif")]
+    public async Task Delete_FormatAlias_MatchesCanonicalCacheExtension(string requestedFormat, string extension)
+    {
+        var key = $"prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/1/1.{extension}";
+        var index = new StatefulKeyIndex();
+        index.Seed(key, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(key, Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad",
+                Format = requestedFormat
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.SuccessfulTiles.Should().Be(1);
+        index.Remaining.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Delete_UnresolvedService_MatchesNoTrackedLayers()
     {
         var index = new StatefulKeyIndex();
@@ -274,6 +335,8 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public ConcurrentBag<string> Expired { get; } = [];
 
+        public string? FailingExpirationKey { get; set; }
+
         public bool IsEnabled => true;
 
         public IReadOnlyList<string> Remaining => [.. _entries.Keys];
@@ -298,6 +361,11 @@ public sealed class TileCacheLifecycleExecutionTests
 
         public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
         {
+            if (string.Equals(key, FailingExpirationKey, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("transient");
+            }
+
             if (_entries.ContainsKey(key))
             {
                 Expired.Add(key);

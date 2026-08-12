@@ -45064,7 +45064,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `expire`, `delete`."
           },
           "serviceId": {
             "type": "string",
@@ -45104,6 +45104,16 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
+          },
+          "style": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional generated-tile style window. Defaults to `default`."
+          },
+          "format": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional generated-tile format window. ImageServer aliases such as `jpeg`, `tiff`, and `cog` map to their canonical cache extensions."
           },
           "generationId": {
             "type": "string",
