@@ -221,6 +221,55 @@ public sealed class MetadataV2GraphSnapshotTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void SnapshotIsRoutable_RequiresServingResolvedServiceLifecycle()
+    {
+        var graph = SampleGraph();
+        var publication = graph.Publications.Single();
+        var service = graph.Services.Single();
+
+        var nonServingSnapshots = new[]
+            {
+                MetadataV2LifecycleStatus.Draft,
+                MetadataV2LifecycleStatus.Retired,
+                MetadataV2LifecycleStatus.Archived,
+            }
+            .Select(lifecycle => new MetadataV2GraphSnapshot(
+                graph with
+                {
+                    Services =
+                    [
+                        service with { Status = new MetadataV2Status { Lifecycle = lifecycle } }
+                    ]
+                },
+                $"\"{lifecycle}\"",
+                DateTimeOffset.UtcNow));
+
+        nonServingSnapshots.Should().OnlyContain(snapshot => !snapshot.IsRoutable(publication));
+
+        var deprecatedSnapshot = new MetadataV2GraphSnapshot(
+            graph with
+            {
+                Services =
+                [
+                    service with
+                    {
+                        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Deprecated }
+                    }
+                ]
+            },
+            "\"deprecated-service\"",
+            DateTimeOffset.UtcNow);
+        deprecatedSnapshot.IsRoutable(publication).Should().BeTrue();
+
+        var missingServiceSnapshot = new MetadataV2GraphSnapshot(
+            graph with { Services = [] },
+            "\"missing-service\"",
+            DateTimeOffset.UtcNow);
+        missingServiceSnapshot.IsRoutable(publication).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void IsRoutable_RequiresServingBindingAndResourceLifecycle()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
@@ -295,6 +344,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
                     Protocols = [ServiceProtocols.OgcFeatures],
                     Route = "/ogc/features",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 }
             ],
             Publications =

@@ -19,6 +19,12 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Publication publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+            !IsServingLifecycle(service.Status.Lifecycle))
+        {
+            return false;
+        }
+
         var resource = snapshot.ResolveResource(publication);
         if (!publication.IsRoutable(resource))
         {

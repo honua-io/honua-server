@@ -387,6 +387,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-1", Name = "guard-tests" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
         var sourceResource = Resource("res-source", "source-layer", [ReaderRole]);

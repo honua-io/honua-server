@@ -90,6 +90,7 @@ public sealed class LayerAccessAuthorizerTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
         var resource = new MetadataV2Resource
         {

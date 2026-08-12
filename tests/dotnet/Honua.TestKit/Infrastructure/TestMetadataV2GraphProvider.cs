@@ -288,6 +288,7 @@ public sealed class TestMetadataV2GraphBuilder
         _services.Add(new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
             AccessPolicy = accessPolicy,

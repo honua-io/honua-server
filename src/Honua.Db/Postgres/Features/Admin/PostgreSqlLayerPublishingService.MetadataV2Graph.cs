@@ -582,12 +582,39 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Where(binding => !addedBindingIds.Contains(binding.Metadata.Id) ||
                 HasStorageBindingBeenRepurposed(binding, persistedBindingsById[binding.Metadata.Id]) &&
                 resources.Any(resource =>
-                    string.Equals(resource.Metadata.Id, binding.ResourceId, StringComparison.Ordinal)) ||
-                publications.Any(publication =>
-                    string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)) ||
-                resources.Any(resource =>
-                    string.Equals(resource.PrimaryStorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) ||
-                    resource.StorageBindingIds.Contains(binding.Metadata.Id, StringComparer.Ordinal)))
+                    string.Equals(resource.Metadata.Id, binding.ResourceId, StringComparison.Ordinal)))
+            .ToArray();
+        var retainedBindingIds = bindings
+            .Select(binding => binding.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var removedAddedBindingIds = addedBindingIds
+            .Where(bindingId => !retainedBindingIds.Contains(bindingId))
+            .ToHashSet(StringComparer.Ordinal);
+        resources = resources
+            .Select(resource =>
+            {
+                var storageBindingIds = resource.StorageBindingIds
+                    .Where(bindingId => !removedAddedBindingIds.Contains(bindingId))
+                    .ToArray();
+                var primaryStorageBindingId = resource.PrimaryStorageBindingId is { } primaryBindingId &&
+                                              !removedAddedBindingIds.Contains(primaryBindingId)
+                    ? primaryBindingId
+                    : storageBindingIds.FirstOrDefault();
+                if (resource.StorageBindingIds.SequenceEqual(storageBindingIds, StringComparer.Ordinal) &&
+                    string.Equals(
+                        resource.PrimaryStorageBindingId,
+                        primaryStorageBindingId,
+                        StringComparison.Ordinal))
+                {
+                    return resource;
+                }
+
+                return resource with
+                {
+                    StorageBindingIds = storageBindingIds,
+                    PrimaryStorageBindingId = primaryStorageBindingId,
+                };
+            })
             .ToArray();
         var resourceLifecycleRecomputeIds = currentGraph.Resources
             .Where(current =>
@@ -722,7 +749,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         => HasTargetMutation(
             new MetadataV2StorageBinding
             {
-                ResourceId = current.ResourceId,
                 ConnectionId = current.ConnectionId,
                 StorageType = current.StorageType,
                 Locator = current.Locator,
@@ -731,7 +757,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             },
             new MetadataV2StorageBinding
             {
-                ResourceId = persisted.ResourceId,
                 ConnectionId = persisted.ConnectionId,
                 StorageType = persisted.StorageType,
                 Locator = persisted.Locator,
