@@ -100,6 +100,19 @@ services:
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
       Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
       Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
+      # Registered COGs are admitted by the API-side bounded range reader before a
+      # native job is queued, so it must see the same object-store coordinates and
+      # credentials as the optional GDAL worker.
+      FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
+      FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
+      FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
+      # Null-valued Compose mapping is host pass-through: when the standard Honua
+      # config variable is absent, Compose omits it instead of materializing an
+      # empty AzureBlob section that activates an unusable range reader.
+      FileStorage__AzureBlob__ConnectionString:
+      AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${HONUA_S3_SESSION_TOKEN:-}"
       Kestrel__Endpoints__Http__Url: "http://+:8080"
       Kestrel__Endpoints__Http__Protocols: "Http1"
       Kestrel__Endpoints__Grpc__Url: "http://+:8081"
@@ -148,6 +161,16 @@ services:
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # Per-job scratch root (already set in the image; pinned here for clarity).
       GdalWorker__ScratchRoot: "/tmp/honua-gdal-worker"
+      # Keep referenced /vsis3 reads on the same registered object store as the API.
+      FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
+      FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
+      FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
+      FileStorage__AzureBlob__ConnectionString:
+      # GDAL consumes standard AWS credential variables out of band; credentials
+      # never enter the durable raster-source descriptor.
+      AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${HONUA_S3_SESSION_TOKEN:-}"
     depends_on:
       redis:
         condition: service_healthy

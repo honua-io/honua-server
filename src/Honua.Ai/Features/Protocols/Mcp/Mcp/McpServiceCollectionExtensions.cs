@@ -147,6 +147,15 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioWidgetTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioWidgetTool>());
 
+        // Declarative interactions (geospatial-mcp ADR-0030, composition profile):
+        // the reference implementation of the standard's bind_interaction /
+        // remove_interaction. They mutate presentation wiring only — no source
+        // records are touched, so neither is a mutation-profile tool (ADR-0028
+        // is unaffected) — and they ride the same editor + generation-checked
+        // UpdateDraftAsync path as every other composition tool above.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, BindStudioInteractionTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioInteractionTool>());
+
         // Publication intent ONLY (REQ-003/REQ-009): no publish/share/embed
         // execution tool exists on the agent surface. This is the sole
         // publish-adjacent tool and it never moves a current/published

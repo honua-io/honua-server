@@ -3,38 +3,44 @@
 
 using System.Globalization;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
 /// <summary>
 /// Resolves geoprocessing raster-source references (<c>layerId</c>/<c>rasterId</c>) to
-/// raster bytes from the registered COG catalog (#2264), reusing the same
-/// <see cref="ICogStore"/> registry and per-provider <see cref="ICloudRangeReader"/>
+/// immutable metadata-only descriptors from the registered COG catalog (#2264/#3090), reusing
+/// the same <see cref="ICogStore"/> registry and per-provider <see cref="ICloudRangeReader"/>
 /// readers the COG tile path uses. Registered as a singleton (the GP submit service is
 /// a singleton); the scoped <see cref="ICogStore"/> is resolved through a per-call
 /// service scope so there is no captive-dependency violation. When no COG store is
 /// configured the resolver returns a clear failure rather than throwing.
 ///
 /// <para>
-/// Before materializing bytes the resolver runs a capped, header-only
-/// <see cref="ICogDecodedSizeInspector"/> probe and fails closed when the raster's projected
-/// <em>decoded</em> grid exceeds <see cref="CatalogRasterSourceOptions.MaxDecodedRasterBytes"/>.
-/// The pre-existing size gate bounds only the compressed bytes read from the object; without
-/// the decoded-size gate a tiny compressed TIFF could declare an enormous decoded grid (a
-/// decompression bomb) that only inflates when the worker decodes it (RAST-005 / #3090).
+/// The serving process never reads the object payload: identity comes from a provider
+/// HEAD/properties request and dimensions come from a capped, ETag-pinned
+/// <see cref="CogRasterHeaderProbe"/> read of the base-image header/IFD fields only. The
+/// projected <em>decoded</em> grid (<c>width * height * bands * ceil(bits/8)</c>) is bounded by
+/// <see cref="CatalogRasterSourceOptions.MaxDecodedRasterBytes"/> before a descriptor is minted,
+/// so a tiny compressed TIFF declaring an enormous decoded grid (a decompression bomb) fails
+/// closed at submission, before any worker invokes GDAL (RAST-005 / #3090).
 /// </para>
 /// </summary>
 internal sealed class CatalogRasterSourceResolver(
     IServiceScopeFactory scopeFactory,
-    ICogDecodedSizeInspector decodedSizeInspector,
-    IOptions<CatalogRasterSourceOptions> options)
+    IOptions<CatalogRasterSourceOptions> options,
+    ILogger<CatalogRasterSourceResolver>? logger = null)
     : IGeoprocessingRasterSourceResolver
 {
     /// <inheritdoc />
@@ -69,7 +75,6 @@ internal sealed class CatalogRasterSourceResolver(
     /// <inheritdoc />
     public async Task<RasterSourceResolution> ResolveAsync(
         RasterSourceReference reference,
-        long maxBytes,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reference);
@@ -110,56 +115,127 @@ internal sealed class CatalogRasterSourceResolver(
                 + $"({registration.Provider}).");
         }
 
-        long size;
+        CloudObjectMetadata metadata;
         try
         {
-            size = await reader.GetObjectSizeAsync(registration.Bucket, registration.ObjectKey, cancellationToken)
+            metadata = await reader.GetObjectMetadataAsync(
+                    registration.Bucket,
+                    registration.ObjectKey,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested is false)
         {
-            return RasterSourceResolution.Failure("the resolved raster object could not be read.");
+            return RasterSourceResolution.Failure("the resolved raster object metadata could not be read.");
         }
 
-        if (size <= 0)
+        if (metadata.SizeBytes <= 0)
         {
             return RasterSourceResolution.Failure("the resolved raster object is empty.");
         }
 
-        if (size > maxBytes || size > int.MaxValue)
+        if (string.IsNullOrWhiteSpace(metadata.ETag))
         {
             return RasterSourceResolution.Failure(
-                $"the resolved raster size {size.ToString(CultureInfo.InvariantCulture)} bytes exceeds the "
-                + $"maximum {maxBytes.ToString(CultureInfo.InvariantCulture)} bytes accepted for inline sourcing.");
+                "the resolved raster object has no ETag and cannot be opened with a conditional worker read.");
         }
 
-        // Bound the projected DECODED grid before materializing any bytes. The compressed-size
-        // gate above cannot see a decompression bomb: a small compressed TIFF may declare an
-        // enormous decoded raster that only inflates when the worker decodes it (#3090). The
-        // probe reads only the header/first IFD within fixed caps and fails closed.
-        var inspection = await decodedSizeInspector
-            .InspectAsync(reader, registration.Bucket, registration.ObjectKey, options.Value.MaxDecodedRasterBytes, cancellationToken)
-            .ConfigureAwait(false);
-        if (!inspection.Accepted)
-        {
-            return RasterSourceResolution.Failure(
-                inspection.RejectionReason ?? "the resolved raster's decoded size could not be validated.");
-        }
-
-        byte[] bytes;
+        CogRasterHeaderProbeResult probe;
         try
         {
-            bytes = await reader.ReadRangeAsync(registration.Bucket, registration.ObjectKey, 0, (int)size, cancellationToken)
+            // A HEAD pin bounds identity and size, but cannot defend the native worker from a
+            // tiny compressed TIFF that declares an enormous decoded grid. Read only the capped
+            // base-image header/IFD fields required for worker resource admission; never read
+            // tile-offset arrays or pixel content in the serving process.
+            probe = await CogRasterHeaderProbe
+                .ReadAsync(
+                    reader,
+                    registration.Bucket,
+                    registration.ObjectKey,
+                    metadata.ETag,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested is false)
         {
-            return RasterSourceResolution.Failure("the resolved raster object could not be read.");
+            return RasterSourceResolution.Failure(
+                "the resolved raster header could not be bounded for native-worker admission.");
         }
 
-        return bytes.Length == 0
-            ? RasterSourceResolution.Failure("the resolved raster object is empty.")
-            : RasterSourceResolution.Success(bytes);
+        // Bound the projected DECODED grid before minting a descriptor. The worker re-applies
+        // its own dimension caps, but a submission-time refusal keeps hostile headers from ever
+        // producing a durable job record (#3090). Probe dimensions are trusted because every
+        // probe range was pinned to the same immutable ETag captured above.
+        var dimensions = probe.Dimensions;
+        var maxDecodedBytes = options.Value.MaxDecodedRasterBytes;
+        long decodedBytes;
+        try
+        {
+            // checked: hostile headers can declare per-axis values whose product wraps 64-bit
+            // math (e.g. 3e9 x 3e9 x 4 bands), which would slip a negative/small total past the
+            // comparison below and defeat the decompression-bomb gate.
+            var bytesPerSample = (dimensions.BitsPerSample + 7) / 8;
+            decodedBytes = checked(dimensions.Width * dimensions.Height
+                * dimensions.BandCount * (long)bytesPerSample);
+        }
+        catch (OverflowException)
+        {
+            return RasterSourceResolution.Failure(
+                $"the resolved raster's decoded size ({dimensions.Width}x{dimensions.Height}, "
+                + $"{dimensions.BandCount} band(s), {dimensions.BitsPerSample} bits/sample) overflows the "
+                + "admission bound and exceeds the maximum accepted for geoprocessing sources.");
+        }
+
+        if (decodedBytes > maxDecodedBytes)
+        {
+            return RasterSourceResolution.Failure(
+                $"the resolved raster's decoded size {decodedBytes.ToString(CultureInfo.InvariantCulture)} bytes "
+                + $"({dimensions.Width}x{dimensions.Height}, {dimensions.BandCount} band(s), "
+                + $"{dimensions.BitsPerSample} bits/sample) exceeds the maximum "
+                + $"{maxDecodedBytes.ToString(CultureInfo.InvariantCulture)} bytes accepted for geoprocessing sources.");
+        }
+
+        CogLog.RasterSourceHeaderProbed(
+            logger ?? NullLogger<CatalogRasterSourceResolver>.Instance,
+            registration.Id,
+            metadata.SizeBytes,
+            probe.RangeCount,
+            probe.RequestedBytes,
+            probe.ReceivedBytes);
+
+        var immutableVersion = FirstNonEmpty(metadata.Version, metadata.ETag)!;
+
+        var mediaType = string.IsNullOrWhiteSpace(metadata.MediaType)
+            ? "image/tiff"
+            : metadata.MediaType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+        var checksum = string.IsNullOrWhiteSpace(metadata.ChecksumAlgorithm)
+            || string.IsNullOrWhiteSpace(metadata.ChecksumValue)
+                ? null
+                : new RasterChecksum(metadata.ChecksumAlgorithm, metadata.ChecksumValue);
+
+        return RasterSourceResolution.Success(new ObjectStoreCogRasterSourceDescriptor
+        {
+            Provider = registration.Provider,
+            StoreReference = registration.Bucket,
+            ObjectKey = registration.ObjectKey,
+            CatalogLayerId = registration.LayerId,
+            CatalogRasterId = registration.Id,
+            DeclaredDimensions = probe.Dimensions,
+            DeclaredPixelScale = probe.PixelScale,
+            Version = immutableVersion,
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = metadata.SizeBytes,
+                MediaType = mediaType,
+                ETag = metadata.ETag,
+                Checksum = checksum,
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "execution",
+                AuthorizationSnapshotReference = $"catalog-registration:{registration.Id.ToString(CultureInfo.InvariantCulture)}",
+            },
+        });
     }
 
     private static async Task<ResolvedCogRegistration?> ResolveRegistrationAsync(
@@ -265,4 +341,9 @@ internal sealed class CatalogRasterSourceResolver(
             ? $"no registered raster for layerId={onlyLayer.ToString(CultureInfo.InvariantCulture)}."
             : "either a layerId or a rasterId is required to resolve a raster source.";
     }
+
+    private static string? FirstNonEmpty(string? primary, string? fallback)
+        => !string.IsNullOrWhiteSpace(primary)
+            ? primary
+            : !string.IsNullOrWhiteSpace(fallback) ? fallback : null;
 }

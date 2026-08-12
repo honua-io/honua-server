@@ -33,6 +33,319 @@ public sealed record StudioCompositionBody
     /// <summary>App-family widgets bound to the composition.</summary>
     [JsonPropertyName("widgets")]
     public IReadOnlyList<StudioCompositionWidget> Widgets { get; init; } = Array.Empty<StudioCompositionWidget>();
+
+    /// <summary>
+    /// Declarative event→action bindings between this document's components
+    /// (geospatial-mcp ADR-0030, <c>common/interactions.schema.json</c>).
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NULLABLE, unlike <see cref="Layers"/>/<see cref="Widgets"/>: the
+    /// projection is overlaid key-by-key onto the stored document by
+    /// <c>StudioCompositionBodyEditor.WriteBody</c>, and the source-generated context writes
+    /// with <c>WhenWritingNull</c>. A null therefore emits nothing at all, so an ordinary
+    /// layer/view/widget edit on a document that never declared interactions does not
+    /// materialize an empty <c>"interactions": []</c> member into every stored map/app
+    /// package. An EMPTY (non-null) list still serializes, so removing the last binding
+    /// genuinely clears the stored block.
+    /// </remarks>
+    [JsonPropertyName("interactions")]
+    public IReadOnlyList<StudioInteraction>? Interactions { get; init; }
+
+    /// <summary>
+    /// Presentation-only grid placement for the document's widgets
+    /// (geospatial-mcp ADR-0030). Null when the document declares no layout;
+    /// see the <see cref="Interactions"/> remarks for why.
+    /// </summary>
+    [JsonPropertyName("layout")]
+    public StudioLayout? Layout { get; init; }
+}
+
+/// <summary>
+/// One declarative event→action binding in a composition document
+/// (geospatial-mcp ADR-0030, <c>common/interactions.schema.json#/$defs/interaction</c>).
+/// Bindings are data, never code: the only dynamic element is <c>$event.*</c> path
+/// substitution inside <see cref="StudioInteractionAction.Args"/> string values.
+/// </summary>
+public sealed record StudioInteraction
+{
+    /// <summary>Stable identifier, unique within the document's interactions block.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
+
+    /// <summary>The user-gesture event source.</summary>
+    [JsonPropertyName("on")]
+    public required StudioInteractionEvent On { get; init; }
+
+    /// <summary>The action performed when the event fires.</summary>
+    [JsonPropertyName("do")]
+    public required StudioInteractionAction Do { get; init; }
+
+    /// <summary>Authored-but-inactive binding: retained in the document, skipped at dispatch.</summary>
+    [JsonPropertyName("disabled")]
+    public bool? Disabled { get; init; }
+}
+
+/// <summary>
+/// The event source half of a <see cref="StudioInteraction"/>: a component
+/// reference plus one member of the closed event set
+/// (<see cref="StudioInteractionVocabulary.EventNames"/>).
+/// </summary>
+public sealed record StudioInteractionEvent
+{
+    /// <summary>Component reference (<c>map</c>, <c>layer:{id}</c>, <c>widget:{id}</c>, <c>control:{id}</c>).</summary>
+    [JsonPropertyName("ref")]
+    public required string Ref { get; init; }
+
+    /// <summary>Event name from the closed set.</summary>
+    [JsonPropertyName("event")]
+    public required string Event { get; init; }
+}
+
+/// <summary>
+/// The action half of a <see cref="StudioInteraction"/>: a component reference,
+/// one member of the closed verb set
+/// (<see cref="StudioInteractionVocabulary.ActionVerbs"/>), and static JSON
+/// arguments. Actions never emit events, so binding graphs cannot cycle.
+/// </summary>
+public sealed record StudioInteractionAction
+{
+    /// <summary>Component reference the verb targets.</summary>
+    [JsonPropertyName("ref")]
+    public required string Ref { get; init; }
+
+    /// <summary>Action verb from the closed set.</summary>
+    [JsonPropertyName("verb")]
+    public required string Verb { get; init; }
+
+    /// <summary>
+    /// Static JSON arguments for the verb. A string value beginning with
+    /// <c>$event.</c> is replaced at dispatch time by the value at that path in the
+    /// event payload. There is no expression language.
+    /// </summary>
+    [JsonPropertyName("args")]
+    public JsonElement? Args { get; init; }
+}
+
+/// <summary>
+/// Presentation-only grid placement for a composition document's widgets
+/// (geospatial-mcp ADR-0030). A composition with widgets and no layout is valid;
+/// hosts choose a default flow.
+/// </summary>
+public sealed record StudioLayout
+{
+    /// <summary>Grid geometry. Rows grow as needed; only columns are declared.</summary>
+    [JsonPropertyName("grid")]
+    public StudioLayoutGrid? Grid { get; init; }
+
+    /// <summary>Widget placements.</summary>
+    [JsonPropertyName("items")]
+    public IReadOnlyList<StudioLayoutItem>? Items { get; init; }
+}
+
+/// <summary>Grid geometry for a <see cref="StudioLayout"/>.</summary>
+public sealed record StudioLayoutGrid
+{
+    /// <summary>
+    /// Number of grid columns
+    /// (<see cref="StudioInteractionVocabulary.MinGridColumns"/>..<see cref="StudioInteractionVocabulary.MaxGridColumns"/>;
+    /// <see cref="StudioInteractionVocabulary.DefaultGridColumns"/> when omitted).
+    /// </summary>
+    [JsonPropertyName("columns")]
+    public int? Columns { get; init; }
+}
+
+/// <summary>Grid placement for one widget (or the map) in a <see cref="StudioLayout"/>.</summary>
+public sealed record StudioLayoutItem
+{
+    /// <summary>Component reference the placement applies to.</summary>
+    [JsonPropertyName("ref")]
+    public required string Ref { get; init; }
+
+    /// <summary>Grid column of the item's left edge (0-based).</summary>
+    [JsonPropertyName("x")]
+    public int X { get; init; }
+
+    /// <summary>Grid row of the item's top edge (0-based).</summary>
+    [JsonPropertyName("y")]
+    public int Y { get; init; }
+
+    /// <summary>Width in grid columns.</summary>
+    [JsonPropertyName("w")]
+    public int W { get; init; }
+
+    /// <summary>Height in grid rows.</summary>
+    [JsonPropertyName("h")]
+    public int H { get; init; }
+}
+
+/// <summary>
+/// How a component reference in an <c>interactions</c>/<c>layout</c> block
+/// resolves against the composition document that declares it.
+/// </summary>
+public enum StudioComponentRefResolution
+{
+    /// <summary>The reference resolves to a component declared in the document.</summary>
+    Resolved = 0,
+
+    /// <summary>The reference does not match the <c>map|layer:{id}|widget:{id}|control:{id}</c> grammar.</summary>
+    Malformed = 1,
+
+    /// <summary>The reference is well-formed but names no component in the document.</summary>
+    Unresolved = 2,
+
+    /// <summary>
+    /// The reference is a well-formed <c>control:{id}</c> reference. Studio composition
+    /// documents declare no controls collection, so a control reference can never resolve
+    /// here and is reported distinctly from an ordinary unresolved reference.
+    /// </summary>
+    ControlsUnsupported = 3,
+}
+
+/// <summary>
+/// The single source of truth for the geospatial-mcp ADR-0030 interaction
+/// vocabulary: the closed event/verb sets, the component-reference grammar, the
+/// per-<c>(on.ref, on.event)</c> fan-out cap, and the layout grid bounds.
+/// </summary>
+/// <remarks>
+/// Every admission surface that accepts an interactions/layout block enforces the same
+/// constants from here — the MCP tool schemas advertise these enums, the composition body
+/// editor rejects out-of-vocabulary binds at admission, and
+/// <c>StudioPackageValidator</c> gates the whole document. Keeping the vocabulary (and the
+/// checks themselves) in one place is the same anti-drift move
+/// <see cref="StudioCompositionViewBounds"/> made for the viewport contract.
+/// </remarks>
+public static class StudioInteractionVocabulary
+{
+    /// <summary>Component reference naming the map itself.</summary>
+    public const string MapRef = "map";
+
+    /// <summary>Prefix of a layer component reference.</summary>
+    public const string LayerRefPrefix = "layer:";
+
+    /// <summary>Prefix of a widget component reference.</summary>
+    public const string WidgetRefPrefix = "widget:";
+
+    /// <summary>Prefix of a control component reference.</summary>
+    public const string ControlRefPrefix = "control:";
+
+    /// <summary>
+    /// Largest number of interactions permitted to share the same
+    /// <c>(on.ref, on.event)</c> pair. ADR-0030 requires implementations to bound the
+    /// fan-out and RECOMMENDS 8; documents over the cap are rejected, not truncated.
+    /// </summary>
+    public const int MaxInteractionsPerEventSource = 8;
+
+    /// <summary>Largest accepted interaction identifier length.</summary>
+    public const int MaxInteractionIdLength = 200;
+
+    /// <summary>Smallest accepted <see cref="StudioLayoutGrid.Columns"/>.</summary>
+    public const int MinGridColumns = 1;
+
+    /// <summary>Largest accepted <see cref="StudioLayoutGrid.Columns"/>.</summary>
+    public const int MaxGridColumns = 24;
+
+    /// <summary>Grid columns assumed when <see cref="StudioLayoutGrid.Columns"/> is omitted.</summary>
+    public const int DefaultGridColumns = 12;
+
+    /// <summary>
+    /// The closed event set: <c>featureSelect</c>/<c>featureHover</c> (layer sources),
+    /// <c>selection</c> (widget sources), <c>change</c> (control sources),
+    /// <c>viewportChange</c> (map source). Extending it requires a standard ADR.
+    /// </summary>
+    public static IReadOnlyList<string> EventNames { get; } =
+        ["featureSelect", "featureHover", "selection", "change", "viewportChange"];
+
+    /// <summary>
+    /// The closed verb set. Verbs mutate presentation/exploration state only, never
+    /// source records (ADR-0028 is unaffected). Extending it requires a standard ADR.
+    /// </summary>
+    public static IReadOnlyList<string> ActionVerbs { get; } =
+        ["setFilter", "setViewport", "selectFeature", "runWidgetQuery", "setVisibility"];
+
+    /// <summary>Returns true when <paramref name="value"/> is a member of the closed event set.</summary>
+    public static bool IsEventName(string? value) =>
+        value is not null && EventNames.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>Returns true when <paramref name="value"/> is a member of the closed verb set.</summary>
+    public static bool IsActionVerb(string? value) =>
+        value is not null && ActionVerbs.Contains(value, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Returns true when <paramref name="value"/> matches the component-reference
+    /// grammar <c>map | layer:{id} | widget:{id} | control:{id}</c> (grammar only —
+    /// <see cref="ResolveRef"/> answers whether it resolves).
+    /// </summary>
+    public static bool IsComponentRef(string? value) =>
+        value is not null
+        && (string.Equals(value, MapRef, StringComparison.Ordinal)
+            || HasNonEmptyId(value, LayerRefPrefix)
+            || HasNonEmptyId(value, WidgetRefPrefix)
+            || HasNonEmptyId(value, ControlRefPrefix));
+
+    /// <summary>
+    /// Resolves a component reference against <paramref name="body"/>: <c>map</c> always
+    /// resolves, <c>layer:{id}</c> resolves against the document's layers,
+    /// <c>widget:{id}</c> against its widgets, and <c>control:{id}</c> never resolves
+    /// (Studio composition documents declare no controls collection).
+    /// </summary>
+    /// <param name="body">The composition document the reference must resolve within.</param>
+    /// <param name="value">The reference to resolve.</param>
+    /// <returns>How the reference resolved.</returns>
+    public static StudioComponentRefResolution ResolveRef(StudioCompositionBody body, string? value)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (!IsComponentRef(value))
+        {
+            return StudioComponentRefResolution.Malformed;
+        }
+
+        if (string.Equals(value, MapRef, StringComparison.Ordinal))
+        {
+            return StudioComponentRefResolution.Resolved;
+        }
+
+        if (value!.StartsWith(ControlRefPrefix, StringComparison.Ordinal))
+        {
+            return StudioComponentRefResolution.ControlsUnsupported;
+        }
+
+        if (value.StartsWith(LayerRefPrefix, StringComparison.Ordinal))
+        {
+            var layerId = value[LayerRefPrefix.Length..];
+            return (body.Layers ?? []).Any(layer => layer is not null
+                    && string.Equals(layer.Id, layerId, StringComparison.Ordinal))
+                ? StudioComponentRefResolution.Resolved
+                : StudioComponentRefResolution.Unresolved;
+        }
+
+        var widgetId = value[WidgetRefPrefix.Length..];
+        return (body.Widgets ?? []).Any(widget => widget is not null
+                && string.Equals(widget.Id, widgetId, StringComparison.Ordinal))
+            ? StudioComponentRefResolution.Resolved
+            : StudioComponentRefResolution.Unresolved;
+    }
+
+    /// <summary>
+    /// Renders the human-readable reason a reference did not resolve, or an empty
+    /// string for <see cref="StudioComponentRefResolution.Resolved"/>. Shared so the
+    /// editor's admission error and the validator's diagnostic read identically.
+    /// </summary>
+    /// <param name="value">The offending reference.</param>
+    /// <param name="resolution">The resolution outcome to describe.</param>
+    /// <returns>The reason text.</returns>
+    public static string DescribeResolution(string? value, StudioComponentRefResolution resolution) => resolution switch
+    {
+        StudioComponentRefResolution.Resolved => string.Empty,
+        StudioComponentRefResolution.Malformed =>
+            $"Component reference '{value}' is not a valid reference; use 'map', 'layer:{{id}}', 'widget:{{id}}' or 'control:{{id}}'.",
+        StudioComponentRefResolution.ControlsUnsupported =>
+            $"Component reference '{value}' cannot resolve: Studio composition documents declare no controls collection, "
+            + "so control references are not supported. Bind the interaction to 'map', a 'layer:{id}' or a 'widget:{id}' instead.",
+        _ => $"Component reference '{value}' does not resolve to a component declared in this composition document.",
+    };
+
+    private static bool HasNonEmptyId(string value, string prefix) =>
+        value.Length > prefix.Length && value.StartsWith(prefix, StringComparison.Ordinal);
 }
 
 /// <summary>

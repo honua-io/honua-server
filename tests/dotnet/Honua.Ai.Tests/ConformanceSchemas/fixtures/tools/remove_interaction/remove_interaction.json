@@ -1,0 +1,13 @@
+{
+  "id": "remove_interaction.parcel_select_filters_chart",
+  "schemaRef": "tools/remove_interaction.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "draftId": "8b6b8f5e-6c1a-4a2a-9a3d-2f0c9c9b8a11",
+    "generation": 4,
+    "interactionId": "select-parcel-filters-chart"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [],
+  "notes": "Reference-shape variant of the upstream geospatial-mcp fixture (conformance/fixtures/tools/remove_interaction/); see the bind_interaction fixture note."
+}

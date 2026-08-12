@@ -119,6 +119,7 @@
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.Tests" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Scene" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

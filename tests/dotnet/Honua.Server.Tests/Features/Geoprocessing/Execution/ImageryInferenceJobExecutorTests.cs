@@ -9,6 +9,9 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
@@ -147,6 +150,51 @@ public sealed class ImageryInferenceJobExecutorTests
         request.RootElement.GetProperty("task").GetString().Should().Be("classification");
         request.RootElement.GetProperty("image").GetBytesFromBase64().Should().Equal(SourceGeoTiff);
         handler.LastAuthorization.Should().Be("Bearer test-key");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_ReferencedCog_IsConditionallyMaterializedAtExecution()
+    {
+        const string etag = "source-etag";
+        var rangeReader = new PinnedRasterRangeReader(SourceGeoTiff, etag);
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(
+            handler,
+            provider: "http",
+            rangeReaders: [rangeReader]);
+        var context = CreateContext("op-referenced-source", out _);
+        var record = CreateJobRecord();
+        var parameters = (Dictionary<string, string>)record.Spec.Parameters;
+        parameters.Remove(ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0.source");
+        parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"] =
+            RasterSourceJson.Serialize(new ObjectStoreCogRasterSourceDescriptor
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                StoreReference = "imagery",
+                ObjectKey = "source.tif",
+                DeclaredDimensions = new RasterSourceDimensions(64, 64, 1, 8),
+                DeclaredPixelScale = new RasterSourcePixelScale(10d, 10d),
+                Version = "version-1",
+                Content = new RasterContentIdentity
+                {
+                    SizeBytes = SourceGeoTiff.LongLength,
+                    MediaType = "image/tiff",
+                    ETag = etag,
+                },
+                SecurityContext = new RasterSecurityContextReference
+                {
+                    TenantId = "tenant-a",
+                    AuthorizationSnapshotReference = "catalog-registration:1",
+                },
+            });
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        rangeReader.ConditionalReadCount.Should().Be(1);
+        rangeReader.UnconditionalReadCount.Should().Be(0);
+        using var request = JsonDocument.Parse(handler.LastRequestBody!);
+        request.RootElement.GetProperty("image").GetBytesFromBase64().Should().Equal(SourceGeoTiff);
     }
 
     [UnitTest]
@@ -1197,7 +1245,8 @@ public sealed class ImageryInferenceJobExecutorTests
         string defaultModel = "",
         ISecretProvider? secretProvider = null,
         long maxArtifactBytes = 50L * 1024L * 1024L,
-        string endpoint = "https://inference.example.com/v1/infer")
+        string endpoint = "https://inference.example.com/v1/infer",
+        IEnumerable<ICloudRangeReader>? rangeReaders = null)
     {
         var inferenceOptions = new ImageryInferenceOptions
         {
@@ -1230,7 +1279,8 @@ public sealed class ImageryInferenceJobExecutorTests
             inferenceMonitor,
             executorMonitor,
             [client],
-            NullLogger<ImageryInferenceJobExecutor>.Instance);
+            NullLogger<ImageryInferenceJobExecutor>.Instance,
+            rangeReaders);
     }
 
     private static IJobExecutionContext CreateContext(string operationId)
@@ -1583,6 +1633,55 @@ public sealed class ImageryInferenceJobExecutorTests
         BinaryPrimitives.WriteUInt32LittleEndian(span[(entry + 4)..], count);
         BinaryPrimitives.WriteUInt32LittleEndian(span[(entry + 8)..], offset);
         entry += 12;
+    }
+
+    private sealed class PinnedRasterRangeReader(byte[] payload, string expectedETag) : ICloudRangeReader
+    {
+        public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
+
+        public int ConditionalReadCount { get; private set; }
+
+        public int UnconditionalReadCount { get; private set; }
+
+        public Task<byte[]> ReadRangeAsync(
+            string bucket,
+            string key,
+            long offset,
+            int length,
+            CancellationToken cancellationToken = default)
+        {
+            UnconditionalReadCount++;
+            throw new InvalidOperationException("Unconditional reads are not allowed.");
+        }
+
+        public Task<byte[]> ReadRangeAsync(
+            string bucket,
+            string key,
+            long offset,
+            int length,
+            string actualETag,
+            CancellationToken cancellationToken = default)
+        {
+            actualETag.Should().Be(expectedETag);
+            offset.Should().Be(0);
+            length.Should().Be(payload.Length);
+            ConditionalReadCount++;
+            return Task.FromResult(payload.ToArray());
+        }
+
+        public Task<Stream> ReadRangeStreamAsync(
+            string bucket,
+            string key,
+            long offset,
+            int length,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<long> GetObjectSizeAsync(
+            string bucket,
+            string key,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(payload.LongLength);
     }
 
     /// <summary>

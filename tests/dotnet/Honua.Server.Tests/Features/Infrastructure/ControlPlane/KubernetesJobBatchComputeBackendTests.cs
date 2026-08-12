@@ -6,8 +6,10 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,6 +19,28 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class KubernetesJobBatchComputeBackendTests
 {
+    [Fact]
+    public void ControlPlaneOptions_BindsTaggedImageAttestationsAsEntryValues()
+    {
+        const string kubernetesImage = "ghcr.io/honua/worker:v2";
+        const string azureImage = "ghcr.io/honua/gdal@sha256:abc123";
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{ControlPlaneOptions.SectionName}:Kubernetes:ImageContracts:0:Image"] = kubernetesImage,
+                [$"{ControlPlaneOptions.SectionName}:Kubernetes:ImageContracts:0:MaxSupportedContractVersion"] = "2",
+                [$"{ControlPlaneOptions.SectionName}:AzureBatch:ImageContracts:0:Image"] = azureImage,
+                [$"{ControlPlaneOptions.SectionName}:AzureBatch:ImageContracts:0:MaxSupportedContractVersion"] = "2"
+            })
+            .Build();
+        var options = new ControlPlaneOptions();
+
+        configuration.GetSection(ControlPlaneOptions.SectionName).Bind(options);
+
+        options.Kubernetes.ImageContracts.Should().ContainSingle().Which.Image.Should().Be(kubernetesImage);
+        options.AzureBatch.ImageContracts.Should().ContainSingle().Which.Image.Should().Be(azureImage);
+    }
+
     [Fact]
     public void BackendIdentity_MatchesContract()
     {
@@ -38,6 +62,71 @@ public sealed class KubernetesJobBatchComputeBackendTests
         capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
+        capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+    }
+
+    [Fact]
+    public async Task StartAsync_V2JobWithUnattestedImage_FailsBeforeCreate()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            DefaultImage = "honua/worker:v2",
+            DefaultImageMaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
+        });
+        var job = CreateJob("job-old-image", image: "honua/worker:v1") with
+        {
+            Spec = CreateJob("job-old-image", image: "honua/worker:v1").Spec with
+            {
+                ContractVersion = RasterSourceContract.JobContractVersion,
+            }
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("supports execution contract version 1");
+        await client.DidNotReceiveWithAnyArgs().CreateJobAsync(default!);
+    }
+
+    [Fact]
+    public async Task StartAsync_V2JobWithAttestedOverrideImage_CreatesJob()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "job-uid-v2" }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            ImageContracts =
+            [
+                new WorkerImageContractOptions
+                {
+                    Image = "honua/worker:v2",
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ]
+        });
+        var job = CreateJob("job-v2-image", image: "honua/worker:v2") with
+        {
+            Spec = CreateJob("job-v2-image", image: "honua/worker:v2").Spec with
+            {
+                ContractVersion = RasterSourceContract.JobContractVersion,
+            }
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(manifest =>
+                manifest.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "2"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1558,7 +1647,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var monitor = Substitute.For<IOptionsMonitor<KubernetesExecutionOptions>>();
         monitor.CurrentValue.Returns(options ?? new KubernetesExecutionOptions
         {
-            DefaultNamespace = "default"
+            DefaultNamespace = "default",
+            DefaultImageMaxSupportedContractVersion = RasterSourceContract.JobContractVersion,
         });
         return new KubernetesJobBatchComputeBackend(
             client,
