@@ -11,9 +11,23 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Protects source-generated configuration binding from init-only properties (#3055).
 /// </summary>
+/// <remarks>
+/// Covered registration shapes: <c>Configure&lt;T&gt;(IConfiguration)</c>,
+/// <c>AddOptions&lt;T&gt;().Bind(...)</c> / <c>.BindConfiguration(...)</c> (chained or through a
+/// deferred builder local), <c>GetSection(T.SectionName).Bind(instance)</c>, and
+/// <c>section.Bind(local)</c> where the local is created with <c>new T()</c>. All of these bind
+/// onto an existing instance, where the source-generated binder silently skips init-only
+/// properties.
+/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class ConfigurationBindingShapeTests
 {
+    /// <summary>
+    /// Drift anchor, not the discovery mechanism: roots are discovered from source on every run;
+    /// these known registrations must keep being discovered or the extraction patterns have
+    /// rotted. The tail entries anchor one representative per non-generic registration shape
+    /// (direct instance binds via <c>new T()</c> locals and <c>T.SectionName</c> section hints).
+    /// </summary>
     private static readonly string[] AuditedRootNames =
     [
         "AlertDeliveryOptions",
@@ -32,6 +46,12 @@ public sealed partial class ConfigurationBindingShapeTests
         "TemporaryFileOptions",
         "TileOptions",
         "WorkspaceOptions",
+        // Direct instance-bind shapes (#3055 follow-up): `var options = new T(); section.Bind(options)`
+        // and `GetSection(T.SectionName).Bind(instance)`.
+        "MySqlOptions",
+        "OidcAuthenticationOptions",
+        "OutputCacheTtlOptions",
+        "SecurityHeadersOptions",
     ];
 
     [ArchitectureTest]
@@ -127,6 +147,37 @@ public sealed partial class ConfigurationBindingShapeTests
                     ContainsConfigurationBind(match.Groups["tail"].Value))
                 {
                     roots.Add(typeName);
+                }
+            }
+
+            // GetSection(T.SectionName).Bind(instance): the section expression names the bound
+            // type directly. This shape appears both standalone and inside Configure<T>(options
+            // => ...) lambdas, whose delegate overload the generic scan above ignores.
+            foreach (Match match in SectionNameBindPattern().Matches(source))
+            {
+                roots.Add(SimpleTypeName(match.Groups["type"].Value));
+            }
+
+            // section.Bind(local) where the local was created with `new T()` (for example the
+            // provider options in AddMySqlServices). Recover T from the local's declaration.
+            var newInstanceTypesByVariable = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (Match match in NewInstanceDeclarationPattern().Matches(source))
+            {
+                var variable = match.Groups["variable"].Value;
+                if (!newInstanceTypesByVariable.TryGetValue(variable, out var typeNames))
+                {
+                    typeNames = new HashSet<string>(StringComparer.Ordinal);
+                    newInstanceTypesByVariable.Add(variable, typeNames);
+                }
+
+                typeNames.Add(SimpleTypeName(match.Groups["type"].Value));
+            }
+
+            foreach (Match match in BindArgumentPattern().Matches(source))
+            {
+                if (newInstanceTypesByVariable.TryGetValue(match.Groups["argument"].Value, out var typeNames))
+                {
+                    roots.UnionWith(typeNames);
                 }
             }
         }
@@ -428,6 +479,17 @@ public sealed partial class ConfigurationBindingShapeTests
 
     [GeneratedRegex(@"\b(?<variable>\w+)\s*\.\s*Bind(?:Configuration)?\s*\(")]
     private static partial Regex VariableBindPattern();
+
+    [GeneratedRegex(
+        @"GetSection\s*\(\s*(?<type>[\w.]+)\s*\.\s*SectionName\s*\)\s*\.\s*Bind\s*\(")]
+    private static partial Regex SectionNameBindPattern();
+
+    [GeneratedRegex(
+        @"(?:var|[\w.<>]+)\s+(?<variable>\w+)\s*=\s*new\s+(?<type>[\w.]+)\s*[({]")]
+    private static partial Regex NewInstanceDeclarationPattern();
+
+    [GeneratedRegex(@"\.\s*Bind\s*\(\s*(?<argument>\w+)\s*\)")]
+    private static partial Regex BindArgumentPattern();
 
     [GeneratedRegex(
         @"Configure\s*<\s*(?<type>[\w.]+)\s*>\s*\((?<tail>.{0,1600}?)\)\s*;",

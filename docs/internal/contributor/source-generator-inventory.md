@@ -27,18 +27,20 @@ wiring; it has been incremental since its introduction in .NET 7.
 
 ## Configuration-binding shape convention
 
-`Configure<T>(IConfiguration)` and `AddOptions<T>().Bind(...)` bind onto an existing
-options instance. With `EnableConfigurationBindingGenerator=true`, an `init`-only
-property in that instance's reachable object graph is not assigned; the configured
-value silently remains at its default. Every configuration type reachable from those
-registration paths must therefore use ordinary `get; set;` accessors, including nested
-objects and collection elements. `init` remains appropriate for request/domain models
-and for configuration records constructed as a new instance through `Get<T>()`.
+`Configure<T>(IConfiguration)`, `AddOptions<T>().Bind(...)`, and direct instance binds
+(`GetSection(T.SectionName).Bind(instance)`, or `section.Bind(local)` on a `new T()`
+local) bind onto an existing options instance. With
+`EnableConfigurationBindingGenerator=true`, an `init`-only property in that instance's
+reachable object graph is not assigned; the configured value silently remains at its
+default. Every configuration type reachable from those registration paths must
+therefore use ordinary `get; set;` accessors, including nested objects and collection
+elements. `init` remains appropriate for request/domain models and for configuration
+records constructed as a new instance through `Get<T>()`.
 
-`ConfigurationBindingShapeTests` discovers the Configure/Bind roots from source,
-walks their property-type graphs, and fails on an `init` accessor. When adding a new
-configuration registration, use settable configuration DTOs all the way down rather
-than sharing an immutable domain DTO in the bound graph.
+`ConfigurationBindingShapeTests` discovers the Configure/Bind/instance-bind roots from
+source, walks their property-type graphs, and fails on an `init` accessor. When adding
+a new configuration registration, use settable configuration DTOs all the way down
+rather than sharing an immutable domain DTO in the bound graph.
 
 The #3055 audit found the following candidates on `trunk`. "Assignment-sensitive"
 excludes initialized mutable container properties that the binder could populate
