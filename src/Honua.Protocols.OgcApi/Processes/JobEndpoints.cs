@@ -56,6 +56,18 @@ internal static class JobEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
+        // Canonical authenticated content route for staged output artifacts (#3089).
+        // Re-authorizes the caller against the job, then streams the immutable staged
+        // object from the registered output store under a fenced read lease so the
+        // orphan sweeper cannot delete an object mid-download.
+        endpoints.MapGet($"{BasePath}/jobs/{{jobId}}/results/artifacts/{{artifactIndex:int}}/content", GetJobArtifactContent)
+            .WithTags(Tag)
+            .WithName("OgcProcessesJobArtifactContent")
+            .WithSummary("Download a staged job output artifact")
+            .Produces(StatusCodes.Status200OK)
+            .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
+            .ExcludeFromDescription();
+
         // HANDLER-AUTHORIZED (#1144): the handler calls
         // OperatorApprovalGate.CheckAuthorizationAsync (with destructive=true) for
         // OperatorResourceType.Job + Execute before any mutation; unauth
@@ -394,13 +406,154 @@ internal static class JobEndpoints
             return JobStoreUnavailableResult();
         }
 
-        var resultsDocument = ToOgcResultsDocument(resultPackage);
+        var resultsDocument = ToOgcResultsDocument(resultPackage, BaseUrlResolver.GetBaseUrl(context), jobId);
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
             MediaTypes.Json,
             StatusCodes.Status200OK);
     }
+
+    private static async Task<IResult> GetJobArtifactContent(
+        string jobId,
+        int artifactIndex,
+        HttpContext context,
+        ILogger<OgcProcessesEndpointsLog> logger,
+        [FromServices] IGeoprocessingJobService jobService)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.processes.getjobartifactcontent");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetJobArtifactContent");
+        activity?.SetTag(HonuaTelemetry.Tags.JobId, jobId);
+
+        // Re-authorize the current caller: first the coarse Job/Read policy, then the
+        // job-scoped decision after the record is resolved — identical to GetJobResults.
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
+
+        ExecutionJobRecord job;
+        try
+        {
+            job = await jobService.GetJobAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingAuthorizationException authEx)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
+        }
+        catch (GeoprocessingStoreUnavailableException)
+        {
+            return JobStoreUnavailableResult();
+        }
+
+        if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+        {
+            return JobNotFoundResult(jobId);
+        }
+
+        authDecision = await gate.CheckAuthorizationAsync(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                ResourceId = job.OperationId,
+                Operation = OperatorOperation.Read
+            },
+            context.RequestAborted).ConfigureAwait(false);
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
+
+        // A cancelled or failed job never exposes staged content as a successful
+        // output (#3089); non-terminal jobs have no publishable result yet.
+        if (job.Status != ExecutionJobStatus.Succeeded)
+        {
+            return ArtifactNotAvailableResult(jobId, artifactIndex);
+        }
+
+        if (artifactIndex < 0
+            || artifactIndex >= job.ArtifactReferences.Count
+            || !Honua.Core.Features.Geoprocessing.Raster.RasterOutputJson.TryDeserialize(
+                job.ArtifactReferences[artifactIndex], out var descriptor)
+            || descriptor is not Honua.Core.Features.Geoprocessing.Raster.StagedObjectRasterOutputDescriptor staged)
+        {
+            return ArtifactNotAvailableResult(jobId, artifactIndex);
+        }
+
+        var store = context.RequestServices
+            .GetService<Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore>();
+        if (store is null
+            || store.Provider != staged.Provider
+            || !string.Equals(store.StoreReference, staged.StoreReference, StringComparison.Ordinal))
+        {
+            OgcProcessesLog.ArtifactStoreUnavailable(logger, jobId, artifactIndex);
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Artifact store unavailable",
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Detail = "The staged output store for this artifact is not configured on this host."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        // Fenced read lease: the orphan sweeper skips leased objects, so a slow
+        // download cannot race a concurrent sweep of an expiring artifact.
+        var stagingOptions = context.RequestServices
+            .GetService<IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>>();
+        var leaseDuration = stagingOptions?.CurrentValue.ReadLeaseDuration ?? TimeSpan.FromMinutes(15);
+        if (!await store.TryAcquireReadLeaseAsync(staged.ObjectKey, leaseDuration, context.RequestAborted).ConfigureAwait(false))
+        {
+            return ArtifactNotAvailableResult(jobId, artifactIndex);
+        }
+
+        var stream = await store.OpenReadAsync(staged.ObjectKey, context.RequestAborted).ConfigureAwait(false);
+        if (stream is null)
+        {
+            return ArtifactNotAvailableResult(jobId, artifactIndex);
+        }
+
+        if (staged.Content.Checksum is { } checksum)
+        {
+            context.Response.Headers.ETag = $"\"{checksum.Algorithm}:{checksum.Value}\"";
+        }
+
+        return Results.Stream(stream, staged.Content.MediaType, enableRangeProcessing: true);
+    }
+
+    private static IResult ArtifactNotAvailableResult(string jobId, int artifactIndex)
+        => Results.Json(
+            new OgcProcessError
+            {
+                Type = "about:blank",
+                Title = "Artifact not available",
+                Status = StatusCodes.Status404NotFound,
+                Detail = $"Job '{jobId}' has no downloadable staged artifact at index {artifactIndex}."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status404NotFound);
 
     private static async Task<IResult> DismissJob(
         string jobId,
@@ -891,11 +1044,28 @@ internal static class JobEndpoints
 
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
-    private static OgcResultsDocument ToOgcResultsDocument(AnalysisResultPackage resultPackage)
+    private static OgcResultsDocument ToOgcResultsDocument(
+        AnalysisResultPackage resultPackage,
+        string baseUrl,
+        string jobId)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        foreach (var artifact in resultPackage.Artifacts)
+        for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
+            var artifact = resultPackage.Artifacts[index];
+
+            // Staged output artifacts (#3089) link through the canonical authenticated
+            // content route; their durable Uri is deliberately null so no provider
+            // location or expiring URL leaks into result links.
+            var href = artifact.Uri;
+            if (href is null
+                && artifact.Metadata.TryGetValue(
+                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var isStaged)
+                && string.Equals(isStaged, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                href = Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(baseUrl, jobId, index);
+            }
+
             var outputName = ResolveUniqueOutputName(ResolveOutputName(artifact, outputs.Count), outputs);
             outputs[outputName] = JsonSerializer.SerializeToElement(
                 new OgcArtifactResult
@@ -903,7 +1073,7 @@ internal static class JobEndpoints
                     Id = artifact.ArtifactId,
                     Kind = artifact.Kind.ToString(),
                     Title = artifact.Label,
-                    Href = artifact.Uri,
+                    Href = href,
                     Type = artifact.ContentType
                 },
                 OgcProcessesJsonContext.Default.OgcArtifactResult);

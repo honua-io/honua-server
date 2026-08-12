@@ -6898,7 +6898,25 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobKindFilterTests.JobResults_NonGeoprocessingJob_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobResults_CrossOwnerFailedJob_ReturnsNotFoundWithoutErrorLeak",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobResults_CrossOwnerSucceededJob_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.JobResults_StagedArtifact_LinksContentRouteWithoutPayload"
+      ],
+      "proof_ledger_surface": "ogc-api-processes",
+      "maturity": "implemented",
+      "capability": "process.ogc-api-processes"
+    },
+    {
+      "id": "get-ogc-processes-jobs-jobid-results-artifacts-artifactindex-content",
+      "route": "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content",
+      "method": "GET",
+      "family": "OGC API Processes",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_CancelledJob_NeverExposesStagedOutput",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_IndexOutOfRange_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_RunningJob_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_SucceededJob_StreamsStagedObject"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",

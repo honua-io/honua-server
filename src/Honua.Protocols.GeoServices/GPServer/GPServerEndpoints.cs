@@ -483,7 +483,8 @@ internal static class GPServerEndpoints
             }
 
             return await BuildExecuteSuccessResponseAsync(
-                jobService, terminal, context.User, envControls, workingSrid, ct);
+                jobService, terminal, context.User, envControls, workingSrid,
+                BaseUrlResolver.GetBaseUrl(context), ct);
         }
         catch (TimeoutException)
         {
@@ -570,6 +571,33 @@ internal static class GPServerEndpoints
         }
     }
 
+    /// <summary>
+    /// Resolves the GP result value for an artifact. Staged output artifacts (#3089)
+    /// deliberately carry no durable Uri; their value is the canonical authenticated
+    /// content route so no provider location or expiring URL leaks to clients.
+    /// </summary>
+    private static string ResolveArtifactValue(
+        ArtifactRef artifact,
+        string jobId,
+        int artifactIndex,
+        string baseUrl)
+    {
+        if (artifact.Uri is { } uri)
+        {
+            return uri;
+        }
+
+        if (artifact.Metadata.TryGetValue(
+                Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged, out var staged)
+            && string.Equals(staged, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return Honua.Core.Features.Geoprocessing.Raster.RasterOutputContentRoutes.Build(
+                baseUrl, jobId, artifactIndex);
+        }
+
+        return artifact.Label;
+    }
+
     private static IResult BuildExecuteFailureResponse(ExecutionJobRecord job, string esriStatus)
     {
         var messages = new List<GPJobMessage>();
@@ -600,6 +628,7 @@ internal static class GPServerEndpoints
         System.Security.Claims.ClaimsPrincipal user,
         EnvControls envControls,
         int workingSrid,
+        string baseUrl,
         CancellationToken ct)
     {
         var results = new List<GPResultResponse>();
@@ -634,7 +663,7 @@ internal static class GPServerEndpoints
                 var artifact = resultPackage.Artifacts[index];
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
-                var value = artifact.Uri ?? artifact.Label;
+                var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl);
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
@@ -1005,7 +1034,17 @@ internal static class GPServerEndpoints
                     $"Output parameter '{paramName}' not found");
             }
 
-            var value = artifact.Uri ?? artifact.Label;
+            var artifactIndex = 0;
+            for (var index = 0; index < results.Artifacts.Count; index++)
+            {
+                if (ReferenceEquals(results.Artifacts[index], artifact))
+                {
+                    artifactIndex = index;
+                    break;
+                }
+            }
+
+            var value = ResolveArtifactValue(artifact, job.OperationId, artifactIndex, BaseUrlResolver.GetBaseUrl(context));
 
             // Honor env:outSR on the async path: when the job was submitted with
             // env:outSR, apply the same reprojection the synchronous execute path

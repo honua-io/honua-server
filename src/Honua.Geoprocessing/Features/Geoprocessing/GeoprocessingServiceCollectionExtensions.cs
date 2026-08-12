@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.FileStorage;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.LocalRunner;
@@ -131,6 +132,20 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
+
+        // Referenced raster outputs (#3089): opt-in staged output store, the
+        // idempotent post-success COG-catalog registrar, and the orphan sweeper that
+        // reconciles staged-but-unpublished and expired staging. The sweeper is
+        // hosted only when the staging store is registered (staging enabled) and an
+        // execution job store exists to interrogate job state.
+        services.AddGeoprocessingOutputStaging(configuration);
+        services.TryAddSingleton<GeoprocessingRasterOutputRegistrar>();
+        if (services.Any(d => d.ServiceType == typeof(IGeoprocessingOutputObjectStore))
+            && services.Any(d => d.ServiceType == typeof(IExecutionJobStore))
+            && ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
+        {
+            services.AddHostedService<GeoprocessingOutputArtifactSweeper>();
+        }
 
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();

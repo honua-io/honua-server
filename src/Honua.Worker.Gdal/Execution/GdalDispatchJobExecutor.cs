@@ -28,6 +28,8 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
 
     private readonly FrozenDictionary<string, IProcessExecutor> _handlers;
     private readonly ILogger<GdalDispatchJobExecutor> _logger;
+    private readonly Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? _outputStore;
+    private readonly Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? _stagingOptions;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered GDAL-backed executors
@@ -37,16 +39,23 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     /// a single executor over several ids — so the O(1) routing table is built from
     /// a single DI scan via <see cref="ProcessExecutorRouteTable.Build"/> instead of
     /// a hand-maintained constructor naming every executor and its id set.
+    /// When an output staging store is registered (#3089), the dispatcher wraps the
+    /// execution context in <see cref="GdalStagedOutputContext"/> so the shared
+    /// publisher stages large outputs by reference instead of inlining them.
     /// </summary>
     public GdalDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
-        ILogger<GdalDispatchJobExecutor> logger)
+        ILogger<GdalDispatchJobExecutor> logger,
+        Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null,
+        Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? stagingOptions = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = ProcessExecutorRouteTable.Build(executors);
         _logger = logger;
+        _outputStore = outputStore;
+        _stagingOptions = stagingOptions;
     }
 
     /// <inheritdoc />
@@ -76,6 +85,12 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
             return Task.FromResult(JobExecutionResult.Failed(
                 $"Process id '{processId ?? "<none>"}' is not supported by the GDAL worker runtime. " +
                 $"Supported ids: {supported}."));
+        }
+
+        var staging = _stagingOptions?.CurrentValue;
+        if (_outputStore is not null && staging is { Enabled: true })
+        {
+            context = new GdalStagedOutputContext(context, job, _outputStore, staging);
         }
 
         return handler.ExecuteAsync(job, context, cancellationToken);

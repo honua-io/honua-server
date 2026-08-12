@@ -482,6 +482,72 @@
           }
         }
       }
+    },
+    "/ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content": {
+      "get": {
+        "summary": "Download a staged job output artifact",
+        "description": "Streams the immutable staged output object published by a succeeded geoprocessing job (#3089). The handler re-authorizes the current caller against the job and reads from the registered output store under a fenced read lease; durable records and result links carry only this stable route, never provider locations or expiring URLs.",
+        "operationId": "OgcProcessesJobArtifactContent",
+        "security": [
+          { "ApiKeyAuth": [] }
+        ],
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "artifactIndex",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The staged artifact content, streamed with the descriptor's media type.",
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found, not succeeded, or no staged artifact at this index",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "503": {
+            "description": "Staged output store not configured on this host",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 
 namespace Honua.Geoprocessing;
@@ -125,13 +126,29 @@ internal static class GeoprocessingResultPackageFactory
                 ?? job.Spec.Parameters.GetValueOrDefault(
                     $"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{slotIndex}");
 
-            Dictionary<string, string>? metadata = null;
+            var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
             if (!string.IsNullOrWhiteSpace(outputName))
             {
-                metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    [GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey] = outputName
-                };
+                metadata[GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey] = outputName;
+            }
+
+            // Typed raster output descriptors (#3089) become metadata-rich artifacts.
+            // Staged objects keep Uri null — the payload is only reachable through the
+            // authenticated content route — while bounded inline descriptors keep the
+            // legacy data-URI value shape for protocol compatibility.
+            string? uri = string.IsNullOrWhiteSpace(reference) ? null : reference;
+            string? contentType;
+            if (RasterOutputJson.TryDeserialize(reference, out var descriptor))
+            {
+                AppendDescriptorMetadata(metadata, descriptor);
+                contentType = descriptor.Content.MediaType;
+                uri = descriptor is InlineRasterOutputDescriptor inline
+                    ? $"data:{descriptor.Content.MediaType};base64,{Convert.ToBase64String(inline.Payload)}"
+                    : null;
+            }
+            else
+            {
+                contentType = InferContentType(reference, kind);
             }
 
             artifacts[index] = new ArtifactRef
@@ -141,13 +158,82 @@ internal static class GeoprocessingResultPackageFactory
                 Label = string.IsNullOrWhiteSpace(outputName)
                     ? BuildArtifactLabel(kind, index)
                     : outputName,
-                Uri = string.IsNullOrWhiteSpace(reference) ? null : reference,
-                ContentType = InferContentType(reference, kind),
-                Metadata = metadata ?? new Dictionary<string, string>()
+                Uri = uri,
+                ContentType = contentType,
+                Metadata = metadata
             };
         }
 
         return artifacts;
+    }
+
+    /// <summary>
+    /// Projects the descriptor's content identity, grid summary, producing engine, and
+    /// lineage onto artifact metadata as stable identities (#3089).
+    /// </summary>
+    private static void AppendDescriptorMetadata(
+        Dictionary<string, string> metadata,
+        RasterOutputDescriptor descriptor)
+    {
+        metadata[RasterOutputArtifactMetadata.Attempt] =
+            descriptor.AttemptNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        metadata[RasterOutputArtifactMetadata.OutputName] = descriptor.OutputName;
+        metadata[RasterOutputArtifactMetadata.SizeBytes] =
+            descriptor.Content.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        metadata[RasterOutputArtifactMetadata.MediaType] = descriptor.Content.MediaType;
+        metadata[RasterOutputArtifactMetadata.ProducingEngine] = descriptor.ProducingEngine;
+        if (descriptor.Content.Checksum is { } checksum)
+        {
+            metadata[RasterOutputArtifactMetadata.Checksum] = $"{checksum.Algorithm}:{checksum.Value}";
+        }
+
+        if (descriptor.Grid is { } grid)
+        {
+            metadata[RasterOutputArtifactMetadata.GridWidth] =
+                grid.Width.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            metadata[RasterOutputArtifactMetadata.GridHeight] =
+                grid.Height.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            metadata[RasterOutputArtifactMetadata.GridBandCount] =
+                grid.BandCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            metadata[RasterOutputArtifactMetadata.GridBitsPerSample] =
+                grid.BitsPerSample.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(grid.CoordinateReferenceSystem))
+            {
+                metadata[RasterOutputArtifactMetadata.GridCrs] = grid.CoordinateReferenceSystem;
+            }
+        }
+
+        if (descriptor.Lineage is { } lineage)
+        {
+            if (!string.IsNullOrWhiteSpace(lineage.ProcessId))
+            {
+                metadata[RasterOutputArtifactMetadata.LineageProcessId] = lineage.ProcessId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lineage.PlanId))
+            {
+                metadata[RasterOutputArtifactMetadata.LineagePlanId] = lineage.PlanId;
+            }
+
+            if (lineage.SourceReferences.Count > 0)
+            {
+                metadata[RasterOutputArtifactMetadata.LineageSources] =
+                    string.Join('|', lineage.SourceReferences);
+            }
+        }
+
+        if (descriptor is StagedObjectRasterOutputDescriptor staged)
+        {
+            metadata[RasterOutputArtifactMetadata.Staged] = "true";
+            metadata[RasterOutputArtifactMetadata.StoreProvider] = staged.Provider.ToString();
+            metadata[RasterOutputArtifactMetadata.StoreReference] = staged.StoreReference;
+            metadata[RasterOutputArtifactMetadata.ObjectKey] = staged.ObjectKey;
+        }
+        else if (descriptor is PostgisRasterOutputDescriptor postgis)
+        {
+            metadata[RasterOutputArtifactMetadata.RegisteredLayerId] =
+                postgis.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 
     private static ProvenanceRecord BuildProvenance(

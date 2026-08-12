@@ -34,23 +34,26 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly IProcessCatalog _processCatalog;
     private readonly IGeoprocessingResultPackageStore? _resultPackageStore;
     private readonly IGeoprocessingRasterSourceResolver? _rasterSourceResolver;
+    private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
-    /// and the optional raster-source resolver.
+    /// the optional raster-source resolver, and the optional output registrar (#3089).
     /// </summary>
     public GeoprocessingJobArtifactService(
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IProcessCatalog processCatalog,
         IGeoprocessingResultPackageStore? resultPackageStore = null,
-        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
+        GeoprocessingRasterOutputRegistrar? outputRegistrar = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
         _processCatalog = processCatalog;
         _resultPackageStore = resultPackageStore;
         _rasterSourceResolver = rasterSourceResolver;
+        _outputRegistrar = outputRegistrar;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -278,6 +281,24 @@ internal sealed class GeoprocessingJobArtifactService
         }
 
         var synthesizedPackage = GeoprocessingResultPackageFactory.Create(job, _processCatalog);
+
+        // Registration is atomic with result visibility (#3089, ADR-0071): a job with
+        // registration intents never yields a Completed package until every intent is
+        // durably registered. The registrar is idempotent, so a crash between the
+        // terminal transition and this read is healed by replaying it here.
+        if (GeoprocessingRasterOutputRegistrar.HasRegistrationIntents(job))
+        {
+            if (_outputRegistrar is null)
+            {
+                throw new InvalidOperationException(
+                    $"Job '{jobId}' declares raster output registration intents, but no output registrar "
+                    + "is configured in this deployment.");
+            }
+
+            synthesizedPackage = await _outputRegistrar
+                .EnsureRegisteredAsync(job, synthesizedPackage, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (_resultPackageStore != null)
         {

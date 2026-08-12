@@ -34,6 +34,24 @@ internal static class GdalWorkerParameterKeys
     public const string ProcessDefinitions = "honua.geoprocessing.process_definitions";
 
     /// <summary>
+    /// Stable analysis plan identifier recorded by the submit path
+    /// (mirrors <c>ExecutionJobParameterKeys.GeoprocessingPlanId</c>).
+    /// </summary>
+    public const string PlanId = "honua.geoprocessing.plan_id";
+
+    /// <summary>
+    /// Prefix of the per-slot output names recorded by the OGC Processes submit path
+    /// (mirrors <c>GeoprocessingProtocolMetadataKeys.OutputNamePrefix</c>).
+    /// </summary>
+    public const string OutputNamePrefix = "process.output.";
+
+    /// <summary>
+    /// Prefix of the per-slot output names recorded by the GPServer submit path
+    /// (mirrors <c>GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix</c>).
+    /// </summary>
+    public const string GPServerOutputNamePrefix = "gpserver.output.";
+
+    /// <summary>
     /// Separator for the ordered process-definitions list.
     /// </summary>
     public const string MetadataListSeparator = "|";
