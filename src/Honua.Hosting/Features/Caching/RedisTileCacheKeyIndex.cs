@@ -148,18 +148,18 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     }
 
     /// <inheritdoc />
-    public async Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(key))
         {
-            return;
+            return false;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            await _redis.GetDatabase().SetAddAsync(ExpiredSetKey, key).ConfigureAwait(false);
+            return await _redis.GetDatabase().SetAddAsync(ExpiredSetKey, key).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

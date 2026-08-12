@@ -667,7 +667,7 @@ public sealed class TileCacheLifecycleExecutionTests
             CancellationToken cancellationToken = default)
             => new(await SnapshotAsync(cancellationToken), SnapshotAvailable);
 
-        public async Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+        public async Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
         {
             if (BeforeExpirationMarkerAsync is not null)
             {
@@ -679,10 +679,13 @@ public sealed class TileCacheLifecycleExecutionTests
                 throw new InvalidOperationException("transient");
             }
 
-            if (_entries.ContainsKey(key) && !Expired.Contains(key))
+            if (!_entries.ContainsKey(key) || Expired.Contains(key))
             {
-                Expired.Add(key);
+                return false;
             }
+
+            Expired.Add(key);
+            return true;
         }
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)

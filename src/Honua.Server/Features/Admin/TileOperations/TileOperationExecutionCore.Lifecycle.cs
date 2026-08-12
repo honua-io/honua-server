@@ -186,11 +186,18 @@ internal sealed partial class TileOperationExecutionCore
                     // a miss. Set-add is idempotent, so always write the marker: an expiration-read
                     // failure must not be mistaken for prior success. Holding the same per-key fence
                     // as RecordWriteAsync orders the marker against concurrent regeneration.
+                    var markerAdded = false;
                     await mutationCoordinator!.ExecuteSerializedAsync(
                         entry.Key,
-                        mutationToken => keyIndex.MarkExpiredAsync(entry.Key, mutationToken),
+                        async mutationToken =>
+                        {
+                            markerAdded = await keyIndex.MarkExpiredAsync(entry.Key, mutationToken).ConfigureAwait(false);
+                        },
                         cancellationToken).ConfigureAwait(false);
-                    mutations++;
+                    if (markerAdded)
+                    {
+                        mutations++;
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

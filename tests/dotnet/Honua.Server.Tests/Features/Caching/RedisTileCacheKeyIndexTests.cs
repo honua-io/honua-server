@@ -11,6 +11,26 @@ namespace Honua.Server.Tests.Features.Caching;
 
 public sealed class RedisTileCacheKeyIndexTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MarkExpiredAsync_ReturnsWhetherRedisAddedTheMarker(bool added)
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.SetAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>())
+            .Returns(added);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var result = await index.MarkExpiredAsync("tile-key");
+
+        result.Should().Be(added);
+    }
+
     [Fact]
     public async Task ExecuteSerializedAsync_WhenLeaseRenewalIsLost_CancelsMutationAndFailsClosed()
     {

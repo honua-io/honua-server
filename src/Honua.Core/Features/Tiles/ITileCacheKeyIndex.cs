@@ -72,7 +72,8 @@ public interface ITileCacheKeyIndex
     /// </summary>
     /// <param name="key">The tile cache key (the storage object key).</param>
     /// <param name="cancellationToken">A cancellation token.</param>
-    Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default);
+    /// <returns><see langword="true"/> when this call added a new marker; otherwise <see langword="false"/>.</returns>
+    Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Snapshots the current index as a set of <see cref="TileCacheEntry" /> records for the evictor

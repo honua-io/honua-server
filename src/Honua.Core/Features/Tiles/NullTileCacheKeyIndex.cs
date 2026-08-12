@@ -36,8 +36,8 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
         => Task.FromResult(false);
 
     /// <inheritdoc />
-    public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    public Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
