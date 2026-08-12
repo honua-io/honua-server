@@ -312,13 +312,15 @@ public static class StudioInteractionVocabulary
         if (value.StartsWith(LayerRefPrefix, StringComparison.Ordinal))
         {
             var layerId = value[LayerRefPrefix.Length..];
-            return (body.Layers ?? []).Any(layer => string.Equals(layer.Id, layerId, StringComparison.Ordinal))
+            return (body.Layers ?? []).Any(layer => layer is not null
+                    && string.Equals(layer.Id, layerId, StringComparison.Ordinal))
                 ? StudioComponentRefResolution.Resolved
                 : StudioComponentRefResolution.Unresolved;
         }
 
         var widgetId = value[WidgetRefPrefix.Length..];
-        return (body.Widgets ?? []).Any(widget => string.Equals(widget.Id, widgetId, StringComparison.Ordinal))
+        return (body.Widgets ?? []).Any(widget => widget is not null
+                && string.Equals(widget.Id, widgetId, StringComparison.Ordinal))
             ? StudioComponentRefResolution.Resolved
             : StudioComponentRefResolution.Unresolved;
     }

@@ -292,6 +292,7 @@ internal sealed class McpStudioRemoveWidgetArgument
 /// The event-source half of an interaction input: a component reference plus one
 /// member of the closed event set (<see cref="StudioInteractionVocabulary.EventNames"/>).
 /// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionEventInput
 {
     [JsonPropertyName("ref")]
@@ -306,6 +307,7 @@ internal sealed class McpStudioInteractionEventInput
 /// closed verb set (<see cref="StudioInteractionVocabulary.ActionVerbs"/>), and static
 /// JSON arguments (<c>$event.*</c> string substitution only — no expression language).
 /// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionActionInput
 {
     [JsonPropertyName("ref")]
@@ -322,6 +324,7 @@ internal sealed class McpStudioInteractionActionInput
 /// Interaction input shape for <c>honua_studio_bind_interaction</c>. Mirrors the
 /// standard's <c>common/interactions.schema.json#/$defs/interaction</c>.
 /// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioInteractionInput
 {
     [JsonPropertyName("id")]
@@ -338,6 +341,7 @@ internal sealed class McpStudioInteractionInput
 }
 
 /// <summary>Arguments for <c>honua_studio_bind_interaction</c>.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioBindInteractionArgument
 {
     [JsonPropertyName("draftId")]
@@ -351,6 +355,7 @@ internal sealed class McpStudioBindInteractionArgument
 }
 
 /// <summary>Arguments for <c>honua_studio_remove_interaction</c>.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpStudioRemoveInteractionArgument
 {
     [JsonPropertyName("draftId")]

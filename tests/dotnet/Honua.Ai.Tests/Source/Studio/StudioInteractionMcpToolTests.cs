@@ -383,6 +383,43 @@ public sealed class StudioInteractionMcpToolTests
         error.Which.Message.Should().Contain("must be a JSON object");
     }
 
+    [Theory]
+    [InlineData("\"disable\":true")]
+    [InlineData("\"on\":{\"ref\":\"layer:parcels\",\"event\":\"featureSelect\",\"once\":true}")]
+    [InlineData("\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\",\"argz\":{}}")]
+    public async Task BindInteraction_WithUnknownMember_SurfacesInvalidArgument(string replacementMember)
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+        var on = replacementMember.StartsWith("\"on\"", StringComparison.Ordinal)
+            ? replacementMember
+            : "\"on\":{\"ref\":\"layer:parcels\",\"event\":\"featureSelect\"}";
+        var action = replacementMember.StartsWith("\"do\"", StringComparison.Ordinal)
+            ? replacementMember
+            : "\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\"}";
+        var extra = replacementMember.StartsWith("\"on\"", StringComparison.Ordinal)
+            || replacementMember.StartsWith("\"do\"", StringComparison.Ordinal)
+                ? string.Empty
+                : $",{replacementMember}";
+
+        var act = () => harness.BindAsync($$"""{"id":"i1",{{on}},{{action}}{{extra}}}""");
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_remove_interaction")]
+    public async Task RemoveInteraction_WithOversizedId_SurfacesInvalidArgument()
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+        var interactionId = new string('i', StudioInteractionVocabulary.MaxInteractionIdLength + 1);
+
+        var act = () => harness.RemoveAsync(interactionId);
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("characters or fewer");
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]

@@ -135,6 +135,26 @@ public sealed class StudioPackageValidatorInteractionsTests
     }
 
     [UnitTest]
+    public void Validate_NullComponentsReferencedByAnInteraction_ReportUnresolvedInsteadOfThrowing()
+    {
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [null],
+              "widgets": [null],
+              "interactions": [
+                { "id": "i1", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "widget:chart", "verb": "setFilter" } }
+              ]
+            }
+            """);
+
+        Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
+        Assert.Equal(2, summary.Diagnostics.Count(diagnostic =>
+            diagnostic.Code == "studio.interaction.ref.unresolved"));
+    }
+
+    [UnitTest]
     public void Validate_ControlRef_FailsWithTheControlsUnsupportedMessage()
     {
         // ADR-0030 admits `control:{id}` in the grammar, but Studio composition documents

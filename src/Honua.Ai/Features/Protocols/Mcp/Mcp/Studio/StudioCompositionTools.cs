@@ -666,6 +666,12 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
             throw new GeoprocessingValidationException("'interactionId' is required.");
         }
 
+        if (argument.InteractionId.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+        {
+            throw new GeoprocessingValidationException(
+                $"'interactionId' must be {StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer.");
+        }
+
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
