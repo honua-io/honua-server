@@ -51,4 +51,12 @@ internal sealed class GdalContainerExecutionOptions
     /// network is required and disabling it keeps the local dry-run hermetic.
     /// </summary>
     public string Network { get; set; } = "none";
+
+    /// <summary>
+    /// Network mode used only when a trusted catalog descriptor supplies a remote GDAL VSI input
+    /// such as <c>/vsis3/</c> or <c>/vsiaz/</c>. Defaults to Docker's <c>bridge</c> network so the
+    /// nested fidelity container can reach the execution-owned object-store endpoint while local
+    /// scratch-file jobs retain the hermetic <see cref="Network"/> mode.
+    /// </summary>
+    public string RemoteVsiNetwork { get; set; } = "bridge";
 }

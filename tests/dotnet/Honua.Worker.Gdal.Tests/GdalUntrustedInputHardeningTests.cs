@@ -4,9 +4,11 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -301,12 +303,112 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
+    public void Hardening_TrustedVsiInvocation_ProjectsRegisteredS3Endpoint()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            new AwsS3Options
+            {
+                Region = "us-west-2",
+                ServiceUrl = "http://minio:9000/",
+                ForcePathStyle = true,
+                AccessKeyId = "test-access-key",
+                SecretAccessKey = "test-secret-key",
+            },
+            inputReferencesS3Vsi: true);
+
+        env["AWS_REGION"].Should().Be("us-west-2");
+        env["AWS_S3_ENDPOINT"].Should().Be("http://minio:9000");
+        env["AWS_HTTPS"].Should().Be("NO");
+        env["AWS_VIRTUAL_HOSTING"].Should().Be("FALSE");
+        env["AWS_ACCESS_KEY_ID"].Should().Be("test-access-key");
+        env["AWS_SECRET_ACCESS_KEY"].Should().Be("test-secret-key");
+    }
+
+    [UnitTest]
+    public void Hardening_TrustedS3VsiInvocation_ForwardsAmbientCredentialChain()
+    {
+        var ambient = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret",
+            ["AWS_SESSION_TOKEN"] = "ambient-session",
+        };
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            new AwsS3Options { Region = "us-east-1" },
+            inputReferencesS3Vsi: true,
+            environmentVariableReader: name => ambient.GetValueOrDefault(name));
+
+        env["AWS_ACCESS_KEY_ID"].Should().Be("ambient-access");
+        env["AWS_SECRET_ACCESS_KEY"].Should().Be("ambient-secret");
+        env["AWS_SESSION_TOKEN"].Should().Be("ambient-session");
+        GdalRuntimeHardening.ToDockerEnvArguments(env).Should().ContainInOrder("-e", "AWS_SESSION_TOKEN");
+    }
+
+    [UnitTest]
+    public void Hardening_LocalInvocation_DoesNotForwardAmbientCredentialChain()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options(),
+            inputReferencesS3Vsi: false,
+            environmentVariableReader: _ => "must-not-leak");
+
+        env.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        env.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+        env.Should().NotContainKey("AWS_SESSION_TOKEN");
+    }
+
+    [UnitTest]
+    public void Hardening_TrustedAzureVsiInvocation_ProjectsConnectionString()
+    {
+        const string connectionString =
+            "DefaultEndpointsProtocol=https;AccountName=registered;AccountKey=secret;EndpointSuffix=core.windows.net";
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            azureOptions: new AzureBlobOptions { ConnectionString = connectionString },
+            inputReferencesAzureVsi: true);
+
+        env["AZURE_STORAGE_CONNECTION_STRING"].Should().Be(connectionString);
+        env.Should().NotContainKey("AWS_S3_ENDPOINT");
+    }
+
+    [UnitTest]
+    public void Hardening_LocalInvocation_DoesNotExposeS3Endpoint()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options
+            {
+                ServiceUrl = "http://minio:9000",
+                ForcePathStyle = true,
+                AccessKeyId = "must-not-leak",
+                SecretAccessKey = "must-not-leak",
+            });
+
+        env.Should().NotContainKey("AWS_S3_ENDPOINT");
+        env.Should().NotContainKey("AWS_VIRTUAL_HOSTING");
+        env.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        env.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+    }
+
+    [UnitTest]
     public void Hardening_ArgumentsReferenceVsi_DetectsVsiPaths()
     {
         GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/vsis3/bucket/x.nc" })
             .Should().BeTrue();
         GdalRuntimeHardening.ArgumentsReferenceVsi(new[] { "-json", "/scratch/op/input.tif" })
             .Should().BeFalse();
+        GdalRuntimeHardening.ArgumentsReferenceS3Vsi(new[] { "/vsis3/bucket/input.tif" })
+            .Should().BeTrue();
+        GdalRuntimeHardening.ArgumentsReferenceAzureVsi(new[] { "/vsiaz/container/input.tif" })
+            .Should().BeTrue();
     }
 
     [UnitTest]
@@ -333,14 +435,16 @@ public sealed class GdalUntrustedInputHardeningTests
             "/scratch/op",
             env);
 
-        // Each hardening var appears as a `-e KEY=VALUE` pair before the image.
+        // Each hardening var appears as a `-e KEY` pair before the image. Values are
+        // passed to the Docker process environment so secrets never enter argv.
         args.Should().Contain("-e");
-        args.Should().Contain(a => a.StartsWith("GDAL_SKIP=", StringComparison.Ordinal));
-        args.Should().Contain(a => a.StartsWith("CPL_VSIL_CURL_ALLOWED_EXTENSIONS=", StringComparison.Ordinal));
+        args.Should().Contain("GDAL_SKIP");
+        args.Should().Contain("CPL_VSIL_CURL_ALLOWED_EXTENSIONS");
+        args.Should().NotContain(a => a.Contains('='));
 
         var imageIndex = args.ToList().IndexOf(GdalContainerExecutionOptions.DefaultImage);
-        var lastEnvValueIndex = args.ToList().FindLastIndex(a => a.StartsWith("GDAL_", StringComparison.Ordinal));
-        lastEnvValueIndex.Should().BeLessThan(imageIndex, "docker flags must precede the image ref");
+        var lastEnvKeyIndex = args.ToList().FindLastIndex(a => a.StartsWith("GDAL_", StringComparison.Ordinal));
+        lastEnvKeyIndex.Should().BeLessThan(imageIndex, "docker flags must precede the image ref");
     }
 
     [UnitTest]
@@ -350,6 +454,8 @@ public sealed class GdalUntrustedInputHardeningTests
         // GDAL_SKIP back so we can prove the runner set it on the child environment.
         var runner = new ProcessGdalCommandRunner(
             Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()),
+            Options.Create(new AzureBlobOptions()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
 
         var (tool, args) = OperatingSystem.IsWindows()
@@ -361,6 +467,84 @@ public sealed class GdalUntrustedInputHardeningTests
         result.Succeeded.Should().BeTrue();
         result.StandardOutput.Should().Contain("VRT");
         result.StandardOutput.Should().Contain("WMS");
+    }
+
+    [UnitTest]
+    public void ProcessRunner_LocalInvocation_StripsInheritedAndReferencedCredentials()
+    {
+        const string referencedVariable = "HONUA_GDAL_REFERENCED_SECRET";
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATH"] = "safe-path",
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret",
+            ["AZURE_STORAGE_CONNECTION_STRING"] = "ambient-azure",
+            [referencedVariable] = "referenced-secret"
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:AwsS3:AccessKeyId"] = $"env:{referencedVariable}"
+            })
+            .Build();
+        var hardeningEnvironment = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options
+            {
+                // Mirrors PostConfigure: the option contains the resolved secret, while the raw
+                // IConfiguration value retains the referenced environment-variable name.
+                AccessKeyId = "referenced-secret",
+                SecretAccessKey = "must-not-be-forwarded"
+            },
+            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" });
+
+        ProcessGdalCommandRunner.ApplyHardenedEnvironment(
+            environment,
+            hardeningEnvironment,
+            new AwsS3Options
+            {
+                AccessKeyId = "referenced-secret",
+                SecretAccessKey = "must-not-be-forwarded"
+            },
+            new AzureBlobOptions { ConnectionString = "must-not-be-forwarded" },
+            configuration);
+
+        environment.Should().ContainKey("PATH");
+        environment.Should().ContainKey("GDAL_SKIP");
+        environment.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        environment.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+        environment.Should().NotContainKey("AZURE_STORAGE_CONNECTION_STRING");
+        environment.Should().NotContainKey(referencedVariable);
+    }
+
+    [UnitTest]
+    public void ProcessRunner_TrustedS3Invocation_ReplacesAmbientCredentialsWithAuthorizedValues()
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret"
+        };
+        var s3 = new AwsS3Options
+        {
+            AccessKeyId = "registered-access",
+            SecretAccessKey = "registered-secret"
+        };
+        var hardeningEnvironment = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            s3,
+            inputReferencesS3Vsi: true);
+
+        ProcessGdalCommandRunner.ApplyHardenedEnvironment(
+            environment,
+            hardeningEnvironment,
+            s3,
+            new AzureBlobOptions());
+
+        environment["AWS_ACCESS_KEY_ID"].Should().Be("registered-access");
+        environment["AWS_SECRET_ACCESS_KEY"].Should().Be("registered-secret");
     }
 
     // ---- End-to-end at the executor boundary (no gdal binary needed) -----------

@@ -29,6 +29,28 @@ public interface ICloudRangeReader
     Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads a byte range only when the object still has the expected ETag.
+    /// Implementations that cannot enforce the condition fail closed rather than silently
+    /// reading mutable content under an identity established by an earlier metadata request.
+    /// </summary>
+    /// <param name="bucket">Bucket or container name</param>
+    /// <param name="key">Object key or blob path</param>
+    /// <param name="offset">Byte offset to start reading from</param>
+    /// <param name="length">Number of bytes to read</param>
+    /// <param name="expectedETag">ETag returned by the identity metadata request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The requested byte range from the matching object identity</returns>
+    Task<byte[]> ReadRangeAsync(
+        string bucket,
+        string key,
+        long offset,
+        int length,
+        string expectedETag,
+        CancellationToken cancellationToken = default)
+        => Task.FromException<byte[]>(new NotSupportedException(
+            "This cloud range reader does not support ETag-conditional reads."));
+
+    /// <summary>
     /// Reads a byte range from a cloud-hosted object as a stream.
     /// </summary>
     /// <param name="bucket">Bucket or container name</param>
@@ -47,4 +69,18 @@ public interface ICloudRangeReader
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Object size in bytes</returns>
     Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets bounded object identity metadata without reading the object payload.
+    /// Implementations should use a provider HEAD/properties request. The default keeps
+    /// existing range-reader implementations source-compatible while returning size only.
+    /// </summary>
+    async Task<CloudObjectMetadata> GetObjectMetadataAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+        => new()
+        {
+            SizeBytes = await GetObjectSizeAsync(bucket, key, cancellationToken).ConfigureAwait(false),
+        };
 }

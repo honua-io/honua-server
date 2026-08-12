@@ -4,6 +4,8 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.Helpers;
 using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
@@ -174,6 +176,31 @@ public static class GdalWorkerServiceCollectionExtensions
                     .GetSection(GdalHardeningOptions.SectionName)
                     .GetSection(nameof(GdalHardeningOptions.SkipDrivers)),
                 options.SkipDrivers));
+
+        // Registered raster references carry only the logical bucket/key identity.
+        // Project the execution-owned S3 endpoint configuration into the worker so
+        // GDAL resolves /vsis3 paths against the same S3-compatible store the API
+        // probed (for example MinIO or LocalStack), without serializing an endpoint
+        // URL or credentials into the durable job descriptor.
+        services
+            .AddOptions<AwsS3Options>()
+            .Bind(configuration.GetSection("FileStorage:AwsS3"));
+        services.PostConfigure<AwsS3Options>(options =>
+        {
+            options.AccessKeyId = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.AccessKeyId,
+                "FileStorage:AwsS3:AccessKeyId");
+            options.SecretAccessKey = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.SecretAccessKey,
+                "FileStorage:AwsS3:SecretAccessKey");
+        });
+        services
+            .AddOptions<AzureBlobOptions>()
+            .Bind(configuration.GetSection("FileStorage:AzureBlob"));
+        services.PostConfigure<AzureBlobOptions>(options =>
+            options.ConnectionString = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.ConnectionString,
+                "FileStorage:AzureBlob:ConnectionString") ?? string.Empty);
 
         if (mode == GdalProcessExecutorMode.Container)
         {

@@ -3,6 +3,8 @@
 
 using System.Diagnostics;
 using System.Text;
+using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,8 +18,30 @@ namespace Honua.Worker.Gdal.Execution;
 /// </summary>
 internal sealed partial class ProcessGdalCommandRunner(
     IOptions<GdalHardeningOptions> hardening,
-    ILogger<ProcessGdalCommandRunner> logger) : IGdalCommandRunner
+    IOptions<AwsS3Options> s3Options,
+    IOptions<AzureBlobOptions> azureOptions,
+    ILogger<ProcessGdalCommandRunner> logger,
+    IConfiguration? configuration = null) : IGdalCommandRunner
 {
+    private static readonly string[] InheritedCloudCredentialVariables =
+    [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        "AWS_ROLE_ARN",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "AZURE_STORAGE_ACCOUNT",
+        "AZURE_STORAGE_ACCESS_KEY",
+        "AZURE_STORAGE_SAS_TOKEN",
+        "AZURE_CLIENT_ID",
+        "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID"
+    ];
+
     /// <inheritdoc />
     public async Task<GdalCommandResult> RunAsync(
         string tool,
@@ -47,13 +71,20 @@ internal sealed partial class ProcessGdalCommandRunner(
         // (VRT, WMS, …) and — for a pure local-scratch invocation — neutralize the
         // remote virtual-filesystem handlers. Applied by overwriting the inherited
         // environment so a value set on the worker process cannot weaken the policy.
+        var referencesRemoteVsi = GdalRuntimeHardening.ArgumentsReferenceVsi(arguments);
         var hardeningEnv = GdalRuntimeHardening.BuildEnvironment(
             hardening.Value,
-            GdalRuntimeHardening.ArgumentsReferenceVsi(arguments));
-        foreach (var kvp in hardeningEnv)
-        {
-            startInfo.Environment[kvp.Key] = kvp.Value;
-        }
+            referencesRemoteVsi,
+            s3Options.Value,
+            azureOptions.Value,
+            GdalRuntimeHardening.ArgumentsReferenceS3Vsi(arguments),
+            GdalRuntimeHardening.ArgumentsReferenceAzureVsi(arguments));
+        ApplyHardenedEnvironment(
+            startInfo.Environment,
+            hardeningEnv,
+            s3Options.Value,
+            azureOptions.Value,
+            configuration);
 
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
@@ -106,6 +137,56 @@ internal sealed partial class ProcessGdalCommandRunner(
 
         Log.ToolCompleted(logger, tool, result.ExitCode);
         return result;
+    }
+
+    internal static void ApplyHardenedEnvironment(
+        IDictionary<string, string?> environment,
+        IReadOnlyDictionary<string, string> hardeningEnvironment,
+        AwsS3Options s3Options,
+        AzureBlobOptions azureOptions,
+        IConfiguration? configuration = null)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(hardeningEnvironment);
+        ArgumentNullException.ThrowIfNull(s3Options);
+        ArgumentNullException.ThrowIfNull(azureOptions);
+
+        var sensitiveNames = new HashSet<string>(InheritedCloudCredentialVariables, StringComparer.OrdinalIgnoreCase);
+        AddEnvironmentReference(sensitiveNames, s3Options.AccessKeyId);
+        AddEnvironmentReference(sensitiveNames, s3Options.SecretAccessKey);
+        AddEnvironmentReference(sensitiveNames, azureOptions.ConnectionString);
+        if (configuration is not null)
+        {
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:AccessKeyId"]);
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AwsS3:SecretAccessKey"]);
+            AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AzureBlob:ConnectionString"]);
+        }
+
+        // ProcessStartInfo starts with a copy of the worker's complete environment. Strip every
+        // known cloud credential and configured env: indirection before re-adding only the values
+        // BuildEnvironment authorized for this exact S3/Azure VSI invocation.
+        foreach (var inheritedName in environment.Keys.Where(sensitiveNames.Contains).ToArray())
+        {
+            environment.Remove(inheritedName);
+        }
+
+        foreach (var kvp in hardeningEnvironment)
+        {
+            environment[kvp.Key] = kvp.Value;
+        }
+    }
+
+    private static void AddEnvironmentReference(HashSet<string> sensitiveNames, string? configuredValue)
+    {
+        const string prefix = "env:";
+        if (configuredValue is not null && configuredValue.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var name = configuredValue[prefix.Length..].Trim();
+            if (name.Length > 0)
+            {
+                sensitiveNames.Add(name);
+            }
+        }
     }
 
     private static void TryKill(Process process)
