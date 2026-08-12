@@ -22,6 +22,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
     public async Task<GdalCommandResult> RunAsync(
         string executable,
         IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
@@ -30,7 +31,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         Log.RunningContainer(logger, executable, string.Join(' ', arguments));
 
         var (exitCode, stdout, stderr) = await RunProcessAsync(
-            executable, arguments, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
+            executable, arguments, environment, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
 
         Log.ContainerCompleted(logger, executable, exitCode);
         return new GdalCommandResult
@@ -59,6 +60,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
             var (exitCode, _, _) = await RunProcessAsync(
                 executable,
                 new[] { "image", "inspect", image },
+                environment: null,
                 throwIfStartFails: false,
                 cancellationToken).ConfigureAwait(false);
             return exitCode == 0;
@@ -73,6 +75,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
     private static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunProcessAsync(
         string executable,
         IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment,
         bool throwIfStartFails,
         CancellationToken cancellationToken)
     {
@@ -88,6 +91,14 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (environment is not null)
+        {
+            foreach (var (key, value) in environment)
+            {
+                startInfo.Environment[key] = value;
+            }
         }
 
         using var process = new Process { StartInfo = startInfo };

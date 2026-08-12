@@ -170,12 +170,32 @@ public static class RasterSourceDescriptorValidator
 
             case ObjectStoreCogRasterSourceDescriptor cog:
                 ValidateOpaqueReference(cog.StoreReference, "storeReference", errors);
-                ValidateRelativeLocator(cog.ObjectKey, "objectKey", errors);
+                ValidateObjectStoreKey(cog.ObjectKey, "objectKey", errors);
+                if (cog.DeclaredDimensions is { } dimensions
+                    && (dimensions.Width <= 0
+                        || dimensions.Height <= 0
+                        || dimensions.BandCount <= 0
+                        || dimensions.BitsPerSample <= 0))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredDimensions",
+                        "Declared raster dimensions must all be positive when supplied.");
+                }
+
+                if (cog.DeclaredPixelScale is { } pixelScale
+                    && (!double.IsFinite(pixelScale.X)
+                        || !double.IsFinite(pixelScale.Y)
+                        || pixelScale.X <= 0d
+                        || pixelScale.Y <= 0d))
+                {
+                    Add(errors, RasterSourceValidationCodes.InvalidField, "declaredPixelScale",
+                        "Declared raster pixel scales must be positive finite numbers when supplied.");
+                }
+
                 break;
 
             case ObjectStoreZarrRasterSourceDescriptor zarr:
                 ValidateOpaqueReference(zarr.StoreReference, "storeReference", errors);
-                ValidateRelativeLocator(zarr.ObjectKey, "objectKey", errors);
+                ValidateObjectStoreKey(zarr.ObjectKey, "objectKey", errors);
                 ValidateRelativeLocator(zarr.ArrayPath, "arrayPath", errors);
                 break;
 
@@ -381,6 +401,18 @@ public static class RasterSourceDescriptorValidator
         }
     }
 
+    private static void ValidateObjectStoreKey(
+        string value,
+        string field,
+        List<RasterSourceValidationError> errors)
+    {
+        if (!IsSafeObjectStoreKey(value))
+        {
+            Add(errors, RasterSourceValidationCodes.UnsafeLocator, field,
+                $"{field} must be a bounded object key without traversal, URI, query, or control syntax.");
+        }
+    }
+
     private static bool IsOpaqueReference(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 160)
@@ -447,6 +479,48 @@ public static class RasterSourceDescriptorValidator
             && !first.StartsWith("/vsi", StringComparison.OrdinalIgnoreCase)
             && !decoded.StartsWith("file", StringComparison.OrdinalIgnoreCase)
             && !decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeObjectStoreKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
+        {
+            return false;
+        }
+
+        // S3 keys and Azure blob names legally contain spaces, '#', ':', repeated slashes, and
+        // words such as "http-data". They remain inside the execution-owned provider/bucket VSI
+        // envelope, so reject only syntax that can change that envelope or smuggle traversal.
+        if (value[0] is '/' or '\\'
+            || value.Contains('\\')
+            || value.Contains('?')
+            || value.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        if (!IsSafeText(decoded, 2048)
+            || decoded[0] is '/' or '\\'
+            || decoded.Contains('\\')
+            || decoded.Contains('?')
+            || decoded.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return decoded
+            .Split('/', StringSplitOptions.None)
+            .All(segment => segment is not "." and not "..");
     }
 
     private static bool IsMediaType(string? value)

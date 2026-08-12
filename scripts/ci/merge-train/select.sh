@@ -244,10 +244,12 @@ train_refresh_review_gate() {
   unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
     '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
   clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")")" || return 1
-  payload="$(jq -nc --argjson reviews "$(jq -c '.reviews // []' <<<"${snapshot}")" \
-    --argjson cleanComments "${clean_comments}" \
+  # Keep review history off the process argument vector. Busy PRs can carry
+  # enough paginated review evidence to exceed Linux ARG_MAX when injected
+  # through --argjson, even though jq can process the same data via stdin.
+  payload="$(printf '%s\n%s\n' "${snapshot}" "${clean_comments}" | jq -sc \
     --argjson unresolvedCount "${unresolved}" --arg head "${head}" \
-    '{reviews:$reviews,cleanComments:$cleanComments,unresolvedCount:$unresolvedCount,head:$head}')" || return 1
+    '{reviews:(.[0].reviews // []),cleanComments:(.[1] // []),unresolvedCount:$unresolvedCount,head:$head}')" || return 1
   result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
   if jq -e '.exactReview or .exactCleanComment' <<<"${result}" >/dev/null; then
     state=success; description='Current exact-head Codex evidence is clean'

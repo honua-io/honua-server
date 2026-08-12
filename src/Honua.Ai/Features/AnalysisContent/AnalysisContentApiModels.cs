@@ -144,6 +144,7 @@ internal sealed record AnalysisArtifactResponse
 [JsonSerializable(typeof(RasterSourceDescriptor))]
 [JsonSerializable(typeof(PostgisRasterSourceDescriptor))]
 [JsonSerializable(typeof(ObjectStoreCogRasterSourceDescriptor))]
+[JsonSerializable(typeof(RasterSourcePixelScale))]
 [JsonSerializable(typeof(ObjectStoreZarrRasterSourceDescriptor))]
 [JsonSerializable(typeof(StagedArtifactRasterSourceDescriptor))]
 [JsonSerializable(typeof(InlineRasterSourceDescriptor))]
