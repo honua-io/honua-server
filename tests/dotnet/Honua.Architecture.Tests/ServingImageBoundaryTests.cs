@@ -388,7 +388,7 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("ARG PDAL_VERSION=");
         dockerfile.Should().Contain("ARG PDAL_SOURCE_SHA256=");
         dockerfile.Should().Contain("ARG GDAL_VERSION=3.13.1");
-        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.10");
+        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.11");
         dockerfile.Should().Contain("ubuntu-full-3.13.1");
         dockerfile.Should().Contain("apt-get -y --no-install-recommends upgrade");
         dockerfile.Should().Contain("FROM ${GDAL_BASE_IMAGE} AS pdal-build");
@@ -407,7 +407,7 @@ public sealed class ServingImageBoundaryTests
         var verifier = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/verify-serving-image-boundary.py"));
         verifier.Should().Contain("\"honua.native.gdal.version\": \"3.13.1\"");
         verifier.Should().Contain("\"honua.native.pdal.version\": \"2.10.2\"");
-        verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"10.0.10\"");
+        verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"10.0.11\"");
         verifier.Should().Contain("worker image must run as user 1001:1001");
         verifier.Should().Contain("libpdalcpp.so");
         const string lockedNugetMount = "--mount=type=cache,target=/root/.nuget/packages,sharing=locked";
