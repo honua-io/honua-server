@@ -237,6 +237,51 @@ sql:
           ('00000000-0000-0000-0000-000000000002', '*', '*', 'query'),
           ('00000000-0000-0000-0000-000000000002', '*', '*', 'metadata')
       ON CONFLICT (role_id, service, layer, operation) DO NOTHING;
+  # Durable managed-user + SCIM group store (#3141). Mirrors migration
+  # 106_CreateManagedUsersAndScimGroups.sql so the migration-skipping integration
+  # fixture has the honua.managed_users / managed_user_roles / scim_groups /
+  # scim_group_members tables. Without these, PostgresUserStore /
+  # PostgresScimGroupStore mutations 500 with
+  # `relation "honua.managed_users" does not exist` (same failure mode as the
+  # rbac_* tables above, honua-server#1568).
+  - |
+      CREATE TABLE IF NOT EXISTS honua.managed_users (
+          user_id             VARCHAR(256) PRIMARY KEY,
+          external_id         VARCHAR(256),
+          display_name        VARCHAR(512) NOT NULL,
+          email               VARCHAR(320),
+          provisioning_source VARCHAR(64)  NOT NULL,
+          provider_id         UUID,
+          is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
+          created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_user_id_lower ON honua.managed_users (LOWER(user_id));"
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_users_external_id_lower ON honua.managed_users (LOWER(external_id)) WHERE external_id IS NOT NULL;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.managed_user_roles (
+          user_id    VARCHAR(256) NOT NULL REFERENCES honua.managed_users(user_id) ON DELETE CASCADE,
+          role       VARCHAR(256) NOT NULL,
+          created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_managed_user_roles_user_role_lower ON honua.managed_user_roles (user_id, LOWER(role));"
+  - "CREATE INDEX IF NOT EXISTS ix_managed_user_roles_role_lower ON honua.managed_user_roles (LOWER(role));"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.scim_groups (
+          group_id     VARCHAR(64)  PRIMARY KEY,
+          display_name VARCHAR(256) NOT NULL,
+          created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_groups_display_name_lower ON honua.scim_groups (LOWER(display_name));"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.scim_group_members (
+          group_id   VARCHAR(64)  NOT NULL REFERENCES honua.scim_groups(group_id) ON DELETE CASCADE,
+          user_id    VARCHAR(256) NOT NULL,
+          created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_group_members_group_user_lower ON honua.scim_group_members (group_id, LOWER(user_id));"
+  - "CREATE INDEX IF NOT EXISTS ix_scim_group_members_user_lower ON honua.scim_group_members (LOWER(user_id));"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
