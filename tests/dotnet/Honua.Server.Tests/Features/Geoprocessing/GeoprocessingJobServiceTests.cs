@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -491,6 +493,52 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_TypedAndLegacyInlineRaster_RejectsBeforePersistence()
+    {
+        var inlineDescriptor = new InlineRasterSourceDescriptor
+        {
+            Version = "inline-v1",
+            Payload = [1, 2, 3],
+            Content = new RasterContentIdentity
+            {
+                SizeBytes = 3,
+                MediaType = "image/tiff",
+                Checksum = new RasterChecksum(
+                    "sha256",
+                    Convert.ToHexString(SHA256.HashData([1, 2, 3])).ToLowerInvariant()),
+            },
+            SecurityContext = new RasterSecurityContextReference
+            {
+                TenantId = "tenant-a",
+                AuthorizationSnapshotReference = "auth-snapshot-123",
+            },
+        };
+        var plan = CreateTypedRasterPlan("source", inlineDescriptor);
+        plan = plan with
+        {
+            Steps =
+            [
+                plan.Steps[0] with
+                {
+                    Inputs = new Dictionary<string, string>(plan.Steps[0].Inputs)
+                    {
+                        ["source"] = Convert.ToBase64String([4, 5, 6]),
+                    },
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobAsync(plan, null, CreatePrincipal()));
+
+        exception.Message.Should().Contain("both a typed reference and a legacy string input");
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithStableSubject_StoresSubjectAsOwner()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -545,6 +593,7 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_RasterIdOnly_AuthorizesOwningLayerBeforeResolvingMetadataOnlyReference()
     {
+        const string tenantId = "Hawai'i Ops @ West";
         var events = new List<string>();
         var rasterResolver = Substitute.For<IGeoprocessingRasterSourceResolver>();
         rasterResolver
@@ -596,7 +645,16 @@ public sealed class GeoprocessingJobServiceTests
             });
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
-        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer);
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(tenantId);
+        await using var requestServices = new ServiceCollection()
+            .AddSingleton(tenantContext)
+            .BuildServiceProvider();
+        var httpContextAccessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { RequestServices = requestServices }
+        };
+        var sut = CreateServiceWithRasterResolver(rasterResolver, layerAuthorizer, httpContextAccessor);
 
         var job = await sut.SubmitJobAsync(CreateRasterSourcePlan(rasterId: 91), null, CreatePrincipal());
 
@@ -606,7 +664,8 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters[ExecutionJobParameterKeys.GeoprocessingStepRasterSourcePrefix + "0.source"]
             .Should().Contain("\"sourceType\":\"cog\"")
             .And.Contain("\"provider\":\"AwsS3\"")
-            .And.Contain("\"tenantId\":\"default\"")
+            .And.Contain($"\"tenantId\":\"{OpaqueTenantReference(tenantId)}\"")
+            .And.NotContain(tenantId)
             .And.Contain($"\"authorizationSnapshotReference\":\"job:{job.OperationId}:submitter\"")
             .And.NotContain("payload");
         job.Spec.ContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
@@ -4100,7 +4159,8 @@ public sealed class GeoprocessingJobServiceTests
 
     private GeoprocessingJobService CreateServiceWithRasterResolver(
         IGeoprocessingRasterSourceResolver? rasterResolver,
-        ILayerAccessAuthorizer layerAuthorizer)
+        ILayerAccessAuthorizer layerAuthorizer,
+        IHttpContextAccessor? httpContextAccessor = null)
         => new(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
@@ -4110,7 +4170,8 @@ public sealed class GeoprocessingJobServiceTests
             _jobStore, _jobQueue,
             resultPackageStore: _resultPackageStore,
             rasterSourceResolver: rasterResolver,
-            layerAccessAuthorizer: layerAuthorizer);
+            layerAccessAuthorizer: layerAuthorizer,
+            httpContextAccessor: httpContextAccessor);
 
     private static AnalysisPlan CreateRasterSourcePlan(long rasterId, int? layerId = null)
     {
@@ -4189,7 +4250,7 @@ public sealed class GeoprocessingJobServiceTests
 
     private static AnalysisPlan CreateTypedRasterPlan(
         string parameterName,
-        ObjectStoreCogRasterSourceDescriptor? descriptor = null) => new()
+        RasterSourceDescriptor? descriptor = null) => new()
         {
             PlanId = "plan-typed-raster",
             IntentId = "intent-typed-raster",
@@ -4227,6 +4288,12 @@ public sealed class GeoprocessingJobServiceTests
             AuthorizationSnapshotReference = "untrusted-caller-hint",
         },
     };
+
+    private static string OpaqueTenantReference(string tenantId)
+    {
+        var source = Encoding.UTF8.GetBytes($"tenant:named:{tenantId}");
+        return $"tenant:{Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant()}";
+    }
 
     private static AnalysisPlanStep BufferStep(string stepId) => new()
     {

@@ -312,6 +312,8 @@ public sealed class GdalUntrustedInputHardeningTests
                 Region = "us-west-2",
                 ServiceUrl = "http://minio:9000/",
                 ForcePathStyle = true,
+                AccessKeyId = "test-access-key",
+                SecretAccessKey = "test-secret-key",
             },
             inputReferencesS3Vsi: true);
 
@@ -319,6 +321,8 @@ public sealed class GdalUntrustedInputHardeningTests
         env["AWS_S3_ENDPOINT"].Should().Be("http://minio:9000");
         env["AWS_HTTPS"].Should().Be("NO");
         env["AWS_VIRTUAL_HOSTING"].Should().Be("FALSE");
+        env["AWS_ACCESS_KEY_ID"].Should().Be("test-access-key");
+        env["AWS_SECRET_ACCESS_KEY"].Should().Be("test-secret-key");
     }
 
     [UnitTest]
@@ -346,10 +350,14 @@ public sealed class GdalUntrustedInputHardeningTests
             {
                 ServiceUrl = "http://minio:9000",
                 ForcePathStyle = true,
+                AccessKeyId = "must-not-leak",
+                SecretAccessKey = "must-not-leak",
             });
 
         env.Should().NotContainKey("AWS_S3_ENDPOINT");
         env.Should().NotContainKey("AWS_VIRTUAL_HOSTING");
+        env.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        env.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
     }
 
     [UnitTest]

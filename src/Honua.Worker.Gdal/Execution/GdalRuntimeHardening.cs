@@ -85,6 +85,16 @@ internal static class GdalRuntimeHardening
 
     private static void AddS3Environment(Dictionary<string, string> env, AwsS3Options options)
     {
+        if (!string.IsNullOrWhiteSpace(options.AccessKeyId))
+        {
+            env["AWS_ACCESS_KEY_ID"] = options.AccessKeyId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.SecretAccessKey))
+        {
+            env["AWS_SECRET_ACCESS_KEY"] = options.SecretAccessKey;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.Region))
         {
             env["AWS_REGION"] = options.Region.Trim();

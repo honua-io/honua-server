@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
@@ -120,8 +122,7 @@ internal sealed class GeoprocessingJobArtifactService
                 }
 
                 var fieldPath = $"steps[{step.StepId}].raster_sources.{source.Key}";
-                if (step.Inputs?.TryGetValue(source.Key, out var legacyValue) == true
-                    && !string.IsNullOrWhiteSpace(legacyValue))
+                if (step.Inputs?.ContainsKey(source.Key) == true)
                 {
                     failures.Add(new GeoprocessingValidationFailure
                     {
@@ -224,10 +225,22 @@ internal sealed class GeoprocessingJobArtifactService
             _rasterSourceResolver,
             new RasterSecurityContextReference
             {
-                TenantId = submitterSecurityContext.TenantId ?? "default",
+                TenantId = CreateOpaqueTenantReference(submitterSecurityContext.TenantId),
                 AuthorizationSnapshotReference = $"job:{jobId}:submitter",
             },
             cancellationToken);
+
+    /// <summary>
+    /// Produces a stable descriptor-safe reference without placing an unrestricted tenant id
+    /// onto the worker contract. Tenant lifecycle identifiers may contain spaces, Unicode, or
+    /// punctuation that the deliberately narrow raster descriptor alphabet rejects.
+    /// </summary>
+    internal static string CreateOpaqueTenantReference(string? tenantId)
+    {
+        var source = tenantId is null ? "tenant:none" : $"tenant:named:{tenantId}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(source));
+        return $"tenant:{Convert.ToHexString(hash).ToLowerInvariant()}";
+    }
 
     /// <summary>
     /// Returns the result package for a terminal job: the durable stored package when it
