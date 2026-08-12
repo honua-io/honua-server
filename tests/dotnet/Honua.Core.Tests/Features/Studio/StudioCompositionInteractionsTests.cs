@@ -67,6 +67,20 @@ public sealed class StudioCompositionInteractionsTests
     }
 
     [UnitTest]
+    public void BindInteraction_WithOversizedId_IsRejected()
+    {
+        var interaction = SelectParcelFiltersChart() with
+        {
+            Id = new string('i', StudioInteractionVocabulary.MaxInteractionIdLength + 1),
+        };
+
+        var error = Assert.Throws<StudioCompositionConflictException>(() =>
+            StudioCompositionBodyEditor.BindInteraction(ParcelComposition(), interaction));
+
+        Assert.Contains("characters or fewer", error.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public void BindInteraction_WithUnresolvableRef_IsRejected()
     {
         var body = ParcelComposition();
@@ -290,6 +304,7 @@ public sealed class StudioCompositionInteractionsTests
             ["setFilter", "setViewport", "selectFeature", "runWidgetQuery", "setVisibility"],
             StudioInteractionVocabulary.ActionVerbs);
         Assert.Equal(8, StudioInteractionVocabulary.MaxInteractionsPerEventSource);
+        Assert.Equal(200, StudioInteractionVocabulary.MaxInteractionIdLength);
         Assert.Equal(1, StudioInteractionVocabulary.MinGridColumns);
         Assert.Equal(24, StudioInteractionVocabulary.MaxGridColumns);
         Assert.Equal(12, StudioInteractionVocabulary.DefaultGridColumns);

@@ -362,6 +362,12 @@ public static class StudioCompositionBodyEditor
             throw new StudioCompositionConflictException("An interaction requires a non-empty 'id'.");
         }
 
+        if (interaction.Id.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+        {
+            throw new StudioCompositionConflictException(
+                $"An interaction 'id' must be {StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer.");
+        }
+
         EnsureBindable(body, interaction);
 
         var interactions = (body.Interactions ?? []).ToList();

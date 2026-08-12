@@ -393,6 +393,13 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             {
                 diagnostics.Add(Error("studio.interaction.id.required", $"{path}/id", "interaction id is required."));
             }
+            else if (interaction.Id.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.id.too-long",
+                    $"{path}/id",
+                    $"interaction id must be {StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer."));
+            }
             else if (!ids.Add(interaction.Id))
             {
                 diagnostics.Add(Error(
@@ -415,6 +422,15 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     "studio.interaction.verb.unsupported",
                     $"{path}/do/verb",
                     $"do.verb must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}."));
+            }
+
+            if (interaction.Do.Args is
+                { ValueKind: not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined })
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.args.object",
+                    $"{path}/do/args",
+                    "do.args must be a JSON object."));
             }
 
             ValidateComponentRef(composition, interaction.On.Ref, $"{path}/on/ref", "studio.interaction.ref", diagnostics);

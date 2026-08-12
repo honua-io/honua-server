@@ -178,6 +178,45 @@ public sealed class StudioPackageValidatorInteractionsTests
     }
 
     [UnitTest]
+    public void Validate_InteractionIdOverTheAdvertisedLimit_Fails()
+    {
+        var id = new string('i', StudioInteractionVocabulary.MaxInteractionIdLength + 1);
+        var summary = ValidateBody(
+            $$"""
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "interactions": [
+                { "id": "{{id}}", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
+              ]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.interaction.id.too-long");
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"not-an-object\"")]
+    [InlineData("42")]
+    [InlineData("true")]
+    public void Validate_ActionArgsThatAreNotAnObject_Fails(string argsJson)
+    {
+        var summary = ValidateBody(
+            $$"""
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "interactions": [
+                { "id": "i1", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport", "args": {{argsJson}} } }
+              ]
+            }
+            """);
+
+        AssertInvalidWith(summary, "studio.interaction.args.object");
+    }
+
+    [UnitTest]
     public void Validate_FanOutOverTheCap_Fails_ButExactlyAtTheCapPasses()
     {
         var atCap = ValidateBody(BodyWithFanOut(StudioInteractionVocabulary.MaxInteractionsPerEventSource));

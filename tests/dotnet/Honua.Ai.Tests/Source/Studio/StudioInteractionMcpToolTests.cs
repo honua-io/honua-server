@@ -230,6 +230,27 @@ public sealed class StudioInteractionMcpToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
+    public async Task BindInteraction_WithOversizedId_SurfacesInvalidArgument()
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+        var id = new string('i', StudioInteractionVocabulary.MaxInteractionIdLength + 1);
+
+        var act = () => harness.BindAsync(
+            $$"""
+            {
+              "id": "{{id}}",
+              "on": { "ref": "layer:parcels", "event": "featureSelect" },
+              "do": { "ref": "map", "verb": "setViewport" }
+            }
+            """);
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("characters or fewer");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
     public async Task BindInteraction_PastTheFanOutCap_SurfacesInvalidArgument()
     {
         var harness = await StudioDraftHarness.CreateAsync();

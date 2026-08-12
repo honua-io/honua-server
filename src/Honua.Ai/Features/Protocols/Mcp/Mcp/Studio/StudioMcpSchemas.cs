@@ -115,7 +115,7 @@ internal static class StudioMcpSchemas
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
             "on": {
               "type": "object",
               "required": ["ref", "event"],

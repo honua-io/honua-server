@@ -555,6 +555,12 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
             throw new GeoprocessingValidationException("'interaction.id' is required.");
         }
 
+        if (interaction.Id.Length > StudioInteractionVocabulary.MaxInteractionIdLength)
+        {
+            throw new GeoprocessingValidationException(
+                $"'interaction.id' must be {StudioInteractionVocabulary.MaxInteractionIdLength} characters or fewer.");
+        }
+
         var on = interaction.On ?? throw new GeoprocessingValidationException("'interaction.on' is required.");
         var action = interaction.Do ?? throw new GeoprocessingValidationException("'interaction.do' is required.");
         if (string.IsNullOrWhiteSpace(on.Ref))

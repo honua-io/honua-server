@@ -235,6 +235,9 @@ public static class StudioInteractionVocabulary
     /// </summary>
     public const int MaxInteractionsPerEventSource = 8;
 
+    /// <summary>Largest accepted interaction identifier length.</summary>
+    public const int MaxInteractionIdLength = 200;
+
     /// <summary>Smallest accepted <see cref="StudioLayoutGrid.Columns"/>.</summary>
     public const int MinGridColumns = 1;
 
