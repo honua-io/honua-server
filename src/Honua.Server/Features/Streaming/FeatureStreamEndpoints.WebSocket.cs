@@ -28,6 +28,7 @@ internal static partial class FeatureStreamEndpoints
         HttpContext context,
         IStreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
+        bool announceInitialSubscription,
         FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
@@ -67,9 +68,9 @@ internal static partial class FeatureStreamEndpoints
             },
             context.RequestAborted).ConfigureAwait(false);
 
-        if (subscriptionFilter is not null)
+        if (announceInitialSubscription)
         {
-            FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter.Summary);
+            FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter!.Summary);
             await SendWebSocketStatusAsync(
                 webSocket,
                 session.WriteLock,

@@ -300,7 +300,11 @@ internal static partial class FeatureStreamEndpoints
                 return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, unscopedSnapshotError));
             }
 
-            return new SubscriptionParseResult(null, false, mode, null);
+            // An unfiltered subscription still needs the live metadata guard. A null filter is
+            // treated as an unconditional match by both replay and live fan-out, which would
+            // otherwise allow events from retired/draft routes to remain deliverable.
+            var unscopedFilter = new StreamSubscriptionFilter(routabilityGuard: deps.RoutabilityGuard);
+            return new SubscriptionParseResult(unscopedFilter, false, mode, null);
         }
 
         var filter = new StreamSubscriptionFilter(

@@ -587,7 +587,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public async Task Broadcast_ServiceFilterStopsMatchingWhenPublicationIsRetired()
+    public async Task Broadcast_UnscopedGuardStopsMatchingWhenPublicationIsRetired()
     {
         const string serviceName = "mutable-stream";
         const int storageLayerId = 41;
@@ -609,10 +609,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         var provider = new TestMetadataV2GraphProvider(graph);
         var guard = new FeatureStreamRoutabilityGuard();
         guard.Update(await provider.GetCurrentAsync());
-        var filter = new StreamSubscriptionFilter(
-            serviceId: serviceName,
-            layerIds: [storageLayerId],
-            routabilityGuard: guard);
+        var filter = new StreamSubscriptionFilter(routabilityGuard: guard);
         using var session = _manager.CreateSession("WebSocket", "metadata-routability", filter);
 
         _manager.Broadcast(FeatureStreamMessage.Data(
