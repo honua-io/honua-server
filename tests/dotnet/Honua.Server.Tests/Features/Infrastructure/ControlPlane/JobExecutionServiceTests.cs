@@ -287,6 +287,79 @@ public sealed class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task ProcessJob_RequeuesNormalExecutorReturn_WhenExclusivePartitionLeaseIsLost()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = "tilecache:svc:webmercatorquad:default",
+                RequiresExclusiveLease = true
+            }
+        };
+        var renewalAttempted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
+        jobStore.TryAcquireLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.RenewLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                renewalAttempted.TrySetResult();
+                return false;
+            });
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await renewalAttempted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+                return JobExecutionResult.Succeeded();
+            });
+        var service = new JobExecutionService(
+            jobQueue,
+            jobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(),
+            null,
+            NullLogger<JobExecutionService>.Instance,
+            partitionLeaseDuration: TimeSpan.FromSeconds(1),
+            partitionLeaseRenewInterval: TimeSpan.FromMilliseconds(10),
+            partitionLeaseContentionDelay: TimeSpan.FromMilliseconds(10));
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Queued),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobQueue.Received(1).RequeueAsync(
+            provisioning.OperationId,
+            provisioning.Priority,
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// Regression: a stale worker's heartbeat pump must stop when
     /// the job has been reclaimed by another worker.

@@ -214,6 +214,33 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_WhenCheckpointCannotBeRead_DoesNotMutateStorage()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            GenerationId = "gen-delete-checkpoint-read-unavailable"
+        };
+
+        var act = async () => await ExecuteAsync(
+            request,
+            index,
+            storage,
+            new FailingLoadCheckpointStore());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("checkpoint read unavailable");
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
     public async Task Delete_WhenIndexIsDisabled_FailsInsteadOfReportingFalseSuccess()
     {
         var storage = Substitute.For<ICloudFileStorage>();
@@ -873,6 +900,25 @@ public sealed class TileCacheLifecycleExecutionTests
             string generationId,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult<TileCacheGenerationCheckpoint?>(null);
+
+        public ValueTask<bool> DeleteAsync(
+            string generationId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(false);
+    }
+
+    private sealed class FailingLoadCheckpointStore : ITileCacheGenerationCheckpointStore
+    {
+        public ValueTask SaveAsync(
+            TileCacheGenerationCheckpoint checkpoint,
+            CancellationToken cancellationToken = default)
+            => ValueTask.CompletedTask;
+
+        public ValueTask<TileCacheGenerationCheckpoint?> LoadAsync(
+            string generationId,
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromException<TileCacheGenerationCheckpoint?>(
+                new InvalidOperationException("checkpoint read unavailable"));
 
         public ValueTask<bool> DeleteAsync(
             string generationId,

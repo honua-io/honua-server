@@ -30,6 +30,8 @@ internal sealed partial class TileCacheEvictionService(
     ILogger<TileCacheEvictionService> logger,
     ICloudFileStorage? storage = null)
 {
+    private const int EvictionBatchSize = 1_000;
+
     private readonly ITileCacheKeyIndex _keyIndex = keyIndex ?? throw new ArgumentNullException(nameof(keyIndex));
     private readonly TileCacheEvictionOptions _options =
         (tileOptions ?? throw new ArgumentNullException(nameof(tileOptions))).Value.Eviction;
@@ -51,33 +53,64 @@ internal sealed partial class TileCacheEvictionService(
             return new TileCacheEvictionResult(0, 0, Enabled: false);
         }
 
-        var snapshot = await _keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.IsAvailable)
+        long totalEntries = 0;
+        long totalBytes = 0;
+        await foreach (var page in _keyIndex.ReadPagesAsync(EvictionBatchSize, cancellationToken).ConfigureAwait(false))
         {
-            return new TileCacheEvictionResult(0, 0, Enabled: false);
+            if (!page.IsAvailable)
+            {
+                return new TileCacheEvictionResult(0, 0, Enabled: false);
+            }
+
+            totalEntries += page.Entries.Count;
+            foreach (var entry in page.Entries)
+            {
+                totalBytes += entry.SizeBytes;
+            }
         }
 
-        if (snapshot.Entries.Count == 0)
+        var scanned = (int)Math.Min(int.MaxValue, totalEntries);
+        if (!ExceedsQuota(totalEntries, totalBytes))
         {
-            return new TileCacheEvictionResult(0, 0, Enabled: true);
+            return new TileCacheEvictionResult(scanned, 0, Enabled: true);
         }
 
-        var victims = TileCacheQuotaPolicy.SelectEvictions(snapshot.Entries, _options);
-        if (victims.Count == 0)
+        // The index pages are oldest-first. Select at most one bounded batch per sweep; hosted
+        // sweeps converge large overages without ever materializing the complete index or an
+        // unbounded victim set in one process.
+        var projectedEntries = totalEntries;
+        var projectedBytes = totalBytes;
+        var victims = new List<TileCacheEntry>(EvictionBatchSize);
+        await foreach (var page in _keyIndex.ReadPagesAsync(EvictionBatchSize, cancellationToken).ConfigureAwait(false))
         {
-            return new TileCacheEvictionResult(snapshot.Entries.Count, 0, Enabled: true);
+            if (!page.IsAvailable)
+            {
+                return new TileCacheEvictionResult(0, 0, Enabled: false);
+            }
+
+            foreach (var entry in page.Entries)
+            {
+                if (!ExceedsQuota(projectedEntries, projectedBytes) || victims.Count >= EvictionBatchSize)
+                {
+                    break;
+                }
+
+                victims.Add(entry);
+                projectedEntries--;
+                projectedBytes -= entry.SizeBytes;
+            }
+
+            if (!ExceedsQuota(projectedEntries, projectedBytes) || victims.Count >= EvictionBatchSize)
+            {
+                break;
+            }
         }
 
         var evicted = 0;
-        var entriesByKey = snapshot.Entries.ToDictionary(static entry => entry.Key, StringComparer.Ordinal);
-        foreach (var key in victims)
+        foreach (var victim in victims)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (!entriesByKey.TryGetValue(key, out var victim))
-            {
-                continue;
-            }
+            var key = victim.Key;
 
             var removed = false;
             if (_storage is null)
@@ -123,9 +156,13 @@ internal sealed partial class TileCacheEvictionService(
             evicted++;
         }
 
-        Log.EvictionSweepCompleted(_logger, snapshot.Entries.Count, evicted);
-        return new TileCacheEvictionResult(snapshot.Entries.Count, evicted, Enabled: true);
+        Log.EvictionSweepCompleted(_logger, scanned, evicted);
+        return new TileCacheEvictionResult(scanned, evicted, Enabled: true);
     }
+
+    private bool ExceedsQuota(long totalEntries, long totalBytes)
+        => (_options.MaxEntries is { } maxEntries && maxEntries > 0 && totalEntries > maxEntries) ||
+           (_options.MaxBytes is { } maxBytes && maxBytes > 0 && totalBytes > maxBytes);
 
     private static partial class Log
     {

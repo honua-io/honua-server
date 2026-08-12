@@ -84,44 +84,45 @@ internal static class TileOperationsEndpoints
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
 
-        var indexSnapshot = keyIndex.IsEnabled
-            ? await keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false)
-            : new TileCacheIndexSnapshot([], IsAvailable: true);
-        if (!indexSnapshot.IsAvailable)
-        {
-            return Results.Problem(
-                title: "Tile cache index unavailable",
-                detail: "The tile cache inventory cannot be read while its backing index is unavailable.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-
-        var entries = indexSnapshot.Entries;
-
         var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
         var totalCount = 0;
         var totalBytes = 0L;
-        foreach (var entry in entries)
+        if (keyIndex.IsEnabled)
         {
-            if (!GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
+            await foreach (var page in keyIndex.ReadPagesAsync(1_000, cancellationToken).ConfigureAwait(false))
             {
-                continue;
-            }
+                if (!page.IsAvailable)
+                {
+                    return Results.Problem(
+                        title: "Tile cache index unavailable",
+                        detail: "The tile cache inventory cannot be read while its backing index is unavailable.",
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
 
-            if (layerFilter is not null && !layerFilter.Contains(parsed.LayerId))
-            {
-                continue;
-            }
+                foreach (var entry in page.Entries)
+                {
+                    if (!GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
+                    {
+                        continue;
+                    }
 
-            if (gridsetFilter is not null &&
-                !string.Equals(parsed.Gridset, gridsetFilter, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+                    if (layerFilter is not null && !layerFilter.Contains(parsed.LayerId))
+                    {
+                        continue;
+                    }
 
-            totalCount++;
-            totalBytes += entry.SizeBytes;
-            var existing = perZoom.TryGetValue(parsed.Z, out var value) ? value : (0, 0L);
-            perZoom[parsed.Z] = (existing.Item1 + 1, existing.Item2 + entry.SizeBytes);
+                    if (gridsetFilter is not null &&
+                        !string.Equals(parsed.Gridset, gridsetFilter, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    totalCount++;
+                    totalBytes += entry.SizeBytes;
+                    var existing = perZoom.TryGetValue(parsed.Z, out var value) ? value : (0, 0L);
+                    perZoom[parsed.Z] = (existing.Item1 + 1, existing.Item2 + entry.SizeBytes);
+                }
+            }
         }
 
         var response = new TileCacheInventoryResponse

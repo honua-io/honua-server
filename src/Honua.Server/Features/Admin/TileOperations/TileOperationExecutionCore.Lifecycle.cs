@@ -83,36 +83,13 @@ internal sealed partial class TileOperationExecutionCore
         var targetLayers = await TileCacheTargetResolver.ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits);
 
-        var snapshot = await keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.IsAvailable)
-        {
-            return progress with
-            {
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = "The tile cache index is temporarily unavailable; no cache entries were changed.",
-                CurrentPhase = "Failed"
-            };
-        }
-
-        var allMatched = snapshot.Entries.Where(entry => window.Matches(entry.Key)).ToList();
-
-        // Deterministic ordinal order so a resumed attempt processes the window in the same order.
-        allMatched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
         var maxTiles = Math.Clamp(request.MaxTiles ?? _maxTilesCeiling, 1, _maxTilesCeiling);
-        string[] warnings = [];
-        if (allMatched.Count > maxTiles)
-        {
-            warnings =
-            [
-                $"The cache lifecycle window matched {allMatched.Count} tiles and was truncated to the {maxTiles}-tile safety cap."
-            ];
-        }
-
         var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
         var checkpointEnabled = _checkpointStore is not null && generationId is not null;
         var checkpoint = checkpointEnabled
-            ? await LoadCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false)
+            ? deleteBytes
+                ? await _checkpointStore!.LoadAsync(generationId!, cancellationToken).ConfigureAwait(false)
+                : await LoadCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false)
             : null;
         var attempt = (checkpoint?.Attempt ?? 0) + 1;
         if (checkpoint is not null)
@@ -130,43 +107,59 @@ internal sealed partial class TileOperationExecutionCore
         var pendingDeleteUnits = deleteBytes && checkpoint is { FailedUnits.Count: > 0 }
             ? new HashSet<string>(checkpoint.FailedUnits, StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
-        var snapshotUnits = allMatched
-            .Select(static entry => TruncateUnit(entry.Key))
-            .ToHashSet(StringComparer.Ordinal);
-        pendingDeleteUnits.IntersectWith(snapshotUnits);
+        var remainingDeleteBudget = deleteBytes
+            ? (int)Math.Max(0L, maxTiles - deleteReservations)
+            : maxTiles;
+        var entryComparer = Comparer<TileCacheEntry>.Create(
+            static (left, right) => string.CompareOrdinal(left.Key, right.Key));
+        var pendingCandidates = new SortedSet<TileCacheEntry>(entryComparer);
+        var freshCandidates = new SortedSet<TileCacheEntry>(entryComparer);
+        var matchedCount = 0L;
 
-        List<TileCacheEntry> matched;
-        if (deleteBytes)
+        await foreach (var page in keyIndex.ReadPagesAsync(1_000, cancellationToken).ConfigureAwait(false))
         {
-            var remainingDeleteBudget = (int)Math.Max(0L, maxTiles - deleteReservations);
-            var newReservationsSelected = 0;
-            matched = [];
-            foreach (var entry in allMatched)
+            if (!page.IsAvailable)
             {
-                if (pendingDeleteUnits.Contains(TruncateUnit(entry.Key)))
+                return progress with
                 {
-                    matched.Add(entry);
-                }
-                else if (newReservationsSelected < remainingDeleteBudget)
-                {
-                    matched.Add(entry);
-                    newReservationsSelected++;
-                }
+                    Status = OperationStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "The tile cache index is temporarily unavailable; no cache entries were changed.",
+                    CurrentPhase = "Failed"
+                };
             }
 
-            if (matched.Count < allMatched.Count && deleteReservations > 0)
+            foreach (var entry in page.Entries)
             {
-                warnings =
-                [
-                    .. warnings,
-                    $"The retry was limited to the {remainingDeleteBudget}-tile budget remaining under the original {maxTiles}-tile safety cap."
-                ];
+                if (!window.Matches(entry.Key))
+                {
+                    continue;
+                }
+
+                matchedCount++;
+                if (deleteBytes && pendingDeleteUnits.Contains(TruncateUnit(entry.Key)))
+                {
+                    _ = pendingCandidates.Add(entry);
+                    continue;
+                }
+
+                AddBoundedLifecycleCandidate(freshCandidates, entry, remainingDeleteBudget);
             }
         }
-        else
-        {
-            matched = allMatched.Take(maxTiles).ToList();
-        }
+
+        pendingDeleteUnits.IntersectWith(
+            pendingCandidates.Select(static entry => TruncateUnit(entry.Key)));
+        var matched = pendingCandidates
+            .Concat(freshCandidates)
+            .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
+            .ToList();
+        var warnings = BuildLifecycleWarnings(
+            matchedCount,
+            matched.Count,
+            maxTiles,
+            deleteBytes,
+            deleteReservations,
+            remainingDeleteBudget);
 
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
         var total = (long)matched.Count;
@@ -415,6 +408,43 @@ internal sealed partial class TileOperationExecutionCore
         => key.Length > TileCacheGenerationCheckpointBounds.MaxFailedUnitLength
             ? key[..TileCacheGenerationCheckpointBounds.MaxFailedUnitLength]
             : key;
+
+    private static void AddBoundedLifecycleCandidate(
+        SortedSet<TileCacheEntry> candidates,
+        TileCacheEntry entry,
+        int limit)
+    {
+        if (limit < 1 || !candidates.Add(entry) || candidates.Count <= limit)
+        {
+            return;
+        }
+
+        _ = candidates.Remove(candidates.Max);
+    }
+
+    private static string[] BuildLifecycleWarnings(
+        long matchedCount,
+        int selectedCount,
+        int maxTiles,
+        bool deleteBytes,
+        long deleteReservations,
+        int remainingDeleteBudget)
+    {
+        var warnings = new List<string>(2);
+        if (matchedCount > maxTiles)
+        {
+            warnings.Add(
+                $"The cache lifecycle window matched {matchedCount} tiles and was truncated to the {maxTiles}-tile safety cap.");
+        }
+
+        if (deleteBytes && selectedCount < matchedCount && deleteReservations > 0)
+        {
+            warnings.Add(
+                $"The retry was limited to the {remainingDeleteBudget}-tile budget remaining under the original {maxTiles}-tile safety cap.");
+        }
+
+        return warnings.ToArray();
+    }
 
     /// <summary>
     /// The bounded target window for a generated-tile-cache expire/delete run. Encapsulates the

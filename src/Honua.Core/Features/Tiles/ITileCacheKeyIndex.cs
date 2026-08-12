@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,6 +19,17 @@ namespace Honua.Core.Features.Tiles;
 public readonly record struct TileCacheIndexSnapshot(
     IReadOnlyList<TileCacheEntry> Entries,
     bool IsAvailable);
+
+/// <summary>
+/// One bounded, oldest-first page from the live tile-cache index.
+/// </summary>
+/// <param name="Entries">Entries in this page.</param>
+/// <param name="IsAvailable">Whether the backing index was readable.</param>
+/// <param name="HasMore">Whether another page may follow.</param>
+public readonly record struct TileCacheIndexPage(
+    IReadOnlyList<TileCacheEntry> Entries,
+    bool IsAvailable,
+    bool HasMore);
 
 /// <summary>
 /// Live tile-cache key index that backs the size-quota / LRU evictor (#1917). Each cached tile on
@@ -108,6 +121,32 @@ public interface ITileCacheKeyIndex
         => new(
             await SnapshotAsync(cancellationToken).ConfigureAwait(false),
             IsAvailable: true);
+
+    /// <summary>
+    /// Reads bounded index pages in least-recently-used order. Backends that do not provide native
+    /// paging inherit a single-page adapter; distributed backends should override this method so a
+    /// large cache never becomes one blocking server command or one unbounded response payload.
+    /// </summary>
+    /// <param name="pageSize">Maximum entries requested per page.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    IAsyncEnumerable<TileCacheIndexPage> ReadPagesAsync(
+        int pageSize,
+        CancellationToken cancellationToken = default)
+        => ReadSinglePageAsync(this, pageSize, cancellationToken);
+
+    private static async IAsyncEnumerable<TileCacheIndexPage> ReadSinglePageAsync(
+        ITileCacheKeyIndex index,
+        int pageSize,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        var snapshot = await index.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
+        var entries = snapshot.Entries
+            .OrderBy(static entry => entry.LastAccessUtc)
+            .ThenBy(static entry => entry.Key, StringComparer.Ordinal)
+            .ToArray();
+        yield return new TileCacheIndexPage(entries, snapshot.IsAvailable, HasMore: false);
+    }
 
     /// <summary>
     /// Removes a key from the index after the corresponding tile has been deleted from the cache

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.Tiles;
 using StackExchange.Redis;
 
@@ -31,11 +32,12 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     private const string StorageExpirationSetKey = "honua:tile-cache:storage-expiration";
     private const string MutationLeaseKeyPrefix = "honua:tile-cache:mutation:";
     private const int StorageExpirationPruneBatchSize = 1_000;
+    private const int SnapshotPageSize = 1_000;
     private static readonly TimeSpan DefaultMutationLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DefaultMutationLeaseRenewalInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MutationLeaseRetryDelay = TimeSpan.FromMilliseconds(25);
     private const string SnapshotScript = """
-        local ranked = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
+        local ranked = redis.call('ZRANGE', KEYS[1], ARGV[1], ARGV[2], 'WITHSCORES')
         local snapshot = {}
         for index = 1, #ranked, 2 do
             local key = ranked[index]
@@ -223,73 +225,127 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
     public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
         CancellationToken cancellationToken = default)
     {
+        var entries = new List<TileCacheEntry>();
+        await foreach (var page in ReadPagesAsync(SnapshotPageSize, cancellationToken).ConfigureAwait(false))
+        {
+            if (!page.IsAvailable)
+            {
+                return new TileCacheIndexSnapshot([], IsAvailable: false);
+            }
+
+            entries.AddRange(page.Entries);
+        }
+
+        return new TileCacheIndexSnapshot(entries, IsAvailable: true);
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<TileCacheIndexPage> ReadPagesAsync(
+        int pageSize,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var db = _redis.GetDatabase();
+        var available = true;
         try
         {
-            var db = _redis.GetDatabase();
             var nowUnixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             while (await PruneStorageExpirationsAsync(db, nowUnixMilliseconds).ConfigureAwait(false)
                 == StorageExpirationPruneBatchSize)
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
-
-            // Capture each ranked observation together with its size and write generation in one
-            // Redis command. A later write cannot otherwise slip between ZRANGE and HGET and make
-            // lifecycle deletion mistake a newly generated object for the older snapshot entry.
-            var snapshot = (RedisResult[]?)await db.ScriptEvaluateAsync(
-                SnapshotScript,
-                new RedisKey[] { LastAccessSetKey, SizeHashKey, WriteVersionHashKey },
-                values: null,
-                flags: CommandFlags.DemandMaster).ConfigureAwait(false);
-            if (snapshot is null || snapshot.Length == 0)
-            {
-                return new TileCacheIndexSnapshot([], IsAvailable: true);
-            }
-
-            const int fieldsPerEntry = 4;
-            if (snapshot.Length % fieldsPerEntry != 0)
-            {
-                throw new RedisException("Tile-cache snapshot script returned a malformed result.");
-            }
-
-            var entries = new List<TileCacheEntry>(snapshot.Length / fieldsPerEntry);
-            for (var i = 0; i < snapshot.Length; i += fieldsPerEntry)
-            {
-                var key = (string?)snapshot[i];
-                if (string.IsNullOrEmpty(key))
-                {
-                    continue;
-                }
-
-                var scoreRaw = (string?)snapshot[i + 1];
-                if (!double.TryParse(scoreRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
-                {
-                    throw new RedisException("Tile-cache snapshot script returned an invalid LRU score.");
-                }
-
-                var sizeRaw = (string?)snapshot[i + 2];
-                var size = long.TryParse(sizeRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-                    ? parsed
-                    : 0L;
-                var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)score);
-                var writeVersion = (string?)snapshot[i + 3];
-                if (string.IsNullOrEmpty(writeVersion))
-                {
-                    writeVersion = null;
-                }
-
-                entries.Add(new TileCacheEntry(key, size, lastAccess, writeVersion));
-            }
-
-            return new TileCacheIndexSnapshot(entries, IsAvailable: true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.SnapshotFailed(_logger, ex);
-            return new TileCacheIndexSnapshot([], IsAvailable: false);
+            available = false;
         }
+
+        if (!available)
+        {
+            yield return new TileCacheIndexPage([], IsAvailable: false, HasMore: false);
+            yield break;
+        }
+
+        long offset = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TileCacheIndexPage page;
+            try
+            {
+                // Each Lua invocation is bounded. It captures a page's LRU score, size, and write
+                // generation atomically so destructive consumers can still fence concurrent writes.
+                var snapshot = (RedisResult[]?)await db.ScriptEvaluateAsync(
+                    SnapshotScript,
+                    new RedisKey[] { LastAccessSetKey, SizeHashKey, WriteVersionHashKey },
+                    new RedisValue[] { offset, offset + pageSize - 1L },
+                    CommandFlags.DemandMaster).ConfigureAwait(false);
+                page = ParseSnapshotPage(snapshot, pageSize);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log.SnapshotFailed(_logger, ex);
+                page = new TileCacheIndexPage([], IsAvailable: false, HasMore: false);
+            }
+
+            yield return page;
+            if (!page.IsAvailable || !page.HasMore)
+            {
+                yield break;
+            }
+
+            offset += pageSize;
+        }
+    }
+
+    private static TileCacheIndexPage ParseSnapshotPage(RedisResult[]? snapshot, int pageSize)
+    {
+        if (snapshot is null || snapshot.Length == 0)
+        {
+            return new TileCacheIndexPage([], IsAvailable: true, HasMore: false);
+        }
+
+        const int fieldsPerEntry = 4;
+        if (snapshot.Length % fieldsPerEntry != 0)
+        {
+            throw new RedisException("Tile-cache snapshot script returned a malformed result.");
+        }
+
+        var rawEntryCount = snapshot.Length / fieldsPerEntry;
+        var entries = new List<TileCacheEntry>(rawEntryCount);
+        for (var i = 0; i < snapshot.Length; i += fieldsPerEntry)
+        {
+            var key = (string?)snapshot[i];
+            if (string.IsNullOrEmpty(key))
+            {
+                continue;
+            }
+
+            var scoreRaw = (string?)snapshot[i + 1];
+            if (!double.TryParse(scoreRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
+            {
+                throw new RedisException("Tile-cache snapshot script returned an invalid LRU score.");
+            }
+
+            var sizeRaw = (string?)snapshot[i + 2];
+            var size = long.TryParse(sizeRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : 0L;
+            var lastAccess = DateTimeOffset.FromUnixTimeMilliseconds((long)score);
+            var writeVersion = (string?)snapshot[i + 3];
+            if (string.IsNullOrEmpty(writeVersion))
+            {
+                writeVersion = null;
+            }
+
+            entries.Add(new TileCacheEntry(key, size, lastAccess, writeVersion));
+        }
+
+        return new TileCacheIndexPage(entries, IsAvailable: true, HasMore: rawEntryCount == pageSize);
     }
 
     /// <inheritdoc />

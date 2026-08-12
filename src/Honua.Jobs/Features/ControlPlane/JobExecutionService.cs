@@ -26,9 +26,33 @@ internal sealed partial class JobExecutionService(
     private const string SafeExecutionFailureMessage = "Job execution failed.";
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
-    private static readonly TimeSpan PartitionLeaseDuration = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan PartitionLeaseRenewInterval = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan PartitionLeaseContentionDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DefaultPartitionLeaseRenewInterval = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan DefaultPartitionLeaseContentionDelay = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _partitionLeaseDuration = DefaultPartitionLeaseDuration;
+    private readonly TimeSpan _partitionLeaseRenewInterval = DefaultPartitionLeaseRenewInterval;
+    private readonly TimeSpan _partitionLeaseContentionDelay = DefaultPartitionLeaseContentionDelay;
+
+    internal JobExecutionService(
+        IJobQueue jobQueue,
+        IExecutionJobStore jobStore,
+        IEnumerable<IJobExecutor> executors,
+        ExecutionJobCancellationTokens cancellationTokens,
+        IEnumerable<IJobTerminalCallback> terminalCallbacks,
+        IExecutionLogStore? logStore,
+        ILogger<JobExecutionService> logger,
+        TimeSpan partitionLeaseDuration,
+        TimeSpan partitionLeaseRenewInterval,
+        TimeSpan partitionLeaseContentionDelay)
+        : this(jobQueue, jobStore, executors, cancellationTokens, terminalCallbacks, logStore, logger)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(partitionLeaseDuration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(partitionLeaseRenewInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(partitionLeaseContentionDelay, TimeSpan.Zero);
+        _partitionLeaseDuration = partitionLeaseDuration;
+        _partitionLeaseRenewInterval = partitionLeaseRenewInterval;
+        _partitionLeaseContentionDelay = partitionLeaseContentionDelay;
+    }
 
     // Multiple executors can share a single ExecutionJobKind when they fence on
     // different runtime profiles — e.g. for ExecutionJobKind.Geoprocessing the lean
@@ -283,7 +307,7 @@ internal sealed partial class JobExecutionService(
                 partitionLeaseAcquired = await jobStore.TryAcquireLeaseAsync(
                         partitionLeaseId,
                         partitionLeaseOwner!,
-                        PartitionLeaseDuration,
+                        _partitionLeaseDuration,
                         stoppingToken)
                     .ConfigureAwait(false);
             }
@@ -307,7 +331,7 @@ internal sealed partial class JobExecutionService(
                     "Exclusive partition lease is held by another job.",
                     CancellationToken.None,
                     forceRequeue: true,
-                    requeueDelayOverride: PartitionLeaseContentionDelay,
+                    requeueDelayOverride: _partitionLeaseContentionDelay,
                     restoreClaimAttempt: true)
                 .ConfigureAwait(false);
             cancellationTokens.Remove(operationId, workerId);
@@ -370,6 +394,41 @@ internal sealed partial class JobExecutionService(
         {
             var result = await executor.ExecuteAsync(running, context, jobCts.Token).ConfigureAwait(false);
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+
+            // Executors are expected to observe cancellation, but a late cancellation can race a
+            // normal return and third-party executors may ignore the token. Never finalize from a
+            // lease-invalid execution merely because no OperationCanceledException was thrown.
+            if (timeoutCts.IsCancellationRequested)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Execution timed out.");
+                Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
+                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                    $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (stoppingToken.IsCancellationRequested)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Worker shutdown.");
+                await AbandonJobAsync(running, workerId, "Worker shutdown.",
+                    CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                return;
+            }
+
+            if (partitionLeaseLostCts.IsCancellationRequested)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "Exclusive partition lease lost.");
+                await AbandonJobAsync(
+                        running,
+                        workerId,
+                        "Exclusive partition lease was lost during execution.",
+                        CancellationToken.None,
+                        forceRequeue: true,
+                        requeueDelayOverride: _partitionLeaseContentionDelay)
+                    .ConfigureAwait(false);
+                return;
+            }
 
             if (result.Status == ExecutionJobStatus.Succeeded)
             {
@@ -448,7 +507,7 @@ internal sealed partial class JobExecutionService(
                     "Exclusive partition lease was lost during execution.",
                     CancellationToken.None,
                     forceRequeue: true,
-                    requeueDelayOverride: PartitionLeaseContentionDelay)
+                    requeueDelayOverride: _partitionLeaseContentionDelay)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -495,7 +554,7 @@ internal sealed partial class JobExecutionService(
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
-                    // The lease is bounded by PartitionLeaseDuration, so a failed best-effort
+                    // The lease is bounded by _partitionLeaseDuration, so a failed best-effort
                     // release cannot strand the partition indefinitely.
                     Log.PartitionLeaseReleaseFailed(logger, operationId, partitionKey!, ex);
                 }
@@ -518,7 +577,7 @@ internal sealed partial class JobExecutionService(
         {
             try
             {
-                await Task.Delay(PartitionLeaseRenewInterval, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(_partitionLeaseRenewInterval, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -531,7 +590,7 @@ internal sealed partial class JobExecutionService(
                 renewed = await jobStore.RenewLeaseAsync(
                         partitionLeaseId,
                         partitionLeaseOwner,
-                        PartitionLeaseDuration,
+                        _partitionLeaseDuration,
                         cancellationToken)
                     .ConfigureAwait(false);
             }

@@ -145,6 +145,55 @@ public sealed class RedisTileCacheKeyIndexTests
             CommandFlags.DemandMaster);
     }
 
+    [Fact]
+    public async Task ReadPagesAsync_UsesBoundedRedisRanges()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)0)));
+        database.ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("WITHSCORES", StringComparison.Ordinal)),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                CommandFlags.DemandMaster)
+            .Returns(
+                Task.FromResult(CreateSnapshotResult(("a", "1000"), ("b", "2000"))),
+                Task.FromResult(CreateSnapshotResult(("c", "3000"))));
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+
+        var entries = new List<string>();
+        await foreach (var page in index.ReadPagesAsync(2))
+        {
+            entries.AddRange(page.Entries.Select(static entry => entry.Key));
+        }
+
+        entries.Should().Equal("a", "b", "c");
+        var ranges = database.ReceivedCalls()
+            .Where(call =>
+                call.GetMethodInfo().Name == nameof(IDatabase.ScriptEvaluateAsync) &&
+                call.GetArguments()[0]?.ToString()?.Contains("WITHSCORES", StringComparison.Ordinal) == true)
+            .Select(call => (RedisValue[])call.GetArguments()[2]!)
+            .Select(values => values.Select(static value => (long)value).ToArray())
+            .ToArray();
+        ranges.Should().BeEquivalentTo(new[] { new long[] { 0, 1 }, new long[] { 2, 3 } },
+            options => options.WithStrictOrdering());
+    }
+
+    private static RedisResult CreateSnapshotResult(params (string Key, string Score)[] entries)
+        => RedisResult.Create(entries.SelectMany(static entry => new RedisResult[]
+        {
+            RedisResult.Create((RedisValue)entry.Key),
+            RedisResult.Create((RedisValue)entry.Score),
+            RedisResult.Create((RedisValue)"42"),
+            RedisResult.Create((RedisValue)"version")
+        }).ToArray());
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
