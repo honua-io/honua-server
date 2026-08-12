@@ -8,9 +8,10 @@ For raster processes, [ADR-0071](0071-raster-execution-boundary.md) is the
 controlling engine and placement decision. As of ADR-0071's 2026-08-11
 single-engine amendment (honua-server#3085, #3167), raster GP always executes
 on the isolated GDAL worker; the PostGIS primitives introduced by this ADR are
-serving/storage-plane and registration capabilities, not an alternative GP
-execution path. Local vs. AWS Batch placement is static operator
-configuration, not a per-job database-budget decision.
+retired from GP routing and remain non-routable analysis implementation
+details, not serving/storage registration capabilities or an alternative GP
+execution path. Local vs. AWS Batch placement is static operator configuration,
+not a per-job database-budget decision.
 
 ## Context
 
