@@ -167,6 +167,18 @@ public sealed class RasterSourceContractTests
     }
 
     [Theory]
+    [InlineData("folder/a file.tif")]
+    [InlineData("folder/hash#colon:source.tif")]
+    [InlineData("folder//preserved-empty-segment.tif")]
+    [InlineData("http-data/source.tif")]
+    public void Validate_LegalObjectStoreKeys_AreAccepted(string objectKey)
+    {
+        var result = RasterSourceDescriptorValidator.Validate(Cog() with { ObjectKey = objectKey });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
     [InlineData("artifact%00secret")]
     [InlineData("artifact%0asecret")]
     public void Validate_StagedArtifactEncodedControl_IsRejected(string artifactReference)

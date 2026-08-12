@@ -84,6 +84,32 @@ public sealed class CogRasterHeaderProbeTests
     }
 
     [Fact]
+    public async Task ReadAsync_ModelTransformationWithPixelScale_FailsClosed()
+    {
+        const string etag = "transformation-and-scale-etag";
+        var reader = new ConditionalRangeReader(BuildClassicTiffWithModelTransformation(includePixelScale: true), etag);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CogRasterHeaderProbe.ReadAsync(reader, "imagery", "transformed-and-scaled.tif", etag));
+
+        Assert.Contains("ModelTransformation", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, reader.UnconditionalReadCount);
+    }
+
+    [Fact]
+    public async Task ReadAsync_ModelTiepointWithoutPixelScale_FailsClosed()
+    {
+        const string etag = "tiepoint-only-etag";
+        var reader = new ConditionalRangeReader(BuildClassicTiffWithModelTiepoint(), etag);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CogRasterHeaderProbe.ReadAsync(reader, "imagery", "tiepoint-only.tif", etag));
+
+        Assert.Contains("ModelTiepoint", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, reader.UnconditionalReadCount);
+    }
+
+    [Fact]
     public async Task ReadAsync_UnsupportedDimensionFieldType_FailsClosed()
     {
         var reader = new ConditionalRangeReader(BuildClassicTiffWithRationalWidth(), "etag-a");
@@ -205,12 +231,13 @@ public sealed class CogRasterHeaderProbeTests
         return bytes;
     }
 
-    private static byte[] BuildClassicTiffWithModelTransformation()
+    private static byte[] BuildClassicTiffWithModelTransformation(bool includePixelScale = false)
     {
         const int ifdOffset = 8;
-        const ushort entryCount = 5;
-        const int transformationOffset = ifdOffset + 2 + (entryCount * 12) + 4;
-        var bytes = new byte[transformationOffset + (16 * sizeof(double))];
+        var entryCount = (ushort)(includePixelScale ? 6 : 5);
+        var transformationOffset = ifdOffset + 2 + (entryCount * 12) + 4;
+        var pixelScaleOffset = transformationOffset + (16 * sizeof(double));
+        var bytes = new byte[pixelScaleOffset + (includePixelScale ? 3 * sizeof(double) : 0)];
         bytes[0] = (byte)'I';
         bytes[1] = (byte)'I';
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 42);
@@ -222,9 +249,39 @@ public sealed class CogRasterHeaderProbeTests
         WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 500);
         WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 16);
         WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 1);
-        WriteClassicTiffEntry(bytes, entryOffset + 48, tag: 34264, type: 12, count: 16, value: transformationOffset);
+        WriteClassicTiffEntry(bytes, entryOffset + 48, tag: 34264, type: 12, count: 16, value: checked((uint)transformationOffset));
+        if (includePixelScale)
+        {
+            WriteClassicTiffEntry(bytes, entryOffset + 60, tag: 33550, type: 12, count: 3, value: checked((uint)pixelScaleOffset));
+            BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(pixelScaleOffset), 30d);
+            BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(pixelScaleOffset + sizeof(double)), 20d);
+        }
+
         BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(transformationOffset), 1000d);
         BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(transformationOffset + (5 * sizeof(double))), 1000d);
+        return bytes;
+    }
+
+    private static byte[] BuildClassicTiffWithModelTiepoint()
+    {
+        const int ifdOffset = 8;
+        const ushort entryCount = 5;
+        const int tiepointOffset = ifdOffset + 2 + (entryCount * 12) + 4;
+        var bytes = new byte[tiepointOffset + (6 * sizeof(double))];
+        bytes[0] = (byte)'I';
+        bytes[1] = (byte)'I';
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), 42);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), ifdOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(ifdOffset), entryCount);
+
+        var entryOffset = ifdOffset + 2;
+        WriteClassicTiffEntry(bytes, entryOffset, tag: 256, type: 4, count: 1, value: 1000);
+        WriteClassicTiffEntry(bytes, entryOffset + 12, tag: 257, type: 4, count: 1, value: 500);
+        WriteClassicTiffEntry(bytes, entryOffset + 24, tag: 258, type: 3, count: 1, value: 16);
+        WriteClassicTiffEntry(bytes, entryOffset + 36, tag: 277, type: 3, count: 1, value: 1);
+        WriteClassicTiffEntry(bytes, entryOffset + 48, tag: 33922, type: 12, count: 6, value: tiepointOffset);
+        BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(tiepointOffset + (3 * sizeof(double))), 500_000d);
+        BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(tiepointOffset + (4 * sizeof(double))), 4_600_000d);
         return bytes;
     }
 

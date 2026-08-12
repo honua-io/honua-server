@@ -237,19 +237,26 @@ public static class CogRasterHeaderProbe
         IReadOnlyList<IfdEntry> entries,
         CancellationToken cancellationToken)
     {
+        if (entries.Any(candidate => candidate.Tag == TiffConstants.TagModelTransformationTag))
+        {
+            // A transformation matrix can rotate, shear, or override a simultaneously declared
+            // pixel scale. The bounded admission model cannot safely choose between those forms.
+            throw new InvalidDataException(
+                "TIFF ModelTransformation georeferencing is not supported by bounded raster admission.");
+        }
+
         var entry = entries.FirstOrDefault(candidate =>
             candidate.Tag == TiffConstants.TagModelPixelScaleTag);
         if (entry.Tag != TiffConstants.TagModelPixelScaleTag)
         {
             if (entries.Any(candidate =>
-                    candidate.Tag == TiffConstants.TagModelTransformationTag))
+                    candidate.Tag == TiffConstants.TagModelTiepointTag))
             {
-                // A transformation matrix can rotate, shear, or scale the grid. Treating
-                // it as the identity grid would under-estimate the ground extent used by
-                // gdalwarp and defeat the pre-spawn output-grid guard. Until the bounded
-                // probe derives all transformed corners, reject this georeferencing form.
+                // A tiepoint without ModelPixelScale is a GCP-style transform, not an identity
+                // grid. GDAL can derive an extent that the bounded probe cannot conservatively
+                // reproduce, so refuse it before native dispatch.
                 throw new InvalidDataException(
-                    "TIFF ModelTransformation georeferencing is not supported by bounded raster admission.");
+                    "TIFF ModelTiepoint georeferencing without ModelPixelScale is not supported by bounded raster admission.");
             }
 
             // This mirrors GDAL's identity-grid interpretation for an unreferenced TIFF.
