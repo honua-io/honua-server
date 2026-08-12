@@ -125,6 +125,28 @@ internal static class GdalOutputGridGuard
         double cellSizeY,
         GdalWorkerOptions options,
         out string error)
+        => TryAdmitResolutionWithFootprint(
+            extentX,
+            extentY,
+            cellSizeX,
+            cellSizeY,
+            bytesPerPixel: 8,
+            options,
+            out error);
+
+    /// <summary>
+    /// Admits a resolution-derived grid using the caller's preserved output pixel footprint.
+    /// Raster resampling keeps the source band count and data type, so its decoded output cannot
+    /// safely use the single-band Float64 estimate used by rasterize/grid operations.
+    /// </summary>
+    public static bool TryAdmitResolutionWithFootprint(
+        double extentX,
+        double extentY,
+        double cellSizeX,
+        double cellSizeY,
+        long bytesPerPixel,
+        GdalWorkerOptions options,
+        out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
         error = "";
@@ -132,6 +154,12 @@ internal static class GdalOutputGridGuard
         if (!IsPositiveFinite(cellSizeX) || !IsPositiveFinite(cellSizeY))
         {
             error = "target cell size must be a positive finite number";
+            return false;
+        }
+
+        if (bytesPerPixel <= 0)
+        {
+            error = "estimated output bytes per pixel must be positive";
             return false;
         }
 
@@ -169,17 +197,15 @@ internal static class GdalOutputGridGuard
             return false;
         }
 
-        // gdal_rasterize / gdalwarp -tr output footprint estimated as single-band Float64
-        // (8 bytes/pixel), mirroring TryAdmit; the width / height / pixel caps are the
-        // primary bound and hold regardless of the true output band count / dtype.
-        const long BytesPerFloat64Pixel = 8L;
+        // Rasterize/grid callers use the single-band Float64 default; resample supplies
+        // the source band count and sample width that gdalwarp preserves.
         // Divide in double space (widen the long numerator) rather than truncating
         // integer division first: MaxDecodedRasterBytes is not guaranteed to be a
-        // multiple of 8, and a floored integer threshold would reject a pixel count
-        // that is actually still within the configured byte budget.
-        if (pixels > (double)options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
+        // multiple of the output footprint, and a floored integer threshold would reject a
+        // pixel count that is actually still within the configured byte budget.
+        if (pixels > (double)options.MaxDecodedRasterBytes / bytesPerPixel)
         {
-            error = $"estimated output grid size {Format(pixels)} pixels × 8 bytes/pixel (single-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
+            error = $"estimated output grid size {Format(pixels)} pixels × {bytesPerPixel.ToString(CultureInfo.InvariantCulture)} bytes/pixel exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
             return false;
         }
 

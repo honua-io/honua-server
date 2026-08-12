@@ -119,6 +119,27 @@ public sealed class GdalOutputGridGuardTests
     }
 
     [UnitTest]
+    public void TryAdmitResolution_MultiBandFootprintOverDecodedByteCap_Rejects()
+    {
+        var options = new GdalWorkerOptions
+        {
+            MaxRasterPixels = long.MaxValue,
+            MaxDecodedRasterBytes = 4_000_000_000,
+        };
+
+        GdalOutputGridGuard.TryAdmitResolutionWithFootprint(
+                20_001,
+                20_001,
+                1,
+                1,
+                bytesPerPixel: 10,
+                options,
+                out var error)
+            .Should().BeFalse();
+        error.Should().Contain("10 bytes/pixel").And.Contain("MaxDecodedRasterBytes");
+    }
+
+    [UnitTest]
     public void TryAdmitResolution_NonFiniteCellSize_Rejects()
     {
         GdalOutputGridGuard.TryAdmitResolution(1000, 1000, double.NaN, 10, Options(), out var error)

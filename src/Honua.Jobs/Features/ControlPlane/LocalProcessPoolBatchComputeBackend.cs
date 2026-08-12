@@ -69,16 +69,26 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private const int MaxTailLines = 50;
 
-    private static readonly BatchComputeBackendCapabilities CapabilitiesSnapshot = new()
+    private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
-        SupportsCancellation = true,
-        SupportsProgressPolling = true,
-        // The reconciler re-queues a Failed job when the backend supports retry; that is exactly how a
-        // process lost to a host restart recovers (a fresh launch on the next attempt).
-        SupportsRetry = true,
-        SupportsLogStreaming = false,
-        SupportsArtifactStaging = false
-    };
+        var configuredMaximum = _options.WorkerContracts
+            .Where(contract => !string.IsNullOrWhiteSpace(contract.Executable))
+            .Where(contract => contract.ArgumentPrefix.Count > 0 || contract.IsSelfContained)
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
+        return new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true,
+            SupportsProgressPolling = true,
+            // The reconciler re-queues a Failed job when the backend supports retry; that is exactly how a
+            // process lost to a host restart recovers (a fresh launch on the next attempt).
+            SupportsRetry = true,
+            SupportsLogStreaming = false,
+            SupportsArtifactStaging = false,
+            MaxSupportedContractVersion = Math.Max(1, configuredMaximum)
+        };
+    }
 
     private readonly ILogger<LocalProcessPoolBatchComputeBackend> _logger;
     private readonly LocalProcessPoolOptions _options;
@@ -102,7 +112,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.LocalProcess;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(CapabilitiesSnapshot);
+        => Task.FromResult(CreateCapabilitiesSnapshot());
 
     public Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -123,6 +133,17 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             {
                 Status = ExecutionJobStatus.Failed,
                 Message = ex.Message
+            });
+        }
+
+        var contractFailure = ValidateExecutableContract(job, executable);
+        if (contractFailure is not null)
+        {
+            Log.LaunchRejected(_logger, job.OperationId, contractFailure);
+            return Task.FromResult(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = contractFailure
             });
         }
 
@@ -271,6 +292,18 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = job.ProviderOperationId,
                 Message = ex.Message
+            };
+        }
+
+        var contractFailure = ValidateExecutableContract(job, executable);
+        if (contractFailure is not null)
+        {
+            Log.LaunchRejected(_logger, job.OperationId, contractFailure);
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = job.ProviderOperationId,
+                Message = contractFailure
             };
         }
 
@@ -498,6 +531,42 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
 
         return executable.Trim();
+    }
+
+    private string? ValidateExecutableContract(ExecutionJobRecord job, string executable)
+    {
+        var arguments = ResolveArguments(job.Spec.Parameters);
+        var supportedVersion = _options.WorkerContracts
+            .Where(contract => string.Equals(contract.Executable, executable, StringComparison.Ordinal))
+            .Where(contract => ContractMatchesSelectedWorker(contract, arguments))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
+        return job.Spec.ContractVersion <= supportedVersion
+            ? null
+            : $"Local process worker '{executable}' with the selected argument prefix supports execution contract "
+                + $"version {supportedVersion}, "
+                + $"but the job requires version {job.Spec.ContractVersion}.";
+    }
+
+    private static bool ContractMatchesSelectedWorker(
+        LocalProcessWorkerContractOptions contract,
+        string[] arguments)
+    {
+        var prefix = contract.ArgumentPrefix;
+        if (prefix.Count == 0)
+        {
+            // Empty prefixes are accepted only under an explicit operator assertion. Inferring
+            // launcher-vs-worker from a filename denylist misses dispatchers such as /usr/bin/env.
+            return contract.IsSelfContained;
+        }
+
+        return arguments.Length >= prefix.Count
+            && prefix.Select((argument, index) => string.Equals(
+                    argument,
+                    arguments[index],
+                    StringComparison.Ordinal))
+                .All(static matches => matches);
     }
 
     private static string[] ResolveArguments(IReadOnlyDictionary<string, string> parameters)
@@ -793,6 +862,35 @@ internal sealed class LocalProcessPoolOptions
     /// <c>honua-local-process</c> folder under the system temp directory is used.
     /// </summary>
     public string? WorkingRoot { get; set; }
+
+    /// <summary>
+    /// Exact worker contract attestations. Shared runtimes and shells must include the argument
+    /// prefix that selects the worker artifact; an empty prefix is accepted only for self-contained
+    /// executables. Unmatched workers are treated as v1.
+    /// </summary>
+    public List<LocalProcessWorkerContractOptions> WorkerContracts { get; set; } = [];
+}
+
+/// <summary>An exact local worker identity and its supported execution contract.</summary>
+internal sealed class LocalProcessWorkerContractOptions
+{
+    /// <summary>Absolute or PATH-resolvable executable identity.</summary>
+    public string Executable { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Ordered argument prefix that selects the worker artifact. Required for shared launchers such
+    /// as <c>dotnet</c>, <c>python</c>, <c>java</c>, or a shell.
+    /// </summary>
+    public List<string> ArgumentPrefix { get; set; } = [];
+
+    /// <summary>
+    /// Explicit operator assertion that <see cref="Executable"/> is the worker itself and does not
+    /// dispatch an argument-selected artifact. Required when <see cref="ArgumentPrefix"/> is empty.
+    /// </summary>
+    public bool IsSelfContained { get; set; }
+
+    /// <summary>Highest execution contract understood by this exact worker identity.</summary>
+    public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
 /// <summary>

@@ -4,6 +4,8 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -185,6 +187,61 @@ public sealed class GdalRasterResampleExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Failed);
             result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
             runner.Invocations.Should().BeEmpty("the over-cap -tr output grid must be refused before gdalwarp runs");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Resample_ReferencedCogTinyCellSize_FailsBeforeReachingTheCli()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for an over-cap referenced grid"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterResampleJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096),
+            NullLogger<GdalRasterResampleJobExecutor>.Instance);
+        try
+        {
+            var descriptor = new ObjectStoreCogRasterSourceDescriptor
+            {
+                Provider = CloudStorageProvider.AwsS3,
+                StoreReference = "imagery",
+                ObjectKey = "dem.tif",
+                DeclaredDimensions = new RasterSourceDimensions(1000, 1000, 1, 16),
+                DeclaredPixelScale = new RasterSourcePixelScale(30d, 30d),
+                Version = "version-1",
+                Content = new RasterContentIdentity
+                {
+                    SizeBytes = 1024,
+                    MediaType = "image/tiff",
+                    ETag = "etag-1",
+                },
+                SecurityContext = new RasterSecurityContextReference
+                {
+                    TenantId = "tenant-a",
+                    AuthorizationSnapshotReference = "catalog-registration:1",
+                },
+            };
+            var job = GdalJobFactory.Job(
+                GdalRasterResampleJobExecutor.HandledProcessId,
+                ("cellSize", "0.1"));
+            var parameters = (Dictionary<string, string>)job.Spec.Parameters;
+            parameters[GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] =
+                RasterSourceJson.Serialize(descriptor);
+
+            var result = await executor.ExecuteAsync(
+                job,
+                new RecordingJobExecutionContext(job.OperationId),
+                default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty(
+                "the referenced -tr output grid must be refused before gdalwarp runs");
         }
         finally
         {

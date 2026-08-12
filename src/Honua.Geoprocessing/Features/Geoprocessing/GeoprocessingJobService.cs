@@ -406,6 +406,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         EnsurePlanExecutable(plan);
         _artifacts.ValidateRasterSources(plan, cancellationToken);
 
+        // Refuse client-supplied durable raster descriptors before any further processing:
+        // only execution-owned catalog resolution below may mint object-store references,
+        // and bounded typed inline sources carry no ambient object-store authority (#3090).
+        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
+
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
         // catalog process to validate; the customcode.* parameters are validated by
@@ -444,11 +449,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // rasterId/layerId mismatches fail through the same generic authorization channel.
         plan = await _artifacts.BindRasterSourceLayerIdsAsync(plan, cancellationToken)
             .ConfigureAwait(false);
-
-        // RAST-003 defines and projects the v2 contract, but no current local or remote
-        // worker consumes it safely. Refuse before approval proposals, fingerprints, job
-        // records, or queue dispatch until #3090 introduces authenticated source resolution.
-        GeoprocessingJobArtifactService.EnsureTypedRasterExecutionSupported(plan);
 
         // Evaluate the mutating-process tier unconditionally — including for custom-code
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
@@ -517,11 +517,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var requestFingerprint = CreateRequestFingerprint(plan);
 
         // Resolve any native raster/surface step that references a registered catalog
-        // raster by layerId/rasterId, materializing the bytes onto the canonical base64
-        // 'source' input the worker reads (#2264). The fingerprint above is computed on
-        // the caller's original (reference-carrying) plan so idempotency keys map to the
-        // request, not the resolved payload; the spec below carries the resolved bytes.
-        plan = await _artifacts.ResolveRasterSourcesAsync(plan, cancellationToken).ConfigureAwait(false);
+        // raster by layerId/rasterId to an immutable metadata-only descriptor (#2264/#3090).
+        // The fingerprint above is computed on the caller's original (reference-carrying)
+        // plan so idempotency keys map to the request, not provider metadata; the spec
+        // below carries no raster payload bytes.
+        plan = await _artifacts.ResolveRasterSourcesAsync(
+                plan,
+                resolvedSecurityContext,
+                jobId,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
