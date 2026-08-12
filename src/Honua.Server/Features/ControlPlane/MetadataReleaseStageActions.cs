@@ -212,8 +212,8 @@ internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        // The new revision is produced by the upstream package-apply step; activation re-persists the
-        // current snapshot to stamp it as current. SaveAsync routes through UpsertCurrentAsync.
+        // The new revision is produced by the upstream package-apply step. Re-activate that
+        // retained snapshot to stamp the pointer without allocating a duplicate revision.
         var store = scope.ServiceProvider.GetService<IMetadataV2GraphStore>();
         if (store is null)
         {
@@ -222,7 +222,7 @@ internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory
         }
 
         var current = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        await store.SaveAsync(current.Graph, current.Etag, cancellationToken).ConfigureAwait(false);
+        await store.ActivateRevisionAsync(current.Revision, current.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ReactivateRevisionAsync(
@@ -246,7 +246,7 @@ internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory
         }
 
         var current = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        await store.SaveAsync(prior.Graph, current.Etag, cancellationToken).ConfigureAwait(false);
+        await store.ActivateRevisionAsync(prior.Revision, current.Etag, cancellationToken).ConfigureAwait(false);
     }
 }
 

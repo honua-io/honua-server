@@ -370,20 +370,17 @@ internal static partial class FeatureServerEndpoints
         var replicaId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
 
-        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
-        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
-
         var record = new ReplicaState(
             replicaId,
             replicaName,
             serviceId,
             syncModel,
             layerIds,
-            now)
-        {
-            LastSyncGeneration = currentGen
-        };
-        await replicaStore.SetAsync(record, cancellationToken: cancellationToken);
+            now);
+        var registered = await replicaStore.RegisterAtCurrentGenerationAsync(
+            record,
+            cancellationToken: cancellationToken);
+        var currentGen = registered.LastSyncGeneration;
 
         var response = new CreateReplicaResponse
         {

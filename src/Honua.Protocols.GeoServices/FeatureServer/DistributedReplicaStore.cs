@@ -15,6 +15,19 @@ internal interface IReplicaStore
     Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Durably registers a replica at the authoritative committed generation and returns the
+    /// stored state. Implementations without a durable change log retain the supplied cursor.
+    /// </summary>
+    async Task<ReplicaState> RegisterAtCurrentGenerationAsync(
+        ReplicaState replica,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        await SetAsync(replica, ttl, cancellationToken).ConfigureAwait(false);
+        return replica;
+    }
+
+    /// <summary>
     /// Conditionally persists a replica's sync state: the write only applies when the stored
     /// <see cref="ReplicaState.LastSyncGeneration"/> and <see cref="ReplicaState.UploadBaseGeneration"/>
     /// still match the expected values the caller read before the sync. Returns false when another
