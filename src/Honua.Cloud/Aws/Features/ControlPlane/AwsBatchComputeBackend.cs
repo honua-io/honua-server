@@ -266,12 +266,20 @@ internal sealed class AwsBatchExecutionOptions
     public const string SectionName = "ControlPlane:AwsBatch";
 
     /// <summary>
-    /// Exact job-definition ARN/revision to maximum-contract attestations. Unlisted definitions are
-    /// treated as v1 workers so a rolling control-plane deployment cannot dispatch a newer durable
-    /// job contract to an older worker definition.
+    /// Job-definition contract attestations. Each ARN/revision is stored as an entry value instead
+    /// of a dictionary key because colons in an ARN are configuration-path delimiters.
     /// </summary>
-    public Dictionary<string, int> JobDefinitionMaxSupportedContractVersions { get; set; } =
-        new(StringComparer.Ordinal);
+    public List<AwsBatchJobDefinitionContractOptions> JobDefinitions { get; set; } = [];
+}
+
+/// <summary>An exact AWS Batch job-definition identity and its supported execution contract.</summary>
+internal sealed class AwsBatchJobDefinitionContractOptions
+{
+    /// <summary>Exact job-definition ARN/revision selected by the workload.</summary>
+    public string JobDefinition { get; set; } = string.Empty;
+
+    /// <summary>Highest execution contract understood by that immutable worker definition.</summary>
+    public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
 /// <summary>
@@ -310,10 +318,11 @@ internal sealed partial class AwsBatchComputeBackend(
 
     private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
-        var jobDefinitionContracts = options.Value.JobDefinitionMaxSupportedContractVersions;
-        var configuredMaximum = jobDefinitionContracts.Count == 0
-            ? 1
-            : jobDefinitionContracts.Values.Max();
+        var configuredMaximum = options.Value.JobDefinitions
+            .Where(definition => !string.IsNullOrWhiteSpace(definition.JobDefinition))
+            .Select(definition => Math.Max(1, definition.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
         return new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
@@ -507,14 +516,14 @@ internal sealed partial class AwsBatchComputeBackend(
 
     private int ResolveJobDefinitionMaxSupportedContractVersion(string jobDefinition)
     {
-        if (options.Value.JobDefinitionMaxSupportedContractVersions.TryGetValue(
+        return options.Value.JobDefinitions
+            .Where(definition => string.Equals(
+                definition.JobDefinition,
                 jobDefinition,
-                out var configuredVersion))
-        {
-            return Math.Max(1, configuredVersion);
-        }
-
-        return 1;
+                StringComparison.Ordinal))
+            .Select(definition => Math.Max(1, definition.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
     }
 
     public async Task<BatchComputeObservation> ObserveAsync(

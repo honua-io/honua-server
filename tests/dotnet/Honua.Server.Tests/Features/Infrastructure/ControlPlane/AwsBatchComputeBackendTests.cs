@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -31,6 +32,28 @@ public sealed class AwsBatchComputeBackendTests
         capabilities.SupportsLogStreaming.Should().BeFalse();
         capabilities.SupportsArtifactStaging.Should().BeFalse();
         capabilities.MaxSupportedContractVersion.Should().Be(RasterSourceContract.JobContractVersion);
+    }
+
+    [Fact]
+    public void AwsBatchExecutionOptions_BindsArnAsEntryValue()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{AwsBatchExecutionOptions.SectionName}:JobDefinitions:0:JobDefinition"] = DefaultJobDefinitionArn,
+                [$"{AwsBatchExecutionOptions.SectionName}:JobDefinitions:0:MaxSupportedContractVersion"] = "2"
+            })
+            .Build();
+        var options = new AwsBatchExecutionOptions();
+
+        configuration.GetSection(AwsBatchExecutionOptions.SectionName).Bind(options);
+
+        options.JobDefinitions.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new AwsBatchJobDefinitionContractOptions
+            {
+                JobDefinition = DefaultJobDefinitionArn,
+                MaxSupportedContractVersion = 2
+            });
     }
 
     [Fact]
@@ -1355,7 +1378,11 @@ public sealed class AwsBatchComputeBackendTests
             client,
             Options.Create(new AwsBatchExecutionOptions
             {
-                JobDefinitionMaxSupportedContractVersions = contracts
+                JobDefinitions = contracts.Select(contract => new AwsBatchJobDefinitionContractOptions
+                {
+                    JobDefinition = contract.Key,
+                    MaxSupportedContractVersion = contract.Value
+                }).ToList()
             }),
             NullLogger<AwsBatchComputeBackend>.Instance);
     }

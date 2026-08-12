@@ -84,10 +84,15 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     [Fact]
     public async Task StartAsync_AttestedSelectedExecutableAcceptsVersionTwo()
     {
-        using var backend = CreateBackend(executableContracts: new Dictionary<string, int>
-        {
-            [CommandShellPath] = RasterSourceContract.JobContractVersion
-        });
+        using var backend = CreateBackend(workerContracts:
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = CommandShellPath,
+                ArgumentPrefix = [OperatingSystem.IsWindows() ? "/c" : "-c", "exit 0"],
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            }
+        ]);
         var job = CreateJob(
             "job-attested-v2",
             new Dictionary<string, string>
@@ -101,6 +106,34 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         var result = await backend.StartAsync(job);
 
         result.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Fact]
+    public async Task StartAsync_SharedLauncherAttestationRejectsDifferentWorkerArguments()
+    {
+        using var backend = CreateBackend(workerContracts:
+        [
+            new LocalProcessWorkerContractOptions
+            {
+                Executable = CommandShellPath,
+                ArgumentPrefix = [OperatingSystem.IsWindows() ? "/c" : "-c", "exit 0"],
+                MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+            }
+        ]);
+        var job = CreateJob(
+            "job-different-worker-v2",
+            new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = CommandShellPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = OperatingSystem.IsWindows() ? "/c" : "-c",
+                [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "exit 9"
+            },
+            contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain("selected argument prefix").And.Contain("requires version 2");
     }
 
     [Fact]
@@ -352,20 +385,39 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
 
     private static LocalProcessPoolBatchComputeBackend CreateBackend(
         int maxConcurrent = 2,
+        IReadOnlyList<LocalProcessWorkerContractOptions>? workerContracts = null,
         IReadOnlyDictionary<string, int>? executableContracts = null)
     {
-        var contracts = executableContracts is null
-            ? new Dictionary<string, int>(StringComparer.Ordinal)
+        IReadOnlyList<LocalProcessWorkerContractOptions> contracts;
+        if (workerContracts is not null)
+        {
+            contracts = workerContracts;
+        }
+        else if (executableContracts is not null)
+        {
+            contracts = executableContracts.Select(contract => new LocalProcessWorkerContractOptions
             {
-                [SleepPath] = RasterSourceContract.JobContractVersion,
-                [ShPath] = RasterSourceContract.JobContractVersion
-            }
-            : new Dictionary<string, int>(executableContracts, StringComparer.Ordinal);
+                Executable = contract.Key,
+                MaxSupportedContractVersion = contract.Value
+            }).ToList();
+        }
+        else
+        {
+            contracts =
+            [
+                new LocalProcessWorkerContractOptions
+                {
+                    Executable = SleepPath,
+                    MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
+                }
+            ];
+        }
+
         return new LocalProcessPoolBatchComputeBackend(
             Options.Create(new LocalProcessPoolOptions
             {
                 MaxConcurrentProcesses = maxConcurrent,
-                ExecutableMaxSupportedContractVersions = contracts
+                WorkerContracts = [.. contracts]
             }),
             NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
     }

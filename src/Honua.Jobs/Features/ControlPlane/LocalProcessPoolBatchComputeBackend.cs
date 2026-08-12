@@ -71,10 +71,11 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
-        var executableContracts = _options.ExecutableMaxSupportedContractVersions;
-        var configuredMaximum = executableContracts.Count == 0
-            ? 1
-            : executableContracts.Values.Max();
+        var configuredMaximum = _options.WorkerContracts
+            .Where(contract => !string.IsNullOrWhiteSpace(contract.Executable))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
         return new BatchComputeBackendCapabilities
         {
             SupportsCancellation = true,
@@ -533,15 +534,47 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private string? ValidateExecutableContract(ExecutionJobRecord job, string executable)
     {
-        var supportedVersion = _options.ExecutableMaxSupportedContractVersions.TryGetValue(
-            executable,
-            out var configuredVersion)
-            ? Math.Max(1, configuredVersion)
-            : 1;
+        var arguments = ResolveArguments(job.Spec.Parameters);
+        var supportedVersion = _options.WorkerContracts
+            .Where(contract => string.Equals(contract.Executable, executable, StringComparison.Ordinal))
+            .Where(contract => ContractMatchesSelectedWorker(contract, executable, arguments))
+            .Select(contract => Math.Max(1, contract.MaxSupportedContractVersion))
+            .DefaultIfEmpty(1)
+            .Max();
         return job.Spec.ContractVersion <= supportedVersion
             ? null
-            : $"Local process executable '{executable}' supports execution contract version {supportedVersion}, "
+            : $"Local process worker '{executable}' with the selected argument prefix supports execution contract "
+                + $"version {supportedVersion}, "
                 + $"but the job requires version {job.Spec.ContractVersion}.";
+    }
+
+    private static bool ContractMatchesSelectedWorker(
+        LocalProcessWorkerContractOptions contract,
+        string executable,
+        string[] arguments)
+    {
+        var prefix = contract.ArgumentPrefix;
+        if (prefix.Count == 0)
+        {
+            // Empty prefixes are reserved for self-contained worker executables. Shared launchers
+            // must attest the worker-selecting argument(s), never the runtime binary alone.
+            return !IsSharedLauncher(executable);
+        }
+
+        return arguments.Length >= prefix.Count
+            && prefix.Select((argument, index) => string.Equals(
+                    argument,
+                    arguments[index],
+                    StringComparison.Ordinal))
+                .All(static matches => matches);
+    }
+
+    private static bool IsSharedLauncher(string executable)
+    {
+        var name = Path.GetFileNameWithoutExtension(executable).ToLowerInvariant();
+        return name.StartsWith("python", StringComparison.Ordinal)
+            || name is "dotnet" or "java" or "sh" or "bash" or "zsh" or "node" or "ruby"
+                or "pwsh" or "powershell" or "cmd";
     }
 
     private static string[] ResolveArguments(IReadOnlyDictionary<string, string> parameters)
@@ -839,12 +872,27 @@ internal sealed class LocalProcessPoolOptions
     public string? WorkingRoot { get; set; }
 
     /// <summary>
-    /// Exact executable identity to maximum-contract attestations. Unlisted executables are treated
-    /// as v1 workers so a <c>process.executable</c> override cannot receive a newer durable contract
-    /// merely because another executable on the same host supports it.
+    /// Exact worker contract attestations. Shared runtimes and shells must include the argument
+    /// prefix that selects the worker artifact; an empty prefix is accepted only for self-contained
+    /// executables. Unmatched workers are treated as v1.
     /// </summary>
-    public Dictionary<string, int> ExecutableMaxSupportedContractVersions { get; set; } =
-        new(StringComparer.Ordinal);
+    public List<LocalProcessWorkerContractOptions> WorkerContracts { get; set; } = [];
+}
+
+/// <summary>An exact local worker identity and its supported execution contract.</summary>
+internal sealed class LocalProcessWorkerContractOptions
+{
+    /// <summary>Absolute or PATH-resolvable executable identity.</summary>
+    public string Executable { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Ordered argument prefix that selects the worker artifact. Required for shared launchers such
+    /// as <c>dotnet</c>, <c>python</c>, <c>java</c>, or a shell.
+    /// </summary>
+    public List<string> ArgumentPrefix { get; set; } = [];
+
+    /// <summary>Highest execution contract understood by this exact worker identity.</summary>
+    public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
 /// <summary>
