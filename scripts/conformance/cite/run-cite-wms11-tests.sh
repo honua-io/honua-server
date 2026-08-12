@@ -264,6 +264,21 @@ fi
 
 echo -e "${GREEN}WMS 1.1.1 endpoints are accessible${NC}"
 
+# The ets-wms11 profiles tests (profiles-basic-1/2, profiles-queryable-1/2/3) fetch
+# http://cite.opengeospatial.org/OGCTestData/wms/1.1.1/null.xml before asserting
+# anything about the server. That hostname is aliased to the in-network
+# ogc-testdata-stub service (honua-server#3156) so the suite stays hermetic; verify
+# the alias resolves and answers from inside the CITE network before spending a full
+# suite run only to fail those five tests with ~135s connect timeouts each.
+echo -e "${YELLOW}Verifying hermetic OGCTestData stub (cite.opengeospatial.org alias)...${NC}"
+if ! $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" exec -T cite-engine \
+    curl -sf -m 10 -o /dev/null "http://cite.opengeospatial.org/OGCTestData/wms/1.1.1/null.xml"; then
+    echo -e "${RED}OGCTestData stub is not reachable via the cite.opengeospatial.org alias${NC}"
+    echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs ogc-testdata-stub"
+    exit 1
+fi
+echo -e "${GREEN}OGCTestData stub is serving cite.opengeospatial.org inside the CITE network${NC}"
+
 if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
