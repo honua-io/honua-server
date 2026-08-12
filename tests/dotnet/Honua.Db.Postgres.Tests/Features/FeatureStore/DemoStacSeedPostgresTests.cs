@@ -25,6 +25,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             await using var dataSource = NpgsqlDataSource.Create(connectionString);
             await CreateMetadataV2TablesAsync(dataSource);
             await CreateChangeTrackingTablesAsync(dataSource);
+            await ExecuteAsync(dataSource, RetainedFeatureChangeSql);
 
             (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
                 .Should().BeNull("the regression must start from the live failure state");
@@ -81,6 +82,10 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(1);
             var firstTriggerOid = await ScalarInt64Async(dataSource, TriggerOidSql);
             var firstIndexOids = await ScalarStringAsync(dataSource, IndexOidsSql);
+            var firstSequenceOid = await ScalarInt64Async(dataSource, SequenceOidSql);
+            var firstSequenceState = await ScalarStringAsync(dataSource, SequenceStateSql);
+            (await ScalarStringAsync(dataSource, SequenceIdentitySql))
+                .Should().Be("honua.features_objectid_seq");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
@@ -96,8 +101,18 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(firstTriggerOid, "an idempotent rerun must not drop and recreate the valid trigger");
             (await ScalarStringAsync(dataSource, IndexOidsSql))
                 .Should().Be(firstIndexOids, "a healthy rerun must retain every recovered index identity");
+            (await ScalarInt64Async(dataSource, SequenceOidSql))
+                .Should().Be(firstSequenceOid, "a healthy rerun must retain the recovered owned sequence");
+            (await ScalarStringAsync(dataSource, SequenceStateSql))
+                .Should().Be(firstSequenceState, "a healthy rerun must not reset or advance the objectid sequence");
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity, "publication ids and bindings must remain stable");
+
+            var featureMaxBeforeDefaultInsert = await ScalarInt64Async(dataSource, FeatureMaxObjectIdSql);
+            var changeMaxBeforeDefaultInsert = await ScalarInt64Async(dataSource, FeatureChangeMaxObjectIdSql);
+            var defaultObjectId = await ScalarInt64Async(dataSource, InsertDefaultFeatureSql);
+            defaultObjectId.Should().BeGreaterThan(featureMaxBeforeDefaultInsert);
+            defaultObjectId.Should().BeGreaterThan(changeMaxBeforeDefaultInsert);
 
             await AssertChangeTrackingAsync(dataSource);
             var stableFeatureState = await ScalarStringAsync(dataSource, FeatureStateSql);
@@ -400,6 +415,28 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
          WHERE indrelid = 'honua.features'::regclass
         """;
 
+    private const string SequenceIdentitySql =
+        "SELECT pg_get_serial_sequence('honua.features', 'objectid')";
+
+    private const string SequenceOidSql =
+        "SELECT pg_get_serial_sequence('honua.features', 'objectid')::regclass::oid::bigint";
+
+    private const string SequenceStateSql =
+        "SELECT format('%s:%s', last_value, is_called) FROM honua.features_objectid_seq";
+
+    private const string FeatureMaxObjectIdSql =
+        "SELECT max(objectid) FROM honua.features";
+
+    private const string FeatureChangeMaxObjectIdSql =
+        "SELECT max(objectid) FROM honua.feature_changes";
+
+    private const string InsertDefaultFeatureSql =
+        """
+        INSERT INTO honua.features (layer_id, geometry, attributes)
+        VALUES (90998, NULL, jsonb_build_object('source', 'sequence-regression'))
+        RETURNING objectid
+        """;
+
     private const string MigrationIndexReferenceTableSql =
         """
         CREATE SCHEMA migration_index_contract;
@@ -630,6 +667,22 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             source_id TEXT,
             public_objectid BIGINT
         );
+        """;
+
+    private const string RetainedFeatureChangeSql =
+        """
+        INSERT INTO honua.feature_changes (
+            generation,
+            layer_id,
+            objectid,
+            operation,
+            public_objectid)
+        VALUES (
+            nextval('honua.sync_generation'),
+            90997,
+            990000000,
+            1,
+            990000000)
         """;
 
     private const string MetadataV2TablesSql =

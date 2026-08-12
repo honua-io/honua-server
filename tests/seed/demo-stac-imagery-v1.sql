@@ -266,6 +266,52 @@ VALUES
         jsonb_build_object('name','Coastal-03','observed_at','2026-03-08T21:00:00Z',
             'quality_score',59,'eo:cloud_cover',29.7,'proj:epsg',4326,'view:sun_azimuth',126.9,'platform','planet-skysat'));
 
+-- A dropped BIGSERIAL relation loses its owned sequence while feature_changes
+-- survives. Explicit fixture IDs do not advance the replacement sequence, so
+-- align it once during recovery before publishing the repaired binding.
+DO $feature_sequence_recovery$
+DECLARE
+    objectid_sequence regclass;
+    objectid_sequence_schema text;
+    retained_max_objectid bigint;
+BEGIN
+    IF current_setting('honua.seed_features_missing', true)::boolean THEN
+        objectid_sequence := pg_get_serial_sequence('honua.features', 'objectid')::regclass;
+        IF objectid_sequence IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features has no owned objectid sequence';
+        END IF;
+
+        SELECT namespace.nspname
+          INTO objectid_sequence_schema
+          FROM pg_class AS sequence_relation
+          JOIN pg_namespace AS namespace ON namespace.oid = sequence_relation.relnamespace
+         WHERE sequence_relation.oid = objectid_sequence;
+        IF objectid_sequence_schema IS DISTINCT FROM 'honua' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features objectid sequence is outside the honua schema';
+        END IF;
+
+        SELECT greatest(
+                   coalesce((SELECT max(objectid) FROM honua.features), 0::bigint),
+                   coalesce((SELECT max(objectid) FROM honua.feature_changes), 0::bigint))
+          INTO retained_max_objectid;
+
+        IF retained_max_objectid < 1 THEN
+            PERFORM setval(objectid_sequence, 1, false);
+        ELSIF retained_max_objectid = 9223372036854775807 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '55000',
+                MESSAGE = 'Recovered honua.features objectid space is exhausted';
+        ELSE
+            PERFORM setval(objectid_sequence, retained_max_objectid, true);
+        END IF;
+    END IF;
+END
+$feature_sequence_recovery$;
+
 -- ---------------------------------------------------------------------------
 -- 2. Merge the STAC service + collections into the active Metadata v2 snapshot.
 --
