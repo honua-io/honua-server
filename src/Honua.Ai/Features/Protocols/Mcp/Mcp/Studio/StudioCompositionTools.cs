@@ -592,6 +592,11 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
             throw new GeoprocessingValidationException("'interaction.do.args' must be a JSON object.");
         }
 
+        if (interaction.Disabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False or JsonValueKind.Undefined))
+        {
+            throw new GeoprocessingValidationException("'interaction.disabled' must be a JSON boolean.");
+        }
+
         return new StudioInteraction
         {
             Id = interaction.Id!,
@@ -602,7 +607,9 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
                 Verb = action.Verb!,
                 Args = action.Args.ValueKind == JsonValueKind.Undefined ? null : action.Args,
             },
-            Disabled = interaction.Disabled,
+            Disabled = interaction.Disabled.ValueKind == JsonValueKind.Undefined
+                ? null
+                : interaction.Disabled.GetBoolean(),
         };
     }
 }

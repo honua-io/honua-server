@@ -187,6 +187,28 @@ public sealed class StudioCompositionBodyEditorTests
     }
 
     [UnitTest]
+    public void RemoveLayer_WhenInteractionReferencesLayer_ThrowsConflict()
+    {
+        var body = StudioCompositionBodyEditor.AddLayer(
+            StudioCompositionBody.Empty, new StudioCompositionLayer { Id = "roads" });
+        body = body with
+        {
+            Interactions =
+            [
+                new StudioInteraction
+                {
+                    Id = "select-roads",
+                    On = new StudioInteractionEvent { Ref = "layer:roads", Event = "featureSelect" },
+                    Do = new StudioInteractionAction { Ref = "map", Verb = "setViewport" },
+                }
+            ]
+        };
+
+        Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
+    }
+
+    [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(
             () => StudioCompositionBodyEditor.SetLayerStyleRef(StudioCompositionBody.Empty, "no-such-layer", "style_x"));
@@ -237,6 +259,23 @@ public sealed class StudioCompositionBodyEditorTests
         body = StudioCompositionBodyEditor.RemoveWidget(body, "legend");
 
         Assert.Equal(["table"], body.Widgets.Select(w => w.Id));
+    }
+
+    [UnitTest]
+    public void RemoveWidget_WhenLayoutReferencesWidget_ThrowsConflict()
+    {
+        var body = StudioCompositionBodyEditor.AddWidget(
+            StudioCompositionBody.Empty, new StudioCompositionWidget { Id = "legend", Kind = "legend" });
+        body = body with
+        {
+            Layout = new StudioLayout
+            {
+                Items = [new StudioLayoutItem { Ref = "widget:legend", X = 0, Y = 0, W = 1, H = 1 }]
+            }
+        };
+
+        Assert.Throws<StudioCompositionConflictException>(
+            () => StudioCompositionBodyEditor.RemoveWidget(body, "legend"));
     }
 
     [Theory]

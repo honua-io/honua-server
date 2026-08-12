@@ -276,6 +276,8 @@ public static class StudioCompositionBodyEditor
             throw new StudioCompositionNotFoundException($"No layer with id '{layerId}' exists in the composition.");
         }
 
+        EnsureComponentIsUnreferenced(body, StudioInteractionVocabulary.LayerRefPrefix + layerId);
+
         return body with
         {
             Layers = body.Layers.Where(existing => !string.Equals(existing.Id, layerId, StringComparison.Ordinal)).ToList()
@@ -329,6 +331,8 @@ public static class StudioCompositionBodyEditor
         {
             throw new StudioCompositionNotFoundException($"No widget with id '{widgetId}' exists in the composition.");
         }
+
+        EnsureComponentIsUnreferenced(body, StudioInteractionVocabulary.WidgetRefPrefix + widgetId);
 
         return body with
         {
@@ -439,6 +443,21 @@ public static class StudioCompositionBodyEditor
         {
             throw new StudioCompositionConflictException(
                 $"'{member}': {StudioInteractionVocabulary.DescribeResolution(reference, resolution)}");
+        }
+    }
+
+    private static void EnsureComponentIsUnreferenced(StudioCompositionBody body, string reference)
+    {
+        var interactionUsesReference = (body.Interactions ?? []).Any(interaction =>
+            string.Equals(interaction.On.Ref, reference, StringComparison.Ordinal)
+            || string.Equals(interaction.Do.Ref, reference, StringComparison.Ordinal));
+        var layoutUsesReference = (body.Layout?.Items ?? []).Any(item =>
+            string.Equals(item.Ref, reference, StringComparison.Ordinal));
+
+        if (interactionUsesReference || layoutUsesReference)
+        {
+            throw new StudioCompositionConflictException(
+                $"Component reference '{reference}' is still used by the composition.");
         }
     }
 

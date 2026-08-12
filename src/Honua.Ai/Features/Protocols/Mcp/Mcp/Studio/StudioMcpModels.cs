@@ -337,7 +337,7 @@ internal sealed class McpStudioInteractionInput
     public McpStudioInteractionActionInput? Do { get; set; }
 
     [JsonPropertyName("disabled")]
-    public bool? Disabled { get; set; }
+    public JsonElement Disabled { get; set; }
 }
 
 /// <summary>Arguments for <c>honua_studio_bind_interaction</c>.</summary>
