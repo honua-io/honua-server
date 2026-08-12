@@ -1,7 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
+using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -108,6 +117,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, SequenceIdentitySql))
                 .Should().Be("honua.features_objectid_seq");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(1);
+            (await ScalarStringAsync(dataSource, SeedMarkerSql))
+                .Should().Be($"{ExpectedSeedSha256}:seed-regression:1");
             var firstPublicationIdentity = await ScalarStringAsync(dataSource, PublicationIdentitySql);
             firstPublicationIdentity.Should().NotBeNullOrWhiteSpace();
 
@@ -116,6 +127,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.features"))
                 .Should().Be(7, "reapplying the seed must replace, not duplicate, fixture rows");
             (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
+            (await ScalarStringAsync(dataSource, SeedMarkerSql))
+                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2");
             (await ScalarInt64Async(dataSource, TriggerCountSql))
                 .Should().Be(1, "reapplying the seed must not duplicate its migration-owned trigger");
             (await ScalarInt64Async(dataSource, TriggerOidSql))
@@ -155,6 +168,9 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             (await ScalarStringAsync(dataSource, PublicationIdentitySql))
                 .Should().Be(firstPublicationIdentity);
             (await ScalarInt64Async(dataSource, TriggerCountSql)).Should().Be(1);
+            (await ScalarStringAsync(dataSource, SeedMarkerSql))
+                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2",
+                    "the injected failure must roll back the transactional seed marker");
 
             await AssertColumnRestrictedTriggerRejectedAsync(dataSource, seed);
             await ExecuteAsync(dataSource, RestoreCanonicalTriggerSql);
@@ -162,6 +178,166 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         }
         finally
         {
+            await fixture.DropDatabaseAsync(databaseName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Apply_ConcurrentCanonicalBootstrap_SerializesAndPreservesBothPublications()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync(
+            nameof(Apply_ConcurrentCanonicalBootstrap_SerializesAndPreservesBothPublications));
+        var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database!;
+        var metadataGateHeld = false;
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await CreateMetadataV2TablesAsync(dataSource);
+            await CreateChangeTrackingTablesAsync(dataSource);
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+
+            var provider = new TestConnectionProvider(dataSource, "honua");
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "seed-regression",
+                schemaName: "honua");
+            var canonicalGraph = new MetadataV2Graph
+            {
+                Environment = "seed-regression",
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Resources =
+                [
+                    new MetadataV2Resource
+                    {
+                        Metadata = new MetadataV2ObjectMetadata
+                        {
+                            Id = "res-canonical",
+                            Name = "canonical-writer-resource",
+                        },
+                        Type = MetadataV2ResourceType.FeatureDataset,
+                    },
+                ],
+            };
+
+            await using var coordinator = await dataSource.OpenConnectionAsync();
+            await using (var hold = coordinator.CreateCommand())
+            {
+                hold.CommandText =
+                    $"SELECT pg_advisory_lock({MetadataLockNamespace}, hashtext('seed-regression'))";
+                await hold.ExecuteNonQueryAsync();
+                metadataGateHeld = true;
+            }
+
+            var canonicalWrite = store.SaveAsync(canonicalGraph, expectedEtag: null);
+            await WaitForMetadataLockWaitersAsync(dataSource, expectedCount: 1);
+            var seedWrite = ExecuteAsync(dataSource, RenderSeed(injectFailure: false));
+            await WaitForMetadataLockWaitersAsync(dataSource, expectedCount: 2);
+
+            await using (var release = coordinator.CreateCommand())
+            {
+                release.CommandText =
+                    $"SELECT pg_advisory_unlock({MetadataLockNamespace}, hashtext('seed-regression'))";
+                await release.ExecuteNonQueryAsync();
+                metadataGateHeld = false;
+            }
+
+            await canonicalWrite.WaitAsync(TimeSpan.FromSeconds(30));
+            await seedWrite.WaitAsync(TimeSpan.FromSeconds(30));
+
+            (await ScalarInt64Async(dataSource, CurrentRevisionSql)).Should().Be(2);
+            (await ScalarInt64Async(dataSource, CanonicalAndSeedPublicationCountSql))
+                .Should().Be(2, "the seed must append to, not overwrite, the canonical bootstrap");
+            (await ScalarStringAsync(dataSource, SeedMarkerSql))
+                .Should().Be($"{ExpectedSeedSha256}:seed-regression:2");
+        }
+        finally
+        {
+            if (metadataGateHeld)
+            {
+                await using var cleanupDataSource = NpgsqlDataSource.Create(connectionString);
+                await ExecuteAsync(
+                    cleanupDataSource,
+                    $"SELECT pg_advisory_unlock({MetadataLockNamespace}, hashtext('seed-regression'))");
+            }
+
+            await fixture.DropDatabaseAsync(databaseName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Apply_ConcurrentReplicaRegistration_CommitsCursorBeforeRecoveryFailsClosed()
+    {
+        var connectionString = await fixture.CreateIsolatedDatabaseAsync(
+            nameof(Apply_ConcurrentReplicaRegistration_CommitsCursorBeforeRecoveryFailsClosed));
+        var databaseName = new NpgsqlConnectionStringBuilder(connectionString).Database!;
+        var recoveryGateHeld = false;
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await CreateMetadataV2TablesAsync(dataSource);
+            await CreateChangeTrackingTablesAsync(dataSource);
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            var repository = new PostgresReplicaRepository(new TestConnectionProvider(dataSource, "honua"));
+            var now = DateTimeOffset.UtcNow;
+            var record = new ReplicaRecord
+            {
+                ReplicaId = "concurrent-replica",
+                ReplicaName = "Concurrent replica",
+                ServiceId = "demo-stac",
+                SyncModel = "perReplica",
+                LayerIds = [90810],
+                CreatedAt = now,
+                LastSyncTime = now,
+                LastSyncGeneration = -1,
+            };
+
+            await using var coordinator = await dataSource.OpenConnectionAsync();
+            await using (var hold = coordinator.CreateCommand())
+            {
+                hold.CommandText =
+                    $"SELECT pg_advisory_lock({RecoveryLockNamespace}, {RecoveryLockKey})";
+                await hold.ExecuteNonQueryAsync();
+                recoveryGateHeld = true;
+            }
+
+            var registration = repository.RegisterAtCurrentGenerationAsync(record);
+            await WaitForAdvisoryWaitersAsync(
+                dataSource, RecoveryLockNamespace, RecoveryLockKey, expectedCount: 1);
+            var recovery = ExecuteAsync(dataSource, RenderSeed(injectFailure: false));
+            await WaitForAdvisoryWaitersAsync(
+                dataSource, RecoveryLockNamespace, RecoveryLockKey, expectedCount: 2);
+
+            await using (var release = coordinator.CreateCommand())
+            {
+                release.CommandText =
+                    $"SELECT pg_advisory_unlock({RecoveryLockNamespace}, {RecoveryLockKey})";
+                await release.ExecuteNonQueryAsync();
+                recoveryGateHeld = false;
+            }
+
+            var registered = await registration.WaitAsync(TimeSpan.FromSeconds(30));
+            registered.LastSyncGeneration.Should().Be(0);
+            Func<Task> recoveryFailure = async () => await recovery.WaitAsync(TimeSpan.FromSeconds(30));
+            var failure = await recoveryFailure.Should().ThrowAsync<PostgresException>();
+            failure.Which.SqlState.Should().Be("55000");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("recovery must observe the serialized registration and fail closed");
+            (await ScalarStringAsync(dataSource, RegisteredReplicaCursorSql))
+                .Should().Be("concurrent-replica:0");
+        }
+        finally
+        {
+            if (recoveryGateHeld)
+            {
+                await using var cleanupDataSource = NpgsqlDataSource.Create(connectionString);
+                await ExecuteAsync(
+                    cleanupDataSource,
+                    $"SELECT pg_advisory_unlock({RecoveryLockNamespace}, {RecoveryLockKey})");
+            }
+
             await fixture.DropDatabaseAsync(databaseName);
         }
     }
@@ -263,6 +439,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     {
         var seedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "demo-stac-imagery-v1.sql");
         var source = File.ReadAllText(seedPath);
+        ExpectedSeedSha256 = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(source))).ToLowerInvariant();
         var begin = source.IndexOf("\nBEGIN;", StringComparison.Ordinal);
         if (begin < 0)
         {
@@ -272,7 +450,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         var rendered = source[(begin + 1)..]
             .Replace(":\"schema\"", $"\"{schema}\"", StringComparison.Ordinal)
             .Replace(":'schema'", $"'{schema}'", StringComparison.Ordinal)
-            .Replace(":'env'", "'seed-regression'", StringComparison.Ordinal);
+            .Replace(":'env'", "'seed-regression'", StringComparison.Ordinal)
+            .Replace(":'seed_sha256'", $"'{ExpectedSeedSha256}'", StringComparison.Ordinal);
         if (rendered.Contains("\\set", StringComparison.Ordinal) || rendered.Contains(":'", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Demo STAC seed still contains psql-only substitutions.");
@@ -332,6 +511,31 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
 
         throw new TimeoutException(
             $"Expected {expectedCount} waiters for advisory lock ({lockNamespace}, {lockKey}).");
+    }
+
+    private static async Task WaitForMetadataLockWaitersAsync(
+        NpgsqlDataSource dataSource,
+        int expectedCount)
+    {
+        var query = $"""
+            SELECT count(*)
+              FROM pg_locks
+             WHERE locktype = 'advisory'
+               AND classid = {MetadataLockNamespace}::oid
+               AND objid = hashtext('seed-regression')::oid
+               AND NOT granted
+            """;
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (await ScalarInt64Async(dataSource, query) >= expectedCount)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        throw new TimeoutException($"Expected {expectedCount} metadata publication lock waiters.");
     }
 
     private static async Task CreateMetadataV2TablesAsync(NpgsqlDataSource dataSource)
@@ -515,6 +719,27 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
     private const int RecoveryLockKey = 1;
     private const int WriterGateLockNamespace = 144047713;
     private const int WriterGateLockKey = 0;
+    private const int MetadataLockNamespace = 144047714;
+    private static string ExpectedSeedSha256 = string.Empty;
+
+    private const string SeedMarkerSql =
+        """
+        SELECT source_sha256 || ':' || metadata_environment || ':' || metadata_revision::text
+          FROM honua.demo_seed_revisions
+         WHERE seed_id = 'demo-stac-imagery-v1'
+        """;
+
+    private const string CanonicalAndSeedPublicationCountSql =
+        """
+        SELECT ((document->'resources') @> '[{"metadata":{"id":"res-canonical"}}]'::jsonb)::int
+             + ((document->'services') @> '[{"metadata":{"id":"svc-demo-stac"}}]'::jsonb)::int
+          FROM honua.metadata_v2_snapshots s
+          JOIN honua.metadata_v2_current c USING (environment, revision)
+         WHERE c.environment = 'seed-regression'
+        """;
+
+    private const string RegisteredReplicaCursorSql =
+        "SELECT replica_id || ':' || last_sync_generation::text FROM honua.replicas WHERE replica_id = 'concurrent-replica'";
 
     private const string RequiredIndexesSql =
         """
@@ -815,7 +1040,15 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             primary_key_column TEXT
         );
         CREATE TABLE honua.replicas (
-            replica_id TEXT PRIMARY KEY
+            replica_id TEXT PRIMARY KEY,
+            replica_name TEXT NOT NULL,
+            service_id TEXT NOT NULL,
+            sync_model TEXT NOT NULL,
+            layer_ids INT[] NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            last_sync_time TIMESTAMPTZ NOT NULL,
+            last_sync_generation BIGINT NOT NULL DEFAULT 0,
+            upload_base_generation BIGINT NOT NULL DEFAULT 0
         );
         CREATE TABLE honua.feature_changes (
             change_id BIGSERIAL PRIMARY KEY,
@@ -850,7 +1083,12 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         """;
 
     private const string RetainedReplicaSql =
-        "INSERT INTO honua.replicas (replica_id) VALUES ('retained-replica')";
+        """
+        INSERT INTO honua.replicas
+            (replica_id, replica_name, service_id, sync_model, layer_ids, created_at, last_sync_time)
+        VALUES
+            ('retained-replica', 'Retained replica', 'demo-stac', 'perReplica', ARRAY[90810], now(), now())
+        """;
 
     private const string MetadataV2TablesSql =
         """
@@ -914,4 +1152,46 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 REFERENCES honua.metadata_v2_snapshots(environment, revision) ON DELETE CASCADE
         );
         """;
+
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName)
+        : IAdoNetDatabaseConnectionProvider
+    {
+        public string GetConnectionString() => dataSource.ConnectionString;
+
+        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SET search_path TO \"{schemaName}\", public;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return connection;
+        }
+
+        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default)
+        {
+            var connection = await OpenConnectionAsync(cancellationToken);
+            try
+            {
+                var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
+                return (connection, transaction);
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
+        }
+
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(
+            Func<Task<T>> operation,
+            CancellationToken cancellationToken = default)
+            => operation();
+
+        public Task ExecuteWithDeadlockRetryAsync(
+            Func<Task> operation,
+            CancellationToken cancellationToken = default)
+            => operation();
+    }
 }

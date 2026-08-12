@@ -41,6 +41,7 @@ fi
 
 SEED_ENV="${HONUA_SEED_ENV:-default}"
 SEED_SCHEMA="${HONUA_SEED_SCHEMA:-honua}"
+SEED_SHA256="$(sha256sum "${SEED_FILE}" | awk '{print $1}')"
 
 echo "Applying demo STAC seed: env=${SEED_ENV} schema=${SEED_SCHEMA} -> ${PGHOST:-localhost}:${PGPORT:-5432}/${PGDATABASE:-honua}"
 
@@ -52,6 +53,7 @@ PGPASSWORD="${PGPASSWORD:?PGPASSWORD is required}" psql \
   -d "${PGDATABASE:-honua}" \
   -v env="${SEED_ENV}" \
   -v schema="${SEED_SCHEMA}" \
+  -v seed_sha256="${SEED_SHA256}" \
   -f "${SEED_FILE}"
 
 echo

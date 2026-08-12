@@ -34,6 +34,8 @@
 --   schema     Honua migration schema (default and only supported value "honua").
 --              The current migration-owned tracking functions are honua-scoped;
 --              fail closed rather than publishing an untracked custom relation.
+--   seed_sha256 SHA-256 of this exact seed source, computed by the invoking wrapper.
+--               Required; persisted transactionally for the deployment gate.
 --
 -- USAGE:
 --   psql -v ON_ERROR_STOP=1 -v env=default -v schema=honua -f demo-stac-imagery-v1.sql
@@ -52,6 +54,11 @@
 \else
   \set schema 'honua'
 \endif
+\if :{?seed_sha256}
+\else
+  \echo 'seed_sha256 is required and must be computed from the seed source bytes'
+  \quit
+\endif
 
 BEGIN;
 
@@ -61,6 +68,7 @@ SET search_path TO :"schema", public;
 -- cannot see psql :vars) can read them via current_setting().
 SELECT set_config('honua.seed_env', :'env', false);
 SELECT set_config('honua.seed_schema', :'schema', false);
+SELECT set_config('honua.seed_sha256', :'seed_sha256', false);
 
 DO $schema_contract$
 BEGIN
@@ -68,6 +76,11 @@ BEGIN
         RAISE EXCEPTION USING
             ERRCODE = '55000',
             MESSAGE = 'Demo STAC seed requires the migration-owned honua schema';
+    END IF;
+    IF current_setting('honua.seed_sha256', true) !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023',
+            MESSAGE = 'Demo STAC seed requires a lowercase SHA-256 source digest';
     END IF;
 END
 $schema_contract$;
@@ -368,13 +381,19 @@ BEGIN
         v_env := 'default';
     END IF;
 
+    -- Same environment-scoped transaction lock and order as
+    -- PostgresMetadataV2GraphStore.SaveAsync. Unlike FOR UPDATE, this also serializes
+    -- the absent-current bootstrap case.
+    PERFORM pg_advisory_xact_lock(144047714, hashtext(v_env));
+
     -- Load the current active snapshot document (if any) so we APPEND, not replace.
     SELECT s.document, s.revision
       INTO v_doc, v_revision
       FROM metadata_v2_snapshots s
       JOIN metadata_v2_current c
         ON c.environment = s.environment AND c.revision = s.revision
-     WHERE s.environment = v_env;
+     WHERE s.environment = v_env
+       FOR UPDATE OF c;
 
     IF v_doc IS NULL THEN
         -- No activated snapshot yet for this environment: start an empty graph.
@@ -610,6 +629,28 @@ BEGIN
         SET revision = EXCLUDED.revision,
             etag = EXCLUDED.etag,
             activated_at = EXCLUDED.activated_at;
+
+    -- Durable proof of which source bytes produced the active seed publication.
+    -- The marker is written in this same transaction after current activation, so a
+    -- failed seed cannot leave a receipt that a trusted in-VPC gate could accept.
+    IF to_regclass('honua.demo_seed_revisions') IS NULL THEN
+        EXECUTE $ddl$CREATE TABLE honua.demo_seed_revisions (
+            seed_id text PRIMARY KEY,
+            source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$'),
+            metadata_environment text NOT NULL,
+            metadata_revision bigint NOT NULL,
+            applied_at timestamptz NOT NULL DEFAULT now()
+        )$ddl$;
+    END IF;
+    INSERT INTO honua.demo_seed_revisions
+        (seed_id, source_sha256, metadata_environment, metadata_revision, applied_at)
+    VALUES
+        ('demo-stac-imagery-v1', current_setting('honua.seed_sha256'), v_env, v_revision, now())
+    ON CONFLICT (seed_id) DO UPDATE
+        SET source_sha256 = EXCLUDED.source_sha256,
+            metadata_environment = EXCLUDED.metadata_environment,
+            metadata_revision = EXCLUDED.metadata_revision,
+            applied_at = EXCLUDED.applied_at;
 
     RAISE NOTICE 'demo STAC seed: environment=% activated revision=% (etag=%)', v_env, v_revision, v_etag;
 END

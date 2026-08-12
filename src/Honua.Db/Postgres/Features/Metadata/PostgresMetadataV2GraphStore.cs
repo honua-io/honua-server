@@ -21,6 +21,10 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// </summary>
 internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
 {
+    // Shared with schema-coupled metadata publishers such as the demo STAC seed.
+    // The environment hash is the second key so unrelated environments can publish concurrently.
+    internal const int MetadataWriteLockNamespace = 144047714;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IMetadataV2GraphCacheInvalidator? _cacheInvalidator;
     private readonly string _environment;
@@ -205,6 +209,12 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Lock before reading metadata_v2_current. FOR UPDATE cannot lock an absent bootstrap
+        // row, so the advisory lock is the authoritative serialization seam for both bootstrap
+        // and established environments. Every publisher uses this lock/order before touching
+        // the current pointer, preventing revision-1 overwrite and cross-writer deadlocks.
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+
         if (expectedEtag is not null)
         {
             var currentEtag = await ReadCurrentEtagAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
@@ -245,6 +255,18 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         _cacheInvalidator?.Invalidate(_environment);
 
         return snapshot;
+    }
+
+    private async Task AcquireEnvironmentWriteLockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT pg_advisory_xact_lock(@namespace, hashtext(@environment))";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@namespace", MetadataWriteLockNamespace);
+        command.Parameters.AddWithValue("@environment", _environment);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureSchemaAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
