@@ -9,11 +9,15 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class AwsBatchComputeBackendTests
 {
+    private const string DefaultJobDefinitionArn =
+        "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1";
+
     [Fact]
     public async Task GetCapabilitiesAsync_ReportsCancellationProgressAndRetry()
     {
@@ -115,6 +119,44 @@ public sealed class AwsBatchComputeBackendTests
             .Where(entry => entry.Name == "HONUA_CONTRACT_VERSION")
             .Should().OnlyContain(entry => entry.Value == "1",
                 "the stamped contract-version gate must win over a workload env.HONUA_CONTRACT_VERSION passthrough.");
+    }
+
+    [Fact]
+    public async Task StartAsync_UnattestedSelectedJobDefinitionRejectsVersionTwoBeforeSubmit()
+    {
+        var client = new StubAwsBatchJobClient();
+        var backend = CreateBackend(client);
+        const string olderDefinition =
+            "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal-old:7";
+        var job = CreateJob(
+            parameters: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [AwsBatchParameterKeys.JobDefinitionArn] = olderDefinition,
+                [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy"
+            },
+            contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain(olderDefinition).And.Contain("version 1").And.Contain("requires version 2");
+        client.LastSubmission.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StartAsync_AttestedSelectedJobDefinitionAcceptsVersionTwo()
+    {
+        var client = new StubAwsBatchJobClient();
+        var backend = CreateBackend(client);
+        var job = CreateJob(contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
+        client.LastSubmission.Should().NotBeNull();
+        client.LastSubmission!.JobDefinition.Should().Be(DefaultJobDefinitionArn);
+        client.LastSubmission.EnvironmentOverrides.Should()
+            .ContainSingle(entry => entry.Name == "HONUA_CONTRACT_VERSION" && entry.Value == "2");
     }
 
     [Fact]
@@ -1299,14 +1341,31 @@ public sealed class AwsBatchComputeBackendTests
         retryName.Should().EndWith("-a3");
     }
 
-    private static AwsBatchComputeBackend CreateBackend(IAwsBatchJobClient client)
-        => new(client, NullLogger<AwsBatchComputeBackend>.Instance);
+    private static AwsBatchComputeBackend CreateBackend(
+        IAwsBatchJobClient client,
+        IReadOnlyDictionary<string, int>? jobDefinitionContracts = null)
+    {
+        var contracts = jobDefinitionContracts is null
+            ? new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [DefaultJobDefinitionArn] = RasterSourceContract.JobContractVersion
+            }
+            : new Dictionary<string, int>(jobDefinitionContracts, StringComparer.Ordinal);
+        return new AwsBatchComputeBackend(
+            client,
+            Options.Create(new AwsBatchExecutionOptions
+            {
+                JobDefinitionMaxSupportedContractVersions = contracts
+            }),
+            NullLogger<AwsBatchComputeBackend>.Instance);
+    }
 
     internal static ExecutionJobRecord CreateJob(
         IReadOnlyDictionary<string, string>? parameters = null,
         string? providerOperationId = null,
         ExecutionJobStatus status = ExecutionJobStatus.Queued,
-        string backend = "honua-aws-batch")
+        string backend = "honua-aws-batch",
+        int contractVersion = 1)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -1324,9 +1383,10 @@ public sealed class AwsBatchComputeBackendTests
                 WorkloadName = "heavy-gdal-clip",
                 WorkloadId = "heavy-gdal-clip",
                 RuntimeProfile = "heavy-gdal",
+                ContractVersion = contractVersion,
                 Parameters = parameters ?? new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    [AwsBatchParameterKeys.JobDefinitionArn] = "arn:aws:batch:us-west-2:123:job-definition/heavy-gdal:1",
+                    [AwsBatchParameterKeys.JobDefinitionArn] = DefaultJobDefinitionArn,
                     [AwsBatchParameterKeys.JobQueueArn] = "arn:aws:batch:us-west-2:123:job-queue/gp-heavy"
                 }
             }

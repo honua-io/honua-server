@@ -106,10 +106,13 @@ internal static class BatchAndDeployBackendsRegistration
 
         // AWS Batch backend follows the unconditional registration pattern used by sibling AWS deploy
         // backends. Per-workload AWS Batch settings (job definition ARN, queue ARN, region, resource
-        // overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads,
-        // so the adapter has no global options section it depends on. Registering unconditionally keeps
-        // the backend visible to the reconciler whenever an operator targets Backend=honua-aws-batch.
+        // overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads.
+        // ControlPlane:AwsBatch separately attests the execution-contract version supported by each exact
+        // job-definition revision. Registering unconditionally keeps the backend visible to the reconciler
+        // whenever an operator targets Backend=honua-aws-batch.
 #if !HONUA_EXCLUDE_AWS
+        services.AddOptions<AwsBatchExecutionOptions>()
+            .BindConfiguration(AwsBatchExecutionOptions.SectionName);
         services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
         services.AddSingleton<AwsBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());

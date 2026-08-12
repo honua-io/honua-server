@@ -7,7 +7,7 @@ using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Raster;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -256,10 +256,30 @@ internal static class AwsBatchStateMapper
 }
 
 /// <summary>
+/// Operator attestations for the execution contracts supported by exact AWS Batch job-definition
+/// identities. Job-definition revisions are immutable worker artifacts, so callers should key the
+/// map by the same ARN (including revision) selected through the workload parameters.
+/// </summary>
+internal sealed class AwsBatchExecutionOptions
+{
+    /// <summary>Configuration section name.</summary>
+    public const string SectionName = "ControlPlane:AwsBatch";
+
+    /// <summary>
+    /// Exact job-definition ARN/revision to maximum-contract attestations. Unlisted definitions are
+    /// treated as v1 workers so a rolling control-plane deployment cannot dispatch a newer durable
+    /// job contract to an older worker definition.
+    /// </summary>
+    public Dictionary<string, int> JobDefinitionMaxSupportedContractVersions { get; set; } =
+        new(StringComparer.Ordinal);
+}
+
+/// <summary>
 /// AWS Batch execution adapter behind the canonical batch-compute boundary.
 /// </summary>
 internal sealed partial class AwsBatchComputeBackend(
     IAwsBatchJobClient batchClient,
+    IOptions<AwsBatchExecutionOptions> options,
     ILogger<AwsBatchComputeBackend> logger) : IBatchComputeBackend
 {
     internal const string AdapterBackendName = "honua-aws-batch";
@@ -281,15 +301,29 @@ internal sealed partial class AwsBatchComputeBackend(
     /// </summary>
     internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
 
-    private static readonly BatchComputeBackendCapabilities CapabilitiesSnapshot = new()
+    internal AwsBatchComputeBackend(
+        IAwsBatchJobClient batchClient,
+        ILogger<AwsBatchComputeBackend> logger)
+        : this(batchClient, Options.Create(new AwsBatchExecutionOptions()), logger)
     {
-        SupportsCancellation = true,
-        SupportsProgressPolling = true,
-        SupportsRetry = true,
-        SupportsLogStreaming = false,
-        SupportsArtifactStaging = false,
-        MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
-    };
+    }
+
+    private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
+    {
+        var jobDefinitionContracts = options.Value.JobDefinitionMaxSupportedContractVersions;
+        var configuredMaximum = jobDefinitionContracts.Count == 0
+            ? 1
+            : jobDefinitionContracts.Values.Max();
+        return new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true,
+            SupportsProgressPolling = true,
+            SupportsRetry = true,
+            SupportsLogStreaming = false,
+            SupportsArtifactStaging = false,
+            MaxSupportedContractVersion = Math.Max(1, configuredMaximum)
+        };
+    }
 
     internal static bool TryExtractPendingJobName(string? providerOperationId, out string jobName)
     {
@@ -380,7 +414,7 @@ internal sealed partial class AwsBatchComputeBackend(
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.AwsBatch;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(CapabilitiesSnapshot);
+        => Task.FromResult(CreateCapabilitiesSnapshot());
 
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -394,6 +428,17 @@ internal sealed partial class AwsBatchComputeBackend(
         // need (honua-iac#70); falls back to the single batch.job_definition_arn for non-tiered
         // configs. vCPU/memory/timeout/retry stay SubmitJob overrides below.
         var jobDefinition = AwsBatchJobDefinitionTierSelector.ResolveJobDefinitionArn(parameters);
+        var jobDefinitionContractVersion = ResolveJobDefinitionMaxSupportedContractVersion(jobDefinition);
+        if (job.Spec.ContractVersion > jobDefinitionContractVersion)
+        {
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = $"AWS Batch job definition '{jobDefinition}' supports execution contract version "
+                    + $"{jobDefinitionContractVersion}, but the job requires version {job.Spec.ContractVersion}."
+            };
+        }
+
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
         var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
@@ -458,6 +503,18 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = "AWS Batch rejected job submission."
             };
         }
+    }
+
+    private int ResolveJobDefinitionMaxSupportedContractVersion(string jobDefinition)
+    {
+        if (options.Value.JobDefinitionMaxSupportedContractVersions.TryGetValue(
+                jobDefinition,
+                out var configuredVersion))
+        {
+            return Math.Max(1, configuredVersion);
+        }
+
+        return 1;
     }
 
     public async Task<BatchComputeObservation> ObserveAsync(

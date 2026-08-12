@@ -7,7 +7,6 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.ControlPlane;
 
@@ -70,17 +69,24 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private const int MaxTailLines = 50;
 
-    private static readonly BatchComputeBackendCapabilities CapabilitiesSnapshot = new()
+    private BatchComputeBackendCapabilities CreateCapabilitiesSnapshot()
     {
-        SupportsCancellation = true,
-        SupportsProgressPolling = true,
-        // The reconciler re-queues a Failed job when the backend supports retry; that is exactly how a
-        // process lost to a host restart recovers (a fresh launch on the next attempt).
-        SupportsRetry = true,
-        SupportsLogStreaming = false,
-        SupportsArtifactStaging = false,
-        MaxSupportedContractVersion = RasterSourceContract.JobContractVersion
-    };
+        var executableContracts = _options.ExecutableMaxSupportedContractVersions;
+        var configuredMaximum = executableContracts.Count == 0
+            ? 1
+            : executableContracts.Values.Max();
+        return new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true,
+            SupportsProgressPolling = true,
+            // The reconciler re-queues a Failed job when the backend supports retry; that is exactly how a
+            // process lost to a host restart recovers (a fresh launch on the next attempt).
+            SupportsRetry = true,
+            SupportsLogStreaming = false,
+            SupportsArtifactStaging = false,
+            MaxSupportedContractVersion = Math.Max(1, configuredMaximum)
+        };
+    }
 
     private readonly ILogger<LocalProcessPoolBatchComputeBackend> _logger;
     private readonly LocalProcessPoolOptions _options;
@@ -104,7 +110,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.LocalProcess;
 
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(CapabilitiesSnapshot);
+        => Task.FromResult(CreateCapabilitiesSnapshot());
 
     public Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
@@ -125,6 +131,17 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             {
                 Status = ExecutionJobStatus.Failed,
                 Message = ex.Message
+            });
+        }
+
+        var contractFailure = ValidateExecutableContract(job, executable);
+        if (contractFailure is not null)
+        {
+            Log.LaunchRejected(_logger, job.OperationId, contractFailure);
+            return Task.FromResult(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = contractFailure
             });
         }
 
@@ -273,6 +290,18 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = job.ProviderOperationId,
                 Message = ex.Message
+            };
+        }
+
+        var contractFailure = ValidateExecutableContract(job, executable);
+        if (contractFailure is not null)
+        {
+            Log.LaunchRejected(_logger, job.OperationId, contractFailure);
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = job.ProviderOperationId,
+                Message = contractFailure
             };
         }
 
@@ -500,6 +529,19 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
 
         return executable.Trim();
+    }
+
+    private string? ValidateExecutableContract(ExecutionJobRecord job, string executable)
+    {
+        var supportedVersion = _options.ExecutableMaxSupportedContractVersions.TryGetValue(
+            executable,
+            out var configuredVersion)
+            ? Math.Max(1, configuredVersion)
+            : 1;
+        return job.Spec.ContractVersion <= supportedVersion
+            ? null
+            : $"Local process executable '{executable}' supports execution contract version {supportedVersion}, "
+                + $"but the job requires version {job.Spec.ContractVersion}.";
     }
 
     private static string[] ResolveArguments(IReadOnlyDictionary<string, string> parameters)
@@ -795,6 +837,14 @@ internal sealed class LocalProcessPoolOptions
     /// <c>honua-local-process</c> folder under the system temp directory is used.
     /// </summary>
     public string? WorkingRoot { get; set; }
+
+    /// <summary>
+    /// Exact executable identity to maximum-contract attestations. Unlisted executables are treated
+    /// as v1 workers so a <c>process.executable</c> override cannot receive a newer durable contract
+    /// merely because another executable on the same host supports it.
+    /// </summary>
+    public Dictionary<string, int> ExecutableMaxSupportedContractVersions { get; set; } =
+        new(StringComparer.Ordinal);
 }
 
 /// <summary>

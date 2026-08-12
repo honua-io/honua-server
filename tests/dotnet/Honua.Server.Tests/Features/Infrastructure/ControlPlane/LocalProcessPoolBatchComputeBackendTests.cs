@@ -22,6 +22,10 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
 
     private static string ShPath => File.Exists("/usr/bin/sh") ? "/usr/bin/sh" : "/bin/sh";
 
+    private static string CommandShellPath => OperatingSystem.IsWindows()
+        ? Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe"
+        : ShPath;
+
     [Fact]
     public async Task BuildEnvironment_WorkloadCannotOverrideContractVersionGate()
     {
@@ -55,6 +59,48 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
                 File.Delete(outFile);
             }
         }
+    }
+
+    [Fact]
+    public async Task StartAsync_UnattestedSelectedExecutableRejectsVersionTwoBeforeLaunch()
+    {
+        using var backend = CreateBackend(executableContracts: new Dictionary<string, int>());
+        var job = CreateJob(
+            "job-unattested-v2",
+            new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = ShPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = "-c",
+                [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "exit 0"
+            },
+            contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.Message.Should().Contain(ShPath).And.Contain("version 1").And.Contain("requires version 2");
+    }
+
+    [Fact]
+    public async Task StartAsync_AttestedSelectedExecutableAcceptsVersionTwo()
+    {
+        using var backend = CreateBackend(executableContracts: new Dictionary<string, int>
+        {
+            [CommandShellPath] = RasterSourceContract.JobContractVersion
+        });
+        var job = CreateJob(
+            "job-attested-v2",
+            new Dictionary<string, string>
+            {
+                [LocalProcessParameterKeys.Executable] = CommandShellPath,
+                [LocalProcessParameterKeys.ArgumentPrefix + "0"] = OperatingSystem.IsWindows() ? "/c" : "-c",
+                [LocalProcessParameterKeys.ArgumentPrefix + "1"] = "exit 0"
+            },
+            contractVersion: 2);
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Running);
     }
 
     [Fact]
@@ -304,12 +350,30 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
         throw new TimeoutException("The local process did not reach the expected state within 15 seconds.");
     }
 
-    private static LocalProcessPoolBatchComputeBackend CreateBackend(int maxConcurrent = 2)
-        => new(
-            Options.Create(new LocalProcessPoolOptions { MaxConcurrentProcesses = maxConcurrent }),
+    private static LocalProcessPoolBatchComputeBackend CreateBackend(
+        int maxConcurrent = 2,
+        IReadOnlyDictionary<string, int>? executableContracts = null)
+    {
+        var contracts = executableContracts is null
+            ? new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [SleepPath] = RasterSourceContract.JobContractVersion,
+                [ShPath] = RasterSourceContract.JobContractVersion
+            }
+            : new Dictionary<string, int>(executableContracts, StringComparer.Ordinal);
+        return new LocalProcessPoolBatchComputeBackend(
+            Options.Create(new LocalProcessPoolOptions
+            {
+                MaxConcurrentProcesses = maxConcurrent,
+                ExecutableMaxSupportedContractVersions = contracts
+            }),
             NullLogger<LocalProcessPoolBatchComputeBackend>.Instance);
+    }
 
-    private static ExecutionJobRecord CreateJob(string operationId, IReadOnlyDictionary<string, string> parameters)
+    private static ExecutionJobRecord CreateJob(
+        string operationId,
+        IReadOnlyDictionary<string, string> parameters,
+        int contractVersion = 1)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -324,6 +388,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
                 Backend = LocalProcessPoolBatchComputeBackend.AdapterBackendName,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "test-workload",
+                ContractVersion = contractVersion,
                 Parameters = parameters
             }
         };
