@@ -230,8 +230,9 @@ public sealed class StudioCompositionInteractionsTests
                 StudioCompositionBodyEditor.ReadBody(envelope),
                 new StudioCompositionLayer { Id = "parcels" }));
 
-        Assert.False(written.Body!.Value.TryGetProperty("interactions", out _));
-        Assert.False(written.Body.Value.TryGetProperty("layout", out _));
+        var writtenBody = written.Body!.Value;
+        Assert.False(writtenBody.TryGetProperty("interactions", out _));
+        Assert.False(writtenBody.TryGetProperty("layout", out _));
     }
 
     [UnitTest]
