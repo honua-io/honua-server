@@ -8,6 +8,17 @@ using System.Threading.Tasks;
 namespace Honua.Core.Features.Tiles;
 
 /// <summary>
+/// A cache-index snapshot together with whether the backing index was actually readable.
+/// An available empty snapshot means no tiles are tracked; an unavailable snapshot must not be
+/// interpreted as an empty cache by destructive lifecycle operations.
+/// </summary>
+/// <param name="Entries">The entries read from the index.</param>
+/// <param name="IsAvailable">Whether the backing index was read successfully.</param>
+public readonly record struct TileCacheIndexSnapshot(
+    IReadOnlyList<TileCacheEntry> Entries,
+    bool IsAvailable);
+
+/// <summary>
 /// Live tile-cache key index that backs the size-quota / LRU evictor (#1917). Each cached tile on
 /// the hot serve path records its key, byte size, and last-access time here so the evictor can later
 /// snapshot the index and ask <see cref="TileCacheQuotaPolicy" /> which least-recently-used keys to
@@ -70,6 +81,19 @@ public interface ITileCacheKeyIndex
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The current cache key index; empty when the index is disabled or unavailable.</returns>
     Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Snapshots the index while preserving the distinction between an empty index and an
+    /// unavailable backing store. Implementations that cannot fail independently of
+    /// <see cref="SnapshotAsync"/> inherit the successful default adapter.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The snapshot and its availability state.</returns>
+    async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
+        CancellationToken cancellationToken = default)
+        => new(
+            await SnapshotAsync(cancellationToken).ConfigureAwait(false),
+            IsAvailable: true);
 
     /// <summary>
     /// Removes a key from the index after the corresponding tile has been deleted from the cache

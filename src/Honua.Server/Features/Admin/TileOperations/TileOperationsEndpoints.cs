@@ -87,9 +87,18 @@ internal static class TileOperationsEndpoints
 
         var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
 
-        var entries = keyIndex.IsEnabled
-            ? await keyIndex.SnapshotAsync(cancellationToken).ConfigureAwait(false)
-            : [];
+        var indexSnapshot = keyIndex.IsEnabled
+            ? await keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false)
+            : new TileCacheIndexSnapshot([], IsAvailable: true);
+        if (!indexSnapshot.IsAvailable)
+        {
+            return Results.Problem(
+                title: "Tile cache index unavailable",
+                detail: "The tile cache inventory cannot be read while its backing index is unavailable.",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var entries = indexSnapshot.Entries;
 
         var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
         var totalCount = 0;

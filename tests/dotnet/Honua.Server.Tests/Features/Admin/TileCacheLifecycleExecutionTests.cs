@@ -94,6 +94,78 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_WhenStorageReturnsFalseAndObjectStillExists_LeavesKeyTracked()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(false);
+        storage.GetMetadataAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(StoredTile(InBoundKey));
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        result.FailedTiles.Should().Be(1);
+        index.Removed.Should().BeEmpty();
+        index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
+    public async Task Delete_WhenStorageReturnsFalseAndObjectIsAbsent_RemovesStaleIndexEntry()
+    {
+        var index = new StatefulKeyIndex();
+        index.Seed(InBoundKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns(false);
+        storage.GetMetadataAsync(InBoundKey, Arg.Any<CancellationToken>()).Returns((CloudFile?)null);
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Completed);
+        result.SuccessfulTiles.Should().Be(1);
+        index.Removed.Should().BeEquivalentTo([InBoundKey]);
+    }
+
+    [UnitTest]
+    public async Task Delete_WhenIndexSnapshotIsUnavailable_FailsWithoutChangingStorage()
+    {
+        var index = new StatefulKeyIndex { SnapshotAvailable = false };
+        index.Seed(InBoundKey, 100);
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        var result = await ExecuteAsync(
+            new TileOperationStartRequest
+            {
+                Operation = "delete",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            },
+            index,
+            storage);
+
+        result.Status.Should().Be(OperationStatus.Failed);
+        result.ErrorMessage.Should().Contain("temporarily unavailable");
+        index.Remaining.Should().BeEquivalentTo([InBoundKey]);
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Delete_AfterMidwayFailure_ResumesRemainingKeys()
     {
         const string key1 = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
@@ -327,6 +399,17 @@ public sealed class TileCacheLifecycleExecutionTests
         return await core.ExecuteAsync(started, request, provider, CancellationToken.None);
     }
 
+    private static CloudFile StoredTile(string key) => new()
+    {
+        FileId = key,
+        FileName = "tile.png",
+        StoragePath = key,
+        ContentType = "image/png",
+        SizeBytes = 100,
+        UploadedAt = DateTimeOffset.UtcNow,
+        Provider = CloudStorageProvider.Local,
+    };
+
     private sealed class StatefulKeyIndex : ITileCacheKeyIndex
     {
         private readonly ConcurrentDictionary<string, long> _entries = new(StringComparer.Ordinal);
@@ -336,6 +419,8 @@ public sealed class TileCacheLifecycleExecutionTests
         public ConcurrentBag<string> Expired { get; } = [];
 
         public string? FailingExpirationKey { get; set; }
+
+        public bool SnapshotAvailable { get; set; } = true;
 
         public bool IsEnabled => true;
 
@@ -358,6 +443,10 @@ public sealed class TileCacheLifecycleExecutionTests
         public Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileCacheEntry>>(
                 [.. _entries.Select(kvp => new TileCacheEntry(kvp.Key, kvp.Value, DateTimeOffset.UtcNow))]);
+
+        public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
+            CancellationToken cancellationToken = default)
+            => new(await SnapshotAsync(cancellationToken), SnapshotAvailable);
 
         public Task MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
         {

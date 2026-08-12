@@ -3,12 +3,15 @@
 
 using System.Collections.Concurrent;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -112,9 +115,38 @@ public sealed class TileCacheEvictionServiceTests
         index.Removed.Should().BeEquivalentTo(["oldest"]);
     }
 
+    [UnitTest]
+    public async Task SweepAsync_WhenStorageDeleteReturnsFalseAndObjectExists_LeavesKeyTracked()
+    {
+        var index = new FakeTileCacheKeyIndex(enabled: true);
+        index.Seed(new TileCacheEntry("oldest", 100, DateTimeOffset.UtcNow.AddMinutes(-30)));
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync("oldest", Arg.Any<CancellationToken>()).Returns(false);
+        storage.GetMetadataAsync("oldest", Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = "oldest",
+            FileName = "tile.png",
+            StoragePath = "oldest",
+            ContentType = "image/png",
+            SizeBytes = 100,
+            UploadedAt = DateTimeOffset.UtcNow,
+            Provider = CloudStorageProvider.Local,
+        });
+        var service = CreateService(
+            index,
+            new TileCacheEvictionOptions { Enabled = true, MaxEntries = 0 },
+            storage);
+
+        var result = await service.SweepAsync(CancellationToken.None);
+
+        result.Evicted.Should().Be(0);
+        index.Removed.Should().BeEmpty();
+    }
+
     private static TileCacheEvictionService CreateService(
         FakeTileCacheKeyIndex index,
-        TileCacheEvictionOptions eviction)
+        TileCacheEvictionOptions eviction,
+        ICloudFileStorage? storage = null)
     {
         var tileOptions = Options.Create(new Honua.Core.Features.Tiles.TileOptions
         {
@@ -125,7 +157,7 @@ public sealed class TileCacheEvictionServiceTests
             index,
             tileOptions,
             NullLogger<TileCacheEvictionService>.Instance,
-            storage: null);
+            storage);
     }
 
     private sealed class FakeTileCacheKeyIndex(bool enabled) : ITileCacheKeyIndex

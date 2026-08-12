@@ -129,6 +129,11 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
+        => (await SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false)).Entries;
+
+    /// <inheritdoc />
+    public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -146,7 +151,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
 
             if (ranked.Length == 0)
             {
-                return [];
+                return new TileCacheIndexSnapshot([], IsAvailable: true);
             }
 
             var fields = new RedisValue[ranked.Length];
@@ -171,12 +176,12 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex
                 entries.Add(new TileCacheEntry(key, size, lastAccess));
             }
 
-            return entries;
+            return new TileCacheIndexSnapshot(entries, IsAvailable: true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.SnapshotFailed(_logger, ex);
-            return [];
+            return new TileCacheIndexSnapshot([], IsAvailable: false);
         }
     }
 

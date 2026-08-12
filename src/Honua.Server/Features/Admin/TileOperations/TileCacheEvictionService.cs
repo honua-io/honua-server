@@ -50,16 +50,21 @@ internal sealed partial class TileCacheEvictionService(
             return new TileCacheEvictionResult(0, 0, Enabled: false);
         }
 
-        var snapshot = await _keyIndex.SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot.Count == 0)
+        var snapshot = await _keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.IsAvailable)
+        {
+            return new TileCacheEvictionResult(0, 0, Enabled: false);
+        }
+
+        if (snapshot.Entries.Count == 0)
         {
             return new TileCacheEvictionResult(0, 0, Enabled: true);
         }
 
-        var victims = TileCacheQuotaPolicy.SelectEvictions(snapshot, _options);
+        var victims = TileCacheQuotaPolicy.SelectEvictions(snapshot.Entries, _options);
         if (victims.Count == 0)
         {
-            return new TileCacheEvictionResult(snapshot.Count, 0, Enabled: true);
+            return new TileCacheEvictionResult(snapshot.Entries.Count, 0, Enabled: true);
         }
 
         var evicted = 0;
@@ -73,7 +78,12 @@ internal sealed partial class TileCacheEvictionService(
             {
                 try
                 {
-                    await _storage.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
+                    if (!await TileCacheStorageDeletion
+                            .DeleteOrConfirmMissingAsync(_storage, key, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        continue;
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -86,8 +96,8 @@ internal sealed partial class TileCacheEvictionService(
             evicted++;
         }
 
-        Log.EvictionSweepCompleted(_logger, snapshot.Count, evicted);
-        return new TileCacheEvictionResult(snapshot.Count, evicted, Enabled: true);
+        Log.EvictionSweepCompleted(_logger, snapshot.Entries.Count, evicted);
+        return new TileCacheEvictionResult(snapshot.Entries.Count, evicted, Enabled: true);
     }
 
     private static partial class Log
@@ -97,5 +107,26 @@ internal sealed partial class TileCacheEvictionService(
 
         [LoggerMessage(EventId = 9264, Level = LogLevel.Warning, Message = "Failed to delete an evicted tile from the cache store; it remains tracked for the next sweep.")]
         public static partial void EvictionDeleteFailed(ILogger logger, Exception exception);
+    }
+}
+
+/// <summary>
+/// Storage-first tile deletion that treats a false delete result as success only after the
+/// provider independently confirms the object is absent. This keeps transient backend failures
+/// indexed and retryable.
+/// </summary>
+internal static class TileCacheStorageDeletion
+{
+    public static async Task<bool> DeleteOrConfirmMissingAsync(
+        ICloudFileStorage storage,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        if (await storage.DeleteAsync(key, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        return await storage.GetMetadataAsync(key, cancellationToken).ConfigureAwait(false) is null;
     }
 }

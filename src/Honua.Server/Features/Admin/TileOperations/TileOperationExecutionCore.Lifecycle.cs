@@ -76,8 +76,19 @@ internal sealed partial class TileOperationExecutionCore
         var targetLayers = await ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         var window = TileCacheKeyWindow.Create(request, targetLayers, _tileLimits);
 
-        var snapshot = await keyIndex.SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var matched = snapshot.Where(entry => window.Matches(entry.Key)).ToList();
+        var snapshot = await keyIndex.SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.IsAvailable)
+        {
+            return progress with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "The tile cache index is temporarily unavailable; no cache entries were changed.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var matched = snapshot.Entries.Where(entry => window.Matches(entry.Key)).ToList();
 
         // Deterministic ordinal order so a resumed attempt processes the window in the same order.
         matched.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
@@ -127,7 +138,13 @@ internal sealed partial class TileOperationExecutionCore
                     // Storage-first ordering (mirrors TileCacheEvictionService.SweepAsync): only drop
                     // the index entry once the byte is gone, so a failed delete leaves the key tracked
                     // for a retry rather than orphaning a tile in cloud storage.
-                    await storage!.DeleteAsync(entry.Key, cancellationToken).ConfigureAwait(false);
+                    if (!await TileCacheStorageDeletion
+                            .DeleteOrConfirmMissingAsync(storage!, entry.Key, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            "The tile remained in cloud storage after the delete attempt.");
+                    }
                 }
                 else
                 {
