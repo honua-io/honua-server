@@ -366,6 +366,26 @@ public sealed class StudioInteractionMcpToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
+    public async Task BindInteraction_WithExplicitNullArgs_SurfacesInvalidArgument()
+    {
+        var harness = await StudioDraftHarness.CreateAsync();
+
+        var act = () => harness.BindAsync(
+            """
+            {
+              "id": "i1",
+              "on": { "ref": "layer:parcels", "event": "featureSelect" },
+              "do": { "ref": "map", "verb": "setViewport", "args": null }
+            }
+            """);
+
+        var error = await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().Contain("must be a JSON object");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
     public void InteractionTools_AdvertiseTheAdr0030Contract()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();

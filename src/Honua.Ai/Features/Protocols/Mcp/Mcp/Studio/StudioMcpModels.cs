@@ -315,7 +315,7 @@ internal sealed class McpStudioInteractionActionInput
     public string? Verb { get; set; }
 
     [JsonPropertyName("args")]
-    public JsonElement? Args { get; set; }
+    public JsonElement Args { get; set; }
 }
 
 /// <summary>

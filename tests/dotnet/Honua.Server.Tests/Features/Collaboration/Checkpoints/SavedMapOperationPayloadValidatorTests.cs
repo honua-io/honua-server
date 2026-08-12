@@ -38,6 +38,9 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // widget checks cannot become blanket rejections of valid App/view documents.
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,0,10,10],"center":[5,5]}}""")]
+    [InlineData(
+        SavedMapOperationKind.ReplaceWebMapDocument,
+        """{"layers":[{"id":"parcels"}],"widgets":[{"id":"chart","kind":"chart"}],"interactions":[{"id":"select","on":{"ref":"layer:parcels","event":"featureSelect"},"do":{"ref":"widget:chart","verb":"setFilter","args":{"field":"id"}},"disabled":false}],"layout":{"grid":{"columns":12},"items":[{"ref":"widget:chart","x":0,"y":0,"w":4,"h":3}]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0,0,10,10],"center":[5,5],"zoom":8}""")]
     // The shared zoom/pitch bounds are INCLUSIVE, so the extremes must stay usable.
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":0,"pitch":0}""")]
@@ -114,6 +117,11 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.SetViewport, """{"pitch":-0.5}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zoom":25}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"pitch":90}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":null}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport","args":null}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"},"disabled":null}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":null}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","y":0,"w":1,"h":1}]}}""")]
     // Not checkpointable at all: the endpoint gates on IsCheckpointable first, but the validator
     // fails closed rather than modelling it as applicable.
     [InlineData(SavedMapOperationKind.SetMetadataField, """{"title":"x"}""")]
@@ -201,6 +209,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visble":false}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend","titel":"x"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"zom":12}}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange","once":true},"do":{"ref":"map","verb":"setViewport"}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"items":[{"ref":"map","x":0,"y":0,"w":1,"h":1,"order":0}]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zom":12}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pich":30}""")]
     public void TryValidate_UnmappedNestedMember_IsRejected(SavedMapOperationKind kind, string payload)
@@ -216,6 +226,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visible":false,"styleRef":"night"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":"legend","kind":"legend","title":"Legend"}]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":12,"pitch":30,"crs":"EPSG:3857"}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"interactions":[{"id":"i","on":{"ref":"map","event":"viewportChange"},"do":{"ref":"map","verb":"setViewport"}}]}""")]
+    [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layout":{"grid":{"columns":8},"items":[{"ref":"map","x":0,"y":0,"w":8,"h":4}]}}""")]
     public void TryValidate_FullyMappedNestedMembers_AreAccepted(SavedMapOperationKind kind, string payload)
     {
         // The allowlists must cover every modelled member, or a legitimate client is refused.

@@ -587,7 +587,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
                 + $"Got '{action.Verb}'.");
         }
 
-        if (action.Args is { ValueKind: not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined })
+        if (action.Args.ValueKind is not (JsonValueKind.Object or JsonValueKind.Undefined))
         {
             throw new GeoprocessingValidationException("'interaction.do.args' must be a JSON object.");
         }
@@ -596,7 +596,12 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         {
             Id = interaction.Id!,
             On = new StudioInteractionEvent { Ref = on.Ref!, Event = on.Event! },
-            Do = new StudioInteractionAction { Ref = action.Ref!, Verb = action.Verb!, Args = action.Args },
+            Do = new StudioInteractionAction
+            {
+                Ref = action.Ref!,
+                Verb = action.Verb!,
+                Args = action.Args.ValueKind == JsonValueKind.Undefined ? null : action.Args,
+            },
             Disabled = interaction.Disabled,
         };
     }

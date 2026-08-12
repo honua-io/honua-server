@@ -113,7 +113,7 @@ internal static class SavedMapOperationPayloadValidator
     /// silently discarded property.
     /// </summary>
     private static readonly HashSet<string> ReplacementMembers =
-        new(StringComparer.Ordinal) { "layers", "view", "widgets" };
+        new(StringComparer.Ordinal) { "layers", "view", "widgets", "interactions", "layout" };
 
     /// <summary>Members of <c>StudioCompositionLayer</c>, by <c>JsonPropertyName</c>.</summary>
     private static readonly HashSet<string> LayerMembers =
@@ -126,6 +126,26 @@ internal static class SavedMapOperationPayloadValidator
     /// <summary>Members of <c>StudioCompositionView</c>, by <c>JsonPropertyName</c>.</summary>
     private static readonly HashSet<string> ViewMembers =
         new(StringComparer.Ordinal) { "bbox", "center", "zoom", "pitch", "bearing", "crs" };
+
+    /// <summary>Members of the ADR-0030 interaction wire objects.</summary>
+    private static readonly HashSet<string> InteractionMembers =
+        new(StringComparer.Ordinal) { "id", "on", "do", "disabled" };
+
+    private static readonly HashSet<string> InteractionEventMembers =
+        new(StringComparer.Ordinal) { "ref", "event" };
+
+    private static readonly HashSet<string> InteractionActionMembers =
+        new(StringComparer.Ordinal) { "ref", "verb", "args" };
+
+    /// <summary>Members of the ADR-0030 layout wire objects.</summary>
+    private static readonly HashSet<string> LayoutMembers =
+        new(StringComparer.Ordinal) { "grid", "items" };
+
+    private static readonly HashSet<string> LayoutGridMembers =
+        new(StringComparer.Ordinal) { "columns" };
+
+    private static readonly HashSet<string> LayoutItemMembers =
+        new(StringComparer.Ordinal) { "ref", "x", "y", "w", "h" };
 
     /// <summary>Members of a style patch payload; unknown casing is a caller typo, not a clear.</summary>
     private static readonly HashSet<string> StylePatchMembers =
@@ -213,7 +233,9 @@ internal static class SavedMapOperationPayloadValidator
         // projection does not model (honua-server#2999 review).
         if (!TryRejectUnmappedMembers(payload, ReplacementMembers, "The document-replace payload", out error)
             || !TryRejectUnmappedArrayMembers(payload, "layers", LayerMembers, "A layer in the document-replace payload", out error)
-            || !TryRejectUnmappedArrayMembers(payload, "widgets", WidgetMembers, "A widget in the document-replace payload", out error))
+            || !TryRejectUnmappedArrayMembers(payload, "widgets", WidgetMembers, "A widget in the document-replace payload", out error)
+            || !TryValidateReplacementInteractions(payload, out error)
+            || !TryValidateReplacementLayout(payload, out error))
         {
             return false;
         }
@@ -235,7 +257,7 @@ internal static class SavedMapOperationPayloadValidator
         catch (JsonException)
         {
             error = "The document-replace payload is not a valid Studio composition body; " +
-                "expected an object with optional 'layers', 'view' and 'widgets' members.";
+                "expected an object with optional 'layers', 'view', 'widgets', 'interactions' and 'layout' members.";
             return false;
         }
 
@@ -300,6 +322,173 @@ internal static class SavedMapOperationPayloadValidator
         // A replacement carries a view too, so it must satisfy the same coordinate-shape rules an
         // explicit SetViewport operation does.
         return TryValidateViewShape(body.View, out error);
+    }
+
+    private static bool TryValidateReplacementInteractions(JsonElement payload, out string error)
+    {
+        if (!payload.TryGetProperty("interactions", out var interactions))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (interactions.ValueKind != JsonValueKind.Array)
+        {
+            error = "The document-replace payload's 'interactions' must be an array.";
+            return false;
+        }
+
+        foreach (var interaction in interactions.EnumerateArray())
+        {
+            const string subject = "An interaction in the document-replace payload";
+            if (interaction.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} must be an object.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(interaction, InteractionMembers, subject, out error)
+                || !TryValidateRequiredString(interaction, "id", out error))
+            {
+                return false;
+            }
+
+            if (!interaction.TryGetProperty("on", out var on) || on.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} requires an object 'on'.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(on, InteractionEventMembers, $"{subject}'s 'on'", out error)
+                || !TryValidateRequiredString(on, "ref", out error)
+                || !TryValidateRequiredString(on, "event", out error))
+            {
+                return false;
+            }
+
+            if (!interaction.TryGetProperty("do", out var action) || action.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} requires an object 'do'.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(action, InteractionActionMembers, $"{subject}'s 'do'", out error)
+                || !TryValidateRequiredString(action, "ref", out error)
+                || !TryValidateRequiredString(action, "verb", out error))
+            {
+                return false;
+            }
+
+            if (action.TryGetProperty("args", out var args) && args.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject}'s 'do.args' must be an object.";
+                return false;
+            }
+
+            if (interaction.TryGetProperty("disabled", out var disabled)
+                && disabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                error = $"{subject}'s 'disabled' must be a boolean.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryValidateReplacementLayout(JsonElement payload, out string error)
+    {
+        if (!payload.TryGetProperty("layout", out var layout))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (layout.ValueKind != JsonValueKind.Object)
+        {
+            error = "The document-replace payload's 'layout' must be an object.";
+            return false;
+        }
+
+        if (!TryRejectUnmappedMembers(layout, LayoutMembers, "The document-replace payload's layout", out error))
+        {
+            return false;
+        }
+
+        if (layout.TryGetProperty("grid", out var grid))
+        {
+            if (grid.ValueKind != JsonValueKind.Object)
+            {
+                error = "The document-replace payload's 'layout.grid' must be an object.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(grid, LayoutGridMembers, "The document-replace payload's layout grid", out error))
+            {
+                return false;
+            }
+
+            if (grid.TryGetProperty("columns", out var columns)
+                && (columns.ValueKind != JsonValueKind.Number || !columns.TryGetInt32(out _)))
+            {
+                error = "The document-replace payload's 'layout.grid.columns' must be an integer.";
+                return false;
+            }
+        }
+
+        if (!layout.TryGetProperty("items", out var items))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        if (items.ValueKind != JsonValueKind.Array)
+        {
+            error = "The document-replace payload's 'layout.items' must be an array.";
+            return false;
+        }
+
+        foreach (var item in items.EnumerateArray())
+        {
+            const string subject = "A layout item in the document-replace payload";
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                error = $"{subject} must be an object.";
+                return false;
+            }
+
+            if (!TryRejectUnmappedMembers(item, LayoutItemMembers, subject, out error)
+                || !TryValidateRequiredString(item, "ref", out error)
+                || !TryValidateRequiredInteger(item, "x", subject, out error)
+                || !TryValidateRequiredInteger(item, "y", subject, out error)
+                || !TryValidateRequiredInteger(item, "w", subject, out error)
+                || !TryValidateRequiredInteger(item, "h", subject, out error))
+            {
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryValidateRequiredInteger(
+        JsonElement payload,
+        string memberName,
+        string subject,
+        out string error)
+    {
+        if (payload.TryGetProperty(memberName, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out _))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        error = $"{subject} requires an integer '{memberName}'.";
+        return false;
     }
 
     /// <summary>
