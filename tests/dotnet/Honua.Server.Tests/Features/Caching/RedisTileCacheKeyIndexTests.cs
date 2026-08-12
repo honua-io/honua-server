@@ -12,6 +12,34 @@ namespace Honua.Server.Tests.Features.Caching;
 public sealed class RedisTileCacheKeyIndexTests
 {
     [Fact]
+    public async Task RecordWriteAsync_TracksStorageExpirationAndPrunesExpiredState()
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(true);
+        var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        await index.RecordWriteAsync("tile-key", 42, expiresAt);
+
+        await database.Received(1).ScriptEvaluateAsync(
+            Arg.Is<string>(script => script.Contains("ZRANGEBYSCORE", StringComparison.Ordinal)),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>(),
+            CommandFlags.DemandMaster);
+        var expirationWrite = transaction.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ITransaction.SortedSetAddAsync))
+            .Select(call => call.GetArguments())
+            .Single(arguments =>
+                arguments[0]?.ToString() == "honua:tile-cache:storage-expiration");
+        expirationWrite[1]?.ToString().Should().Be("tile-key");
+        expirationWrite[2].Should().Be(Convert.ToDouble(expiresAt.ToUnixTimeMilliseconds()));
+    }
+
+    [Fact]
     public async Task RecordWriteAsync_WhenTransactionIsNotCommitted_Throws()
     {
         var redis = Substitute.For<IConnectionMultiplexer>();
@@ -22,7 +50,10 @@ public sealed class RedisTileCacheKeyIndexTests
         transaction.ExecuteAsync(Arg.Any<CommandFlags>()).Returns(false);
         var index = new RedisTileCacheKeyIndex(redis, NullLogger<RedisTileCacheKeyIndex>.Instance);
 
-        var act = async () => await index.RecordWriteAsync("tile-key", 42);
+        var act = async () => await index.RecordWriteAsync(
+            "tile-key",
+            42,
+            DateTimeOffset.UtcNow.AddHours(1));
 
         await act.Should().ThrowAsync<RedisException>()
             .WithMessage("*write state transaction was not committed*");

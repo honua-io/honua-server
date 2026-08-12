@@ -56,7 +56,11 @@ public sealed class GeoServicesCloudTileCacheTests
             CancellationToken.None,
             keyIndex);
 
-        await keyIndex.Received(1).RecordWriteAsync(ObjectKey, data.LongLength, Arg.Any<CancellationToken>());
+        await keyIndex.Received(1).RecordWriteAsync(
+            ObjectKey,
+            data.LongLength,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -82,6 +86,7 @@ public sealed class GeoServicesCloudTileCacheTests
         await keyIndex.DidNotReceive().RecordWriteAsync(
             Arg.Any<string>(),
             Arg.Any<long>(),
+            Arg.Any<DateTimeOffset>(),
             Arg.Any<CancellationToken>());
     }
 }

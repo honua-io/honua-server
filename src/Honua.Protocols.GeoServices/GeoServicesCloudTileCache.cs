@@ -110,6 +110,8 @@ internal static class GeoServicesCloudTileCache
         {
             async Task UploadAndRecordAsync(CancellationToken mutationToken)
             {
+                var ttl = ResolveTileCacheTtl(storageOptions);
+                var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
                 using var stream = new MemoryStream(data, writable: false);
                 var upload = await storage.UploadAsync(new FileUploadRequest
                 {
@@ -117,7 +119,7 @@ internal static class GeoServicesCloudTileCache
                     FileName = fileName,
                     ContentType = contentType,
                     SizeBytes = data.LongLength,
-                    TimeToLive = ResolveTileCacheTtl(storageOptions),
+                    TimeToLive = ttl,
                     Metadata = metadata,
                     ObjectKeyOverride = objectKey,
                     EnableChunkedUpload = false
@@ -132,7 +134,7 @@ internal static class GeoServicesCloudTileCache
                 // quota-manage it and lifecycle deletion can fence this exact write.
                 if (keyIndex is { IsEnabled: true })
                 {
-                    await keyIndex.RecordWriteAsync(objectKey, data.LongLength, mutationToken).ConfigureAwait(false);
+                    await keyIndex.RecordWriteAsync(objectKey, data.LongLength, expiresAt, mutationToken).ConfigureAwait(false);
                 }
             }
 

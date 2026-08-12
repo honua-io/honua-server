@@ -94,6 +94,51 @@ public sealed class TileCacheLifecycleExecutionTests
     }
 
     [UnitTest]
+    public async Task Delete_MaxTiles_RemainsCumulativeAcrossRetry()
+    {
+        const string first = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/0.png";
+        const string second = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/1.png";
+        const string outsideOriginalCap = "prefix/imageserver/tiles/1/webmercatorquad/default/abc/2/0/2.png";
+        var index = new StatefulKeyIndex();
+        index.Seed(first, 100);
+        index.Seed(second, 100);
+        index.Seed(outsideOriginalCap, 100);
+        var failSecond = true;
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<string>(0);
+                if (failSecond && string.Equals(key, second, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("transient");
+                }
+
+                return Task.FromResult(true);
+            });
+        var checkpointStore = new InMemoryTileCacheGenerationCheckpointStore();
+        var request = new TileOperationStartRequest
+        {
+            Operation = "delete",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad",
+            MaxTiles = 2,
+            GenerationId = "gen-delete-cumulative-cap"
+        };
+
+        var firstAttempt = await ExecuteAsync(request, index, storage, checkpointStore);
+        firstAttempt.Status.Should().Be(OperationStatus.Failed);
+        failSecond = false;
+
+        var retry = await ExecuteAsync(request, index, storage, checkpointStore);
+
+        retry.Status.Should().Be(OperationStatus.Completed);
+        index.Removed.Should().BeEquivalentTo([first, second]);
+        index.Remaining.Should().BeEquivalentTo([outsideOriginalCap]);
+        await storage.DidNotReceive().DeleteAsync(outsideOriginalCap, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task Delete_WhenIndexIsDisabled_FailsInsteadOfReportingFalseSuccess()
     {
         var storage = Substitute.For<ICloudFileStorage>();
@@ -645,7 +690,11 @@ public sealed class TileCacheLifecycleExecutionTests
             return Task.CompletedTask;
         }
 
-        public Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        public Task RecordWriteAsync(
+            string key,
+            long sizeBytes,
+            DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
             => RecordAccessAsync(key, sizeBytes, cancellationToken);
 
         public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)

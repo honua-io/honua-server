@@ -28,7 +28,11 @@ public sealed class NullTileCacheKeyIndex : ITileCacheKeyIndex
         => Task.CompletedTask;
 
     /// <inheritdoc />
-    public Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+    public Task RecordWriteAsync(
+        string key,
+        long sizeBytes,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
     /// <inheritdoc />

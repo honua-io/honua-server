@@ -197,7 +197,11 @@ public sealed class TileCacheEvictionServiceTests
         public Task RecordAccessAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task RecordWriteAsync(string key, long sizeBytes, CancellationToken cancellationToken = default)
+        public Task RecordWriteAsync(
+            string key,
+            long sizeBytes,
+            DateTimeOffset expiresAt,
+            CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)

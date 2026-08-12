@@ -122,6 +122,26 @@ internal sealed partial class TileOperationExecutionCore
             TileOperationLog.GenerationResumed(_logger, generationId!, checkpoint.CompletedMetatileBlocks, checkpoint.FailedUnits.Count, attempt);
         }
 
+        // Delete removes successful entries from the next snapshot. Subtract those prior
+        // mutations from the generation's original safety budget before selecting a retry window,
+        // otherwise newly exposed keys can make repeated attempts exceed MaxTiles cumulatively.
+        var priorDeleteMutations = deleteBytes
+            ? Math.Min(maxTiles, checkpoint?.CompletedUnitCount ?? 0L)
+            : 0L;
+        if (deleteBytes)
+        {
+            var remainingDeleteBudget = (int)Math.Max(0L, maxTiles - priorDeleteMutations);
+            if (matched.Count > remainingDeleteBudget)
+            {
+                matched.RemoveRange(remainingDeleteBudget, matched.Count - remainingDeleteBudget);
+                warnings =
+                [
+                    .. warnings,
+                    $"The retry was limited to the {remainingDeleteBudget}-tile budget remaining under the original {maxTiles}-tile safety cap."
+                ];
+            }
+        }
+
         var phase = deleteBytes ? "Deleting tiles" : "Expiring tiles";
         var total = (long)matched.Count;
         // The snapshot is the complete accounting window for this attempt. Delete retries no
@@ -238,7 +258,7 @@ internal sealed partial class TileOperationExecutionCore
                         generationId!,
                         request.Operation,
                         i + 1,
-                        affected,
+                        deleteBytes ? priorDeleteMutations + affected : affected,
                         failed,
                         newFailedUnits,
                         attempt,
