@@ -1,0 +1,21 @@
+{
+  "id": "bind_interaction.parcel_select_filters_chart",
+  "schemaRef": "tools/bind_interaction.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "draftId": "8b6b8f5e-6c1a-4a2a-9a3d-2f0c9c9b8a11",
+    "generation": 3,
+    "interaction": {
+      "id": "select-parcel-filters-chart",
+      "on": { "ref": "layer:parcels", "event": "featureSelect" },
+      "do": {
+        "ref": "widget:area-chart",
+        "verb": "setFilter",
+        "args": { "field": "parcelId", "value": "$event.featureId" }
+      }
+    }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [],
+  "notes": "Reference-shape variant of the upstream geospatial-mcp fixture (conformance/fixtures/tools/bind_interaction/): the standard targets a composition document by mapPackageId/appPackageId, while the reference implementation authors compositions through the draft lifecycle. The standard schema declares draftId/generation as x-honua-reference-shape and requires only `interaction`, so this instance validates against BOTH the standard schema and Honua's live inputSchema."
+}

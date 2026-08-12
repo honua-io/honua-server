@@ -263,6 +263,11 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             return;
         }
 
+        if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(envelope.Family))
+        {
+            ValidateCompositionInteractionsAndLayout(envelope, diagnostics);
+        }
+
         try
         {
             if (envelope.Family == StudioPackageFamily.Map)
@@ -307,6 +312,205 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         {
             diagnostics.Add(Error("studio.body.invalid", "/body", "package body does not match the declared family format."));
         }
+    }
+
+    /// <summary>
+    /// Gates the standard-owned <c>interactions</c>/<c>layout</c> blocks of a map/app
+    /// composition body (geospatial-mcp ADR-0030). Both blocks are OPTIONAL: a body that
+    /// declares neither produces no diagnostics. When present they must satisfy the
+    /// closed event/verb sets, the component-reference grammar, in-document reference
+    /// resolution, id uniqueness, the per-<c>(on.ref, on.event)</c> fan-out cap, and the
+    /// layout grid/placement bounds.
+    /// </summary>
+    /// <remarks>
+    /// The rules are enforced HERE as well as at the composition-tool admission gate
+    /// (<see cref="StudioCompositionBodyEditor.BindInteraction"/>) because a body can be
+    /// authored wholesale through the draft-update surface, which never passes through the
+    /// editor. Both call the shared <see cref="StudioInteractionVocabulary"/> checks, so
+    /// the two gates cannot drift.
+    /// </remarks>
+    private static void ValidateCompositionInteractionsAndLayout(
+        StudioPackageEnvelope envelope,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var body = envelope.Body!.Value;
+        if (!body.TryGetProperty("interactions", out var rawInteractions) &&
+            !body.TryGetProperty("layout", out _))
+        {
+            return;
+        }
+
+        if (rawInteractions.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null or JsonValueKind.Array))
+        {
+            diagnostics.Add(Error("studio.interactions.array", "/body/interactions", "interactions must be an array."));
+            return;
+        }
+
+        StudioCompositionBody composition;
+        try
+        {
+            composition = StudioCompositionBodyEditor.ReadBody(envelope);
+        }
+        catch (StudioCompositionBodyException)
+        {
+            diagnostics.Add(Error(
+                "studio.composition.invalid",
+                "/body",
+                "the composition's interactions/layout blocks do not match the standard shape."));
+            return;
+        }
+
+        ValidateInteractions(composition, diagnostics);
+        ValidateLayout(composition, diagnostics);
+    }
+
+    private static void ValidateInteractions(
+        StudioCompositionBody composition,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var interactions = composition.Interactions;
+        if (interactions is null)
+        {
+            return;
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var fanOut = new Dictionary<(string Ref, string Event), int>();
+        for (var i = 0; i < interactions.Count; i++)
+        {
+            var interaction = interactions[i];
+            var path = $"/body/interactions/{i}";
+            // The wire model cannot express non-null: an explicit JSON null deserializes
+            // into these `required` members regardless of their annotation.
+            if (interaction is null || interaction.On is null || interaction.Do is null)
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.required", path, "interaction must declare 'id', 'on' and 'do'."));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(interaction.Id))
+            {
+                diagnostics.Add(Error("studio.interaction.id.required", $"{path}/id", "interaction id is required."));
+            }
+            else if (!ids.Add(interaction.Id))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.id.duplicate",
+                    $"{path}/id",
+                    $"interaction id '{interaction.Id}' must be unique within the interactions block."));
+            }
+
+            if (!StudioInteractionVocabulary.IsEventName(interaction.On.Event))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.event.unsupported",
+                    $"{path}/on/event",
+                    $"on.event must be one of: {string.Join(", ", StudioInteractionVocabulary.EventNames)}."));
+            }
+
+            if (!StudioInteractionVocabulary.IsActionVerb(interaction.Do.Verb))
+            {
+                diagnostics.Add(Error(
+                    "studio.interaction.verb.unsupported",
+                    $"{path}/do/verb",
+                    $"do.verb must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}."));
+            }
+
+            ValidateComponentRef(composition, interaction.On.Ref, $"{path}/on/ref", "studio.interaction.ref", diagnostics);
+            ValidateComponentRef(composition, interaction.Do.Ref, $"{path}/do/ref", "studio.interaction.ref", diagnostics);
+
+            var key = (interaction.On.Ref, interaction.On.Event);
+            fanOut[key] = fanOut.TryGetValue(key, out var count) ? count + 1 : 1;
+        }
+
+        foreach (var ((eventRef, eventName), count) in fanOut)
+        {
+            if (count > StudioInteractionVocabulary.MaxInteractionsPerEventSource)
+            {
+                diagnostics.Add(Error(
+                    "studio.interactions.fan-out",
+                    "/body/interactions",
+                    $"At most {StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions may share the "
+                    + $"same event source; '{eventRef}'/'{eventName}' has {count}."));
+            }
+        }
+    }
+
+    private static void ValidateLayout(StudioCompositionBody composition, List<StudioValidationDiagnostic> diagnostics)
+    {
+        var layout = composition.Layout;
+        if (layout is null)
+        {
+            return;
+        }
+
+        if (layout.Grid?.Columns is { } columns &&
+            (columns < StudioInteractionVocabulary.MinGridColumns || columns > StudioInteractionVocabulary.MaxGridColumns))
+        {
+            diagnostics.Add(Error(
+                "studio.layout.grid.columns.invalid",
+                "/body/layout/grid/columns",
+                $"layout grid columns must be between {StudioInteractionVocabulary.MinGridColumns} and "
+                + $"{StudioInteractionVocabulary.MaxGridColumns}."));
+        }
+
+        var items = layout.Items;
+        if (items is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var path = $"/body/layout/items/{i}";
+            if (item is null)
+            {
+                diagnostics.Add(Error("studio.layout.item.required", path, "layout item must not be null."));
+                continue;
+            }
+
+            ValidateComponentRef(composition, item.Ref, $"{path}/ref", "studio.layout.item.ref", diagnostics);
+
+            if (item.X < 0 || item.Y < 0)
+            {
+                diagnostics.Add(Error(
+                    "studio.layout.item.origin.invalid", path, "layout item x/y must be zero or greater."));
+            }
+
+            if (item.W < 1 || item.H < 1)
+            {
+                diagnostics.Add(Error(
+                    "studio.layout.item.size.invalid", path, "layout item w/h must be one or greater."));
+            }
+        }
+    }
+
+    private static void ValidateComponentRef(
+        StudioCompositionBody composition,
+        string? reference,
+        string path,
+        string codePrefix,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        var resolution = StudioInteractionVocabulary.ResolveRef(composition, reference);
+        if (resolution == StudioComponentRefResolution.Resolved)
+        {
+            return;
+        }
+
+        var suffix = resolution switch
+        {
+            StudioComponentRefResolution.Malformed => "invalid",
+            StudioComponentRefResolution.ControlsUnsupported => "control-unsupported",
+            _ => "unresolved",
+        };
+
+        diagnostics.Add(Error(
+            $"{codePrefix}.{suffix}",
+            path,
+            StudioInteractionVocabulary.DescribeResolution(reference, resolution)));
     }
 
     private static void ValidateInitialView(MapInitialView initialView, string path, List<StudioValidationDiagnostic> diagnostics)

@@ -464,3 +464,206 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
     }
 }
+
+/// <summary>
+/// MCP tool that adds or replaces one declarative event→action binding in a
+/// map/app-family Studio draft's composition — the reference implementation of
+/// the geospatial-mcp standard's <c>bind_interaction</c> (ADR-0030, <c>composition</c>
+/// profile). The standard-level target is a composition document
+/// (<c>mapPackageId</c>/<c>appPackageId</c>); Honua authors compositions through the
+/// draft lifecycle, and that <c>draftId</c> + <c>generation</c> spelling is admitted
+/// upstream as <c>x-honua-reference-shape</c>.
+/// </summary>
+internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMcpTool
+{
+    /// <summary>The tool name published in <c>tools/list</c>.</summary>
+    public const string ToolName = "honua_studio_bind_interaction";
+
+    private readonly ILogger<BindStudioInteractionTool> _typedLogger;
+
+    public BindStudioInteractionTool(IGeoprocessingJobService jobService, ILogger<BindStudioInteractionTool> logger)
+        : base(jobService, logger)
+    {
+        _typedLogger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Name => ToolName;
+
+    /// <inheritdoc />
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
+
+    /// <inheritdoc />
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Bind Studio interaction",
+        Description =
+            "Add or replace (by id) one declarative event→action binding in a map/app-family Studio draft's "
+            + "composition, with optimistic-generation checking. Bindings are data, not code: arguments are static "
+            + "JSON plus '$event.' path substitution, and actions never emit events, so bindings cannot cascade. "
+            + "Fails with invalid_argument when the event/verb is outside the closed sets, when on.ref/do.ref does "
+            + "not resolve to a component declared in the same document (control: references never resolve), or when "
+            + "the binding would push a single (on.ref, on.event) source past "
+            + $"{StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions.",
+        InputSchema = StudioMcpSchemas.BindInteractionArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        // Re-binding the same id with the same body is idempotent; the tool never
+        // removes composed state, so it is not destructive.
+        Annotations = McpToolAnnotationSets.Write("Bind Studio interaction", destructive: false, idempotent: true)
+    };
+
+    /// <inheritdoc />
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("StudioBindInteraction");
+        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
+
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+            .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioBindInteractionArgument);
+        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
+        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        var interaction = BuildInteraction(argument.Interaction);
+
+        var updated = await MutateCompositionAsync(
+            principal,
+            ToolName,
+            lifecycleService,
+            draftId,
+            generation,
+            body => StudioCompositionBodyEditor.BindInteraction(body, interaction),
+            cancellationToken).ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+
+    /// <summary>
+    /// Maps the wire input onto the domain <see cref="StudioInteraction"/>, enforcing the
+    /// required members and the closed event/verb vocabulary in the HANDLER. The advertised
+    /// <c>inputSchema</c> states the same contract, but MCP dispatch does not evaluate it,
+    /// so the schema is documentation and this is the gate.
+    /// </summary>
+    private static StudioInteraction BuildInteraction(McpStudioInteractionInput? input)
+    {
+        var interaction = input ?? throw new GeoprocessingValidationException("'interaction' is required.");
+        if (string.IsNullOrWhiteSpace(interaction.Id))
+        {
+            throw new GeoprocessingValidationException("'interaction.id' is required.");
+        }
+
+        var on = interaction.On ?? throw new GeoprocessingValidationException("'interaction.on' is required.");
+        var action = interaction.Do ?? throw new GeoprocessingValidationException("'interaction.do' is required.");
+        if (string.IsNullOrWhiteSpace(on.Ref))
+        {
+            throw new GeoprocessingValidationException("'interaction.on.ref' is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(action.Ref))
+        {
+            throw new GeoprocessingValidationException("'interaction.do.ref' is required.");
+        }
+
+        if (!StudioInteractionVocabulary.IsEventName(on.Event))
+        {
+            throw new GeoprocessingValidationException(
+                $"'interaction.on.event' must be one of: {string.Join(", ", StudioInteractionVocabulary.EventNames)}. "
+                + $"Got '{on.Event}'.");
+        }
+
+        if (!StudioInteractionVocabulary.IsActionVerb(action.Verb))
+        {
+            throw new GeoprocessingValidationException(
+                $"'interaction.do.verb' must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}. "
+                + $"Got '{action.Verb}'.");
+        }
+
+        if (action.Args is { ValueKind: not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined })
+        {
+            throw new GeoprocessingValidationException("'interaction.do.args' must be a JSON object.");
+        }
+
+        return new StudioInteraction
+        {
+            Id = interaction.Id!,
+            On = new StudioInteractionEvent { Ref = on.Ref!, Event = on.Event! },
+            Do = new StudioInteractionAction { Ref = action.Ref!, Verb = action.Verb!, Args = action.Args },
+            Disabled = interaction.Disabled,
+        };
+    }
+}
+
+/// <summary>
+/// MCP tool that removes one declarative event→action binding, by id, from a
+/// map/app-family Studio draft's composition — the reference implementation of the
+/// geospatial-mcp standard's <c>remove_interaction</c> (ADR-0030, <c>composition</c>
+/// profile). Removing an unknown id is an error, not a no-op.
+/// </summary>
+internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, IMcpTool
+{
+    /// <summary>The tool name published in <c>tools/list</c>.</summary>
+    public const string ToolName = "honua_studio_remove_interaction";
+
+    private readonly ILogger<RemoveStudioInteractionTool> _typedLogger;
+
+    public RemoveStudioInteractionTool(IGeoprocessingJobService jobService, ILogger<RemoveStudioInteractionTool> logger)
+        : base(jobService, logger)
+    {
+        _typedLogger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Name => ToolName;
+
+    /// <inheritdoc />
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
+
+    /// <inheritdoc />
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = ToolName,
+        Title = "Remove Studio interaction",
+        Description =
+            "Remove one declarative event→action binding from a map/app-family Studio draft's composition by id, "
+            + "with optimistic-generation checking. Fails with not_found if no interaction with that id exists.",
+        InputSchema = StudioMcpSchemas.RemoveInteractionArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        // Destructive: it removes composed wiring. Undo is a fresh
+        // honua_studio_bind_interaction call, not this tool.
+        Annotations = McpToolAnnotationSets.Write("Remove Studio interaction", destructive: true, idempotent: false)
+    };
+
+    /// <inheritdoc />
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("StudioRemoveInteraction");
+        McpLog.ToolInvoked(_typedLogger, ToolName, WorkflowFamily);
+
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
+            .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveInteractionArgument);
+        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
+        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        if (string.IsNullOrWhiteSpace(argument.InteractionId))
+        {
+            throw new GeoprocessingValidationException("'interactionId' is required.");
+        }
+
+        var updated = await MutateCompositionAsync(
+            principal,
+            ToolName,
+            lifecycleService,
+            draftId,
+            generation,
+            body => StudioCompositionBodyEditor.RemoveInteraction(body, argument.InteractionId!),
+            cancellationToken).ConfigureAwait(false);
+
+        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+    }
+}

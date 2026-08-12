@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/common/interactions.schema.json",
+  "title": "Composition interactions and layout",
+  "description": "Standard-owned declarative blocks for composition documents (MapPackage/AppPackage): `interactions` wires component events to bounded action verbs; `layout` places widgets on a grid. Bindings are data, never code: the only dynamic element is $event.* path substitution in string argument values. Actions never emit events (only user gestures do), so binding graphs cannot cycle by construction. Reference resolution and the per-(ref,event) fan-out cap (recommended 8) are validation-gate responsibilities. See docs/adr/0030-declarative-interactions-and-layout.md.",
+  "type": "object",
+  "$defs": {
+    "componentRef": {
+      "type": "string",
+      "pattern": "^(map|layer:.+|widget:.+|control:.+)$",
+      "description": "Reference to a component declared in the same composition document: `map`, `layer:{id}`, `widget:{id}`, or `control:{id}`. Must resolve within the document (validation-gate check, not a schema check)."
+    },
+    "eventName": {
+      "type": "string",
+      "enum": ["featureSelect", "featureHover", "selection", "change", "viewportChange"],
+      "description": "Closed event set: featureSelect/featureHover (layer sources), selection (widget sources), change (control sources), viewportChange (map source). Extending the set requires a standard ADR (ADR-0030)."
+    },
+    "actionVerb": {
+      "type": "string",
+      "enum": ["setFilter", "setViewport", "selectFeature", "runWidgetQuery", "setVisibility"],
+      "description": "Closed verb set drawn from the existing composition vocabulary. Verbs mutate presentation/exploration state only, never source records (ADR-0028 unaffected). Extending the set requires a standard ADR (ADR-0030)."
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "on", "do"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Stable identifier, unique within the document's interactions block. bind_interaction replaces an existing interaction with the same id."
+        },
+        "on": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "event"],
+          "properties": {
+            "ref": { "$ref": "#/$defs/componentRef" },
+            "event": { "$ref": "#/$defs/eventName" }
+          },
+          "description": "The user-gesture event source. Implementations MUST bound the number of interactions sharing the same (ref, event) pair; a cap of 8 is RECOMMENDED, and documents over the cap are rejected, not truncated."
+        },
+        "do": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "verb"],
+          "properties": {
+            "ref": { "$ref": "#/$defs/componentRef" },
+            "verb": { "$ref": "#/$defs/actionVerb" },
+            "args": {
+              "type": "object",
+              "description": "Static JSON arguments for the verb. A string value beginning with `$event.` is replaced at dispatch time by the value at that path in the event payload (e.g. $event.featureId, $event.value, $event.bbox). No expression language: no arithmetic, no conditionals, no function calls."
+            }
+          },
+          "description": "The action. Verb-driven state changes MUST NOT re-enter the interaction dispatcher (actions never emit events)."
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Authored-but-inactive binding; retained in the document, skipped at dispatch."
+        }
+      }
+    },
+    "layoutItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "x", "y", "w", "h"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/componentRef" },
+        "x": { "type": "integer", "minimum": 0, "description": "Grid column of the item's left edge (0-based)." },
+        "y": { "type": "integer", "minimum": 0, "description": "Grid row of the item's top edge (0-based)." },
+        "w": { "type": "integer", "minimum": 1, "description": "Width in grid columns." },
+        "h": { "type": "integer", "minimum": 1, "description": "Height in grid rows." }
+      },
+      "description": "Grid placement for one widget (or the map). The ref must resolve within the document — same validation gate as interactions."
+    }
+  },
+  "properties": {
+    "interactions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/interaction" },
+      "description": "Declarative event→action bindings between components of this composition document."
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 24,
+              "default": 12,
+              "description": "Number of grid columns; 12 is the default."
+            }
+          },
+          "description": "Grid geometry. Rows grow as needed; only columns are declared."
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutItem" },
+          "description": "Widget placements. A composition with widgets and no layout is valid; hosts choose a default flow."
+        }
+      },
+      "description": "Presentation-only grid placement for the document's widgets."
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/remove_interaction.schema.json",
+  "title": "remove_interaction inputSchema",
+  "description": "Argument shape for remove_interaction (composition profile, ADR-0030). Removes one declarative event→action binding, by id, from a composition document. Target addressing matches bind_interaction: a composition document (mapPackageId or appPackageId) at the standard level, with the reference implementation's draft-lifecycle spelling (draftId + generation) admitted as x-honua-reference-shape. Removing an unknown interactionId is an error, not a no-op. See docs/adr/0030-declarative-interactions-and-layout.md.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["interactionId"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target MapPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "appPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target AppPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "interactionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Id of the interaction to remove."
+    }
+  }
+}

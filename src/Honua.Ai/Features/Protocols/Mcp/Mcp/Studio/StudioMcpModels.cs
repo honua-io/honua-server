@@ -284,6 +284,86 @@ internal sealed class McpStudioRemoveWidgetArgument
 }
 
 // -----------------------------------------------------------------------
+// honua_studio_bind_interaction / honua_studio_remove_interaction
+// (geospatial-mcp ADR-0030 bind_interaction / remove_interaction)
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// The event-source half of an interaction input: a component reference plus one
+/// member of the closed event set (<see cref="StudioInteractionVocabulary.EventNames"/>).
+/// </summary>
+internal sealed class McpStudioInteractionEventInput
+{
+    [JsonPropertyName("ref")]
+    public string? Ref { get; set; }
+
+    [JsonPropertyName("event")]
+    public string? Event { get; set; }
+}
+
+/// <summary>
+/// The action half of an interaction input: a component reference, one member of the
+/// closed verb set (<see cref="StudioInteractionVocabulary.ActionVerbs"/>), and static
+/// JSON arguments (<c>$event.*</c> string substitution only — no expression language).
+/// </summary>
+internal sealed class McpStudioInteractionActionInput
+{
+    [JsonPropertyName("ref")]
+    public string? Ref { get; set; }
+
+    [JsonPropertyName("verb")]
+    public string? Verb { get; set; }
+
+    [JsonPropertyName("args")]
+    public JsonElement? Args { get; set; }
+}
+
+/// <summary>
+/// Interaction input shape for <c>honua_studio_bind_interaction</c>. Mirrors the
+/// standard's <c>common/interactions.schema.json#/$defs/interaction</c>.
+/// </summary>
+internal sealed class McpStudioInteractionInput
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("on")]
+    public McpStudioInteractionEventInput? On { get; set; }
+
+    [JsonPropertyName("do")]
+    public McpStudioInteractionActionInput? Do { get; set; }
+
+    [JsonPropertyName("disabled")]
+    public bool? Disabled { get; set; }
+}
+
+/// <summary>Arguments for <c>honua_studio_bind_interaction</c>.</summary>
+internal sealed class McpStudioBindInteractionArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("interaction")]
+    public McpStudioInteractionInput? Interaction { get; set; }
+}
+
+/// <summary>Arguments for <c>honua_studio_remove_interaction</c>.</summary>
+internal sealed class McpStudioRemoveInteractionArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("interactionId")]
+    public string? InteractionId { get; set; }
+}
+
+// -----------------------------------------------------------------------
 // honua_studio_propose_publication
 // -----------------------------------------------------------------------
 

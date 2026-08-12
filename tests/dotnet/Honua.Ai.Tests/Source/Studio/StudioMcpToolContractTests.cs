@@ -393,6 +393,8 @@ public sealed class StudioMcpToolContractTests
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
             new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
+            new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
             new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
         ];
     }

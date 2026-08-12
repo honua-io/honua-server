@@ -67,6 +67,11 @@ public static class StudioCompositionBodyEditor
             // initializers. Every consumer here and in the collaboration appliers dereferences
             // them directly (Any, ToList, ToDictionary, .Count), so without this a `{}` body turns
             // the next composition edit into an unmapped NullReferenceException.
+            //
+            // Interactions/Layout are deliberately NOT normalized: null means "this
+            // document declares no such block", which WriteBody must leave alone rather
+            // than materialize as an empty member on every unrelated edit (see
+            // StudioCompositionBody.Interactions).
             return composition with
             {
                 Layers = composition.Layers ?? [],
@@ -87,7 +92,8 @@ public static class StudioCompositionBodyEditor
     /// <remarks>
     /// <para>
     /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
-    /// <c>layers</c>, <c>view</c> and <c>widgets</c> and nothing else — but a canonical map package
+    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c> and <c>layout</c> and nothing
+    /// else — but a canonical map package
     /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
     /// <c>sourceBindings</c> and <c>initialView</c> (all required by <c>MapGenerationSchema</c>).
     /// Serializing the projection straight over the body therefore DELETED every unmodelled field
@@ -107,11 +113,14 @@ public static class StudioCompositionBodyEditor
     /// </para>
     /// </remarks>
     /// <summary>
-    /// The stored member name for <see cref="StudioCompositionBody.View"/>, matching its
-    /// <c>JsonPropertyName</c>. It is the only projected member that can be absent from the
-    /// serialized projection, because layers and widgets always serialize (as arrays).
+    /// The stored member names for the OPTIONAL projected members
+    /// (<see cref="StudioCompositionBody.View"/>, <see cref="StudioCompositionBody.Interactions"/>,
+    /// <see cref="StudioCompositionBody.Layout"/>), matching their <c>JsonPropertyName</c>s.
+    /// These are the projected members that can be absent from the serialized projection —
+    /// layers and widgets always serialize (as arrays) — so a wholesale replacement has to
+    /// clear them explicitly.
     /// </summary>
-    private const string ViewMemberName = "view";
+    private static readonly string[] OptionalProjectedMemberNames = ["view", "interactions", "layout"];
 
     /// <summary>
     /// Replaces the composition projection WHOLESALE, clearing projected members the replacement
@@ -123,7 +132,10 @@ public static class StudioCompositionBodyEditor
     /// <c>view</c> never overwrote the stored one and the "wholesale" replacement silently kept
     /// the previous viewport. That overlay behaviour is correct for the incremental edits
     /// (add-layer, set-style, set-viewport) that share the editor, so replacement gets its own
-    /// seam rather than changing theirs (honua-server#2999 review).
+    /// seam rather than changing theirs (honua-server#2999 review). The same reasoning covers
+    /// every optional projected member (<see cref="OptionalProjectedMemberNames"/>), so
+    /// <c>interactions</c>/<c>layout</c> clear on wholesale replacement exactly as
+    /// <c>view</c> does.
     /// </remarks>
     /// <param name="envelope">The stored envelope.</param>
     /// <param name="body">The replacement composition.</param>
@@ -136,19 +148,34 @@ public static class StudioCompositionBodyEditor
         ArgumentNullException.ThrowIfNull(body);
 
         var written = WriteBody(envelope, body);
-        if (body.View is not null || written.Body is not { ValueKind: JsonValueKind.Object } merged)
+        if (written.Body is not { ValueKind: JsonValueKind.Object } merged)
         {
             return written;
         }
 
-        // The replacement carries no view, so the stored one must go rather than survive.
+        // Whichever optional members the replacement omits must GO rather than survive from
+        // the stored document; the projection's serialized form is the authority on which
+        // ones it carries.
+        var replacementMembers = JsonSerializer
+            .SerializeToElement(body, StudioJsonContext.Default.StudioCompositionBody)
+            .EnumerateObject()
+            .Select(member => member.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var dropped = OptionalProjectedMemberNames
+            .Where(name => !replacementMembers.Contains(name))
+            .ToArray();
+        if (dropped.Length == 0)
+        {
+            return written;
+        }
+
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             foreach (var member in merged.EnumerateObject())
             {
-                if (string.Equals(member.Name, ViewMemberName, StringComparison.Ordinal))
+                if (dropped.Contains(member.Name, StringComparer.Ordinal))
                 {
                     continue;
                 }
@@ -307,6 +334,124 @@ public static class StudioCompositionBodyEditor
         {
             Widgets = body.Widgets.Where(existing => !string.Equals(existing.Id, widgetId, StringComparison.Ordinal)).ToList()
         };
+    }
+
+    /// <summary>
+    /// Adds a declarative interaction to the composition, replacing an existing binding
+    /// with the same <see cref="StudioInteraction.Id"/> in place (geospatial-mcp
+    /// ADR-0030 <c>bind_interaction</c>: "adds or replaces (by id) one interaction").
+    /// </summary>
+    /// <remarks>
+    /// This is an ADMISSION gate as well as a mutation: a bind whose vocabulary is out of
+    /// the closed event/verb sets, whose refs do not resolve within the document, or which
+    /// would push the <c>(on.ref, on.event)</c> fan-out past
+    /// <see cref="StudioInteractionVocabulary.MaxInteractionsPerEventSource"/> is REJECTED
+    /// rather than stored and reported later. The identical rules are re-checked over the
+    /// whole document by <c>StudioPackageValidator</c>, because a document can also be
+    /// authored wholesale through the draft-update surface, which never passes here.
+    /// </remarks>
+    /// <param name="body">The composition to bind into.</param>
+    /// <param name="interaction">The binding to add or replace.</param>
+    /// <returns>The composition with the binding applied.</returns>
+    public static StudioCompositionBody BindInteraction(StudioCompositionBody body, StudioInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(interaction);
+        if (string.IsNullOrWhiteSpace(interaction.Id))
+        {
+            throw new StudioCompositionConflictException("An interaction requires a non-empty 'id'.");
+        }
+
+        EnsureBindable(body, interaction);
+
+        var interactions = (body.Interactions ?? []).ToList();
+        var index = interactions.FindIndex(existing => string.Equals(existing.Id, interaction.Id, StringComparison.Ordinal));
+        if (index >= 0)
+        {
+            interactions[index] = interaction;
+        }
+        else
+        {
+            interactions.Add(interaction);
+        }
+
+        return body with { Interactions = interactions };
+    }
+
+    /// <summary>
+    /// Removes a declarative interaction by id. Throws when no interaction with that id
+    /// exists — ADR-0030's <c>remove_interaction</c> makes an unknown id an error, not a
+    /// no-op, so an agent cannot believe it unbound something it never bound.
+    /// </summary>
+    /// <param name="body">The composition to remove from.</param>
+    /// <param name="interactionId">Id of the interaction to remove.</param>
+    /// <returns>The composition without that binding.</returns>
+    public static StudioCompositionBody RemoveInteraction(StudioCompositionBody body, string interactionId)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentException.ThrowIfNullOrWhiteSpace(interactionId);
+        var interactions = body.Interactions ?? [];
+        if (!interactions.Any(existing => string.Equals(existing.Id, interactionId, StringComparison.Ordinal)))
+        {
+            throw new StudioCompositionNotFoundException(
+                $"No interaction with id '{interactionId}' exists in the composition.");
+        }
+
+        return body with
+        {
+            Interactions = interactions
+                .Where(existing => !string.Equals(existing.Id, interactionId, StringComparison.Ordinal))
+                .ToList(),
+        };
+    }
+
+    private static void EnsureBindable(StudioCompositionBody body, StudioInteraction interaction)
+    {
+        if (!StudioInteractionVocabulary.IsEventName(interaction.On.Event))
+        {
+            throw new StudioCompositionConflictException(
+                $"'on.event' must be one of: {string.Join(", ", StudioInteractionVocabulary.EventNames)}. "
+                + $"Got '{interaction.On.Event}'.");
+        }
+
+        if (!StudioInteractionVocabulary.IsActionVerb(interaction.Do.Verb))
+        {
+            throw new StudioCompositionConflictException(
+                $"'do.verb' must be one of: {string.Join(", ", StudioInteractionVocabulary.ActionVerbs)}. "
+                + $"Got '{interaction.Do.Verb}'.");
+        }
+
+        EnsureRefResolves(body, interaction.On.Ref, "on.ref");
+        EnsureRefResolves(body, interaction.Do.Ref, "do.ref");
+        EnsureFanOutCap(body, interaction);
+    }
+
+    private static void EnsureRefResolves(StudioCompositionBody body, string reference, string member)
+    {
+        var resolution = StudioInteractionVocabulary.ResolveRef(body, reference);
+        if (resolution != StudioComponentRefResolution.Resolved)
+        {
+            throw new StudioCompositionConflictException(
+                $"'{member}': {StudioInteractionVocabulary.DescribeResolution(reference, resolution)}");
+        }
+    }
+
+    private static void EnsureFanOutCap(StudioCompositionBody body, StudioInteraction interaction)
+    {
+        // Replacement of an existing id does not grow the fan-out, so it is excluded from
+        // the count: re-binding the 8th interaction on a saturated source must stay legal.
+        var sharing = (body.Interactions ?? [])
+            .Count(existing =>
+                !string.Equals(existing.Id, interaction.Id, StringComparison.Ordinal)
+                && string.Equals(existing.On.Ref, interaction.On.Ref, StringComparison.Ordinal)
+                && string.Equals(existing.On.Event, interaction.On.Event, StringComparison.Ordinal));
+
+        if (sharing >= StudioInteractionVocabulary.MaxInteractionsPerEventSource)
+        {
+            throw new StudioCompositionConflictException(
+                $"At most {StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions may share the "
+                + $"same event source; '{interaction.On.Ref}'/'{interaction.On.Event}' already has {sharing}.");
+        }
     }
 }
 
