@@ -326,6 +326,43 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
+    public void Hardening_TrustedS3VsiInvocation_ForwardsAmbientCredentialChain()
+    {
+        var ambient = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AWS_ACCESS_KEY_ID"] = "ambient-access",
+            ["AWS_SECRET_ACCESS_KEY"] = "ambient-secret",
+            ["AWS_SESSION_TOKEN"] = "ambient-session",
+        };
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: true,
+            new AwsS3Options { Region = "us-east-1" },
+            inputReferencesS3Vsi: true,
+            environmentVariableReader: name => ambient.GetValueOrDefault(name));
+
+        env["AWS_ACCESS_KEY_ID"].Should().Be("ambient-access");
+        env["AWS_SECRET_ACCESS_KEY"].Should().Be("ambient-secret");
+        env["AWS_SESSION_TOKEN"].Should().Be("ambient-session");
+        GdalRuntimeHardening.ToDockerEnvArguments(env).Should().ContainInOrder("-e", "AWS_SESSION_TOKEN");
+    }
+
+    [UnitTest]
+    public void Hardening_LocalInvocation_DoesNotForwardAmbientCredentialChain()
+    {
+        var env = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions(),
+            inputReferencesRemoteVsi: false,
+            new AwsS3Options(),
+            inputReferencesS3Vsi: false,
+            environmentVariableReader: _ => "must-not-leak");
+
+        env.Should().NotContainKey("AWS_ACCESS_KEY_ID");
+        env.Should().NotContainKey("AWS_SECRET_ACCESS_KEY");
+        env.Should().NotContainKey("AWS_SESSION_TOKEN");
+    }
+
+    [UnitTest]
     public void Hardening_TrustedAzureVsiInvocation_ProjectsConnectionString()
     {
         const string connectionString =

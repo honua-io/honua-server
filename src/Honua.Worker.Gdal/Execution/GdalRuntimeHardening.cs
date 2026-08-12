@@ -34,6 +34,9 @@ internal static class GdalRuntimeHardening
     /// <param name="azureOptions">Execution-owned Azure Blob connection settings.</param>
     /// <param name="inputReferencesS3Vsi">Whether the arguments contain a trusted <c>/vsis3</c> path.</param>
     /// <param name="inputReferencesAzureVsi">Whether the arguments contain a trusted <c>/vsiaz</c> path.</param>
+    /// <param name="environmentVariableReader">
+    /// Optional environment seam for tests. Production uses <see cref="Environment.GetEnvironmentVariable(string)"/>.
+    /// </param>
     /// <returns>An ordered map of environment variable name to value.</returns>
     public static IReadOnlyDictionary<string, string> BuildEnvironment(
         GdalHardeningOptions options,
@@ -41,7 +44,8 @@ internal static class GdalRuntimeHardening
         AwsS3Options? s3Options = null,
         AzureBlobOptions? azureOptions = null,
         bool inputReferencesS3Vsi = false,
-        bool inputReferencesAzureVsi = false)
+        bool inputReferencesAzureVsi = false,
+        Func<string, string?>? environmentVariableReader = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -73,6 +77,11 @@ internal static class GdalRuntimeHardening
         if (inputReferencesS3Vsi && s3Options is not null)
         {
             AddS3Environment(env, s3Options);
+            if (string.IsNullOrWhiteSpace(s3Options.AccessKeyId)
+                && string.IsNullOrWhiteSpace(s3Options.SecretAccessKey))
+            {
+                AddAmbientS3Credentials(env, environmentVariableReader ?? Environment.GetEnvironmentVariable);
+            }
         }
 
         if (inputReferencesAzureVsi && azureOptions is not null)
@@ -81,6 +90,20 @@ internal static class GdalRuntimeHardening
         }
 
         return env;
+    }
+
+    private static void AddAmbientS3Credentials(
+        Dictionary<string, string> env,
+        Func<string, string?> environmentVariableReader)
+    {
+        foreach (var name in new[] { "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN" })
+        {
+            var value = environmentVariableReader(name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                env[name] = value;
+            }
+        }
     }
 
     private static void AddS3Environment(Dictionary<string, string> env, AwsS3Options options)
