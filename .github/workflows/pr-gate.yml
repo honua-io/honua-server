@@ -35,7 +35,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Verify .NET base-image security inventory
-        run: scripts/ci/base-image-mirrors.sh --verify-inventory-doc docs/internal/security/code-scanning-2026-Q2-remediation.md
+        run: |
+          scripts/ci/base-image-mirrors.sh --self-test
+          scripts/ci/base-image-mirrors.sh --verify-inventory-doc docs/internal/security/code-scanning-2026-Q2-remediation.md
 
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
