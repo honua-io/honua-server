@@ -82,6 +82,19 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 .Should().Be(changeStateBeforeHostileResolverRecovery);
 
             await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
+            await ExecuteAsync(dataSource, RaisingTrackingFunctionSql);
+            var changeStateBeforeRaisingTrackerRecovery = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
+            Func<Task> applyWithRaisingTracker = () => ExecuteAsync(dataSource, seed);
+            var raisingTrackerFailure = await applyWithRaisingTracker.Should().ThrowAsync<PostgresException>();
+            raisingTrackerFailure.Which.SqlState.Should().Be("P0001");
+            (await ScalarStringAsync(dataSource, "SELECT to_regclass('honua.features')::text"))
+                .Should().BeNull("a tracker exception must not be mistaken for the intentional probe rollback");
+            (await ScalarInt64Async(dataSource, "SELECT count(*) FROM honua.metadata_v2_snapshots"))
+                .Should().Be(0, "a raising tracker must not publish metadata");
+            (await ScalarStringAsync(dataSource, FeatureChangeStateSql))
+                .Should().Be(changeStateBeforeRaisingTrackerRecovery);
+
+            await InstallCurrentChangeTrackingFunctionsAsync(dataSource);
             await ExecuteAsync(dataSource, RetainedFeatureChangeSql);
             var retainedChangeState = await ScalarStringAsync(dataSource, FeatureChangeStateSql);
             Func<Task> applyWithLostHistory = () => ExecuteAsync(dataSource, seed);
@@ -979,6 +992,16 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             RETURN storage_objectid;
         END;
         $$ LANGUAGE plpgsql STABLE;
+        """;
+
+    private const string RaisingTrackingFunctionSql =
+        """
+        CREATE OR REPLACE FUNCTION honua.track_feature_changes()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            RAISE EXCEPTION 'hostile tracker';
+        END;
+        $$ LANGUAGE plpgsql;
         """;
 
     private const string TriggerTypeSql =

@@ -280,10 +280,10 @@ BEGIN
         END IF;
 
         RAISE EXCEPTION USING
-            ERRCODE = 'P0001',
+            ERRCODE = 'ZX001',
             MESSAGE = 'rollback demo STAC tracking probe';
     EXCEPTION
-        WHEN SQLSTATE 'P0001' THEN NULL;
+        WHEN SQLSTATE 'ZX001' THEN NULL;
     END;
 END
 $tracking_behavior$;
