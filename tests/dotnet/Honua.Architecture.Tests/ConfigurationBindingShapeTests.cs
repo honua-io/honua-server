@@ -14,10 +14,9 @@ namespace Honua.Architecture.Tests;
 /// <remarks>
 /// Covered registration shapes: <c>Configure&lt;T&gt;(IConfiguration)</c>,
 /// <c>AddOptions&lt;T&gt;().Bind(...)</c> / <c>.BindConfiguration(...)</c> (chained or through a
-/// deferred builder local), <c>GetSection(T.SectionName).Bind(instance)</c>, and
-/// <c>section.Bind(local)</c> where the local is created with <c>new T()</c>. All of these bind
-/// onto an existing instance, where the source-generated binder silently skips init-only
-/// properties.
+/// deferred builder local), <c>Get&lt;T&gt;()</c>, <c>GetSection(T.SectionName).Bind(instance)</c>, and
+/// <c>section.Bind(local)</c> where the local is created with <c>new T()</c>. All of these use the
+/// source-generated assignment path, which silently skips init-only properties.
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class ConfigurationBindingShapeTests
@@ -43,6 +42,7 @@ public sealed partial class ConfigurationBindingShapeTests
         "SceneDatasetOptions",
         "SecureConfigurationOptions",
         "SpecCostEstimatorOptions",
+        "StartupResilienceOptions",
         "TemporaryFileOptions",
         "TileOptions",
         "WorkspaceOptions",
@@ -128,7 +128,8 @@ public sealed partial class ConfigurationBindingShapeTests
 
         Assert.True(
             violations.Count == 0,
-            "Types bound through Configure<T>(IConfiguration) or AddOptions<T>().Bind must use " +
+            "Types bound through Configure<T>(IConfiguration), AddOptions<T>().Bind, or Get<T>() " +
+            "must use " +
             "ordinary setters throughout their reachable object graph. Init-only properties: " +
             string.Join(", ", violations));
     }
@@ -179,6 +180,12 @@ public sealed partial class ConfigurationBindingShapeTests
             {
                 candidateTypeNames.Add(typeName);
             }
+
+            // IConfiguration.Get<T>() creates an instance and then uses the same generated
+            // binding path, so init-only accessors are unsafe here too.
+            candidateTypeNames.UnionWith(GetPattern()
+                .Matches(source)
+                .Select(match => match.Groups["type"].Value));
 
             // GetSection(T.SectionName).Bind(instance): the section expression names the bound
             // type directly. This shape appears both standalone and inside Configure<T>(options
@@ -619,6 +626,9 @@ public sealed partial class ConfigurationBindingShapeTests
         @"Configure\s*<\s*(?<type>[\w.]+)\s*>\s*\((?<tail>.{0,1600}?)\)\s*;",
         RegexOptions.Singleline)]
     private static partial Regex ConfigurePattern();
+
+    [GeneratedRegex(@"\.\s*Get\s*<\s*(?<type>[\w.]+)\s*>\s*\(\s*\)")]
+    private static partial Regex GetPattern();
 
     [GeneratedRegex(
         @"\b(?:class|record(?:\s+class)?)\s+(?<name>[A-Za-z_]\w*)(?<tail>[^\{;]*)(?<brace>\{)",

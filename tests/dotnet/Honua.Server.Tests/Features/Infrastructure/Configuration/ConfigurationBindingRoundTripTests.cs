@@ -135,6 +135,28 @@ public sealed class ConfigurationBindingRoundTripTests
         Assert.Equal(["scene-reader"], Assert.IsType<string[]>(accessPolicy.AllowedRoles));
     }
 
+    [UnitTest]
+    public void StartupResilienceOptions_Get_CreatesConfiguredInstance()
+    {
+        var configuration = BuildConfiguration(
+            ("Database:StartupResilience:DegradedStartEnabled", "true"),
+            ("Database:StartupResilience:RetryMigrationsInBackground", "false"),
+            ("Database:StartupResilience:RetryBaseDelay", "00:00:07"),
+            ("Database:StartupResilience:RetryMaxDelay", "00:02:00"),
+            ("Database:StartupResilience:MaxRetryAttempts", "9"));
+
+        var options = configuration
+            .GetSection(StartupResilienceOptions.SectionName)
+            .Get<StartupResilienceOptions>();
+
+        Assert.NotNull(options);
+        Assert.True(options.DegradedStartEnabled);
+        Assert.False(options.RetryMigrationsInBackground);
+        Assert.Equal(TimeSpan.FromSeconds(7), options.RetryBaseDelay);
+        Assert.Equal(TimeSpan.FromMinutes(2), options.RetryMaxDelay);
+        Assert.Equal(9, options.MaxRetryAttempts);
+    }
+
     private static IConfigurationRoot BuildConfiguration(
         params (string Key, string? Value)[] settings)
         => new ConfigurationBuilder()

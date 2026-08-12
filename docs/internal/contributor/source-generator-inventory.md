@@ -27,17 +27,17 @@ wiring; it has been incremental since its introduction in .NET 7.
 
 ## Configuration-binding shape convention
 
-`Configure<T>(IConfiguration)`, `AddOptions<T>().Bind(...)`, and direct instance binds
-(`GetSection(T.SectionName).Bind(instance)`, or `section.Bind(local)` on a `new T()`
-local) bind onto an existing options instance. With
-`EnableConfigurationBindingGenerator=true`, an `init`-only property in that instance's
-reachable object graph is not assigned; the configured value silently remains at its
-default. Every configuration type reachable from those registration paths must
+`Configure<T>(IConfiguration)`, `AddOptions<T>().Bind(...)`, `Get<T>()`, and direct instance
+binds (`GetSection(T.SectionName).Bind(instance)`, or `section.Bind(local)` on a `new T()`
+local) all use the source-generated assignment path. With
+`EnableConfigurationBindingGenerator=true`, an `init`-only property in the reachable object
+graph is not assigned; the configured value silently remains at its default. Every
+configuration type reachable from those registration paths must
 therefore use ordinary `get; set;` accessors, including nested objects and collection
-elements. `init` remains appropriate for request/domain models and for configuration
-records constructed as a new instance through `Get<T>()`.
+elements. `init` remains appropriate for request/domain models that are not
+configuration-bound.
 
-`ConfigurationBindingShapeTests` discovers the Configure/Bind/instance-bind roots from
+`ConfigurationBindingShapeTests` discovers the Configure/Bind/Get/instance-bind roots from
 source, walks their property-type graphs, and fails on an `init` accessor. When adding
 a new configuration registration, use settable configuration DTOs all the way down
 rather than sharing an immutable domain DTO in the bound graph.
@@ -65,11 +65,11 @@ mechanical.
 | `MigrationSafetyOptions` | 3 | 3 |
 | `FieldCollectionAutomationOptions` | 3 | 0 |
 | `SpecCostEstimatorOptions` | 2 | 2 |
-| **Total** | **143** | **133** |
+| `StartupResilienceOptions` | 5 | 5 |
+| **Total** | **148** | **138** |
 
 The scan also confirmed that similarly named immutable types were outside the
-vulnerable path: `StartupResilienceOptions` is constructed with `Get<T>()`;
-`CsvImportOptions` and `StyleSuggestionOptions` are request/domain objects; and
+vulnerable path: `CsvImportOptions` and `StyleSuggestionOptions` are request/domain objects; and
 `CircuitBreakerOptions` / `HttpResilienceOptions` had no configuration-binding
 registration. Do not mechanically convert such immutable, non-bound types.
 
