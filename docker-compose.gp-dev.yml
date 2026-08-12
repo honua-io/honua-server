@@ -106,7 +106,10 @@ services:
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
       FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
-      FileStorage__AzureBlob__ConnectionString: "${HONUA_AZURE_STORAGE_CONNECTION_STRING:-}"
+      # Null-valued Compose mapping is host pass-through: when the standard Honua
+      # config variable is absent, Compose omits it instead of materializing an
+      # empty AzureBlob section that activates an unusable range reader.
+      FileStorage__AzureBlob__ConnectionString:
       AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"
       AWS_SECRET_ACCESS_KEY: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
       AWS_SESSION_TOKEN: "${HONUA_S3_SESSION_TOKEN:-}"
@@ -162,7 +165,7 @@ services:
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"
       FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
-      FileStorage__AzureBlob__ConnectionString: "${HONUA_AZURE_STORAGE_CONNECTION_STRING:-}"
+      FileStorage__AzureBlob__ConnectionString:
       # GDAL consumes standard AWS credential variables out of band; credentials
       # never enter the durable raster-source descriptor.
       AWS_ACCESS_KEY_ID: "${HONUA_S3_ACCESS_KEY_ID:-}"
