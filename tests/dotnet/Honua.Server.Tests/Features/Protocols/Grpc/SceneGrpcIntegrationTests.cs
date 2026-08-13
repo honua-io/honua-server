@@ -1331,7 +1331,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
                         ["Scenes:Datasets:1:Name"] = "Protected Fixture",
                         ["Scenes:Datasets:1:AssetRoot"] = fixtureRoot,
                         ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false",
-                        ["Scenes:Datasets:1:AccessPolicy:AllowedRoles:0"] = "scene-admin",
+                        ["Scenes:Datasets:1:AccessPolicy:AllowedRoles:0"] = "admin",
                     });
                 });
             });
@@ -1353,7 +1353,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         }
 
         // An authorized caller carries the admin API key, which satisfies the
-        // protected scene's role gate (mirrors the HTTP/I3S _authenticatedClient).
+        // protected scene's admin role gate (mirrors the HTTP/I3S _authenticatedClient).
         _authHeaders = new Metadata { { "X-API-Key", AdminPassword } };
         if (_fixture.CurrentSchema is not null)
         {
