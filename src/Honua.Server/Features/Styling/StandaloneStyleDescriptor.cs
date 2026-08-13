@@ -122,6 +122,7 @@ internal static class StandaloneStyleDescriptor
             return GeometryType.None;
         }
 
+        var fallbackGeometryType = GeometryType.None;
         foreach (var layer in layers.EnumerateArray())
         {
             if (layer.ValueKind != JsonValueKind.Object
@@ -131,23 +132,30 @@ internal static class StandaloneStyleDescriptor
                 continue;
             }
 
-            // First symbolizing layer wins: the default documents emit the primary
-            // symbolizer first and any outline/label layer after it.
-            var geometryType = typeElement.GetString() switch
+            var layerType = typeElement.GetString();
+            var geometryType = layerType switch
             {
                 "fill" or "fill-extrusion" => GeometryType.Polygon,
                 "line" => GeometryType.LineString,
-                "circle" or "symbol" or "heatmap" => GeometryType.Point,
+                "circle" or "heatmap" => GeometryType.Point,
+                "symbol" => GeometryType.Point,
                 _ => GeometryType.None
             };
 
-            if (geometryType != GeometryType.None)
+            // A symbol layer is commonly a label overlay for a concrete fill/line/circle
+            // layer later in the document. Remember it only as a fallback so labels do not
+            // misclassify polygon or line styles as points.
+            if (string.Equals(layerType, "symbol", StringComparison.Ordinal))
+            {
+                fallbackGeometryType = geometryType;
+            }
+            else if (geometryType != GeometryType.None)
             {
                 return geometryType;
             }
         }
 
-        return GeometryType.None;
+        return fallbackGeometryType;
     }
 
     private static int ReadStorageLayerId(JsonElement root)

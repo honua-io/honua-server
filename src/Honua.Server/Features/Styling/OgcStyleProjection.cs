@@ -327,6 +327,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
         }
 
+        if (drawingInfo.ValueKind != JsonValueKind.Object)
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "drawingInfo must be a JSON object.");
+        }
+
         var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
@@ -567,6 +574,15 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             ? $"style-{Guid.NewGuid():N}"
             : styleId.Trim();
 
+        var (collidingResource, _, _) = await ResolveResourceAsync(resolvedStyleId, cancellationToken).ConfigureAwait(false);
+        if (collidingResource is not null)
+        {
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Conflict,
+                null,
+                $"Style identifier '{resolvedStyleId}' is already owned by a collection.");
+        }
+
         var created = await _independentStyleCatalog
             .CreateStyleAsync(resolvedStyleId, mapLibreStyleJson, title: resolvedStyleId, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
@@ -623,7 +639,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             {
                 if (!root.TryGetProperty("version", out var version)
                     || version.ValueKind != JsonValueKind.Number
-                    || version.GetInt32() != 8)
+                    || !version.TryGetInt32(out var versionNumber)
+                    || versionNumber != 8)
                 {
                     error = "MapLibre style must include version 8.";
                     return false;

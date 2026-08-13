@@ -283,6 +283,42 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_IdOwnedByCollection_Returns409Conflict()
+    {
+        var client = _fixture.CreateAdminClient();
+        // The style projection is keyed by the collection resource's metadata name. Seed
+        // its canonical layer style so that exact route-owned identifier is visible.
+        var collectionStyleId = await SeedAndResolveStyleIdAsync(client);
+
+        using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-Style-Id", collectionStyleId);
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_StrictFractionalVersion_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+        var style = JsonNode.Parse(BuildDefaultStyleJson())!;
+        style["version"] = 8.5;
+
+        using var content = new StringContent(style.ToJsonString(), Encoding.UTF8, MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles?validate=strict") { Content = content };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Delete)]
     [Endpoint("DELETE /ogc/styles/{styleId}")]
     public async Task DeleteStyle_AfterCreate_Returns204ThenNotFound()
@@ -506,6 +542,23 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
             .GetProperty("layers")[0].GetProperty("paint").GetProperty("circle-color")
             .GetString().Should().Be("#ff0000");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_LayerBoundCatalogStyle_NonObjectDrawingInfo_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        var styleId = $"style-layer-{WebAppFixture.TestLayerId}";
+
+        using var content = new StringContent("[]", Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{styleId}") { Content = content };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
