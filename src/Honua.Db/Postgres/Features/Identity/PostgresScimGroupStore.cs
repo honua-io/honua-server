@@ -190,6 +190,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        await PostgresUserIdentityLock.AcquireGroupAsync(
+            connection,
+            transaction,
+            groupId,
+            cancellationToken).ConfigureAwait(false);
+
         var existing = await ReadGroupAsync(connection, transaction, groupId, cancellationToken).ConfigureAwait(false);
         if (existing is null)
         {
@@ -265,6 +271,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        await PostgresUserIdentityLock.AcquireGroupAsync(
+            connection,
+            transaction,
+            groupId,
+            cancellationToken).ConfigureAwait(false);
+
         var existing = await ReadGroupAsync(connection, transaction, groupId, cancellationToken).ConfigureAwait(false);
         if (existing is null)
         {
@@ -313,6 +325,12 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await PostgresUserIdentityLock.AcquireGroupAsync(
+            connection,
+            transaction,
+            groupId,
+            cancellationToken).ConfigureAwait(false);
 
         var existing = await ReadGroupAsync(connection, transaction, groupId, cancellationToken).ConfigureAwait(false);
         if (existing is null)

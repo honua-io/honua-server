@@ -468,6 +468,20 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
 
         await PostgresUserIdentityLock.AcquireAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
 
+        // The endpoint's role list is a transport snapshot captured before this transaction.
+        // Re-read the durable projection after acquiring the user lock so a concurrent admin
+        // revocation cannot be undone by a profile-only SCIM PUT carrying stale roles.
+        var lockedExisting = await ReadUserByCanonicalIdAsync(
+            connection,
+            transaction,
+            canonicalId,
+            cancellationToken).ConfigureAwait(false);
+        if (lockedExisting is null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
         // The record id (userName) is immutable, matching the in-memory store. external_id
         // is only overwritten when the IdP supplies one: losing the stable subject on a PUT
         // that omits it would orphan in-flight deferred snapshots keyed by that subject.
@@ -507,7 +521,7 @@ internal sealed class PostgresUserStore : IUserStore, IScimUserStore
                 // memberships were intentionally retained. Reconcile those memberships in
                 // the same transaction so the user and group role projections cannot diverge.
                 var groupRoles = await ReadGroupRolesForUserAsync(connection, transaction, canonicalId, cancellationToken).ConfigureAwait(false);
-                replacementRoles = NormalizeRoles([.. provisioning.Roles, .. groupRoles]);
+                replacementRoles = NormalizeRoles([.. lockedExisting.Roles, .. groupRoles]);
             }
 
             await ReplaceRolesAsync(connection, transaction, canonicalId, replacementRoles, cancellationToken).ConfigureAwait(false);

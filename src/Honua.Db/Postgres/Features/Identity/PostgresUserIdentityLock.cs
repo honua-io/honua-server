@@ -15,6 +15,8 @@ internal static class PostgresUserIdentityLock
 {
     private const string AcquireSql =
         "SELECT pg_advisory_xact_lock(hashtextextended(LOWER(@user_id), 0))";
+    private const string AcquireGroupSql =
+        "SELECT pg_advisory_xact_lock(hashtextextended('scim-group:' || LOWER(@group_id), 0))";
 
     public static async Task AcquireAsync(
         NpgsqlConnection connection,
@@ -43,5 +45,16 @@ internal static class PostgresUserIdentityLock
         {
             await AcquireAsync(connection, transaction, userId, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public static async Task AcquireGroupAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string groupId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(AcquireGroupSql, connection, transaction);
+        command.Parameters.AddWithValue("group_id", NpgsqlDbType.Varchar, groupId.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

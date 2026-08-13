@@ -218,6 +218,65 @@ public sealed class PostgresScimGroupStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ReplaceGroup_ConcurrentDisjointPuts_DoNotUnionMemberships()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresScimGroupStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var (users, groups) = CreateStores(schema);
+            var groupsReplicaB = new PostgresScimGroupStore(fixture.DataSource, schemaName: schema);
+
+            await users.CreateUserAsync(new ScimUserProvisioning { UserName = "put-a@example.com" });
+            await users.CreateUserAsync(new ScimUserProvisioning { UserName = "put-b@example.com" });
+            var group = await groups.CreateGroupAsync(new ScimGroupProvisioning
+            {
+                DisplayName = "put-role",
+            });
+
+            // Hold the group lock so both replicas queue before reading the existing member
+            // set. Once released, each PUT must read and replace the result of its predecessor.
+            await using var blockerConnection = await fixture.DataSource.OpenConnectionAsync();
+            await using var blockerTransaction = await blockerConnection.BeginTransactionAsync();
+            await PostgresUserIdentityLock.AcquireGroupAsync(
+                blockerConnection,
+                blockerTransaction,
+                group!.GroupId,
+                CancellationToken.None);
+
+            var replaceA = groups.ReplaceGroupAsync(group.GroupId, new ScimGroupProvisioning
+            {
+                DisplayName = "put-role",
+                MemberUserIds = ["put-a@example.com"],
+            });
+            var replaceB = groupsReplicaB.ReplaceGroupAsync(group.GroupId, new ScimGroupProvisioning
+            {
+                DisplayName = "put-role",
+                MemberUserIds = ["put-b@example.com"],
+            });
+
+            await Task.Delay(100);
+            replaceA.IsCompleted.Should().BeFalse();
+            replaceB.IsCompleted.Should().BeFalse();
+            await blockerTransaction.CommitAsync();
+            await Task.WhenAll(replaceA, replaceB);
+
+            var persisted = await groups.GetGroupAsync(group.GroupId);
+            persisted!.MemberUserIds.Should().ContainSingle();
+            var finalMember = persisted.MemberUserIds[0];
+            var removedMember = finalMember.Equals("put-a@example.com", StringComparison.OrdinalIgnoreCase)
+                ? "put-b@example.com"
+                : "put-a@example.com";
+            (await users.GetUserAsync(finalMember))!.Roles.Should().Contain("put-role");
+            (await users.GetUserAsync(removedMember))!.Roles.Should().NotContain("put-role");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeleteGroup_RevokesMappedRole_FromAllMembers_AcrossStoreInstances()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresScimGroupStoreTests));

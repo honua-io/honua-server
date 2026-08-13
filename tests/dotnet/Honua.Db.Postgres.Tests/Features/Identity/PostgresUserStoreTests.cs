@@ -338,6 +338,42 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ReplaceUser_StalePreservedRoles_UsesLockedStoredProjection()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
+        try
+        {
+            await EnsureManagedUserTablesAsync(schema);
+            var store = CreateStore(schema);
+
+            await store.CreateUserAsync(new ScimUserProvisioning
+            {
+                UserName = "role-race@example.com",
+                Roles = ["viewer"],
+            });
+
+            // Simulate the SCIM endpoint's pre-read, followed by a concurrent admin role
+            // update that commits before the PUT acquires the durable user lock.
+            var staleRoles = (await store.GetUserAsync("role-race@example.com"))!.Roles;
+            await store.UpdateUserRolesAsync("role-race@example.com", ["editor"]);
+
+            var replaced = await store.ReplaceUserAsync("role-race@example.com", new ScimUserProvisioning
+            {
+                UserName = "role-race@example.com",
+                DisplayName = "Profile Updated",
+                Roles = staleRoles,
+            });
+
+            replaced!.DisplayName.Should().Be("Profile Updated");
+            replaced.Roles.Should().BeEquivalentTo(["editor"]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReplaceUser_SetActiveFalse_ClearsRoles()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
