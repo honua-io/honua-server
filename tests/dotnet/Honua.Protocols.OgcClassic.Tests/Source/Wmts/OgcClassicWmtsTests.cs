@@ -136,6 +136,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-projected", Name = "projected-layer" },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             SchemaFields =
             [
                 new MetadataV2Field
@@ -168,6 +169,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "binding-projected", Name = "binding-projected" },
             ResourceId = "res-projected",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = "projected_layer",
             StorageLayerId = storageLayerId,
@@ -176,6 +178,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-projected", Name = serviceId },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Protocols = [ServiceProtocols.Wmts, ServiceProtocols.MapServer],
         };
 
@@ -185,6 +188,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
             ServiceId = "svc-projected",
             ResourceId = "res-projected",
             StorageBindingId = "binding-projected",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             PublicationType = MetadataV2PublicationType.EsriMapLayer,
             Identifier = new MetadataV2PublicationIdentifier
             {

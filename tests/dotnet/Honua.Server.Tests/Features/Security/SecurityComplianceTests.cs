@@ -56,9 +56,9 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
+            .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment(Environments.Production);
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
             });

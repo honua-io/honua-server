@@ -157,6 +157,73 @@ public sealed class PortalItemProjectorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_RetiredPublication_OmitsItem()
+    {
+        var active = BuildSnapshot(
+            BuildService("service.parcels", "Parcels", ServiceProtocols.FeatureServer, publicAccess: true),
+            resourceAccess: AnonymousPolicy());
+        var graph = active.Graph with
+        {
+            Publications =
+            [
+                active.Graph.Publications.Single() with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
+                }
+            ]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"retired\"", DateTimeOffset.UnixEpoch);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MetadataV2LifecycleStatus.Draft)]
+    [InlineData(MetadataV2LifecycleStatus.Archived)]
+    [InlineData(MetadataV2LifecycleStatus.Retired)]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_LayerlessInactiveService_OmitsItem(MetadataV2LifecycleStatus lifecycle)
+    {
+        var service = BuildService(
+            "service.parcels",
+            "Parcels",
+            ServiceProtocols.FeatureServer,
+            publicAccess: true) with
+        {
+            Status = new MetadataV2Status { Lifecycle = lifecycle }
+        };
+        var snapshot = BuildLayerlessSnapshot(service);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_LayerlessActiveService_ProjectsItem()
+    {
+        var service = BuildService(
+            "service.parcels",
+            "Parcels",
+            ServiceProtocols.FeatureServer,
+            publicAccess: true);
+        var snapshot = BuildLayerlessSnapshot(service);
+        var projector = CreateProjector();
+
+        var items = projector.ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl);
+
+        items.Should().ContainSingle();
+        items[0].Id.Should().Be("service.parcels");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void ProjectItem_UnpermittedPrincipal_ReturnsNull()
     {
         var snapshot = BuildSnapshot(
@@ -264,6 +331,7 @@ public sealed class PortalItemProjectorTests
             },
             Protocols = [protocol],
             AccessPolicy = publicAccess ? AnonymousPolicy() : null,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
     private static AccessPolicy AnonymousPolicy() => new() { AllowAnonymous = true };
@@ -279,6 +347,17 @@ public sealed class PortalItemProjectorTests
         return BuildSnapshotWithResource(service, resource);
     }
 
+    private static MetadataV2GraphSnapshot BuildLayerlessSnapshot(MetadataV2Service service)
+    {
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Services = [service],
+        };
+        return new MetadataV2GraphSnapshot(graph, "\"etag\"", DateTimeOffset.UnixEpoch);
+    }
+
     private static MetadataV2GraphSnapshot BuildSnapshotWithResource(
         MetadataV2Service service,
         MetadataV2Resource resource)
@@ -287,13 +366,20 @@ public sealed class PortalItemProjectorTests
         {
             Revision = 1,
             Environment = "test",
-            Resources = [resource],
+            Resources =
+            [
+                resource with
+                {
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+                }
+            ],
             Services = [service],
             Publications =
             [
                 new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = resource.Metadata.Id,
                     ServiceId = service.Metadata.Id,
                     PublicationType = MetadataV2PublicationType.EsriFeatureLayer,

@@ -167,6 +167,11 @@ public static class RelationTypes
     public const string DescribedBy = "describedby";
 
     /// <summary>
+    /// Refers to license documentation for the link context.
+    /// </summary>
+    public const string License = "license";
+
+    /// <summary>
     /// Refers to a resource that serves as the data source.
     /// </summary>
     public const string Data = "data";

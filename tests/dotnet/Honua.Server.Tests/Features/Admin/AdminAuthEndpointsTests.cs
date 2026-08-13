@@ -283,9 +283,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .UseEnvironment("Production")
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
             });
 
@@ -325,9 +325,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .UseEnvironment("Production")
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
             });
 
@@ -365,9 +365,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/logout"));
 
         var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .UseEnvironment("Production")
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
             });
 

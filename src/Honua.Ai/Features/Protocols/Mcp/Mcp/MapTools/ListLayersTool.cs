@@ -99,12 +99,12 @@ internal sealed class ListLayersTool : IMcpTool
             foreach (var publication in publications)
             {
                 var resource = snapshot.ResolveResource(publication);
-                if (resource is null || publication.LayerIndex is not { } layerIndex)
+                if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
                 {
                     continue;
                 }
 
-                var summary = ToSummary(service, publication, resource, layerIndex);
+                var summary = ToSummary(service, publication, resource!, layerIndex);
                 if (filter is null || Matches(summary, service, filter))
                 {
                     layers.Add(summary);

@@ -113,6 +113,7 @@ internal static class CollectionEndpoints
                 (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
                     resolved.Resource,
                     resolved.Publication,
+                    resolved.Service,
                     resolved.LayerIndex,
                     featureReader,
                     baseUrl,
@@ -197,6 +198,7 @@ internal static class CollectionEndpoints
             var collection = await StacMappingService.MapResourceToCollectionAsync(
                 resolved.Value.Resource,
                 resolved.Value.Publication,
+                resolved.Value.Service,
                 resolved.Value.LayerIndex,
                 featureReader,
                 baseUrl,

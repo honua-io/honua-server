@@ -28,6 +28,7 @@ internal static partial class FeatureStreamEndpoints
         HttpContext context,
         IStreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
+        bool announceInitialSubscription,
         FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
@@ -67,9 +68,9 @@ internal static partial class FeatureStreamEndpoints
             },
             context.RequestAborted).ConfigureAwait(false);
 
-        if (subscriptionFilter is not null)
+        if (announceInitialSubscription)
         {
-            FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter.Summary);
+            FeatureStreamLog.SessionCreatedWithFilter(logger, session.SessionId, subscriptionFilter!.Summary);
             await SendWebSocketStatusAsync(
                 webSocket,
                 session.WriteLock,
@@ -1131,20 +1132,25 @@ internal static partial class FeatureStreamEndpoints
         CancellationToken cancellationToken)
     {
         var serviceId = NullIfEmpty(control.ServiceId);
-        var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await deps.RoutabilityGuard.RefreshAsync(
+            deps.MetadataV2GraphProvider,
+            cancellationToken).ConfigureAwait(false);
         MetadataV2Service? service = null;
+        bool serviceIdIsExact = false;
         if (serviceId is not null)
         {
-            service = ResolveStreamService(snapshot, serviceId);
+            serviceIdIsExact = snapshot.Index.ServicesById.TryGetValue(serviceId, out service);
+            service ??= ResolveStreamService(snapshot, serviceId);
             if (service is null)
             {
                 return (null, $"Service '{serviceId}' not found.");
             }
 
-            serviceId = service.Metadata.Name;
+            serviceId = serviceIdIsExact ? service.Metadata.Id : service.Metadata.Name;
         }
 
         var layerIds = ResolveControlLayerIds(control);
+        bool hasExplicitLayerScope = layerIds is { Length: > 0 };
         if (serviceId is null && layerIds is null && !IsAdmin(context.User))
         {
             return (null, "Unfiltered all-layer feature streams require admin access.");
@@ -1199,11 +1205,22 @@ internal static partial class FeatureStreamEndpoints
         }
         else if (service is not null)
         {
-            var accessError = RequireAllLayerAccess(context, snapshot, service);
-            if (accessError is not null)
+            var serviceLayers = ResolveServiceStreamLayers(snapshot, service).ToArray();
+            if (serviceLayers.Length == 0)
             {
-                return (null, "Access to the requested stream service is forbidden.");
+                return (null, $"Service '{service.Metadata.Name}' has no routable layers.");
             }
+
+            foreach (var layer in serviceLayers)
+            {
+                var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
+                if (accessError is not null)
+                {
+                    return (null, "Access to the requested stream service is forbidden.");
+                }
+            }
+
+            layerIds = serviceLayers.Select(static layer => layer.LayerId).Distinct().ToArray();
         }
 
         double[]? bbox = null;
@@ -1317,7 +1334,16 @@ internal static partial class FeatureStreamEndpoints
             temporalFilter = parsedTemporalFilter;
         }
 
-        return (new StreamSubscriptionFilter(serviceId, layerIds, bbox, attributeFilter, temporalFilter), null);
+        return (new StreamSubscriptionFilter(
+            serviceId: serviceId,
+            serviceIdIsExact: serviceIdIsExact,
+            resolvedServiceId: service?.Metadata.Id,
+            hasExplicitLayerScope: hasExplicitLayerScope,
+            layerIds: layerIds,
+            bbox: bbox,
+            attributeFilter: attributeFilter,
+            temporalFilter: temporalFilter,
+            routabilityGuard: deps.RoutabilityGuard), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

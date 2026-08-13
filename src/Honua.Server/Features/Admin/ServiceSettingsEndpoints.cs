@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -337,29 +338,42 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
             }
 
-            // Find the publication for this (service, layerId) pair. In V2 layer ids are
-            // resource-local indices on publications; the v1 admin contract was "layer ids
-            // are stable across services of the same name", so we walk every publication
-            // on every matching service and resolve the first numeric LayerIndex match.
-            var serviceIds = services
-                .Select(s => s.Metadata.Id)
-                .ToHashSet(StringComparer.Ordinal);
-            MetadataV2Resource? resource = null;
-            var publications = snapshot.Graph.Publications;
-            for (var publicationIndex = 0; publicationIndex < publications.Count; publicationIndex++)
+            var featureServices = services
+                .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+                .Where(service => IsFeatureServerService(snapshot.Graph, service))
+                .ToArray();
+            if (featureServices.Length == 0)
             {
-                var publication = publications[publicationIndex];
-                if (serviceIds.Contains(publication.ServiceId) &&
-                    publication.Identifier.IsNumeric &&
-                    publication.LayerIndex == layerId)
-                {
-                    resource = snapshot.ResolveResource(publication);
-                    if (resource is not null)
-                    {
-                        break;
-                    }
-                }
+                return TypedResults.Problem(
+                    title: "FeatureServer service not found",
+                    detail: $"Service '{serviceName}' does not resolve to a FeatureServer service.",
+                    statusCode: StatusCodes.Status409Conflict);
             }
+
+            var featureServiceIds = featureServices
+                .Select(service => service.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var targetResourceIds = snapshot.Graph.Publications
+                .Where(publication =>
+                    featureServiceIds.Contains(publication.ServiceId) &&
+                    publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                    snapshot.IsRoutable(publication) &&
+                    publication.LayerIndex == layerId)
+                .Select(publication => publication.ResourceId)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (targetResourceIds.Length > 1)
+            {
+                return TypedResults.Problem(
+                    title: "Ambiguous FeatureServer layer",
+                    detail: $"Layer {layerId} in service '{serviceName}' resolves to multiple resources.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var resource = targetResourceIds.Length == 1
+                ? snapshot.Graph.Resources.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Metadata.Id, targetResourceIds[0], StringComparison.Ordinal))
+                : null;
             if (resource is null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
@@ -372,36 +386,22 @@ internal static class ServiceSettingsEndpoints
                     $"Invalid mergeStrategy '{mergeStrategyValue}'. Allowed values: newest, oldest, average, max, min."));
             }
 
-            // Patch access policy off the V2 resource's current AccessPolicy.
-            AccessPolicy? updatedAccessPolicy = resource.AccessPolicy;
-            if (request.AccessPolicy is not null)
+            var governanceRequested = request.License is not null ||
+                request.Attribution is not null ||
+                request.Publisher is not null ||
+                request.LicenseUrl is not null ||
+                request.SourceUrl is not null;
+            if (!LayerSourceGovernance.TryCreate(
+                    request.License,
+                    request.Attribution,
+                    request.Publisher,
+                    request.LicenseUrl,
+                    request.SourceUrl,
+                    out var sourceGovernance,
+                    out var governanceError))
             {
-                var existingAp = resource.AccessPolicy ?? new AccessPolicy();
-                updatedAccessPolicy = existingAp with
-                {
-                    AllowAnonymous = request.AccessPolicy.AllowAnonymous ?? existingAp.AllowAnonymous,
-                    AllowAnonymousWrite = request.AccessPolicy.AllowAnonymousWrite ?? existingAp.AllowAnonymousWrite,
-                    AllowedRoles = request.AccessPolicy.AllowedRoles ?? existingAp.AllowedRoles,
-                    AllowedWriteRoles = request.AccessPolicy.AllowedWriteRoles ?? existingAp.AllowedWriteRoles
-                };
+                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
-
-            // Patch time info off the V2 Temporal block (StartTimeField / EndTimeField /
-            // TrackIdField).
-            var existingTemporal = resource.Temporal;
-            string? startTimeField = existingTemporal?.StartTimeField;
-            string? endTimeField = existingTemporal?.EndTimeField;
-            string? trackIdField = existingTemporal?.TrackIdField;
-            var temporalRequested = request.TimeInfo is not null;
-            if (request.TimeInfo is { } incomingTimeInfo)
-            {
-                startTimeField = incomingTimeInfo.StartTimeField is "" ? null : (incomingTimeInfo.StartTimeField ?? startTimeField);
-                endTimeField = incomingTimeInfo.EndTimeField is "" ? null : (incomingTimeInfo.EndTimeField ?? endTimeField);
-                trackIdField = incomingTimeInfo.TrackIdField is "" ? null : (incomingTimeInfo.TrackIdField ?? trackIdField);
-            }
-            var updatedTemporal = temporalRequested || existingTemporal is not null
-                ? ToV2Temporal(startTimeField, endTimeField, trackIdField, existing: existingTemporal)
-                : null;
 
             // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
             // strategy in the response (so PUT semantics are preserved for callers), but
@@ -427,19 +427,59 @@ internal static class ServiceSettingsEndpoints
                 updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
-            await MutateResourcesForLayerAsync(
+            var mutation = await MutateResourceByIdAsync(
                 graphStore,
                 serviceName,
                 layerId,
+                resource.Metadata.Id,
                 next =>
                 {
-                    if (updatedAccessPolicy is not null)
+                    if (request.AccessPolicy is { } incomingAccessPolicy)
                     {
-                        next = next with { AccessPolicy = updatedAccessPolicy };
+                        var existingAccessPolicy = next.AccessPolicy ?? new AccessPolicy();
+                        next = next with
+                        {
+                            AccessPolicy = existingAccessPolicy with
+                            {
+                                AllowAnonymous = incomingAccessPolicy.AllowAnonymous ?? existingAccessPolicy.AllowAnonymous,
+                                AllowAnonymousWrite = incomingAccessPolicy.AllowAnonymousWrite ?? existingAccessPolicy.AllowAnonymousWrite,
+                                AllowedRoles = incomingAccessPolicy.AllowedRoles ?? existingAccessPolicy.AllowedRoles,
+                                AllowedWriteRoles = incomingAccessPolicy.AllowedWriteRoles ?? existingAccessPolicy.AllowedWriteRoles
+                            }
+                        };
                     }
+
+                    if (request.TimeInfo is { } incomingTimeInfo)
+                    {
+                        var existingTemporal = next.Temporal;
+                        var startTimeField = incomingTimeInfo.StartTimeField is ""
+                            ? null
+                            : incomingTimeInfo.StartTimeField ?? existingTemporal?.StartTimeField;
+                        var endTimeField = incomingTimeInfo.EndTimeField is ""
+                            ? null
+                            : incomingTimeInfo.EndTimeField ?? existingTemporal?.EndTimeField;
+                        var trackIdField = incomingTimeInfo.TrackIdField is ""
+                            ? null
+                            : incomingTimeInfo.TrackIdField ?? existingTemporal?.TrackIdField;
+                        next = next with
+                        {
+                            Temporal = ToV2Temporal(
+                                startTimeField,
+                                endTimeField,
+                                trackIdField,
+                                existing: existingTemporal)
+                        };
+                    }
+
                     next = next with
                     {
-                        Temporal = updatedTemporal,
+                        Metadata = governanceRequested
+                            ? ApplySourceGovernancePatch(
+                                next.Metadata,
+                                request,
+                                sourceGovernance,
+                                DateTimeOffset.UtcNow)
+                            : next.Metadata,
                     };
                     // RasterMosaic has no typed V2 home yet — silently drop until the V2
                     // raster extension lands. The v1 admin shape is preserved so
@@ -447,13 +487,29 @@ internal static class ServiceSettingsEndpoints
                     return next;
                 },
                 context.RequestAborted).ConfigureAwait(false);
+            if (mutation.BindingConflict)
+            {
+                return TypedResults.Problem(
+                    title: "FeatureServer layer changed during update",
+                    detail: $"Layer {layerId} in service '{serviceName}' was relinked while its metadata was being updated.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var persistedResource = mutation.Resource;
+            if (persistedResource is null)
+            {
+                return TypedResults.NotFound(
+                    ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
+            }
+
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
-                resource.Metadata.Name,
-                updatedAccessPolicy,
-                updatedTemporal,
+                persistedResource.Metadata.Name,
+                persistedResource.Metadata,
+                persistedResource.AccessPolicy,
+                persistedResource.Temporal,
                 updatedRasterMosaic);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
@@ -485,6 +541,13 @@ internal static class ServiceSettingsEndpoints
         services = matches;
         return matches.Length > 0;
     }
+
+    private static bool IsFeatureServerService(MetadataV2Graph graph, MetadataV2Service service)
+        => service.ServiceType == MetadataV2ServiceType.EsriFeatureService ||
+           service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
+           graph.Publications.Any(publication =>
+               string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     private static ServiceSettingsResponse BuildSettingsResponse(
         string serviceName,
@@ -538,6 +601,7 @@ internal static class ServiceSettingsEndpoints
     private static LayerMetadataResponse BuildLayerMetadataResponse(
         int layerId,
         string layerName,
+        MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
         RasterMosaicResponse? rasterMosaic)
@@ -546,6 +610,11 @@ internal static class ServiceSettingsEndpoints
         {
             LayerId = layerId,
             LayerName = layerName,
+            License = metadata.License,
+            Attribution = metadata.Attribution,
+            Publisher = metadata.Publisher,
+            LicenseUrl = FindGovernanceLink(metadata, "license"),
+            SourceUrl = FindGovernanceLink(metadata, "describedby"),
             AccessPolicy = accessPolicy is not null ? new AccessPolicyResponse
             {
                 AllowAnonymous = accessPolicy.AllowAnonymous,
@@ -561,6 +630,144 @@ internal static class ServiceSettingsEndpoints
             } : null,
             RasterMosaic = rasterMosaic
         };
+    }
+
+    private static MetadataV2ObjectMetadata ApplySourceGovernancePatch(
+        MetadataV2ObjectMetadata current,
+        UpdateLayerMetadataRequest request,
+        LayerSourceGovernance? normalized,
+        DateTimeOffset updatedAt)
+    {
+        var effectiveLicense = request.License is null ? current.License : normalized?.License;
+        var currentLicenseUrl = FindGovernanceLink(current, "license");
+        var requestedLicenseUrl = request.LicenseUrl;
+        var normalizedLicenseUrl = normalized?.LicenseUrl;
+        if (request.License is not null && request.LicenseUrl is null)
+        {
+            var previousDerivedLicenseUrl = LayerSourceGovernance.GetSpdxLicenseUrl(current.License);
+            if (currentLicenseUrl is null ||
+                string.Equals(currentLicenseUrl, previousDerivedLicenseUrl, StringComparison.Ordinal))
+            {
+                normalizedLicenseUrl = normalized?.EffectiveLicenseUrl;
+                requestedLicenseUrl = normalizedLicenseUrl ?? string.Empty;
+            }
+        }
+
+        var links = current.Links.ToList();
+        PatchGovernanceLink(
+            links,
+            requestedLicenseUrl,
+            normalizedLicenseUrl,
+            "license",
+            effectiveLicense,
+            refreshTitle: request.License is not null);
+        PatchGovernanceLink(
+            links,
+            request.SourceUrl,
+            normalized?.SourceUrl,
+            "describedby",
+            "Source documentation");
+
+        return current with
+        {
+            License = effectiveLicense,
+            Attribution = request.Attribution is null ? current.Attribution : normalized?.Attribution,
+            Publisher = request.Publisher is null ? current.Publisher : normalized?.Publisher,
+            Links = links,
+            UpdatedAt = current.UpdatedAt is { } currentUpdatedAt && currentUpdatedAt > updatedAt
+                ? currentUpdatedAt
+                : updatedAt
+        };
+    }
+
+    private static void PatchGovernanceLink(
+        List<MetadataV2Link> links,
+        string? requestedValue,
+        string? normalizedValue,
+        string relation,
+        string? title,
+        bool refreshTitle = false)
+    {
+        var currentIndex = FindGovernanceLinkIndex(links, relation);
+        var insertionIndex = links.FindIndex(link =>
+            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase));
+
+        if (requestedValue is null)
+        {
+            if (refreshTitle && currentIndex >= 0)
+            {
+                links[currentIndex] = links[currentIndex] with { Title = title };
+            }
+
+            return;
+        }
+
+        var previous = currentIndex >= 0 ? links[currentIndex] : null;
+        links.RemoveAll(link =>
+            string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase));
+
+        if (normalizedValue is not null)
+        {
+            var replacement = previous is null
+                ? new MetadataV2Link
+                {
+                    Href = normalizedValue,
+                    Rel = relation,
+                    Title = title,
+                    ManagedBy = LayerSourceGovernance.LinkManager
+                }
+                : previous with
+                {
+                    Href = normalizedValue,
+                    Rel = relation,
+                    Title = title,
+                    ManagedBy = LayerSourceGovernance.LinkManager
+                };
+            if (insertionIndex >= 0)
+            {
+                links.Insert(Math.Min(insertionIndex, links.Count), replacement);
+            }
+            else
+            {
+                links.Add(replacement);
+            }
+        }
+    }
+
+    private static string? FindGovernanceLink(MetadataV2ObjectMetadata metadata, string relation)
+    {
+        var relationLinks = metadata.Links
+            .Where(link => string.Equals(link.Rel, relation, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return relationLinks.FirstOrDefault(link =>
+                   string.Equals(
+                       link.ManagedBy,
+                       LayerSourceGovernance.LinkManager,
+                       StringComparison.Ordinal))?.Href ??
+               relationLinks.FirstOrDefault()?.Href;
+    }
+
+    private static int FindGovernanceLinkIndex(List<MetadataV2Link> links, string relation)
+    {
+        var relationIndex = -1;
+        for (var i = 0; i < links.Count; i++)
+        {
+            if (!string.Equals(links[i].Rel, relation, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            relationIndex = relationIndex < 0 ? i : relationIndex;
+            if (string.Equals(
+                    links[i].ManagedBy,
+                    LayerSourceGovernance.LinkManager,
+                    StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return relationIndex;
     }
 
     /// <summary>
@@ -606,16 +813,16 @@ internal static class ServiceSettingsEndpoints
 
         try
         {
-            // V2 cutover: resolve the service's layer ids from numeric publications
-            // in the canonical graph. Layer ids come from the publication
-            // LayerIndex for every numeric publication on a matching service.
+            // V2 cutover: resolve the service's layer ids from the canonical graph.
+            // Reading LayerIndex also honors snapshots that predate Identifier and
+            // still carry only the legacy top-level layerIndex value.
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var serviceIds = snapshot.Graph.Services
                 .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId) && p.Identifier.IsNumeric)
+                .Where(p => serviceIds.Contains(p.ServiceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -695,49 +902,47 @@ internal static class ServiceSettingsEndpoints
     }
 
     /// <summary>
-    /// Loads the canonical Metadata v2 graph, walks every publication whose service
-    /// matches <paramref name="serviceName"/> and whose <c>LayerIndex</c> equals
-    /// <paramref name="layerId"/>, applies <paramref name="mutate"/> to the backing
-    /// resource(s) once, and persists the result. The v1 contract was "layer ids are
-    /// stable across services of the same name", so the V2 cut-over collapses the same
-    /// way: one logical layer maps to one V2 resource even when it is published through
-    /// multiple V2 services.
+    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to the
+    /// uniquely resolved canonical resource, and persists the result. The immutable
+    /// resource id is carried across optimistic-concurrency retries, and the current
+    /// FeatureServer publication is revalidated before each attempt so a relink cannot
+    /// redirect or orphan the patch.
     /// </summary>
-    private static async Task MutateResourcesForLayerAsync(
+    private static async Task<(MetadataV2Resource? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string serviceName,
         int layerId,
+        string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var matchingServiceIds = snapshot.Graph.Services
-                .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-                .Select(s => s.Metadata.Id)
-                .ToHashSet(StringComparer.Ordinal);
-
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => matchingServiceIds.Contains(p.ServiceId)
-                    && p.Identifier.IsNumeric
-                    && p.LayerIndex == layerId)
-                .Select(p => p.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-
-            if (targetResourceIds.Count == 0)
+            var bindingState = ResolveFeatureLayerBindingState(
+                snapshot.Graph,
+                serviceName,
+                layerId,
+                resourceId);
+            if (bindingState == FeatureLayerBindingState.Conflict)
             {
-                return;
+                return (null, true);
+            }
+            if (bindingState == FeatureLayerBindingState.NotFound)
+            {
+                return (null, false);
             }
 
             var resources = snapshot.Graph.Resources.ToArray();
-            for (var i = 0; i < resources.Length; i++)
+            var resourceIndex = Array.FindIndex(resources, resource =>
+                string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
+            if (resourceIndex < 0)
             {
-                if (targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    resources[i] = mutate(resources[i]);
-                }
+                return (null, false);
             }
+
+            var mutatedResource = mutate(resources[resourceIndex]);
+            resources[resourceIndex] = mutatedResource;
 
             var updated = snapshot.Graph with
             {
@@ -748,13 +953,70 @@ internal static class ServiceSettingsEndpoints
             try
             {
                 _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
+                return (mutatedResource, false);
             }
             catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
             {
                 // Concurrent etag bump — re-read and re-apply against the fresh snapshot.
             }
         }
+    }
+
+    private static FeatureLayerBindingState ResolveFeatureLayerBindingState(
+        MetadataV2Graph graph,
+        string serviceName,
+        int layerId,
+        string expectedResourceId)
+    {
+        var matchingServices = graph.Services
+            .Where(service => string.Equals(
+                service.Metadata.Name,
+                serviceName,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matchingServices.Length == 0)
+        {
+            return FeatureLayerBindingState.NotFound;
+        }
+
+        var featureServiceIds = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+            .Where(service => IsFeatureServerService(graph, service))
+            .Select(service => service.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (featureServiceIds.Count == 0)
+        {
+            return FeatureLayerBindingState.Conflict;
+        }
+
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"feature-layer-binding\"", DateTimeOffset.UtcNow);
+        var currentResourceIds = graph.Publications
+            .Where(publication =>
+                featureServiceIds.Contains(publication.ServiceId) &&
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                snapshot.IsRoutable(publication) &&
+                publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (currentResourceIds.Length == 0)
+        {
+            return FeatureLayerBindingState.NotFound;
+        }
+        if (currentResourceIds.Length != 1 ||
+            !string.Equals(currentResourceIds[0], expectedResourceId, StringComparison.Ordinal))
+        {
+            return FeatureLayerBindingState.Conflict;
+        }
+
+        return FeatureLayerBindingState.Bound;
+    }
+
+    private enum FeatureLayerBindingState
+    {
+        Bound,
+        NotFound,
+        Conflict,
     }
 
     /// <summary>

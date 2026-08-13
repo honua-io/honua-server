@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
 
@@ -37,6 +38,18 @@ internal sealed class MapServerResponse
     /// </summary>
     [JsonPropertyName("copyrightText")]
     public string? CopyrightText { get; init; }
+
+    /// <summary>SPDX license expression from canonical metadata.</summary>
+    [JsonPropertyName("license")]
+    public string? License { get; init; }
+
+    /// <summary>Data producer or source organization from canonical metadata.</summary>
+    [JsonPropertyName("publisher")]
+    public string? Publisher { get; init; }
+
+    /// <summary>Additive license/source documentation links.</summary>
+    [JsonPropertyName("links")]
+    public GeoServicesGovernanceLink[]? Links { get; init; }
 
     /// <summary>
     /// Spatial reference.
@@ -421,6 +434,12 @@ internal sealed class MapServerDocumentInfo
     public string Subject { get; init; } = "";
 
     /// <summary>
+    /// Data attribution and credits.
+    /// </summary>
+    [JsonPropertyName("Credits")]
+    public string Credits { get; init; } = "";
+
+    /// <summary>
     /// Document category.
     /// </summary>
     [JsonPropertyName("Category")]
@@ -531,6 +550,22 @@ internal sealed class MapServerLayerResponse
     /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
+
+    /// <summary>Layer attribution in the standard GeoServices copyright field.</summary>
+    [JsonPropertyName("copyrightText")]
+    public string? CopyrightText { get; init; }
+
+    /// <summary>SPDX license expression from canonical metadata.</summary>
+    [JsonPropertyName("license")]
+    public string? License { get; init; }
+
+    /// <summary>Data producer or source organization from canonical metadata.</summary>
+    [JsonPropertyName("publisher")]
+    public string? Publisher { get; init; }
+
+    /// <summary>Additive license/source documentation links.</summary>
+    [JsonPropertyName("links")]
+    public GeoServicesGovernanceLink[]? Links { get; init; }
 
     /// <summary>
     /// Geometry type (for feature layers).

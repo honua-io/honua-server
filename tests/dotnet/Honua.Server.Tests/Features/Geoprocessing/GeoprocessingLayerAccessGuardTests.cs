@@ -387,6 +387,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-1", Name = "guard-tests" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
         var sourceResource = Resource("res-source", "source-layer", [ReaderRole]);
@@ -419,6 +420,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
         AccessPolicy = new AccessPolicy { AllowedRoles = allowedRoles },
+        Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
     };
 
     private static MetadataV2Publication Publication(
@@ -432,6 +434,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
             ResourceId = resourceId,
             LayerIndex = layerIndex,
             IsPrimary = true,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
     /// <summary>

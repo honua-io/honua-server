@@ -6,6 +6,7 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -268,6 +269,40 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 """;
             var servicesCount = (int)(await countCmd.ExecuteScalarAsync())!;
             servicesCount.Should().Be(1, "the orphaned sidecar row must be reconciled away on bootstrap");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task TransactionOutcomeObserver_DistinguishesCommittedAndAbortedTransactions()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            await using var committedConnection = (NpgsqlConnection)await provider.OpenConnectionAsync();
+            await using var committedTransaction = await committedConnection.BeginTransactionAsync();
+            var committedId = await PostgresTransactionOutcomeObserver.CaptureTransactionIdAsync(
+                committedConnection,
+                committedTransaction,
+                CancellationToken.None);
+            await committedTransaction.CommitAsync(CancellationToken.None);
+
+            await using var abortedConnection = (NpgsqlConnection)await provider.OpenConnectionAsync();
+            await using var abortedTransaction = await abortedConnection.BeginTransactionAsync();
+            var abortedId = await PostgresTransactionOutcomeObserver.CaptureTransactionIdAsync(
+                abortedConnection,
+                abortedTransaction,
+                CancellationToken.None);
+            await abortedTransaction.RollbackAsync(CancellationToken.None);
+
+            (await PostgresTransactionOutcomeObserver.TryObserveCommitAsync(provider, committedId))
+                .Should().BeTrue();
+            (await PostgresTransactionOutcomeObserver.TryObserveCommitAsync(provider, abortedId))
+                .Should().BeFalse();
         }
         finally
         {

@@ -225,14 +225,14 @@ internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2Graph
                 visibleResourceId,
                 layerIndex: ServiceRbacTestFixture.AlphaLayerId,
                 storageBindingId: "binding-layer-0",
-                publicationType: MetadataV2PublicationType.ODataEntitySet)
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .AddPublication(
                 "svc-alpha-layer-1",
                 serviceId,
                 hiddenResourceId,
                 layerIndex: ServiceRbacTestFixture.BetaLayerId,
                 storageBindingId: "binding-layer-1",
-                publicationType: MetadataV2PublicationType.ODataEntitySet)
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .BuildProvider();
     }
 

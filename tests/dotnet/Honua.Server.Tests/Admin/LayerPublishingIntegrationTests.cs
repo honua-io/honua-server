@@ -153,6 +153,308 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WithStandaloneSpdxLicense_ReturnsDerivedLicenseUrl()
+    {
+        const string license = "MIT";
+        const string expectedLicenseUrl = "https://spdx.org/licenses/MIT.html";
+
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            License = license,
+        });
+        _layerId = published.LayerId;
+
+        published.License.Should().Be(license);
+        published.LicenseUrl.Should().Be(expectedLicenseUrl);
+
+        var listResponse = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
+        listResponse.Be200Ok();
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await listResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        listApi!.Data!.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
+            .Should().Be(expectedLicenseUrl);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
+    [Endpoint("GET /openapi.json")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task PublishLayer_WithSourceGovernance_ProjectsConsistentlyAcrossProtocols()
+    {
+        const string license = "CC0-1.0";
+        const string attribution = "Example boundary data contributors";
+        const string publisher = "Example Data Office";
+        const string licenseUrl = "https://example.test/licenses/cc0-1.0";
+        const string sourceUrl = "https://example.test/datasets/boundaries";
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            License = license,
+            Attribution = attribution,
+            Publisher = publisher,
+            LicenseUrl = licenseUrl,
+            SourceUrl = sourceUrl
+        });
+        _layerId = published.LayerId;
+
+        published.License.Should().Be(license);
+        published.Attribution.Should().Be(attribution);
+        published.Publisher.Should().Be(publisher);
+        published.LicenseUrl.Should().Be(licenseUrl);
+        published.SourceUrl.Should().Be(sourceUrl);
+
+        var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
+        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
+        var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
+        var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
+        featureServer.Be200Ok();
+        mapServer.Be200Ok();
+        ogcCollection.Be200Ok();
+        stacCollection.Be200Ok();
+
+        AssertGeoServicesGovernance(
+            await featureServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+        AssertGeoServicesGovernance(
+            await mapServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+
+        using var ogcDocument = JsonDocument.Parse(await ogcCollection.Content.ReadAsStringAsync());
+        ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
+        AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
+
+        using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
+        stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
+        var stacProviders = stacDocument.RootElement.GetProperty("providers");
+        stacProviders.GetArrayLength().Should().Be(2);
+        var stacProvider = stacProviders.EnumerateArray().Single(provider =>
+            provider.TryGetProperty("roles", out var roles) &&
+            roles.EnumerateArray().Any(role => role.GetString() == "producer"));
+        stacProvider.GetProperty("name").GetString().Should().Be(publisher);
+        stacProvider.GetProperty("roles")
+            .EnumerateArray()
+            .Select(role => role.GetString())
+            .Should()
+            .Equal("producer");
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "describedby", sourceUrl, "Source documentation");
+
+        var openApiResponse = await _client.GetAsync("/openapi.json");
+        openApiResponse.Be200Ok();
+        using (var openApiDocument = JsonDocument.Parse(await openApiResponse.Content.ReadAsStringAsync()))
+        {
+            openApiDocument.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty("Link")
+                .GetProperty("properties")
+                .TryGetProperty("hreflang", out _)
+                .Should()
+                .BeTrue();
+        }
+
+        var listResponse = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
+        listResponse.Be200Ok();
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await listResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(
+            listApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+
+        var toggleResponse = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/{published.LayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
+        toggleResponse.Be200Ok();
+        var toggleApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
+            await toggleResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(toggleApi!.Data!, license, attribution, publisher, licenseUrl, sourceUrl);
+
+        var bulkResponse = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/enabled?serviceName={_serviceName}",
+            JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
+        bulkResponse.Be200Ok();
+        var bulkApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+            await bulkResponse.Content.ReadAsStringAsync(),
+            _jsonOptions);
+        AssertSummaryGovernance(
+            bulkApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            license,
+            attribution,
+            publisher,
+            licenseUrl,
+            sourceUrl);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task PublishedLayer_WithServiceGovernanceDefaults_ProjectsFallbacksAcrossProtocols()
+    {
+        const string license = "CC-BY-4.0";
+        const string attribution = "Service-level data contributors";
+        const string publisher = "Service Data Office";
+        const string licenseUrl = "https://example.test/licenses/cc-by-4.0";
+        const string sourceUrl = "https://example.test/datasets/service-default";
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+        });
+        _layerId = published.LayerId;
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == published.LayerId &&
+            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ResourceId;
+        var publishingServiceIds = snapshot.Graph.Publications
+            .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
+            .Select(publication => publication.ServiceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var services = snapshot.Graph.Services
+            .Select(service => publishingServiceIds.Contains(service.Metadata.Id)
+                ? service with
+                {
+                    Metadata = service.Metadata with
+                    {
+                        License = license,
+                        Attribution = attribution,
+                        Publisher = publisher,
+                        Links =
+                        [
+                            new MetadataV2Link
+                            {
+                                Href = licenseUrl,
+                                Rel = "license",
+                                Title = license,
+                            },
+                            new MetadataV2Link
+                            {
+                                Href = sourceUrl,
+                                Rel = "describedby",
+                                Title = "Source documentation",
+                            },
+                        ],
+                    },
+                }
+                : service)
+            .ToArray();
+        await SaveMetadataGraphAsync(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = services,
+        });
+        var persistedSnapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var persistedService = persistedSnapshot.Graph.Services.Single(service =>
+            publishingServiceIds.Contains(service.Metadata.Id));
+        persistedService.Metadata.License.Should().Be(license);
+        persistedService.Metadata.Attribution.Should().Be(attribution);
+        persistedService.Metadata.Publisher.Should().Be(publisher);
+
+        var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
+        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
+        var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
+        var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
+        featureServer.Be200Ok();
+        mapServer.Be200Ok();
+        ogcCollection.Be200Ok();
+        stacCollection.Be200Ok();
+
+        AssertGeoServicesGovernance(
+            await featureServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher: null,
+            licenseUrl,
+            sourceUrl);
+        AssertGeoServicesGovernance(
+            await mapServer.Content.ReadAsStringAsync(),
+            license,
+            attribution,
+            publisher: null,
+            licenseUrl,
+            sourceUrl);
+
+        using var ogcDocument = JsonDocument.Parse(await ogcCollection.Content.ReadAsStringAsync());
+        ogcDocument.RootElement.GetProperty("attribution").GetString().Should().Be(attribution);
+        AssertGovernanceLink(ogcDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(
+            ogcDocument.RootElement.GetProperty("links"),
+            "describedby",
+            sourceUrl,
+            "Source documentation");
+
+        using var stacDocument = JsonDocument.Parse(await stacCollection.Content.ReadAsStringAsync());
+        stacDocument.RootElement.GetProperty("license").GetString().Should().Be(license);
+        stacDocument.RootElement.GetProperty("providers")[0].GetProperty("name").GetString().Should().Be(attribution);
+        AssertGovernanceLink(stacDocument.RootElement.GetProperty("links"), "license", licenseUrl, license);
+        AssertGovernanceLink(
+            stacDocument.RootElement.GetProperty("links"),
+            "describedby",
+            sourceUrl,
+            "Source documentation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /stac/collections")]
@@ -979,6 +1281,16 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 Enabled = false
             });
 
+            var publishedGraph = _fixture.GetCurrentV2GraphSnapshot();
+            var disabledBinding = publishedGraph.Graph.StorageBindings.Single(binding =>
+                binding.StorageLayerId == disabledLayer.LayerId);
+            var disabledResource = publishedGraph.Index.ResourcesById[disabledBinding.ResourceId];
+            var disabledPublications = publishedGraph.Index.PublicationsByResource[disabledResource.Metadata.Id];
+            disabledBinding.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+            disabledResource.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
+            disabledPublications.Should().HaveCount(2).And.OnlyContain(publication =>
+                publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired);
+
             // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also clears the per-test public table).
             await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""
@@ -1559,6 +1871,60 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         return api.Data!;
     }
 
+    private static void AssertGeoServicesGovernance(
+        string payload,
+        string license,
+        string attribution,
+        string? publisher,
+        string licenseUrl,
+        string sourceUrl)
+    {
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        root.TryGetProperty("copyrightText", out var copyrightText)
+            .Should().BeTrue($"GeoServices governance payload: {payload}");
+        copyrightText.GetString().Should().Be(attribution);
+        root.GetProperty("license").GetString().Should().Be(license);
+        if (publisher is null)
+        {
+            root.TryGetProperty("publisher", out _).Should().BeFalse();
+        }
+        else
+        {
+            root.GetProperty("publisher").GetString().Should().Be(publisher);
+        }
+        var links = root.GetProperty("links");
+        AssertGovernanceLink(links, "license", licenseUrl, license);
+        AssertGovernanceLink(links, "describedby", sourceUrl, "Source documentation");
+    }
+
+    private static void AssertGovernanceLink(
+        JsonElement links,
+        string relation,
+        string href,
+        string title)
+    {
+        var link = links.EnumerateArray().Single(item =>
+            string.Equals(item.GetProperty("rel").GetString(), relation, StringComparison.Ordinal));
+        link.GetProperty("href").GetString().Should().Be(href);
+        link.GetProperty("title").GetString().Should().Be(title);
+    }
+
+    private static void AssertSummaryGovernance(
+        PublishedLayerSummary summary,
+        string license,
+        string attribution,
+        string publisher,
+        string licenseUrl,
+        string sourceUrl)
+    {
+        summary.License.Should().Be(license);
+        summary.Attribution.Should().Be(attribution);
+        summary.Publisher.Should().Be(publisher);
+        summary.LicenseUrl.Should().Be(licenseUrl);
+        summary.SourceUrl.Should().Be(sourceUrl);
+    }
+
     private async Task AssertPersistedExtentAsync(
         double expectedXmin,
         double expectedYmin,
@@ -1905,11 +2271,16 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         });
     }
 
-    private async Task SaveMetadataGraphAsync(MetadataV2Graph graph)
+    private Task SaveMetadataGraphAsync(MetadataV2Graph graph)
     {
         using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-        await store.SaveAsync(graph, expectedEtag: null);
+        var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+        // This fixture owns an isolated provider, while its admin publish transaction may
+        // have initialized either the request-schema partition or the private baseline.
+        // Keep both views aligned when this test mutates the graph outside an HTTP request.
+        provider.SetGraph(graph, schema: string.Empty);
+        return Task.CompletedTask;
     }
 
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)

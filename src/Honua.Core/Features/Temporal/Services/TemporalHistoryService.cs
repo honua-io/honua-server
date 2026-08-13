@@ -281,20 +281,23 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
                 $"Layer '{layerId}' was not found on service '{serviceId}'.");
         }
 
-        var resource = snapshot.ResolveResource(publication)
-            ?? throw new TemporalLayerNotFoundException(
-                $"Layer '{layerId}' on service '{serviceId}' does not resolve to a resource.");
+        var resource = snapshot.ResolveResource(publication);
+        if (!snapshot.IsRoutable(publication))
+        {
+            throw new TemporalLayerNotFoundException(
+                $"Layer '{layerId}' on service '{serviceId}' does not resolve to an active resource.");
+        }
 
         var storageBinding = snapshot.ResolveStorageBinding(publication);
         FeatureStorageMapping? storageMapping = null;
         int? storageLayerId = null;
         if (storageBinding is { StorageType: MetadataV2StorageType.RelationalTable })
         {
-            storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
+            storageMapping = FeatureStorageMapping.FromMetadata(resource!, storageBinding);
             storageLayerId = storageBinding.StorageLayerId;
         }
 
-        return new ResolvedLayer(service, publication, resource, storageMapping, storageLayerId);
+        return new ResolvedLayer(service, publication, resource!, storageMapping, storageLayerId);
     }
 
     // Read-only providers (DuckDB, MySQL/MariaDB) register a no-op change tracker so DI activation

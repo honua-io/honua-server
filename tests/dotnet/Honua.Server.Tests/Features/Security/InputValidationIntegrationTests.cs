@@ -27,9 +27,9 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
+            .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment(Environments.Production);
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
             });
@@ -282,9 +282,9 @@ public sealed class InputValidationODataIntegrationTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/odata.yaml")
+            .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
             {
-                builder.UseEnvironment(Environments.Production);
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
             });

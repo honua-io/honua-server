@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -19,6 +21,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     internal const string DefaultSubscriptionId = "default";
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
     private const int RecentEventIdCapacity = 128;
 
     /// <summary>
@@ -36,6 +39,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly ILogger<FeatureStreamSessionManager> _logger;
     private readonly FeatureStreamMetrics _metrics;
     private readonly IConnectionMultiplexer? _redis;
+    private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
+    private readonly SemaphoreSlim _clusterBroadcastDispatchGate = new(1, 1);
     private ISubscriber? _subscriber;
     private readonly Timer? _clusterBroadcastRecoveryTimer;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
@@ -49,17 +56,23 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private int _clusterBroadcastBacklogCount;
     private long _clusterBroadcastBacklogDropped;
     private bool _clusterBroadcastBacklogDropLogged;
+    private long _nextRoutabilityRefreshTimestamp;
+    private int _lastRoutabilityRefreshSucceeded = 1;
 
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
         ILogger<FeatureStreamSessionManager> logger,
         FeatureStreamMetrics metrics,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        FeatureStreamRoutabilityGuard? routabilityGuard = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _redis = redis;
+        _routabilityGuard = routabilityGuard;
+        _serviceScopeFactory = serviceScopeFactory;
 
         if (_redis is null)
         {
@@ -106,6 +119,81 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Configured concurrent-session cap. Exposed for the health check's saturation signal.
     /// </summary>
     public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
+
+    /// <summary>
+    /// Refreshes the routing state referenced by all open scoped subscriptions. Failure clears
+    /// the state so a stale filter fails closed until metadata becomes readable again.
+    /// </summary>
+    public async ValueTask<bool> RefreshRoutabilityAsync(CancellationToken cancellationToken = default)
+    {
+        if (_serviceScopeFactory is null || _routabilityGuard is null)
+        {
+            return true;
+        }
+
+        var now = Environment.TickCount64;
+        if (CanReuseRoutabilityRefresh(now))
+        {
+            return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
+        }
+
+        await _routabilityRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        var throttleNextRefresh = true;
+        try
+        {
+            now = Environment.TickCount64;
+            if (CanReuseRoutabilityRefresh(now))
+            {
+                return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) != 0;
+            }
+
+            await _routabilityGuard.RefreshAsync(
+                ReadScopedMetadataAsync,
+                cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 1);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throttleNextRefresh = false;
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Volatile.Write(ref _lastRoutabilityRefreshSucceeded, 0);
+            FeatureStreamLog.RoutabilityRefreshFailed(_logger, ex);
+            return false;
+        }
+        finally
+        {
+            if (throttleNextRefresh)
+            {
+                Volatile.Write(
+                    ref _nextRoutabilityRefreshTimestamp,
+                    Environment.TickCount64 + (long)RoutabilityRefreshInterval.TotalMilliseconds);
+            }
+
+            _routabilityRefreshGate.Release();
+        }
+    }
+
+    private bool CanReuseRoutabilityRefresh(long now)
+    {
+        if (now >= Volatile.Read(ref _nextRoutabilityRefreshTimestamp))
+        {
+            return false;
+        }
+
+        return Volatile.Read(ref _lastRoutabilityRefreshSucceeded) == 0 || _routabilityGuard!.HasValidState;
+    }
+
+    private async ValueTask<MetadataV2GraphSnapshot> ReadScopedMetadataAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _serviceScopeFactory!.CreateAsyncScope();
+        var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Point-in-time snapshot of the cross-node broadcast backlog for the health check:
@@ -492,10 +580,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 return;
             }
 
-            BroadcastLocally(FeatureStreamMessage.Data(
-                payload.Envelope,
-                payload.GeometryEnvelope,
-                payload.PropertiesJson));
+            _ = HandleClusterBroadcastAsync(payload);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -503,6 +588,31 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             // a cross-node broadcast. A malformed or unexpected payload must not throw back
             // into StackExchange.Redis's dispatch thread; log and drop the message.
             LogClusterBroadcastFailedOnce(ex);
+        }
+    }
+
+    private async Task HandleClusterBroadcastAsync(FeatureStreamBroadcastMessage payload)
+    {
+        await _clusterBroadcastDispatchGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!await RefreshRoutabilityAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            BroadcastLocally(FeatureStreamMessage.Data(
+                payload.Envelope,
+                payload.GeometryEnvelope,
+                payload.PropertiesJson));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LogClusterBroadcastFailedOnce(ex);
+        }
+        finally
+        {
+            _clusterBroadcastDispatchGate.Release();
         }
     }
 
