@@ -1267,17 +1267,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            // Occupy the only session slot with a real delta stream, which never reads the
-            // feature store and therefore stays up on the unreadable reader.
-            using var heldRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=delta");
-            using var heldResponse = await fixture.CreateAdminClient()
-                .SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            heldResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var heldStream = await heldResponse.Content.ReadAsStreamAsync(cts.Token);
-            using var heldReader = new StreamReader(heldStream, Encoding.UTF8);
-            var connected = await ReadUntilEventAsync(heldReader, "status", cts.Token);
-            connected.Should().NotBeNull("the held session must be established before the cap is tested");
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
 
             using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
             using var response = await fixture.CreateAdminClient()
@@ -1288,6 +1279,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             body.Should().Contain("session limit");
             body.Should().NotContain("baseline snapshot cannot be served",
                 "the rejected request must not reach snapshot storage preflight");
+            sessionManager.SessionCount.Should().Be(1);
         }
         finally
         {
