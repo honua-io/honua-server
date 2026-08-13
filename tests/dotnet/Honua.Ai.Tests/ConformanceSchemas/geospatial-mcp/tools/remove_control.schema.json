@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/remove_control.schema.json",
+  "title": "remove_control inputSchema",
+  "description": "Argument shape for remove_control (composition profile, ADR-0031). Removes one control, by id, from a composition document's `controls` collection. Target addressing matches add_control: a composition document (mapPackageId or appPackageId) at the standard level, with the reference implementation's draft-lifecycle spelling (draftId + generation) admitted as x-honua-reference-shape. Removing an unknown controlId is an error, not a no-op. Removing a control leaves any interaction bound to `control:{id}` unresolvable, so an implementation MUST either reject the removal or remove those bindings with it — silently keeping a dangling binding is not conformant. See docs/adr/0031-composition-controls.md.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["controlId"],
+  "properties": {
+    "mapPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target MapPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "appPackageId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target AppPackage composition document. Exactly one of mapPackageId / appPackageId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "controlId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Id of the control to remove."
+    },
+    "cascadeInteractions": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, interactions whose on.ref or do.ref is `control:{controlId}` are removed with the control. When false (default), the call fails if any interaction still references it, so a document never silently retains an unresolvable binding."
+    }
+  }
+}

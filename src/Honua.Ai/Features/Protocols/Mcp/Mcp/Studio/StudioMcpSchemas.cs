@@ -43,6 +43,8 @@ internal static class StudioMcpSchemas
 
     private static readonly string ActionVerbEnumJson = EnumJson(StudioInteractionVocabulary.ActionVerbs);
 
+    private static readonly string ControlKindEnumJson = EnumJson(StudioInteractionVocabulary.ControlKinds);
+
     private const string PackageKeyPropertyJson = """
         {
           "type": "string",
@@ -121,7 +123,7 @@ internal static class StudioMcpSchemas
               "required": ["ref", "event"],
               "additionalProperties": false,
               "properties": {
-                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Event-source component declared in the same document: 'map', 'layer:{id}' or 'widget:{id}'. 'control:{id}' is grammatical but never resolves — Studio composition documents declare no controls collection." },
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Event-source component declared in the same document: 'map', 'layer:{id}', 'widget:{id}' or 'control:{id}' (resolved against the document's controls collection, geospatial-mcp ADR-0031)." },
                 "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "User-gesture event: featureSelect/featureHover (layers), selection (widgets), change (controls), viewportChange (map)." }
               },
               "description": "The user-gesture event source. At most {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions may share the same (ref, event) pair."
@@ -164,6 +166,52 @@ internal static class StudioMcpSchemas
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
+          }
+        }
+        """;
+
+    // The closed control-kind vocabulary comes from the shared ADR-0031 contract
+    // (StudioInteractionVocabulary.ControlKinds) rather than being restated here, so the
+    // advertised schema, the composition-editor admission gate and the
+    // StudioPackageValidator document gate cannot drift apart.
+    private static readonly string ControlInputSchemaJson = $$"""
+        {
+          "type": "object",
+          "required": ["id", "kind"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Stable control id, unique within the composition's controls block. Adding an existing id replaces that control; 'control:{id}' interaction references resolve against it." },
+            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Closed control vocabulary. Map affordances: navigation, scale, fullscreen, geolocate, search, measure, attribution, basemapSwitcher, bookmarks. Data-binding affordances that emit 'change': timeSlider, filterSelect, filterSlider, filterDateRange, opacity. There is deliberately no feature-editing draw kind (ADR-0028)." },
+            "title": { "type": "string", "maxLength": {{StudioInteractionVocabulary.MaxControlTitleLength}}, "description": "Host-rendered label. Hosts fall back to a per-kind default when omitted." },
+            "sourceId": { "type": "string", "maxLength": 200, "description": "Layer or datasource the control reads its domain from. Data-binding kinds normally set it; presentation-only kinds omit it." },
+            "config": { "type": "object", "description": "Per-kind, host-interpreted configuration. Data, not code: no expression language, and no capability the composition surface does not already have." }
+          }
+        }
+        """;
+
+    private static readonly string AddControlArgumentSchemaJson = $$"""
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "control"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "control": {{ControlInputSchemaJson}}
+          }
+        }
+        """;
+
+    private static readonly string RemoveControlArgumentSchemaJson = $$"""
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "controlId"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Id of the control to remove. Removing an unknown id is an error, not a no-op." },
+            "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
           }
         }
         """;
@@ -350,6 +398,12 @@ internal static class StudioMcpSchemas
 
     /// <summary>Schema for <see cref="McpStudioRemoveInteractionArgument"/>.</summary>
     public static readonly JsonElement RemoveInteractionArgumentSchema = Parse(RemoveInteractionArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioAddControlArgument"/>.</summary>
+    public static readonly JsonElement AddControlArgumentSchema = Parse(AddControlArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioRemoveControlArgument"/>.</summary>
+    public static readonly JsonElement RemoveControlArgumentSchema = Parse(RemoveControlArgumentSchemaJson);
 
     /// <summary>Schema for <see cref="McpStudioProposePublicationArgument"/>.</summary>
     public static readonly JsonElement ProposePublicationArgumentSchema = Parse(ProposePublicationArgumentSchemaJson);

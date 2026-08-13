@@ -155,28 +155,49 @@ public sealed class StudioPackageValidatorInteractionsTests
     }
 
     [UnitTest]
-    public void Validate_ControlRef_FailsWithTheControlsUnsupportedMessage()
+    public void Validate_ControlRef_ResolvesAgainstTheDocumentsControlsCollection()
     {
-        // ADR-0030 admits `control:{id}` in the grammar, but Studio composition documents
-        // declare no controls collection — so a control ref is a validation FAILURE here,
-        // with a message that says why rather than a generic "does not resolve".
+        // The rule this replaces: before ADR-0031 a `control:{id}` ref was rejected outright
+        // because the composition body modelled no controls. It now resolves by exact id
+        // match against `body.controls`, exactly as layer:/widget: refs do.
         var summary = ValidateBody(
             """
             {
               "format": "honua_map_package.v1",
               "layers": [{ "id": "parcels" }],
+              "controls": [{ "id": "year-slider", "kind": "timeSlider", "sourceId": "parcels" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "control:year-slider", "event": "change" }, "do": { "ref": "layer:parcels", "verb": "setFilter" } }
               ]
             }
             """);
 
-        var diagnostic = Assert.Single(
-            summary.Diagnostics, d => d.Code == "studio.interaction.ref.control-unsupported");
+        Assert.DoesNotContain(summary.Diagnostics, d => d.Code.StartsWith("studio.interaction.ref", StringComparison.Ordinal));
+        Assert.DoesNotContain(summary.Diagnostics, d => d.Code.StartsWith("studio.control", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_UnknownControlRef_FailsWithTheGenericUnresolvedMessage()
+    {
+        // A control ref naming no declared control is an ordinary unresolved reference now;
+        // the old "declares no controls collection" wording would be false.
+        var summary = ValidateBody(
+            """
+            {
+              "format": "honua_map_package.v1",
+              "layers": [{ "id": "parcels" }],
+              "controls": [{ "id": "year-slider", "kind": "timeSlider" }],
+              "interactions": [
+                { "id": "i1", "on": { "ref": "control:decade-slider", "event": "change" }, "do": { "ref": "layer:parcels", "verb": "setFilter" } }
+              ]
+            }
+            """);
+
+        var diagnostic = Assert.Single(summary.Diagnostics, d => d.Code == "studio.interaction.ref.unresolved");
         Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
         Assert.Equal("/body/interactions/0/on/ref", diagnostic.Path);
-        Assert.Contains("declare no controls collection", diagnostic.Message, StringComparison.Ordinal);
-        Assert.Contains("control:year-slider", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("does not resolve", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("control:decade-slider", diagnostic.Message, StringComparison.Ordinal);
     }
 
     [UnitTest]

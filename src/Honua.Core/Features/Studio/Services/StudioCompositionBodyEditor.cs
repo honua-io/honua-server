@@ -70,7 +70,7 @@ public static class StudioCompositionBodyEditor
             // them directly (Any, ToList, ToDictionary, .Count), so without this a `{}` body turns
             // the next composition edit into an unmapped NullReferenceException.
             //
-            // Interactions/Layout are deliberately NOT normalized: null means "this
+            // Interactions/Layout/Controls are deliberately NOT normalized: null means "this
             // document declares no such block", which WriteBody must leave alone rather
             // than materialize as an empty member on every unrelated edit (see
             // StudioCompositionBody.Interactions).
@@ -91,10 +91,11 @@ public static class StudioCompositionBodyEditor
     {
         if (composition.Interactions?.Any(interaction =>
                 interaction is null || interaction.On is null || interaction.Do is null) == true
-            || composition.Layout?.Items?.Any(item => item is null) == true)
+            || composition.Layout?.Items?.Any(item => item is null) == true
+            || composition.Controls?.Any(control => control is null) == true)
         {
             throw new JsonException(
-                "Composition interactions and layout items must contain non-null reference nodes.");
+                "Composition interactions, layout items and controls must contain non-null reference nodes.");
         }
     }
 
@@ -128,12 +129,13 @@ public static class StudioCompositionBodyEditor
     /// <summary>
     /// The stored member names for the OPTIONAL projected members
     /// (<see cref="StudioCompositionBody.View"/>, <see cref="StudioCompositionBody.Interactions"/>,
-    /// <see cref="StudioCompositionBody.Layout"/>), matching their <c>JsonPropertyName</c>s.
+    /// <see cref="StudioCompositionBody.Layout"/>, <see cref="StudioCompositionBody.Controls"/>),
+    /// matching their <c>JsonPropertyName</c>s.
     /// These are the projected members that can be absent from the serialized projection —
     /// layers and widgets always serialize (as arrays) — so a wholesale replacement has to
     /// clear them explicitly.
     /// </summary>
-    private static readonly string[] OptionalProjectedMemberNames = ["view", "interactions", "layout"];
+    private static readonly string[] OptionalProjectedMemberNames = ["view", "interactions", "layout", "controls"];
 
     /// <summary>
     /// Replaces the composition projection WHOLESALE, clearing projected members the replacement
@@ -424,6 +426,136 @@ public static class StudioCompositionBodyEditor
         {
             Interactions = interactions
                 .Where(existing => !string.Equals(existing.Id, interactionId, StringComparison.Ordinal))
+                .ToList(),
+        };
+    }
+
+    /// <summary>
+    /// Adds a control to the composition, replacing an existing control with the same
+    /// <see cref="StudioCompositionControl.Id"/> in place (geospatial-mcp ADR-0031
+    /// <c>add_control</c>: "adds or replaces (by id) one control").
+    /// </summary>
+    /// <remarks>
+    /// An ADMISSION gate as well as a mutation, exactly as
+    /// <see cref="BindInteraction"/> is: a control whose kind is outside the closed
+    /// ADR-0031 vocabulary, or whose id is empty/oversized, is REJECTED here rather than
+    /// stored and reported later. <c>StudioPackageValidator</c> re-checks the identical
+    /// rules over the whole document, because a body can also be authored wholesale
+    /// through the draft-update surface, which never passes here.
+    /// </remarks>
+    /// <param name="body">The composition to add the control to.</param>
+    /// <param name="control">The control to add or replace.</param>
+    /// <returns>The composition with the control applied.</returns>
+    public static StudioCompositionBody AddControl(StudioCompositionBody body, StudioCompositionControl control)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(control);
+        if (string.IsNullOrWhiteSpace(control.Id))
+        {
+            throw new StudioCompositionConflictException("A control requires a non-empty 'id'.");
+        }
+
+        if (control.Id.Length > StudioInteractionVocabulary.MaxControlIdLength)
+        {
+            throw new StudioCompositionConflictException(
+                $"A control 'id' must be {StudioInteractionVocabulary.MaxControlIdLength} characters or fewer.");
+        }
+
+        if (!StudioInteractionVocabulary.IsControlKind(control.Kind))
+        {
+            throw new StudioCompositionConflictException(
+                $"'control.kind' must be one of: {string.Join(", ", StudioInteractionVocabulary.ControlKinds)}. "
+                + $"Got '{control.Kind}'.");
+        }
+
+        var controls = (body.Controls ?? []).ToList();
+        var index = controls.FindIndex(existing => string.Equals(existing.Id, control.Id, StringComparison.Ordinal));
+        if (index >= 0)
+        {
+            controls[index] = control;
+        }
+        else
+        {
+            controls.Add(control);
+        }
+
+        return body with { Controls = controls };
+    }
+
+    /// <summary>
+    /// Removes a control by id. Throws when no control with that id exists — ADR-0031
+    /// makes an unknown id an error, not a no-op.
+    /// </summary>
+    /// <remarks>
+    /// Removing a control an interaction still references would leave a dangling
+    /// <c>control:{id}</c> binding, which ADR-0031 forbids. The default
+    /// (<paramref name="cascadeInteractions"/> <see langword="false"/>) therefore REJECTS
+    /// the removal; passing <see langword="true"/> removes the referencing interactions
+    /// with the control. Silently retaining an unresolvable binding is not conformant, so
+    /// there is no third option.
+    /// </remarks>
+    /// <param name="body">The composition to remove from.</param>
+    /// <param name="controlId">Id of the control to remove.</param>
+    /// <param name="cascadeInteractions">
+    /// When <see langword="true"/>, interactions whose <c>on.ref</c> or <c>do.ref</c> is
+    /// <c>control:{controlId}</c> are removed with the control.
+    /// </param>
+    /// <returns>The composition without that control (and, when cascading, its bindings).</returns>
+    public static StudioCompositionBody RemoveControl(
+        StudioCompositionBody body,
+        string controlId,
+        bool cascadeInteractions = false)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentException.ThrowIfNullOrWhiteSpace(controlId);
+        var controls = body.Controls ?? [];
+        if (!controls.Any(existing => string.Equals(existing.Id, controlId, StringComparison.Ordinal)))
+        {
+            throw new StudioCompositionNotFoundException($"No control with id '{controlId}' exists in the composition.");
+        }
+
+        var reference = StudioInteractionVocabulary.ControlRefPrefix + controlId;
+        var remaining = body with
+        {
+            Controls = controls
+                .Where(existing => !string.Equals(existing.Id, controlId, StringComparison.Ordinal))
+                .ToList(),
+        };
+
+        if (!cascadeInteractions)
+        {
+            var bound = (body.Interactions ?? [])
+                .Where(interaction =>
+                    string.Equals(interaction.On.Ref, reference, StringComparison.Ordinal)
+                    || string.Equals(interaction.Do.Ref, reference, StringComparison.Ordinal))
+                .Select(interaction => interaction.Id)
+                .ToArray();
+            if (bound.Length > 0)
+            {
+                throw new StudioCompositionConflictException(
+                    $"Control '{controlId}' is still referenced by interaction(s) {string.Join(", ", bound)}. "
+                    + "Remove those bindings first, or re-run with cascadeInteractions=true to remove them "
+                    + "with the control.");
+            }
+
+            EnsureComponentIsUnreferenced(body, reference);
+            return remaining;
+        }
+
+        // Layout items are never control references (controls are chrome, not grid items),
+        // so the cascade is scoped to interactions; a layout item naming a control is
+        // rejected by the layout gate rather than swept up here.
+        if (body.Interactions is null)
+        {
+            return remaining;
+        }
+
+        return remaining with
+        {
+            Interactions = body.Interactions
+                .Where(interaction =>
+                    !string.Equals(interaction.On.Ref, reference, StringComparison.Ordinal)
+                    && !string.Equals(interaction.Do.Ref, reference, StringComparison.Ordinal))
                 .ToList(),
         };
     }

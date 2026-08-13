@@ -99,22 +99,47 @@ public sealed class StudioCompositionInteractionsTests
     }
 
     [UnitTest]
-    public void BindInteraction_WithControlRef_IsRejectedWithTheControlsMessage()
+    public void BindInteraction_WithControlRef_ResolvesAgainstTheControlsCollection()
     {
-        // Studio composition documents declare no controls collection, so a `control:`
-        // reference is grammatical but can never resolve. The message has to say that
-        // rather than the generic "does not resolve", or an agent will keep retrying.
-        var body = ParcelComposition();
+        // The inverse of the pre-ADR-0031 behaviour: `control:{id}` was rejected outright
+        // because the composition body declared no controls collection. It now resolves by
+        // exact id match, exactly as `layer:` and `widget:` do — this is what makes ADR-0030's
+        // reserved control ref grammar and `change` event operative.
+        var body = StudioCompositionBodyEditor.AddControl(
+            ParcelComposition(),
+            new StudioCompositionControl { Id = "year-slider", Kind = "timeSlider", SourceId = "parcels" });
+
+        var bound = StudioCompositionBodyEditor.BindInteraction(
+            body,
+            SelectParcelFiltersChart() with
+            {
+                On = new StudioInteractionEvent { Ref = "control:year-slider", Event = "change" },
+            });
+
+        var interaction = Assert.Single(bound.Interactions!);
+        Assert.Equal("control:year-slider", interaction.On.Ref);
+        Assert.Equal("change", interaction.On.Event);
+    }
+
+    [UnitTest]
+    public void BindInteraction_WithUnknownControlRef_IsRejectedWithTheGenericUnresolvedMessage()
+    {
+        // A control ref that names no declared control is an ordinary unresolved reference
+        // now — the old "no controls collection exists" message would be a lie.
+        var body = StudioCompositionBodyEditor.AddControl(
+            ParcelComposition(),
+            new StudioCompositionControl { Id = "year-slider", Kind = "timeSlider" });
 
         var error = Assert.Throws<StudioCompositionConflictException>(() =>
             StudioCompositionBodyEditor.BindInteraction(
                 body,
                 SelectParcelFiltersChart() with
                 {
-                    On = new StudioInteractionEvent { Ref = "control:year-slider", Event = "change" },
+                    On = new StudioInteractionEvent { Ref = "control:decade-slider", Event = "change" },
                 }));
 
-        Assert.Contains("declare no controls collection", error.Message, StringComparison.Ordinal);
+        Assert.Contains("does not resolve", error.Message, StringComparison.Ordinal);
+        Assert.Contains("control:decade-slider", error.Message, StringComparison.Ordinal);
     }
 
     [UnitTest]
@@ -287,7 +312,8 @@ public sealed class StudioCompositionInteractionsTests
     [InlineData("widget:area-chart", StudioComponentRefResolution.Resolved)]
     [InlineData("layer:missing", StudioComponentRefResolution.Unresolved)]
     [InlineData("widget:missing", StudioComponentRefResolution.Unresolved)]
-    [InlineData("control:year-slider", StudioComponentRefResolution.ControlsUnsupported)]
+    [InlineData("control:year-slider", StudioComponentRefResolution.Resolved)]
+    [InlineData("control:missing", StudioComponentRefResolution.Unresolved)]
     [InlineData("layer:", StudioComponentRefResolution.Malformed)]
     [InlineData("parcels", StudioComponentRefResolution.Malformed)]
     [InlineData("", StudioComponentRefResolution.Malformed)]
@@ -315,6 +341,7 @@ public sealed class StudioCompositionInteractionsTests
     {
         Layers = [new StudioCompositionLayer { Id = "parcels", Type = "fill" }],
         Widgets = [new StudioCompositionWidget { Id = "area-chart", Kind = "chart" }],
+        Controls = [new StudioCompositionControl { Id = "year-slider", Kind = "timeSlider", SourceId = "parcels" }],
     };
 
     internal static StudioInteraction SelectParcelFiltersChart()
