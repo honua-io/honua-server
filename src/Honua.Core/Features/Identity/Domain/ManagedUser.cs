@@ -14,6 +14,22 @@ public sealed class ManagedUser
     public required string UserId { get; init; }
 
     /// <summary>
+    /// Stable external identifier for this identity — the SCIM <c>externalId</c> supplied by
+    /// the provisioning identity provider, which conventionally carries the case-sensitive
+    /// OIDC subject (<c>sub</c>/<c>NameIdentifier</c>). Stores index this value with
+    /// <see cref="ExternalIssuer"/> so a managed identity is resolvable even when the SCIM
+    /// <c>userName</c> differs from the OIDC subject captured in deferred security snapshots
+    /// (honua-server#3141).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
+    /// <summary>
+    /// OIDC issuer that owns <see cref="ExternalId"/>. Together the two values form the
+    /// stable authentication identity; subjects are not globally unique across issuers.
+    /// </summary>
+    public string? ExternalIssuer { get; init; }
+
+    /// <summary>
     /// Display name.
     /// </summary>
     public required string DisplayName { get; init; }

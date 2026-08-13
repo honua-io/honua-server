@@ -219,6 +219,13 @@ public sealed class ScimUser
     /// <summary>Server-assigned unique identifier.</summary>
     public string? Id { get; init; }
 
+    /// <summary>
+    /// Identifier owned by the provisioning identity provider (RFC 7643 §3.1), conventionally
+    /// the OIDC subject. Persisted and indexed so the managed identity resolves by subject as
+    /// well as by <c>userName</c> (honua-server#3141).
+    /// </summary>
+    public string? ExternalId { get; init; }
+
     /// <summary>Unique login identifier owned by the identity provider.</summary>
     public string? UserName { get; init; }
 
