@@ -7146,7 +7146,9 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld10_ReturnsDerivedSld",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld11_ReturnsDerivedSld11",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_DefaultAccept_ReturnsMapLibreStyle",
-        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_UnknownStyle_Returns404"
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_StandaloneStyle_AcceptEsriDrawingInfo_ReturnsDrawingInfo",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_UnknownStyle_Returns404",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_UnsupportedAccept_Returns406ListingEveryEncoding"
       ],
       "proof_ledger_surface": "ogc-api-styles",
       "maturity": "implemented",
@@ -21322,6 +21324,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_MapLibreRoundTripsToDrawingInfo",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_UpdatesCatalogStyle",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_WithDrawingInfo_StoresCanonicalMapLibre",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_UnknownStyle_Returns404",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithInvalidMapLibre_StrictHandling_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_WithValidMapLibre_Returns204"
       ],

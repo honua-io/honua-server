@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.Styling.Sld;
 
@@ -183,6 +184,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
         }
 
+        if (encoding == OgcStyleEncoding.EsriDrawingInfo)
+        {
+            // ADR-0002: the canonical document is the stored MapLibre style, so the Esri
+            // renderer is always back-generated from it here rather than served from the
+            // catalog's cached drawingInfo column — a cache written by an earlier edit must
+            // never shadow the canonical style a later MapLibre PUT replaced it with.
+            var descriptor = StandaloneStyleDescriptor.FromMapLibre(style.StyleId, style.MapLibreStyleJson!);
+            var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(style.MapLibreStyleJson!, descriptor);
+            return new OgcStylesheet(
+                drawingInfoJson,
+                OgcStyleMediaTypes.EsriDrawingInfo,
+                OgcStyleEncoding.EsriDrawingInfo);
+        }
+
         return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
     }
 
@@ -257,7 +272,15 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+            // Phase 2: the styleId may identify a catalog style rather than a collection-keyed
+            // one. Keep PUT symmetric with POST/DELETE, which already reach the catalog.
+            var bound = await ResolveCatalogStyleLayerAsync(styleId, cancellationToken).ConfigureAwait(false);
+            if (bound is null)
+            {
+                return await UpdateCatalogStyleAsync(styleId, mapLibreStyleJson, strict, cancellationToken).ConfigureAwait(false);
+            }
+
+            (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
         JsonElement parsed;
@@ -293,12 +316,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(drawingInfoJson);
 
-        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
-        if (resource is null || !storageLayerId.HasValue)
-        {
-            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
-        }
-
         JsonElement drawingInfo;
         try
         {
@@ -308,6 +325,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         catch (JsonException ex)
         {
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"drawingInfo is not valid JSON: {ex.Message}");
+        }
+
+        var (resource, storageLayerId, _) = await ResolveResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (resource is null || !storageLayerId.HasValue)
+        {
+            // Phase 2: catalog styles accept the negotiated Esri encoding on write too, so
+            // the console's drawingInfo authoring mode reaches them.
+            var bound = await ResolveCatalogStyleLayerAsync(styleId, cancellationToken).ConfigureAwait(false);
+            if (bound is null)
+            {
+                return await UpdateCatalogStyleFromDrawingInfoAsync(styleId, drawingInfo, strict, cancellationToken).ConfigureAwait(false);
+            }
+
+            (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
         // Convert Esri drawingInfo -> canonical MapLibre server-side (ADR-0002), capturing lossy symbolizers.
@@ -352,6 +383,146 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
             _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "drawingInfo is invalid.", warnings)
         };
+    }
+
+    // A catalog style whose id is not a collection name may still be bound to a layer — the
+    // per-layer default styles are mirrored into the catalog as "style-layer-{id}" and listed
+    // through this surface. Writing only the catalog copy for those would leave the canonical
+    // per-layer store (which every renderer reads) stale, so resolve the primary association
+    // and route the update through the same per-layer path a collection-keyed style uses; that
+    // path re-mirrors into the catalog, keeping one source of truth.
+    private async Task<(MetadataV2Resource Resource, int StorageLayerId)?> ResolveCatalogStyleLayerAsync(
+        string styleId,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return null;
+        }
+
+        var associations = await _independentStyleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
+        var association = associations
+            .Where(candidate => string.Equals(candidate.StyleId, styleId, StringComparison.Ordinal))
+            .OrderBy(candidate => candidate.Ordinal)
+            .FirstOrDefault();
+        if (association is null)
+        {
+            return null;
+        }
+
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(association.LayerId, out var resource) && resource is not null
+            ? (resource, association.LayerId)
+            : null;
+    }
+
+    // Phase 2 write path: update a standalone catalog style from a MapLibre document.
+    // Applies the same validation POST does — a standalone style has no layer binding, so
+    // the per-layer normalizer (which requires a Honua tile source) cannot be used.
+    private async Task<OgcStyleUpdateResult> UpdateCatalogStyleAsync(
+        string styleId,
+        string mapLibreStyleJson,
+        bool strict,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, strict, out var error))
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, error);
+        }
+
+        await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null);
+    }
+
+    // Phase 2 write path: update a standalone catalog style from an Esri drawingInfo
+    // renderer. The renderer is converted server-side (ADR-0002) and only the resulting
+    // canonical MapLibre style is stored, so MapLibre stays the single source of truth and
+    // the Esri encoding is re-derived on read.
+    private async Task<OgcStyleUpdateResult> UpdateCatalogStyleFromDrawingInfoAsync(
+        string styleId,
+        JsonElement drawingInfo,
+        bool strict,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        var existing = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        }
+
+        // Both converters are geometry-driven. Prefer the geometry the submitted renderer
+        // symbolizes; fall back to the geometry the stored canonical style already uses.
+        var descriptor = StandaloneStyleDescriptor.FromMapLibre(styleId, existing.MapLibreStyleJson);
+        var geometryType = StandaloneStyleDescriptor.InferGeometryType(drawingInfo);
+        if (geometryType == MetadataV2GeometryType.None)
+        {
+            geometryType = descriptor.GeometryType;
+        }
+
+        if (geometryType == MetadataV2GeometryType.None)
+        {
+            // Converting with an unknown geometry would silently replace the canonical style
+            // with an empty default document; reject instead.
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The geometry type the renderer symbolizes could not be determined. Use symbols of type esriSMS/esriPMS (point), esriSLS (line), or esriSFS (polygon).");
+        }
+
+        var conversion = _geoServicesConverter.Convert(drawingInfo, descriptor.Id, styleId, geometryType);
+
+        var warnings = conversion.Unsupported.Count == 0
+            ? null
+            : conversion.Unsupported.Select(u => $"{u.Code} ({u.SymbolizerType}): {u.Guidance}").ToArray();
+
+        // Strict: never persist a lossy conversion — reject so the operator can adjust the renderer.
+        if (strict && warnings is { Length: > 0 })
+        {
+            return new OgcStyleUpdateResult(
+                OgcStyleUpdateStatus.Invalid,
+                "The renderer uses features the canonical MapLibre style cannot represent. Resubmit without strict handling to accept the lossy conversion.",
+                warnings);
+        }
+
+        await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings);
+    }
+
+    // Replaces the canonical MapLibre document of an existing catalog style, keeping its
+    // descriptive metadata and letting the store increment style_version. The cached
+    // drawingInfo column is deliberately cleared: the Esri encoding is derived from the
+    // canonical style on read, so a stale cache must never outlive the style it mirrored.
+    private async Task PersistCatalogStyleAsync(
+        StyleCatalogRecord existing,
+        string mapLibreStyleJson,
+        CancellationToken cancellationToken)
+    {
+        _ = await _independentStyleCatalog!
+            .UpsertStyleAsync(
+                existing.StyleId,
+                mapLibreStyleJson,
+                existing.Title,
+                existing.Description,
+                drawingInfoJson: null,
+                revisedBy: null,
+                changeSummary: null,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
@@ -18,10 +19,10 @@ using Honua.TestKit.Extensions;
 namespace Honua.Server.Tests.Features.Styling;
 
 /// <summary>
-/// Integration tests for the OGC API - Styles Phase 1 adapter (ADR-0048, issue #1388).
+/// Integration tests for the OGC API - Styles adapter (ADR-0048, issues #1388/#1389).
 /// Covers landing/styles list, conformance, content-negotiated stylesheets (MapLibre +
-/// derived SLD), style metadata, manage-styles PUT (with strict validation), and the
-/// 501 responses for standalone POST-create / DELETE.
+/// derived SLD and Esri drawingInfo), style metadata, and the manage-styles PUT/POST/DELETE
+/// surface for both collection-keyed and standalone catalog styles (#3188).
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
@@ -30,6 +31,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
     private const string Sld10MediaType = "application/vnd.ogc.sld+xml;version=1.0";
     private const string Sld11MediaType = "application/vnd.ogc.sld+xml;version=1.1";
+    private const string EsriDrawingInfoMediaType = "application/vnd.esri.drawinginfo+json";
 
     private readonly WebAppFixture _fixture = new();
 
@@ -312,6 +314,196 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStylesheet_StandaloneStyle_AcceptEsriDrawingInfo_ReturnsDrawingInfo()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(EsriDrawingInfoMediaType));
+
+        var response = await client.SendAsync(request);
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(EsriDrawingInfoMediaType);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSMS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStylesheet_UnsupportedAccept_Returns406ListingEveryEncoding()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("text/csv"));
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var detail = document.RootElement.GetProperty("detail").GetString();
+        detail.Should().Contain(MapboxStyleMediaType);
+        detail.Should().Contain(Sld10MediaType);
+        detail.Should().Contain(Sld11MediaType);
+        detail.Should().Contain(EsriDrawingInfoMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_StandaloneStyle_UpdatesCatalogStyle()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        // Replace the canonical document with a line style so the update is observable.
+        using var content = new StringContent(
+            BuildStyleJson(MetadataV2GeometryType.LineString),
+            Encoding.UTF8,
+            MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = content
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        fetched.Be200Ok();
+        using var document = JsonDocument.Parse(await fetched.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("line");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_StandaloneStyle_MapLibreRoundTripsToDrawingInfo()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        using var content = new StringContent(
+            BuildStyleJson(MetadataV2GeometryType.LineString),
+            Encoding.UTF8,
+            MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = content
+        };
+        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // The Esri encoding is derived from the canonical MapLibre style that was just PUT,
+        // so it must reflect the new geometry rather than the drawingInfo cached at create.
+        using var esriRequest = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        esriRequest.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(EsriDrawingInfoMediaType));
+
+        var esriResponse = await client.SendAsync(esriRequest);
+
+        esriResponse.Be200Ok();
+        using var document = JsonDocument.Parse(await esriResponse.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSLS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_StandaloneStyle_WithDrawingInfo_StoresCanonicalMapLibre()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
+
+        var drawingInfo = JsonSerializer.Serialize(
+            StyleDefaults.BuildDefaultDrawingInfo(MetadataV2GeometryType.Polygon));
+        using var content = new StringContent(drawingInfo, Encoding.UTF8, EsriDrawingInfoMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = content
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // MapLibre stays the single source of truth: the renderer was converted on write.
+        var mapLibre = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        mapLibre.Be200Ok();
+        mapLibre.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+        using var mapLibreDocument = JsonDocument.Parse(await mapLibre.Content.ReadAsStringAsync());
+        mapLibreDocument.RootElement.GetProperty("layers").EnumerateArray()
+            .Should().Contain(layer => layer.GetProperty("type").GetString() == "fill");
+
+        // ...and reading the Esri encoding back derives the same symbolizer family.
+        using var esriRequest = new HttpRequestMessage(HttpMethod.Get, $"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        esriRequest.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(EsriDrawingInfoMediaType));
+        var esriResponse = await client.SendAsync(esriRequest);
+        esriResponse.Be200Ok();
+        using var esriDocument = JsonDocument.Parse(await esriResponse.Content.ReadAsStringAsync());
+        esriDocument.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSFS");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        // Seeding a layer style mirrors it into the catalog as "style-layer-{id}", which the
+        // styles list surfaces. Editing that style must reach the canonical per-layer store.
+        await SeedTestLayerStyleAsync(client);
+        var styleId = $"style-layer-{WebAppFixture.TestLayerId}";
+
+        var style = JsonNode.Parse(BuildDefaultStyleJson())!;
+        style["layers"]![0]!["paint"]!["circle-color"] = "#ff0000";
+
+        using var content = new StringContent(style.ToJsonString(), Encoding.UTF8, MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        {
+            Content = content
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var layerStyle = await client.GetAsync($"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style");
+        layerStyle.Be200Ok();
+        using var document = JsonDocument.Parse(await layerStyle.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
+            .GetProperty("layers")[0].GetProperty("paint").GetProperty("circle-color")
+            .GetString().Should().Be("#ff0000");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task PutStyle_UnknownStyle_Returns404()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/missing-{Guid.NewGuid():N}")
+        {
+            Content = content
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_IncludesStylesAndStylesheetLinks()
     {
@@ -363,12 +555,32 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         response.Be200Ok();
     }
 
-    private static string BuildDefaultStyleJson()
+    /// <summary>
+    /// Creates a standalone (layer-less) catalog style through the manage-styles POST
+    /// surface and returns its identifier.
+    /// </summary>
+    private static async Task<string> CreateStandaloneStyleAsync(
+        HttpClient adminClient,
+        MetadataV2GeometryType geometryType)
+    {
+        var styleId = $"standalone-{Guid.NewGuid():N}";
+        using var content = new StringContent(BuildStyleJson(geometryType), Encoding.UTF8, MapboxStyleMediaType);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+
+        var response = await adminClient.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return styleId;
+    }
+
+    private static string BuildDefaultStyleJson() => BuildStyleJson(MetadataV2GeometryType.Point);
+
+    private static string BuildStyleJson(MetadataV2GeometryType geometryType)
     {
         var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            MetadataV2GeometryType.Point);
+            geometryType);
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         return JsonSerializer.Serialize(style);
     }

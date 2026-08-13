@@ -23,10 +23,10 @@ namespace Honua.Protocols.Ogc.Api.Styles;
 /// <summary>
 /// OGC API - Styles endpoints (ADR-0048, Phase 1). Projects Honua's per-layer style
 /// storage as conformant OGC styles: landing, conformance, OpenAPI, the styles list,
-/// content-negotiated stylesheets (MapLibre canonical + derived SLD 1.0/1.1), style
-/// metadata, and a partial <c>manage-styles</c> surface (PUT only). Standalone style
-/// create (POST) and delete (DELETE) return 501 until the Phase 2 independent style
-/// catalog lands (issue #1389).
+/// content-negotiated stylesheets (MapLibre canonical + derived SLD 1.0/1.1 and Esri
+/// drawingInfo), style metadata, and the <c>manage-styles</c> surface (PUT/POST/DELETE).
+/// PUT, POST, and DELETE all reach standalone styleId-keyed styles in the independent
+/// style catalog (ADR-0048 Phase 2, issue #1389).
 /// </summary>
 public static class OgcStylesEndpoints
 {
@@ -97,7 +97,7 @@ public static class OgcStylesEndpoints
             .WithDisplayName("Update Style")
             .WithName("UpdateStyle")
             .WithSummary("Update an existing style (manage-styles)")
-            .WithDescription("Validates and stores a MapLibre stylesheet for an existing style. Honors Prefer: handling=strict and ?validate. Creating standalone styles is not yet supported (Phase 2).")
+            .WithDescription("Validates and stores a MapLibre stylesheet (or an Esri drawingInfo renderer, converted server-side) for an existing style, whether it is a collection-keyed style or a standalone catalog style. Honors Prefer: handling=strict and ?validate. Use POST to create a standalone style.")
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
@@ -241,7 +241,7 @@ public static class OgcStylesEndpoints
         {
             return StandardErrorHelpers.CreateNotAcceptable(
                 context,
-                "Supported stylesheet media types are application/vnd.mapbox.style+json, application/vnd.ogc.sld+xml;version=1.0, and application/vnd.ogc.sld+xml;version=1.1.");
+                "Supported stylesheet media types are application/vnd.mapbox.style+json, application/vnd.ogc.sld+xml;version=1.0, application/vnd.ogc.sld+xml;version=1.1, and application/vnd.esri.drawinginfo+json.");
         }
 
         var stylesheet = await projection.GetStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
