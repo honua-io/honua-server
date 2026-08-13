@@ -36,8 +36,9 @@ internal static class StandaloneStyleDescriptor
             var root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object)
             {
-                layerId = ReadStorageLayerId(root);
-                geometryType = ReadGeometryType(root);
+                var (symbolizingGeometryType, sourceName) = ReadSymbolizingLayer(root);
+                geometryType = symbolizingGeometryType;
+                layerId = ResolveStorageLayerId(root, sourceName);
             }
         }
         catch (JsonException)
@@ -115,14 +116,22 @@ internal static class StandaloneStyleDescriptor
         return geometryType != GeometryType.None;
     }
 
-    private static GeometryType ReadGeometryType(JsonElement root)
+    /// <summary>
+    /// Finds the layer whose symbology defines the style, returning both the geometry type
+    /// it implies and the name of the source it draws from. The source travels with the
+    /// geometry type because the conversion has to be bound to the layer that was actually
+    /// selected, not to whichever source happens to be declared first.
+    /// </summary>
+    private static (GeometryType GeometryType, string? SourceName) ReadSymbolizingLayer(JsonElement root)
     {
         if (!root.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array)
         {
-            return GeometryType.None;
+            return (GeometryType.None, null);
         }
 
         var fallbackGeometryType = GeometryType.None;
+        string? fallbackSourceName = null;
+
         foreach (var layer in layers.EnumerateArray())
         {
             if (layer.ValueKind != JsonValueKind.Object
@@ -142,46 +151,85 @@ internal static class StandaloneStyleDescriptor
                 _ => GeometryType.None
             };
 
+            var sourceName = layer.TryGetProperty("source", out var sourceElement)
+                && sourceElement.ValueKind == JsonValueKind.String
+                    ? sourceElement.GetString()
+                    : null;
+
             // A symbol layer is commonly a label overlay for a concrete fill/line/circle
             // layer later in the document. Remember it only as a fallback so labels do not
             // misclassify polygon or line styles as points.
             if (string.Equals(layerType, "symbol", StringComparison.Ordinal))
             {
-                fallbackGeometryType = geometryType;
+                if (fallbackGeometryType == GeometryType.None)
+                {
+                    fallbackGeometryType = geometryType;
+                    fallbackSourceName = sourceName;
+                }
             }
             else if (geometryType != GeometryType.None)
             {
-                return geometryType;
+                return (geometryType, sourceName);
             }
         }
 
-        return fallbackGeometryType;
+        return (fallbackGeometryType, fallbackSourceName);
     }
 
-    private static int ReadStorageLayerId(JsonElement root)
+    /// <summary>
+    /// Resolves the storage-layer id the conversion must be bound to, preferring the source
+    /// the symbolizing layer actually references.
+    /// </summary>
+    private static int ResolveStorageLayerId(JsonElement root, string? sourceName)
     {
         if (!root.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Object)
         {
             return 0;
         }
 
+        // Bind to the source the selected layer draws from. With several layer-* sources
+        // present, declaration order says nothing about which one the style symbolizes, and
+        // picking the wrong one silently repoints the rebuilt canonical document (and its
+        // tile URL) at an unrelated data layer.
+        if (!string.IsNullOrEmpty(sourceName)
+            && sources.TryGetProperty(sourceName, out _)
+            && TryParseStorageLayerId(sourceName, out var boundLayerId))
+        {
+            return boundLayerId;
+        }
+
+        // The symbolizing layer named no usable Honua source, so fall back to the document's
+        // own binding — but only while it is unambiguous. Several distinct layer-* sources
+        // with nothing selecting between them is a genuine ambiguity: report "no layer"
+        // rather than guessing, so the converters use their geometry-only default instead of
+        // rebuilding the style against an arbitrary layer.
+        var resolved = 0;
         foreach (var name in sources.EnumerateObject().Select(source => source.Name))
         {
-            if (!name.StartsWith("layer-", StringComparison.Ordinal))
+            if (!TryParseStorageLayerId(name, out var candidate))
             {
                 continue;
             }
 
-            if (int.TryParse(
-                    name.AsSpan("layer-".Length),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var layerId))
+            if (resolved != 0 && resolved != candidate)
             {
-                return layerId;
+                return 0;
             }
+
+            resolved = candidate;
         }
 
-        return 0;
+        return resolved;
+    }
+
+    private static bool TryParseStorageLayerId(string sourceName, out int layerId)
+    {
+        layerId = 0;
+        return sourceName.StartsWith("layer-", StringComparison.Ordinal)
+            && int.TryParse(
+                sourceName.AsSpan("layer-".Length),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out layerId);
     }
 }

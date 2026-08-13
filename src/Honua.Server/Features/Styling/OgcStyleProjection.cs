@@ -10,6 +10,8 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.Styling.Sld;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Styling;
 
@@ -29,6 +31,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private readonly IGeoServicesStyleConverter _geoServicesConverter;
     private readonly IStyleCatalog? _independentStyleCatalog;
     private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
+    private readonly ILogger _logger;
 
     public OgcStyleProjection(
         IMetadataV2GraphProvider graphProvider,
@@ -36,8 +39,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ILayerStyleCatalog styleCatalog,
         IGeoServicesStyleConverter geoServicesConverter,
         IStyleCatalog? independentStyleCatalog = null,
-        IMetadataV2StyleGraphSync? styleGraphSync = null)
+        IMetadataV2StyleGraphSync? styleGraphSync = null,
+        ILogger<OgcStyleProjection>? logger = null)
     {
+        _logger = logger ?? NullLogger<OgcStyleProjection>.Instance;
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _styleService = styleService ?? throw new ArgumentNullException(nameof(styleService));
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
@@ -550,18 +555,35 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         if (_styleGraphSync is not null)
         {
-            var associations = await _independentStyleCatalog
-                .ListAssociationsAsync(cancellationToken)
-                .ConfigureAwait(false);
-            foreach (var layerId in associations
-                         .Where(association => string.Equals(
-                             association.StyleId,
-                             existing.StyleId,
-                             StringComparison.Ordinal))
-                         .Select(association => association.LayerId)
-                         .Distinct())
+            // The catalog write above has already committed and incremented style_version, so
+            // this mirror into the metadata-v2 graph is strictly post-commit. Reporting a
+            // failure here would surface a successful edit as a 500: the endpoint would skip
+            // its output-cache eviction (serving the stale list for the whole TTL) and a
+            // client retry would apply a second revision of an edit that already landed.
+            // Best-effort, mirroring LayerStyleService's own catalog/graph sync — log it and
+            // let StyleResourceIds lag until the next publish.
+            try
             {
-                await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                var associations = await _independentStyleCatalog
+                    .ListAssociationsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var layerId in associations
+                             .Where(association => string.Equals(
+                                 association.StyleId,
+                                 existing.StyleId,
+                                 StringComparison.Ordinal))
+                             .Select(association => association.LayerId)
+                             .Distinct())
+                {
+                    await _styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            // Intentional broad catch: a post-commit synchronization failure must not be
+            // reported as a failed edit. Cancellation still propagates so a shutdown or an
+            // aborted request is not silently swallowed.
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
             }
         }
 
