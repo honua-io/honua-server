@@ -81,8 +81,9 @@ public sealed class FeatureStreamOptions
     /// </summary>
     /// <remarks>
     /// <see cref="MaxSnapshotFeatures"/> bounds the feature COUNT, which says nothing about the
-    /// response size: 5000 parcel multipolygons are two orders of magnitude larger than 5000
-    /// building footprints. Deployments that buffer the whole response before returning it
+    /// response size: on the demo seed the same 5000-feature cap yields a ~6.6 MB baseline for
+    /// parcel multipolygons but ~3.3 MB for building footprints, so geometry complexity alone
+    /// moves the payload by a factor of two. Deployments that buffer the whole response before returning it
     /// (API gateways and serverless function URLs typically cap an invoke response at 6 MB)
     /// discard an over-large 200 and substitute their own untyped 500, so a baseline the server
     /// considered successful never reaches the client (honua-server#3181). Bounding the payload
