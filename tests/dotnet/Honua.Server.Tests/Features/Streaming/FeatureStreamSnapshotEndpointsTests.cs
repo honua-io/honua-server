@@ -1256,6 +1256,38 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotMode_WhenSessionLimitReached_DoesNotRunStorePreflight()
+    {
+        // Admission must precede the storage probe. Otherwise callers rejected by the session
+        // cap can still make the server scan the feature store before receiving a 503.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var fixture = CreateLimitedFixtureWithUnreadableFeatureReader(maxConcurrentSessions: 1);
+        await fixture.InitializeAsync();
+        try
+        {
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
+            using var response = await fixture.CreateAdminClient()
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync(cts.Token);
+            body.Should().Contain("session limit");
+            body.Should().NotContain("baseline snapshot cannot be served",
+                "the rejected request must not reach snapshot storage preflight");
+            sessionManager.SessionCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_DeltaMode_UnreadableLayer_IsUnaffectedByTheSnapshotPreflight()
     {
         // The pre-flight probe is scoped to snapshot subscriptions: delta delivery never reads
@@ -1333,6 +1365,15 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                     sp => new UnreadableFeatureReader(CreateFeatureReader(sp, original)),
                     original.Lifetime));
             });
+
+    private static WebAppFixture CreateLimitedFixtureWithUnreadableFeatureReader(int maxConcurrentSessions)
+        => CreateFixtureWithUnreadableFeatureReader()
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration(
+                (_, configBuilder) => configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureStreaming:MaxConcurrentSessions"] =
+                        maxConcurrentSessions.ToString(CultureInfo.InvariantCulture)
+                })));
 
     private static IFeatureReader CreateFeatureReader(
         IServiceProvider serviceProvider,

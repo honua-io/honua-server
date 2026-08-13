@@ -77,13 +77,13 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
+        FeatureStreamSession session,
         IStreamSubscriptionFilter? subscriptionFilter,
         FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
 
@@ -96,15 +96,6 @@ internal static partial class FeatureStreamEndpoints
                 cursor = lei;
             }
         }
-
-        var session = sessionManager.TryCreateSession(SseTransport, NullIfEmpty(clientLabel), subscriptionFilter);
-        if (session is null)
-        {
-            await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
-            return;
-        }
-
-        using var sessionLease = session;
 
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";

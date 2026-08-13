@@ -26,6 +26,7 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDependencies deps,
         ILogger logger,
         HttpContext context,
+        FeatureStreamSession session,
         IStreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
         FeatureStreamSubscriptionMode mode)
@@ -33,21 +34,8 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-        var session = sessionManager.TryCreateSession(
-            WebSocketTransport,
-            NullIfEmpty(clientLabel),
-            subscriptionFilter,
-            addDefaultSubscription);
-        if (session is null)
-        {
-            await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
-            return;
-        }
-
-        using var sessionLease = session;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
         // The default subscription is allocated at session creation and is never replaced
