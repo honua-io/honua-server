@@ -149,6 +149,21 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Sweep_RetentionHoldEstablishedAfterEligibilityCheck_IsNeverDeleted()
+    {
+        var key = await StageObjectAsync("job-registering", attempt: 1);
+        _jobStore.GetAsync("job-registering", Arg.Any<CancellationToken>())
+            .Returns(CreateJob("job-registering", ExecutionJobStatus.Cancelled, attemptCount: 1));
+        var racingStore = new RetentionHoldRaceOutputStore(_store, key);
+
+        var result = await CreateSweeper(racingStore).SweepOnceAsync(CancellationToken.None);
+
+        result.Deleted.Should().Be(0);
+        (await _store.HasRetentionHoldAsync(key)).Should().BeTrue();
+        (await _store.GetInfoAsync(key)).Should().NotBeNull();
+    }
+
+    [UnitTest]
     public async Task Sweep_ActivelyReadObject_IsNeverDeleted()
     {
         var key = await StageObjectAsync("job-reading", attempt: 1);
@@ -191,9 +206,10 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
         (await _store.GetInfoAsync("gp/outputs/manual-upload.tif")).Should().NotBeNull();
     }
 
-    private GeoprocessingOutputArtifactSweeper CreateSweeper()
+    private GeoprocessingOutputArtifactSweeper CreateSweeper(
+        IGeoprocessingOutputObjectStore? store = null)
         => new(
-            _store,
+            store ?? _store,
             _jobStore,
             new StaticOptionsMonitor<GeoprocessingOutputStagingOptions>(_options),
             NullLogger<GeoprocessingOutputArtifactSweeper>.Instance);
@@ -243,6 +259,59 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
             StoreReference = "gp-outputs",
             ObjectKey = objectKey,
         };
+
+    private sealed class RetentionHoldRaceOutputStore(
+        IGeoprocessingOutputObjectStore inner,
+        string targetObjectKey) : IGeoprocessingOutputObjectStore
+    {
+        private int _retentionChecks;
+
+        public CloudStorageProvider Provider => inner.Provider;
+
+        public string StoreReference => inner.StoreReference;
+
+        public Task<RasterContentIdentity> WriteAsync(
+            string objectKey, Stream content, string mediaType, CancellationToken cancellationToken = default)
+            => inner.WriteAsync(objectKey, content, mediaType, cancellationToken);
+
+        public Task<Stream?> OpenReadAsync(string objectKey, CancellationToken cancellationToken = default)
+            => inner.OpenReadAsync(objectKey, cancellationToken);
+
+        public Task<GeoprocessingStagedObjectInfo?> GetInfoAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+            => inner.GetInfoAsync(objectKey, cancellationToken);
+
+        public IAsyncEnumerable<GeoprocessingStagedObjectInfo> ListAsync(
+            string keyPrefix, CancellationToken cancellationToken = default)
+            => inner.ListAsync(keyPrefix, cancellationToken);
+
+        public Task<bool> DeleteAsync(string objectKey, CancellationToken cancellationToken = default)
+            => inner.DeleteAsync(objectKey, cancellationToken);
+
+        public Task<bool> TryAcquireReadLeaseAsync(
+            string objectKey, TimeSpan duration, CancellationToken cancellationToken = default)
+            => inner.TryAcquireReadLeaseAsync(objectKey, duration, cancellationToken);
+
+        public Task<bool> HasActiveReadLeaseAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+            => inner.HasActiveReadLeaseAsync(objectKey, cancellationToken);
+
+        public Task<bool> SetRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+            => inner.SetRetentionHoldAsync(objectKey, cancellationToken);
+
+        public async Task<bool> HasRetentionHoldAsync(
+            string objectKey, CancellationToken cancellationToken = default)
+        {
+            if (string.Equals(objectKey, targetObjectKey, StringComparison.Ordinal)
+                && Interlocked.Increment(ref _retentionChecks) == 2)
+            {
+                await inner.SetRetentionHoldAsync(objectKey, cancellationToken);
+            }
+
+            return await inner.HasRetentionHoldAsync(objectKey, cancellationToken);
+        }
+    }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {

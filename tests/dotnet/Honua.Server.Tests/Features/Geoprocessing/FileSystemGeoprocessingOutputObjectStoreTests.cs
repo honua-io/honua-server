@@ -116,7 +116,7 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
         }
 
         File.WriteAllText(
-            Path.Combine(_root, "gp/outputs/job/a1/output1/result.tif.readlease"),
+            Path.Join(_root, "gp/outputs/job/a1/output1/result.tif.readlease"),
             "not-a-tick-count");
 
         (await _store.HasActiveReadLeaseAsync("gp/outputs/job/a1/output1/result.tif")).Should().BeTrue();

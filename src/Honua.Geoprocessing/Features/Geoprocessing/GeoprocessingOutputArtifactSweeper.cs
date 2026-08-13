@@ -95,6 +95,15 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
                         continue;
                     }
 
+                    // Registration may establish a durable hold after
+                    // ShouldDeleteAsync inspected the object. Recheck it in the same
+                    // final guard as the read lease so the catalog can never race a
+                    // destructive sweep.
+                    if (await store.HasRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
                     await store.DeleteAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false);
                     deleted++;
                     Log.OrphanDeleted(logger, staged.ObjectKey);
@@ -180,10 +189,14 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
 
     private static bool IsReferencedByJob(ExecutionJobRecord job, string objectKey)
     {
-        foreach (var reference in job.ArtifactReferences)
+        var parsedDescriptors = job.ArtifactReferences
+            .Select(static reference => RasterOutputJson.TryDeserialize(reference, out var descriptor)
+                ? descriptor
+                : null)
+            .Where(static descriptor => descriptor is StagedObjectRasterOutputDescriptor);
+        foreach (var descriptor in parsedDescriptors)
         {
-            if (RasterOutputJson.TryDeserialize(reference, out var descriptor)
-                && descriptor is StagedObjectRasterOutputDescriptor staged
+            if (descriptor is StagedObjectRasterOutputDescriptor staged
                 && string.Equals(staged.ObjectKey, objectKey, StringComparison.Ordinal))
             {
                 return true;

@@ -291,15 +291,16 @@ public static class RasterOutputDescriptorValidator
 
         if (objectKey is { Length: > 0 })
         {
-            foreach (var segment in objectKey.Split('/', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (segment.EndsWith(".zarr", StringComparison.OrdinalIgnoreCase)
+            var zarrSegments = objectKey
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Where(static segment =>
+                    segment.EndsWith(".zarr", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(segment, "zarr.json", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(segment, ".zgroup", StringComparison.Ordinal)
-                    || string.Equals(segment, ".zarray", StringComparison.Ordinal))
-                {
-                    return true;
-                }
+                    || string.Equals(segment, ".zarray", StringComparison.Ordinal));
+            if (zarrSegments.Any())
+            {
+                return true;
             }
         }
 

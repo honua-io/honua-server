@@ -112,6 +112,18 @@ public sealed class OgcProcessesStagedArtifactContentTests
 
     [IntegrationTest]
     [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_UnreconciledRegistrationIntent_FailsClosed()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.RegistrationPendingJobId}/results/artifacts/0/content");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        (await response.Content.ReadAsByteArrayAsync()).Should().NotEqual(_fixture.StagedPayload);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task JobResults_StagedArtifact_LinksContentRouteWithoutPayload()
     {
@@ -252,6 +264,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
     public const string SucceededJobId = "gp-staged-succeeded-001";
     public const string RunningJobId = "gp-staged-running-001";
     public const string CancelledJobId = "gp-staged-cancelled-001";
+    public const string RegistrationPendingJobId = "gp-staged-registration-pending-001";
 
     private readonly string _storeRoot = Directory.CreateTempSubdirectory("honua-ogc-staged-content-").FullName;
 
@@ -292,13 +305,22 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         var succeeded = CreateJob(SucceededJobId, ExecutionJobStatus.Succeeded, reference);
         var running = CreateJob(RunningJobId, ExecutionJobStatus.Running, reference);
         var cancelled = CreateJob(CancelledJobId, ExecutionJobStatus.Cancelled, reference);
+        var registrationPending = CreateJob(
+            RegistrationPendingJobId,
+            ExecutionJobStatus.Succeeded,
+            reference,
+            registrationTarget: "cog-catalog:7");
 
         var mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         mockJobStore.GetAsync(SucceededJobId, Arg.Any<CancellationToken>()).Returns(succeeded);
         mockJobStore.GetAsync(RunningJobId, Arg.Any<CancellationToken>()).Returns(running);
         mockJobStore.GetAsync(CancelledJobId, Arg.Any<CancellationToken>()).Returns(cancelled);
+        mockJobStore.GetAsync(RegistrationPendingJobId, Arg.Any<CancellationToken>()).Returns(registrationPending);
         mockJobStore.GetAsync(
-                Arg.Is<string>(id => id != SucceededJobId && id != RunningJobId && id != CancelledJobId),
+                Arg.Is<string>(id => id != SucceededJobId
+                    && id != RunningJobId
+                    && id != CancelledJobId
+                    && id != RegistrationPendingJobId),
                 Arg.Any<CancellationToken>())
             .Returns((ExecutionJobRecord?)null);
 
@@ -332,7 +354,11 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         return payload;
     }
 
-    private static ExecutionJobRecord CreateJob(string jobId, ExecutionJobStatus status, string reference)
+    private static ExecutionJobRecord CreateJob(
+        string jobId,
+        ExecutionJobStatus status,
+        string reference,
+        string? registrationTarget = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -349,7 +375,13 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "test-backend",
                 Kind = ExecutionJobKind.Geoprocessing,
-                WorkloadName = "raster.resample"
+                WorkloadName = "raster.resample",
+                Parameters = registrationTarget is null
+                    ? new Dictionary<string, string>(StringComparer.Ordinal)
+                    : new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["honua.geoprocessing.output_registration.outputRaster"] = registrationTarget,
+                    }
             }
         };
     }

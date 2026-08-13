@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.ControlPlane;
@@ -122,6 +123,16 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
                     + "registered into the COG catalog (#3103).");
             }
 
+            if (staged.Provider == CloudStorageProvider.Local)
+            {
+                // The COG serving surface intentionally has no Local range reader.
+                // Inserting this descriptor would create a permanent catalog row
+                // that can never be resolved by the tile/content endpoints.
+                throw new GeoprocessingValidationException(
+                    $"Output registration for '{outputName}' references local staged storage, which cannot "
+                    + "be served by the cloud COG catalog. Use an AwsS3 or AzureBlob staged output provider.");
+            }
+
             if (cogStore is null)
             {
                 throw new InvalidOperationException(
@@ -129,16 +140,14 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
                     + "deployment.");
             }
 
-            var rasterId = await RegisterOrGetAsync(
-                cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
-
-            // The catalog row is permanent while the job record expires from Redis, so
-            // the durable retention hold on the staged object — not the job record —
-            // is what exempts a registered object from orphan sweeping. Setting the
-            // hold is part of registration: failing it fails this pass, and the
-            // idempotent replay (terminal callback or next results read) completes it.
+            // Protect the staged object before publishing its permanent catalog row.
+            // A failed catalog write can be retried against the held immutable object;
+            // the reverse order could expose a row whose object was never protected.
             await EnsureRetentionHoldAsync(job.OperationId, outputName, staged, cancellationToken)
                 .ConfigureAwait(false);
+
+            var rasterId = await RegisterOrGetAsync(
+                cogStore, layerId, staged, cancellationToken).ConfigureAwait(false);
 
             registeredByOutput[outputName] = (layerId, rasterId);
             Log.OutputRegistered(logger, job.OperationId, outputName, layerId, rasterId);
@@ -155,11 +164,9 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
     {
         if (!RasterOutputContentRoutes.CanServe(outputStore, staged.Provider.ToString(), staged.StoreReference))
         {
-            // No matching store on this host: the hold cannot be written here. This is
-            // the split-host misconfiguration surfaced by the content route as well;
-            // log loudly rather than failing registration for a store-topology issue.
-            Log.RetentionHoldStoreUnavailable(logger, jobId, outputName);
-            return;
+            throw new InvalidOperationException(
+                $"Output registration for '{outputName}' of job '{jobId}' cannot protect staged object "
+                + $"'{staged.ObjectKey}': no matching output store is configured on this host.");
         }
 
         if (!await outputStore!.SetRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
@@ -235,14 +242,11 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
     private static Dictionary<string, string> CollectIntents(ExecutionJobRecord job)
     {
         var intents = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (key, value) in job.Spec.Parameters)
+        foreach (var (key, value) in job.Spec.Parameters.Where(static parameter =>
+                     parameter.Key.StartsWith(
+                         ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix,
+                         StringComparison.Ordinal)))
         {
-            if (!key.StartsWith(
-                    ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
             var outputName = key[ExecutionJobParameterKeys.GeoprocessingOutputRegistrationPrefix.Length..];
             if (!string.IsNullOrWhiteSpace(outputName) && !string.IsNullOrWhiteSpace(value))
             {
@@ -256,12 +260,14 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
     private static Dictionary<string, RasterOutputDescriptor> CollectDescriptors(ExecutionJobRecord job)
     {
         var descriptors = new Dictionary<string, RasterOutputDescriptor>(StringComparer.Ordinal);
-        foreach (var reference in job.ArtifactReferences)
+        var parsedDescriptors = job.ArtifactReferences
+            .Select(static reference => RasterOutputJson.TryDeserialize(reference, out var descriptor)
+                ? descriptor
+                : null)
+            .Where(static descriptor => descriptor is not null);
+        foreach (var descriptor in parsedDescriptors)
         {
-            if (RasterOutputJson.TryDeserialize(reference, out var descriptor))
-            {
-                descriptors[descriptor.OutputName] = descriptor;
-            }
+            descriptors[descriptor!.OutputName] = descriptor;
         }
 
         return descriptors;
@@ -304,8 +310,5 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
         public static partial void OutputRegistered(
             ILogger logger, string operationId, string outputName, int layerId, long rasterId);
 
-        [LoggerMessage(8037, LogLevel.Warning,
-            "No matching staged output store on this host for registered output '{OutputName}' of job {OperationId}; the retention hold cannot be written here and the object may be swept once the job record expires. Configure Geoprocessing:OutputStaging identically on the serving host.")]
-        public static partial void RetentionHoldStoreUnavailable(ILogger logger, string operationId, string outputName);
     }
 }

@@ -89,6 +89,21 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
     }
 
     [UnitTest]
+    public async Task EnsureRegistered_LocalStagedObject_FailsClosedAndInsertsNothing()
+    {
+        var cogStore = new UniqueConstraintCogStore();
+        var registrar = CreateRegistrar(cogStore);
+        var job = CreateSucceededJob("cog-catalog:7", provider: CloudStorageProvider.Local);
+
+        var act = () => registrar.EnsureRegisteredAsync(
+            job, GeoprocessingResultPackageFactoryProxy(job), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("cannot be served by the cloud COG catalog");
+        cogStore.Rows.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task EnsureRegistered_MissingDescriptorForIntent_FailsClosed()
     {
         var registrar = CreateRegistrar(new UniqueConstraintCogStore());
@@ -153,12 +168,20 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
             .Which.Message.Should().Contain("no longer exists");
+        cogStore.Rows.Should().BeEmpty();
     }
 
     private static GeoprocessingRasterOutputRegistrar CreateRegistrar(
         ICogStore cogStore,
         Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore? outputStore = null)
     {
+        if (outputStore is null)
+        {
+            var defaultStore = new HoldRecordingOutputObjectStore();
+            defaultStore.Objects.Add($"gp/outputs/{JobId}/a1/{OutputName}/result.tif");
+            outputStore = defaultStore;
+        }
+
         var services = new ServiceCollection();
         services.AddScoped(_ => cogStore);
         var provider = services.BuildServiceProvider();
@@ -200,7 +223,8 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
     private static ExecutionJobRecord CreateSucceededJob(
         string registrationTarget,
-        string? objectKey = null)
+        string? objectKey = null,
+        CloudStorageProvider provider = CloudStorageProvider.AwsS3)
     {
         var descriptor = new StagedObjectRasterOutputDescriptor
         {
@@ -214,7 +238,7 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
                 Checksum = new RasterChecksum("sha256", new string('a', 64)),
             },
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
-            Provider = CloudStorageProvider.Local,
+            Provider = provider,
             StoreReference = "gp-outputs",
             ObjectKey = objectKey ?? $"gp/outputs/{JobId}/a1/{OutputName}/result.tif",
         };
@@ -322,7 +346,7 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
     /// <summary>
     /// Minimal output-store double for hold assertions: matches the descriptors'
-    /// (Local, gp-outputs) identity and records retention holds.
+    /// (AwsS3, gp-outputs) identity and records retention holds.
     /// </summary>
     private sealed class HoldRecordingOutputObjectStore
         : Honua.Core.Features.Geoprocessing.Abstractions.IGeoprocessingOutputObjectStore
@@ -331,7 +355,7 @@ public sealed class GeoprocessingRasterOutputRegistrarTests
 
         public HashSet<string> Holds { get; } = new(StringComparer.Ordinal);
 
-        public CloudStorageProvider Provider => CloudStorageProvider.Local;
+        public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
         public string StoreReference => "gp-outputs";
 

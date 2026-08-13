@@ -163,7 +163,7 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         // Declared entry count far larger than the remaining bytes.
         bytes[56] = 0xFF;
         bytes[57] = 0x7F;
-        var outputPath = Path.Combine(_scratch, Guid.NewGuid().ToString("N") + "-malformed.tif");
+        var outputPath = Path.Join(_scratch, Guid.NewGuid().ToString("N") + "-malformed.tif");
         File.WriteAllBytes(outputPath, bytes);
 
         var error = await GdalArtifactPublisher.PublishFileAsync(
@@ -268,7 +268,7 @@ public sealed class GdalArtifactPublisherTests : IDisposable
 
     private string WriteOutput(string fileName, int size)
     {
-        var path = Path.Combine(_scratch, Guid.NewGuid().ToString("N") + "-" + fileName);
+        var path = Path.Join(_scratch, Guid.NewGuid().ToString("N") + "-" + fileName);
         var payload = new byte[size];
         Random.Shared.NextBytes(payload);
         File.WriteAllBytes(path, payload);
@@ -322,8 +322,9 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         }
 
         public Task<Stream?> OpenReadAsync(string objectKey, CancellationToken cancellationToken = default)
-            => Task.FromResult<Stream?>(
-                Objects.TryGetValue(objectKey, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
+            => Task.FromResult<Stream?>(Objects.TryGetValue(objectKey, out var bytes)
+                ? new Honua.TestKit.CallerOwnedMemoryStream(bytes, writable: false)
+                : null);
 
         public Task<GeoprocessingStagedObjectInfo?> GetInfoAsync(
             string objectKey,

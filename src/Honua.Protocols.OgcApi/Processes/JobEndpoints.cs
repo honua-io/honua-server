@@ -495,6 +495,25 @@ internal static class JobEndpoints
             return ArtifactNotAvailableResult(jobId, artifactIndex);
         }
 
+        // Route content visibility through the same result-package reconciliation
+        // contract as GET .../results. In particular, a job with output-registration
+        // intents must not expose deterministic staged bytes before every requested
+        // catalog registration has completed successfully.
+        try
+        {
+            _ = await jobService
+                .GetJobResultsAsync(jobId, context.User, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            return JobNotFoundResult(jobId);
+        }
+        catch (GeoprocessingStoreUnavailableException)
+        {
+            return JobStoreUnavailableResult();
+        }
+
         if (artifactIndex < 0
             || artifactIndex >= job.ArtifactReferences.Count
             || !Honua.Core.Features.Geoprocessing.Raster.RasterOutputJson.TryDeserialize(

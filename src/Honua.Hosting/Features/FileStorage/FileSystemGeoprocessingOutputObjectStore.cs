@@ -260,7 +260,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
             throw new ArgumentException($"Object key '{objectKey}' is not a contained relative key.", nameof(objectKey));
         }
 
-        var combined = Path.GetFullPath(Path.Combine(_root, objectKey));
+        var combined = Path.GetFullPath(Path.Join(_root, objectKey));
         if (!combined.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             && !string.Equals(combined, _root, StringComparison.Ordinal))
         {
@@ -313,6 +313,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         }
         catch (UnauthorizedAccessException)
         {
+            // Best-effort cleanup of a temporary sidecar.
         }
     }
 }
